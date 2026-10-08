@@ -70,7 +70,7 @@ export const EVENT_SCHEMAS = {
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
   // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
   'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string() }),
-  // Self-update (issue #44): commits are full shas; `ref` is the branch or the release tag.
+  // Self-update (issue #44): commits are full shas; `ref` is the branch of the channel.
   'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),

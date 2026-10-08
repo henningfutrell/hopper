@@ -1561,7 +1561,7 @@ job is judged, and when its prompt is built):
 
 | completion | complete when | the job's prompt says |
 |------------|---------------|-----------------------|
-| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, so this is the change on main), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
+| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
 | `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
 
 The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
@@ -1574,7 +1574,7 @@ complete: no pull request opened by this job, ready for review, closes <issue ur
 work is complete: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
 `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
 source, take every done job as complete. Before issue #171, a job that said it was done was closed
-as completed with nothing on main.
+as completed with nothing on the default branch.
 
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
@@ -5281,17 +5281,17 @@ build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
 `{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
 writes it (`kind: install`) from the clone's `origin`
-and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+and `HEAD`; the branch is `stable` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
+the new one, with the channel's branch. One without `kind` (from before issue #409) is an install.
 No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
 
 **So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
 the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
-default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+default `stable`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
 OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
 `scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
-the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `stable`) and tags `HOPPER_IMAGE` (default
 `localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
 install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
 install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
@@ -5308,27 +5308,30 @@ Check now. Checking cannot be turned off (issue #177): `0` used to mean "only wh
 hopper left with it set offered nothing merged after it; now `0` (or less) is the default minute, with a
 warning in the log. One minute, not fifteen (issue #177): a change merged to the
 tracked branch is not shipped until the running hopper offers it, and a 15-minute check left merged work
-unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `dev`, `beta`, `main` → the head
-of the branch of that name (issue #282); `release` → the newest `v<major>.<minor>.<patch>` tag. With no
-channel set, it is the branch install.json names when that is a channel, else `main`. An update is
+unoffered for up to that long; a fetch that brings nothing is one round trip. The **update channel** decides the target: `dev`, `beta` or `stable`, the head
+of the branch of that name (issues #282, #423). With no channel set, it is the branch install.json names
+when that is a channel, else `stable`. An update is
 **available** when the installed commit does not contain the target (an install ahead of it, e.g.
-from a feature branch, is `current`) — or, on a branch channel, when install.json names another
-channel's branch and the target is not the installed commit: moving from `dev` to `main` goes back
-to `main`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
-"move to the main channel").
+from a feature branch, is `current`) — or when install.json names another
+channel's branch and the target is not the installed commit: moving from `dev` to `stable` goes back
+to `stable`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
+"move to the stable channel").
 
-**Channels and promotion (issue #282).** Changes land on `dev`; `beta` is promoted from `dev`, and
-`main` from `beta`, each a fast-forward to a commit the less steady branch already ran
-(`git push origin <commit>:beta`, then `git push origin <commit>:main`). A hopper on `dev` gets every
-change first; one on `main` gets only what ran on `beta`, so a change that breaks is caught before it
-reaches every hopper. Which branch pull requests merge to (the repository's default branch) is the
-owner's choice; while it is `main`, `dev` and `beta` are fast-forwarded to it after each merge, and
-the channels only differ once changes merge to `dev` first. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
+**Channels and promotion (issues #282, #423).** `dev` is the repository's default branch: every pull
+request, a job's included, merges there. `beta` is promoted from `dev`, and `stable` from `beta`, each by
+a maintainer, as a fast-forward to a commit the less steady branch already ran
+(`git push origin <commit>:beta`, then `git push origin <commit>:stable`; `docs/deploy.md` "Update channels
+and promotion" says when). A hopper on `dev` gets every change first; one on `stable` gets only what ran on
+`beta`, so a change that breaks is caught before it reaches every hopper. Each of the three branches has
+the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
+`dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
+migration 26 sets a hopper on `main` or `release` to `stable`, and the `main` branch stays at the commit
+that brought it, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
 at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
 them when the installed commit has no such file) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
-not what changed for its users. The newest release is reported on either channel (`release.newer`). **In this
+not what changed for its users. **In this
 version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
 `install.sh` and the image copy the file), read once at start — shown whether or not an update
 exists, and when self-update is unavailable.
@@ -5386,10 +5389,10 @@ migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`.
 an available update as soon as a check finds it, and at once when switched on with one available.
 
 **UI.** A notice above the views while an update is available, applying or failed — headline
-("Update available", or the release), "What's new" (the bullets), Update now. The header's
+("Update available", or the channel it moves to), "What's new" (the bullets), Update now. The header's
 version (a bordered button with an info icon, the installed commit from `sm` up) shows on every screen
 and opens the Version and updates panel at any time (issue #165): version, installed, installed on,
-newest, release, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `main` / `release`, each with what it pulls), the
+newest, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `stable`, each with what it pulls), the
 update's What's new, In this version. The same details are Settings → Version (`#settings/version`).
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,
@@ -5415,8 +5418,8 @@ with no host install path.
 
 `compose.yaml` at the root, served by the install page beside `install.sh`. Three services: `secrets`
 (once per start; the database password is made on the first one and kept in a volume, each file
-readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository's
-`main`, or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
+readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository,
+or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
 #125 the hopper is the published image, the `secrets` service is folded into `postgres`, and Podman is
 the recommended runtime ("The published image, with Podman" below). Operating detail: `docs/deploy.md`
 "In containers, with Podman".
@@ -5473,11 +5476,11 @@ Owner request: publish a public container image people can pull and run, so the 
 installed on the host; running from it is the recommended path, other installs stay but are
 secondary; install and run docs focus on Podman.
 
-**The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `main` (and by
-hand) and pushes `ghcr.io/henningfutrell/hopper`: `latest` follows `main`, `sha-<commit>` pins one
-build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). A newer push never cancels a build
+**The image.** `.github/workflows/image.yml` builds the `Dockerfile` on every push to `dev`, `beta` or
+`stable` (and by hand) and pushes `ghcr.io/henningfutrell/hopper`: the tag of the branch's name follows that
+branch, `latest` follows `stable` (issue #423), `sha-<commit>` pins one build; `linux/amd64` and `linux/arm64` (QEMU; herdr ships both). A newer push never cancels a build
 in progress: runs queue, and GitHub keeps only the newest pending one, so the last commit of a merge
-stream is always published (issue #156: cancelling left `latest` hours behind `main`). It logs in with the workflow's own
+stream is always published (issue #156: cancelling left `latest` hours behind). Each branch queues on its own. It logs in with the workflow's own
 `GITHUB_TOKEN` (`packages: write`): no registry credential exists to keep or rotate. The package is
 public, so a pull needs no sign-in. Nothing in the image is specific to one install: everything the
 hopper keeps is in its database, its secrets come from the runtime ("Deployable", "Secrets").

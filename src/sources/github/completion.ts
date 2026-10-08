@@ -1,7 +1,7 @@
 // The GitHub source's definition of done (issues #171, #187, #350). A job that ended done is complete
 // when its issue reached its completion: `merge`, the issue is **closed as complete** — by the merge
 // of the job's own pull request, opened at or after the job's createdAt (a merge closes an issue only
-// on the default branch, so that is the change on main), or, no pull request closing it, closed as
+// on the default branch, `dev`), or, no pull request closing it, closed as
 // completed at or after the job's createdAt: by a commit, or with no code at all (issue #350: a job
 // may end its issue without a pull request); `pull-request`, that, or the job's own pull request is
 // open, not a draft, and closes the issue when merged. The completion is the source's `completion`

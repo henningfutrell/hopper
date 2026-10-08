@@ -86,8 +86,6 @@ export function VersionDetails({ className }: { className?: string }) {
         <dd className="font-mono">{s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : '—'}</dd>
         {s.installed && <><dt className="text-muted-foreground">Installed on</dt><dd>{new Date(s.installed.installedAt).toLocaleString()}</dd></>}
         {s.target && <><dt className="text-muted-foreground">Newest</dt><dd className="font-mono">{s.target.ref} {short(s.target.commit)}</dd></>}
-        <dt className="text-muted-foreground">Release</dt>
-        <dd className="font-mono">{s.release ? `${s.release.tag}${s.release.newer ? ' (newer)' : ''}` : 'none yet'}</dd>
         <dt className="text-muted-foreground">Checked</dt>
         <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
       </dl>

@@ -52,7 +52,7 @@ RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 # .github/workflows/image.yml from GitHub. A build given none knows the repository and branch, and says it lacks
 # its commit. Last, so a new commit rebuilds only this layer.
 ARG HOPPER_REPO=https://github.com/henningfutrell/hopper.git
-ARG HOPPER_BRANCH=main
+ARG HOPPER_BRANCH=stable
 ARG HOPPER_COMMIT=
 LABEL org.opencontainers.image.source=$HOPPER_REPO \
       org.opencontainers.image.revision=$HOPPER_COMMIT

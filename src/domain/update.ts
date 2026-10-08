@@ -1,14 +1,15 @@
 // Self-update (issue #44): what is installed, what is newer on the update channel, and how
 // applying it stands. design.md "Self-update".
 
-/** The channels that follow a branch of the same name, least stable first (issue #282): changes land on `dev`, are promoted to `beta`, then to `main`. */
-export const BRANCH_CHANNELS = ['dev', 'beta', 'main'] as const;
-export const UPDATE_CHANNELS = [...BRANCH_CHANNELS, 'release'] as const;
-/** What counts as newer: every commit on the channel's branch (`dev`, `beta`, `main`), or release tags only (`release`). */
+/**
+ * The update channels, least stable first (issues #282, #423): each follows the branch of its name. Changes land on
+ * `dev`, the default branch, are promoted to `beta`, then to `stable`.
+ */
+export const UPDATE_CHANNELS = ['dev', 'beta', 'stable'] as const;
+/** What counts as newer: every commit on the channel's branch. */
 export type UpdateChannel = (typeof UPDATE_CHANNELS)[number];
-export type BranchChannel = (typeof BRANCH_CHANNELS)[number];
 
-export const isBranchChannel = (name: string): name is BranchChannel => (BRANCH_CHANNELS as readonly string[]).includes(name);
+export const isUpdateChannel = (name: string): name is UpdateChannel => (UPDATE_CHANNELS as readonly string[]).includes(name);
 
 /**
  * How a build of the hopper is replaced (issue #409): `install` — a directory built by scripts/install.sh or an
@@ -22,19 +23,11 @@ export interface InstallInfo {
   kind: InstallKind;
   /** The git repository updates come from (the clone's `origin`). */
   repo: string;
-  /** The branch it was installed from: an update on a branch channel writes that channel's branch. */
+  /** The branch it was installed from: an update writes its channel's branch. */
   branch: string;
   commit: string;
   /** When it was built: the install, the update, or the image. */
   installedAt: string;
-}
-
-export interface UpdateRelease {
-  /** The newest `v<semver>` tag. */
-  tag: string;
-  commit: string;
-  /** The installed commit does not contain it. */
-  newer: boolean;
 }
 
 export type UpdateState = 'unavailable' | 'current' | 'available' | 'applying' | 'error';
@@ -77,9 +70,8 @@ export interface UpdateStatus extends UpdateSettings {
   /** Why updates are unavailable, or the last check's or apply's error. */
   reason?: string;
   installed?: InstallInfo;
-  /** The newest commit of the channel: its branch head (`dev`, `beta`, `main`) or the newest release's commit (`release`). */
+  /** The newest commit of the channel: the head of its branch. */
   target?: { commit: string; ref: string };
-  release?: UpdateRelease;
   /** What's new: the target's WHATS-NEW.md bullets the installed version lacks, newest first, in plain words. */
   whatsNew: string[];
   /** What the installed version brought: the newest bullets of its own WHATS-NEW.md, update or not. */

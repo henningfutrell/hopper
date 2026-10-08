@@ -32,9 +32,10 @@ a drop-in with `Environment=<NAME>_FILE=%d/<name>`.
 
 `compose.yaml` (issues #119, #125): the whole hopper in containers, from that one file — no clone, no
 host install, no build, nothing to set before the first start. The hopper is the public image
-`ghcr.io/henningfutrell/hopper` (`latest` follows `main`; `sha-<commit>` pins one build; Intel/AMD and
-ARM), built and pushed by `.github/workflows/image.yml` on every change to `main`. The install page
-serves the compose file.
+`ghcr.io/henningfutrell/hopper` (`latest` follows `stable`; `dev`, `beta` and `stable` follow the branch of
+that name; `sha-<commit>` pins one build; Intel/AMD and ARM), built and pushed by `.github/workflows/image.yml`
+on every change to those three branches ("Update channels and promotion" below). The install page serves the
+compose file. To run another channel, set `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev` (or `:beta`) in `.env`.
 
 Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
 `podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
@@ -295,6 +296,45 @@ HOPPER_SIGN_IN_LOCAL_ENABLED=false
 
 A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`). Another GitHub App or
 GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG`.
+
+## Update channels and promotion
+
+The repository has three long-lived branches, and they are the update channels (issue #423), least stable
+first:
+
+| Branch | What is on it | Who moves it, and when |
+|---|---|---|
+| `dev` | the default branch: every pull request, a job's included, merges here | each merge |
+| `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
+| `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
+
+A **promotion** is a fast-forward push of a commit the less stable branch already has, never a merge or a
+commit of its own:
+
+```sh
+git fetch origin
+git push origin <commit>:beta     # a commit on dev
+git push origin <commit>:stable   # a commit on beta
+```
+
+Git refuses a push that is not a fast-forward, so `beta` and `stable` only ever hold what ran one step
+below. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted
+from there. There is no schedule and nothing promotes on its own: the maintainer decides.
+
+What each push publishes: `.github/workflows/image.yml` builds the image tag of the branch's name
+(`stable` also moves `latest`); `.github/workflows/pages.yml` publishes the Pages site, its `install.sh` and
+its `compose.yaml` from `stable` only.
+
+A hopper picks its channel in Settings → Version (dev, beta, stable); it takes effect without a restart.
+An install from `scripts/install.sh` or the curl install starts on the branch it was installed from
+(`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by pulling the tag of its channel.
+
+**From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
+is set to `stable` when it starts on a version with these channels (store migration 26). The `main` branch
+stays where the change to three channels landed, so a hopper still on an older version, which follows
+`main`, updates once to that version and from then on follows `stable`. Nothing is promoted to `main`
+after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
+a channel in its Settings, or install again.
 
 ## Rename from job-hopper
 

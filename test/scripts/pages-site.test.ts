@@ -66,7 +66,7 @@ describe('the front page below the fold', () => {
   it('tours the features, then links the docs on GitHub', () => {
     for (const feature of TOUR) expect(text(index)).toContain(feature.title);
     for (const doc of ['README.md', 'docs/deploy.md', 'docs/sign-in.md', 'docs/plugins.md', 'WHATS-NEW.md'])
-      expect(index).toContain(`href="${REPO}/blob/main/${doc}"`);
+      expect(index).toContain(`href="${REPO}/blob/stable/${doc}"`);
   });
 
   it('shows a feature\'s screenshot, with alt text and its size, once docs/screenshots has it (issue #353)', () => {
