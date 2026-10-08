@@ -7886,13 +7886,35 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   and every `auth.*` event carry the login's id, kind, tool, status, times and what waits on it, never
   them; they live in the daemon's memory while the login is open and are dropped when it ends (a restart
   drops them: `codeKept: false`; a herdr job still waiting is read back from its screen). Only a UI session
-  of the user reads them, from `GET /api/logins` and `/api/logins/:id`: never the API door's token, never a
-  loopback read without a session. Wherever a run's output goes on — a job's progress, a question's text
+  of the user whose role may act on a login (operator or admin, issue #477) reads them, from `GET /api/logins`
+  and `/api/logins/:id`: never a viewer's, never the API door's token, never a loopback read without a session. Wherever a run's output goes on — a job's progress, a question's text
   and recent output, a job's result or error, a login's failure reason — a code its screen or output shows
   is replaced with `[code hidden]`. Webhooks deliver `auth.*` events as any other, without the URL or code.
 - **Notifiers.** No `auth.*` event goes to a notifier: the existing notifier sends questions, and a login
   is not one. Webhook subscribers may subscribe to `auth.*`. The Logins UI is issue #477.
 - **Naming.** "Login lane" in the issue is a login kind here: a **lane** is a job slot (`lane.opened`).
+- **The Logins view** (issue #477, `ui/src/views/logins.tsx`, its model `ui/src/model/logins.ts`). A view of its
+  own (`#logins`), apart from Questions: no login is ever a question card. One card per login, open ones first
+  with the least time left on top: the machine, the tool, what waits on it (the job, or the escalation run),
+  the code with copy and open (`DeviceCode`), a countdown, and Request a new code (a run that can ask) and
+  Cancel (asks first). **Phases**, from the server's status and the clock: `pending`; `expiring` under the
+  **warning** — the setting `warnSec` (default 60 s; `POST /ui/api/logins/settings`, admin; 10 to 3600) or a
+  fifth of the code's life from its last report, whichever is longer — the card and the badge amber, the
+  countdown larger, and a polite live region says it once; `expired` at `expiresAt` by the browser's clock,
+  before the server's `auth.expired` arrives (the code no longer shown, the card says what happens to the
+  job by `onExpiry`); then the server's status is final: `completed` (Signed in, the time, the job goes on),
+  `cancelled`, `failed` with its reason. **Server time:** `GET /api/logins` answers `now`; the UI keeps
+  server time less its own clock and counts down on the shared 1 s clock plus that offset, so a skewed
+  browser clock does not move the countdown. **Live:** each `auth.*` event refreshes the logins, as each
+  `question.*` refreshes the questions. **Badge:** the nav entry and a header link count the open logins
+  (pending, not past `expiresAt`) on every view until none is left, never cleared by being seen
+  (issue #499's rule for Questions). An ended login stays on its card 5 minutes (`ENDED_ON_CARD_MS`), an
+  expired one held for a new code until it changes; then it goes to Earlier logins, under the cards, a
+  compact list that never had the code. A viewer's card shows the countdown and a notice instead of the
+  code and the actions. The logins settings are a panel there for an admin.
+  Taken conservatively, each one place to change: a top-level nav entry, not a tab beside Questions; the
+  warning one setting per user (the logins settings are the user's); 5 minutes on a card; no browser
+  notification (no `auth.*` event goes to a notifier, above).
 
 Open decisions taken conservatively, each one entry to change: the kinds after `device_code`
 (`LOGIN_KINDS`, `kinds.ts`); who completes a login (the user only); on expiry (`onExpiry`, default

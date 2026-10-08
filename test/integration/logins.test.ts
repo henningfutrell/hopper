@@ -98,7 +98,7 @@ describe('a job that waits on a device login', () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), authTurn({ code: 'QRST-2345', polls: 60 }), DONE] });
     const a = await start(herdr);
     const token = await a.login();
-    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'hold' }, { token })).body).toEqual({ onExpiry: 'hold' });
+    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'hold' }, { token })).body).toEqual({ onExpiry: 'hold', warnSec: 60 });
     const job = await a.pull({}, item());
     const login = await pendingLogin(a);
     await waitFor(async () => (await loginsOf(a)).logins[0]!.status === 'expired', { timeoutMs: 8000 });

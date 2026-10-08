@@ -2,7 +2,7 @@
 // and centred, a copy button beside it, the provider one press away (the press copies the code too), how
 // long the code lasts, and the way back. The landing page's GitHub sign-in and Sources' Connect GitHub
 // both show it, as the hopper's own sign-ins, with no machine; a login prompt a machine raises names that
-// machine (issue #485).
+// machine (issue #485). The Logins view (issue #477) brings its own actions and countdown in place of Cancel.
 import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -26,7 +26,7 @@ function useLeft(at: string | undefined): string | null {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, machine, onCancel, cancelDisabled, className, ...rest }: {
+export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, machine, onCancel, cancelDisabled, actions, className, ...rest }: {
   provider: string; userCode: string; verificationUri: string; expiresAt?: string;
   /** The machine that raised the prompt (issue #485); absent for the hopper's own sign-ins. */
   machine?: { id: string; name?: string };
@@ -34,7 +34,9 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
   waiting: ReactNode;
   /** A last line in small print. */
   note?: ReactNode;
-  onCancel: () => void; cancelDisabled?: boolean; className?: string;
+  /** In place of the Cancel button: the caller's own actions. */
+  actions?: ReactNode;
+  onCancel?: () => void; cancelDisabled?: boolean; className?: string;
 } & Record<`data-${string}`, string>) {
   const [copied, setCopied] = useState(false);
   const left = useLeft(expiresAt);
@@ -51,13 +53,13 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
         className={cn(buttonVariants({ size: 'lg' }), 'h-10 w-full max-w-xs gap-2')}>
         Open {provider}<ExternalLink />
       </a>
-      <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
+      <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono break-all text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
       <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
         <div className="flex items-center gap-2"><Loader2 className="size-3.5 shrink-0 animate-spin text-[#1ecad4] motion-reduce:animate-none" />{waiting}</div>
         {left && <div className="num text-[0.7rem] text-muted-foreground/80">The code expires in {left}</div>}
       </div>
       {note && <div className="max-w-xs text-[0.7rem] leading-relaxed text-muted-foreground/80">{note}</div>}
-      <Button variant="ghost" size="sm" disabled={cancelDisabled} onClick={onCancel}>Cancel</Button>
+      {actions ?? <Button variant="ghost" size="sm" disabled={cancelDisabled} onClick={onCancel}>Cancel</Button>}
     </div>
   );
 }

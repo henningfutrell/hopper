@@ -1,8 +1,10 @@
 // Derived reads over the store, memoised so a view re-renders only when what it derives from changes.
 import { useMemo } from 'react';
+import { useNow } from '@/hooks/use-now';
 import { jobBoard, type JobBoard } from '@/model/board';
 import { laneSpans, questionWaits, type LaneSpan, type QuestionWait } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
+import { loginsBadge } from '@/model/logins';
 import { allows } from '@/model/roles';
 import { awaitsOwner } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
@@ -38,6 +40,22 @@ export function useQuestionWaits(since: number): QuestionWait[] {
 
 /** How many open questions wait on the owner, seen or not: the nav badge (issue #499). */
 export const useAwaitingOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+
+/** Server time, ticking each second: the browser's shared clock plus the offset read with the logins (issue #477). */
+export const useServerNow = (): number => useNow() + useHopper((s) => s.serverOffsetMs);
+
+/** How many logins wait on the user, and whether one is about to expire: the nav badge and the header (issue #477). */
+export function useLoginsBadge(): { n: number; warn: boolean } {
+  const now = useServerNow();
+  const logins = useHopper((s) => s.logins);
+  const settings = useHopper((s) => s.loginSettings);
+  return settings ? loginsBadge(logins, now, settings) : { n: 0, warn: false };
+}
+
+/** A machine's name: its label, else its id; undefined for none. */
+export function useMachineName(id: string | undefined): string | undefined {
+  return useHopper((s) => (id ? s.machines.find((m) => m.id === id)?.label ?? id : undefined));
+}
 
 /** How many waiting jobs wait on the pre-sort: the Queue nav badge. */
 export const useAwaitingSort = (): number => useHopper((s) => awaitingSort(Object.values(s.jobs)));
