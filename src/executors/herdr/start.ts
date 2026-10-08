@@ -7,7 +7,7 @@ import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { JOB_WORKTREE_MARK, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
-import { SCRATCH_DIR, isBypassDialog, isTrustDialog } from './screen.ts';
+import { SCRATCH_DIR, isBypassDialog, isTrustDialog, windowsShellOf } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
@@ -172,7 +172,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * does not exist there in the home instead, so only the shell can say the work tree is not usable,
  * and then the job fails at once with what it said (issue #323). The jobs directory, and a work tree
  * under it, the shell makes first (`make`, issue #314). A fresh shell drops what is typed before its
- * prompt, so the command runs again until its output shows. Null when made, else the failure.
+ * prompt, so the command runs again until its output shows. The command is POSIX shell: a pane whose
+ * shell is PowerShell or cmd fails the job at once, naming it (issue #367). Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
   const scratch = jobScratchOf(s.cwd, ctx.job.id);
@@ -185,6 +186,10 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
     const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
     if (screen.split('\n').some((l) => l.trim() === SCRATCH_UNUSABLE)) {
       return { kind: 'failed', error: `the work tree ${s.cwd} is not usable on ${ctx.machine.id}: ${tail(screen, 10)}` };
+    }
+    const shell = windowsShellOf(screen);
+    if (shell) {
+      return { kind: 'failed', error: `the shell of pane ${s.paneId} on ${ctx.machine.id} is ${shell}, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr's default shell for the hopper's herdr session on that machine (README "A Windows computer")` };
     }
   }
   return { kind: 'failed', error: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };

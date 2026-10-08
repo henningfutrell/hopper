@@ -311,6 +311,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
+<tr><td>A job fails with <code>… is PowerShell, and the hopper needs a POSIX shell</code></td><td>The machine is a Windows computer whose jobs open in PowerShell. Give its hopper session Git Bash as the shell: <a href="https://github.com/henningfutrell/hopper#a-computer-or-a-sandbox-box-one-line">A Windows computer</a>.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of

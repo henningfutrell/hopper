@@ -174,7 +174,7 @@ describe('herdr-claude executor: a pane whose shell is a Windows shell fails the
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx);
     expect(out).toEqual({ kind: 'failed', error: `the shell of pane w1:p1 on laptop is ${named}, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr's default shell for the hopper's herdr session on that machine (README "A Windows computer")` });
     const there = remotes.get('laptop')!;
-    expect(there.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
+    expect(there.calls.filter((c) => c.method === 'runInPane' && !String(c.args[1]).startsWith('env -u HOPPER_JOB_ID'))).toHaveLength(1);
     expect(there.agentStarts).toEqual([]);
     expect(there.closed).toEqual(['w1:p1']);
   });

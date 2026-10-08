@@ -142,6 +142,9 @@ function bypassDialog(): string[] {
   ];
 }
 
+/** Each Windows shell's prompt, and the error it answers the hopper's POSIX commands with, then the prompt again (issue #367). */
+const WINDOWS_SHELLS = { powershell: ['PS C:\\Users\\dev> ', "The token '&&' is not a valid statement separator in this version."], cmd: ['C:\\Users\\dev>', 'The filename, directory name, or volume label syntax is incorrect.'] } as const;
+
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
   const turns = [...(o.turns ?? [])];
   const width = o.width ?? 100;
@@ -320,14 +323,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
-      if (o.windowsShell === 'powershell') {
-        p.lines.push(`PS C:\\Users\\dev> ${command}`, 'At line:1 char:20', "The token '&&' is not a valid statement separator in this version.", '    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException', '', 'PS C:\\Users\\dev> ');
-        return;
-      }
-      if (o.windowsShell === 'cmd') {
-        p.lines.push(`C:\\Users\\dev>${command}`, 'The filename, directory name, or volume label syntax is incorrect.', '', 'C:\\Users\\dev>');
-        return;
-      }
+      if (o.windowsShell) { const [prompt, error] = WINDOWS_SHELLS[o.windowsShell]; p.lines.push(`${prompt}${command}`, error, '', prompt); return; }
       // The reap at job end (reap.ts): what it kept, then its last line.
       if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
         p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
