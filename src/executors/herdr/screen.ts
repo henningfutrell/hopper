@@ -16,9 +16,9 @@ export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, 
  * its work tree (then its own git worktree of it, when it has one: issue #379), the protocol. The job rules
  * are editable; the work tree and the protocol are not.
  */
-export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string): string {
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string, sharedDependencies = false): string {
   const rules = jobRules.trim();
-  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, cwd)] : []), ...PROTOCOL_LINES].join('\n');
+  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, cwd, sharedDependencies)] : []), ...PROTOCOL_LINES].join('\n');
 }
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */

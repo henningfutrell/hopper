@@ -39,6 +39,8 @@ export interface HerdrClaudeExecutorOptions {
   yolo?: boolean;
   /** Each job its own git worktree of a work tree that is a git repository's top, in its scratch dir (issue #379). Default false. */
   jobWorktrees?: boolean;
+  /** A job worktree's node_modules linked to dependencies shared with the repository's other jobs (issue #410). Default false. */
+  sharedDependencies?: boolean;
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
   idleNudgeMs: number;
@@ -118,7 +120,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false,
-    jobWorktrees: o.jobWorktrees ?? false,
+    jobWorktrees: o.jobWorktrees ?? false, sharedDependencies: o.sharedDependencies ?? false,
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
@@ -283,7 +285,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree)}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree, state.sharedDependencies === true)}`, FOOTER_ANCHOR);
       });
     },
 

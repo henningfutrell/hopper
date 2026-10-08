@@ -54,6 +54,8 @@ export interface FakeHerdrOptions {
   repositories?: string[];
   /** Git refuses to make a job worktree. */
   worktreeFails?: boolean;
+  /** What sharing dependencies in a job worktree says (issue #410). Default `none`: no lockfile. */
+  deps?: 'linked' | 'installed' | 'own' | 'kept' | 'none' | 'failed';
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
@@ -337,6 +339,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       }
       if (command.startsWith('case "$(cat /proc/self/cgroup')) {
         p.lines.push(`$ ${command}`, `hopper-scope-${p.scoped ? 'entered' : 'outside'}`, '$ ');
+        return;
+      }
+      // Sharing dependencies (issue #410, shared-deps.ts): its outcome.
+      if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) {
+        p.lines.push(`$ ${command}`, `hopper-deps-${o.deps ?? 'none'}`, '$ ');
         return;
       }
       // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
