@@ -33,6 +33,7 @@
         "job.requeued",
         "job.reattached",
         "job.reprioritized",
+        "job.respecified",
         "lane.opened",
         "lane.closed",
         "decision.made",

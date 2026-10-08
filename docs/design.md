@@ -127,7 +127,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 ## The engine
 
 - **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events
-  `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
+  `job.queued`, `job.prioritized`, `job.reprioritized`, `job.respecified`, `job.approved`, `job.finished`,
   `job.failed`, `job.cancelled`, `question.asked`, `question.answered`,
   `question.expired`, and the queue gate's `job.accepted`, `job.rejected`, `queue.ordered`, `queue.gate_changed` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
   arriving mid-decision coalesce into one follow-up, which keeps the first waiting trigger's name
@@ -377,6 +377,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.requeued` | `{ from, reason: "daemon restart" }` |
 | `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
+| `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -1131,8 +1132,9 @@ source every `pollSeconds`:
    `ingest(item)` — spec `{ executor: item.executor, payload: { prompt, cwd, model?, env },
    priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`; `item.invalid`
    or a payload the executor rejects → job created and failed in one tx (`job.queued` +
-   `job.failed`); for items that already have a job: `host.reprioritize(jobId,
-   item.priority, item.priorityReason)` (re-sort; applies only to queued/held),
+   `job.failed`); for items that already have a job: `host.refresh(jobId, item, source)`
+   (re-sort and respecify; applies only to queued/held — see **Waiting jobs take the config as
+   it is now** below),
    `source: JobSourceRef`, with `payload.prompt = item.prompt`, `payload.env = item.env` —
    then `report({kind:'claimed'})`, merge the returned patch into
    `sourceState`. A key whose newest job is not re-runnable → skip (the host's `ingest` guard).
@@ -1157,6 +1159,25 @@ source every `pollSeconds`:
    once when the source is ok again; a source in error longer than the **stall threshold**
    (`STALL_AFTER_MS`, 30 min) records `source.stalled { source, kind, error, since }` once per run of
    failures, which the notifiers send.
+
+**Waiting jobs take the config as it is now** (issue #375). Each sync offers every item that already
+has a waiting (`queued`/`held`) job to `host.refresh(jobId, item, source)`, one tx that re-reads the
+job (`src/engine/source-host.ts`):
+
+- **Priority:** the routing rule's, else the item's, as now; a change → `job.reprioritized`. A job
+  that ran before (requeued) is re-sorted too.
+- **Spec, only while the job has never started** (`attempts` 0, no pending answer): routing is run
+  again and the parts the source and routing rules give the spec — executor, model, work tree,
+  default work tree, machine pin, routing rule (`SpecFromConfig`) — are worked out again. The job
+  keeps what they gave it last as `fromConfig` (absent on a job from before: its spec as it is). A
+  part whose value on the job differs from `fromConfig` was changed by hand and is kept; the others
+  take the new value. When the config's answer changed, the spec is replaced
+  (`JobRepository.respecify`), `fromConfig` updated and `job.respecified { from, to }` recorded; a
+  Decision follows, since the pin may have moved. A new spec its executor rejects is not applied
+  (logged); the job keeps the old one.
+- **A started job keeps its spec.** A job waiting on an answer resumes in the pane, agent session
+  and work tree it ran in, so neither its machine nor its work tree can change under it. To run it on
+  the new config, cancel it and run it again.
 
 **Re-run.** A source key may have many jobs; `jobs.source_key` is an index, not unique, and
 `getBySourceKey` returns the **newest** (`created_at`, then `seq`, descending). An item whose
@@ -4467,7 +4488,10 @@ routing:
   author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
   in `job.queued`, still v1), and the UI shows it on the job. A source re-sort does not change a
   priority that a rule set.
-- **New jobs only.** A rule change does not touch jobs already created. The UI copy says so.
+- **New jobs, and waiting jobs that have not started** (issue #375). A rule change reaches a
+  queued or held job that has never started on the next sync of its source, as the source's own
+  options do (**Waiting jobs take the config as it is now**, "Job sources"). A started job keeps how
+  it was routed. The UI copy says so.
 - **Targets.** If a rule names a machine or executor that is not configured, a save returns 400.
   If the target disappears later, intake skips the rule with a warning and tries the next one.
   Intake never fails on a rule. `GET /api/routing` lists those rules under `skipped`.
@@ -6728,7 +6752,8 @@ running jobs' panes (issue #350), so a restart is no way to apply a setting.
   is synced at once. A changed one (same name, new instance — its `defaultCwd`, `repoPaths`,
   `completion`, authors, …) takes over the slot: its counts and its jobs are kept, and from its next sync
   it pulls, checks and reports through the new instance. Options read at intake (`defaultCwd`,
-  `repoPaths`, priority) apply to the next job; a job already queued keeps what it was given. Completion
+  `repoPaths`, `model`, priority) apply to the next job, and to a waiting job that has not started on
+  the next sync (issue #375). Completion
   is judged when a job ends, so a running job is judged by the source as it is then. A removed source
   pulls nothing more: it stays, paused as `removed from the plugins config`, checks and reports its own
   jobs until each has ended and its end is reported, then goes. No job is cancelled or failed for it.
