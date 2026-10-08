@@ -23,7 +23,7 @@ export interface AppInstallation {
 
 /**
  * A user's connected account at one provider, as GET /api/connected-accounts reports it: connected
- * (the account, when), not connected, expired, waiting on the device code the user enters at
+ * (the account, when), not connected, expired, unreadable, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
  */
 export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: typeof CONNECTED_VIA } & (
@@ -47,6 +47,8 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */
   | { state: 'expired'; account: string; connectedAt: string; error: string }
+  /** Its tokens are sealed under a key the runtime does not give (issue #514): not ended — give the key back. `error`: what to do. */
+  | { state: 'unreadable'; account: string; connectedAt: string; error: string }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }
 );

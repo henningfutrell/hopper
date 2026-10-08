@@ -63,12 +63,18 @@ export interface Renewer {
   trouble(provider: ConnectedAccountProvider): string | undefined;
   /** A new grant was kept: no trouble left. */
   clear(provider: ConnectedAccountProvider): void;
+  /**
+   * Run `fn` with no renewal of the account under way, in this process or another (its lock, waited for as
+   * a renewal waits): the grant is replaced or dropped (issue #514) while nothing is rotating it.
+   */
+  exclusive<T>(provider: ConnectedAccountProvider, fn: () => Promise<T>): Promise<T>;
   start(): void;
   stop(): void;
 }
 
 export function createRenewer(o: RenewerOptions): Renewer {
   const renewing = new Map<ConnectedAccountProvider, Promise<string>>();
+  const replacing = new Map<ConnectedAccountProvider, Promise<unknown>>();
   const troubles = new Map<ConnectedAccountProvider, Trouble>();
   const now = () => o.clock.now().getTime();
   const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= now();
@@ -105,6 +111,7 @@ export function createRenewer(o: RenewerOptions): Renewer {
     let r = renewing.get(provider);
     if (r) return r;
     r = (async () => {
+      await replacing.get(provider)?.catch(() => undefined);
       const first = o.live(provider);
       if (refused !== undefined && first.account.accessToken !== refused) return first.account.accessToken; // already renewed
       if (!first.account.refreshToken) throw o.end(first.stored, `${PROVIDER_NAME[provider]} refused the token and there is no refresh token to renew it`);
@@ -158,10 +165,33 @@ export function createRenewer(o: RenewerOptions): Renewer {
     return g.accessToken;
   }
 
-  /** A token kept in clear — before #441, or before the runtime gave a key — sealed now. */
+  /** A token kept in clear — before #441, or before the runtime gave a key — or sealed under an older key (#514), sealed now. */
   function seal({ account: a, stored }: Live): void {
     const done = stored.refreshToken !== undefined ? accounts.swap(a.provider, stored.refreshToken, o.atRest.sealed(a)) : (accounts.put(o.atRest.sealed(a)), true);
     if (done) o.logger.info(`hopper: ${PROVIDER_NAME[a.provider]} tokens of ${a.account} sealed at rest`);
+  }
+
+  function exclusive<T>(provider: ConnectedAccountProvider, fn: () => Promise<T>): Promise<T> {
+    const before = replacing.get(provider);
+    const run = (async () => {
+      await before?.catch(() => undefined);
+      await renewing.get(provider)?.catch(() => undefined);
+      const until = Date.now() + LOCK_WAIT_MS;
+      let held = accounts.lock(provider);
+      while (!held && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+        held = accounts.lock(provider);
+      }
+      if (!held) o.logger.warn(`hopper: ${PROVIDER_NAME[provider]}: another process held the renewal lock for ${LOCK_WAIT_MS / 1000} s; going on without it`);
+      try {
+        return await fn();
+      } finally {
+        if (held) accounts.unlock(provider);
+      }
+    })();
+    replacing.set(provider, run);
+    void run.catch(() => undefined).finally(() => { if (replacing.get(provider) === run) replacing.delete(provider); });
+    return run;
   }
 
   function renewDue(): Promise<void> {
@@ -169,7 +199,7 @@ export function createRenewer(o: RenewerOptions): Renewer {
       for (const p of CONNECTED_ACCOUNT_PROVIDERS) {
         const l = o.lookable(p);
         if (!l) continue;
-        if (o.atRest.clear(l.stored)) seal(l);
+        if (o.atRest.stale(l.stored)) seal(l);
         if (!l.account.refreshToken || !due(l.account) || (troubles.get(p)?.retryAt ?? 0) > now()) continue;
         await renew(p).catch(() => undefined); // logged where it failed
       }
@@ -178,7 +208,7 @@ export function createRenewer(o: RenewerOptions): Renewer {
   }
 
   return {
-    renew, due, renewDue,
+    renew, due, renewDue, exclusive,
     trouble: (provider) => troubles.get(provider)?.why,
     clear: (provider) => { troubles.delete(provider); },
     start() {

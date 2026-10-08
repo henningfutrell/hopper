@@ -11,7 +11,7 @@ const REPO = 'owner/repo';
 
 function accounts(login: string | undefined): ConnectedAccountTokens {
   return {
-    account: () => login, ended: () => undefined, token: async () => 'token', renew: async () => 'token',
+    account: () => login, ended: () => undefined, expired: () => false, token: async () => 'token', renew: async () => 'token',
     endpoints: () => ({ url: 'https://github.com', apiUrl: 'https://api.github.com' }), jobRepositories: () => [REPO],
   };
 }

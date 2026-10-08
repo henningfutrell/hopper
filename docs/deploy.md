@@ -43,8 +43,11 @@ and give the receiver the new one. From then on the variable is not read: delete
    many (`webhook signing secret(s) sealed again under the current HOPPER_TOKEN_KEY`).
 4. Remove `HOPPER_TOKEN_KEY_PREVIOUS` and restart again.
 
-The connected account's tokens carry no key id: after a rotation it asks to connect GitHub again
-(docs/design.md "Keeping the connection").
+The connected account's tokens open under `HOPPER_TOKEN_KEY_PREVIOUS` too, and are sealed again under the
+new key within a minute of the restart (log: `tokens of <account> sealed at rest`): no new GitHub sign-in.
+Keep the key with the database: a hopper on the database with neither key reads the connection as
+*cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
+"One grant per connection").
 
 Mounted secrets: in compose, a `secrets:` entry (added to `compose.yaml`) appears at `/run/secrets/<name>` — set
 `<NAME>_FILE=/run/secrets/<name>`; in Kubernetes, a Secret volume; under systemd, `LoadCredential=` in
@@ -342,6 +345,15 @@ HOPPER_SIGN_IN_LOCAL_ENABLED=false
 
 A subject is the numeric user id (`id` in `https://api.github.com/users/<login>`). Another GitHub App or
 GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG`.
+
+**GitHub keeps ten sign-ins per person and app.** Each hopper connected as one GitHub user holds one; an
+eleventh made anywhere — another hopper, a test container, a connect in a browser — revokes the oldest
+unused one, which may be a running hopper's, and that hopper then reads *sign-in expired*. Disconnecting,
+and connecting again, revoke the sign-in they replace, so they add none. Keep hoppers plus short-lived
+instances connected as one user on one app at most ten. A test, verify or CI container does not connect as
+a person whose hoppers matter on the shared app: give it its own app (`HOPPER_GITHUB_CLIENT_ID`) or its own
+GitHub user, or no connection at all; one that connected anyway uses Sources → *Stop working through
+GitHub* before it is removed (docs/design.md "One grant per connection").
 
 ## Update channels and promotion
 

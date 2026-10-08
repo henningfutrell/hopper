@@ -287,7 +287,7 @@ describe('the renewer (#441)', () => {
     expect(JSON.stringify(s.connectedAccounts.get('github'))).not.toMatch(/gh[or]_/);
 
     const other = process_(github, store(url, clock), clock, { box: createTokenBox(randomBytes(32).toString('hex')) });
-    expect((await other.service.status())[0]).toMatchObject({ state: 'failed', error: expect.stringMatching(/another HOPPER_TOKEN_KEY/) });
+    expect((await other.service.status())[0]).toMatchObject({ state: 'unreadable', error: expect.stringMatching(/another HOPPER_TOKEN_KEY/) });
     await expect(other.service.token('github')).rejects.toThrow(/another HOPPER_TOKEN_KEY/);
     expect(other.told).toEqual([]);
   });

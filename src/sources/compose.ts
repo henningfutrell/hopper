@@ -102,11 +102,12 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     }
     return built.source;
   };
-  // `expired`: the sign-in ended (issue #441), so the UI asks to connect again on every screen.
+  // `expired`: the sign-in ended (issue #441), so the UI asks to connect again on every screen. Not while its
+  // tokens cannot be opened (issue #514): that asks for the key, never a new grant.
   const unconnected = () => ({
     mode: 'account', repos: accounts.jobRepositories(provider), label: options.label,
     account: { service: provider, detail: { via: CONNECTED_VIA }, problem: accounts.ended(provider) ?? notConnected(provider) },
-    ...(accounts.ended(provider) ? { expired: true } : {}),
+    ...(accounts.expired(provider) ? { expired: true } : {}),
   });
   return {
     name: o.name,
