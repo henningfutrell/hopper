@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Each account's weekly usage is now used up before it resets instead of a reserve being thrown away: in the last hours before a week resets, the hopper keeps starting jobs until that week is really spent. Jobs go first to the account whose week resets soonest with the most left, and a job at the highest priority can run one lane over the limit when every lane is busy. Each of the three can be turned off.
 - Settings → Version history now works for a hopper built from its source as a container image: it shows which version and change you run and what each version brought, and says when a newer one is out. When the build does not know something, the page still shows everything else it knows and says what is missing.
 - A machine can keep some of its lanes for the work only it can do: jobs that could run anywhere leave them free and go to other machines first.
 - A Claude job running on a machine that connects to the hopper by itself no longer fails when the hopper restarts: the job keeps running while the machine connects again, for up to two minutes, and only fails if the machine does not come back, saying so.
