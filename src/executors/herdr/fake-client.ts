@@ -5,6 +5,7 @@
 import { HerdrError } from './client.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
+import { CHROME, WINDOWS_SHELLS, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
 
 export interface FakeTurn {
   /** Lines appended while working, one per poll. */
@@ -103,54 +104,18 @@ export interface FakeHerdrClient extends HerdrClient {
   killAgent(name: string): void;
   /** The next call of `method` rejects with a HerdrError of this code. */
   failNext(method: keyof HerdrClient, code: string): void;
+  /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
+  setUnreachable(on: boolean): void;
   screen(paneId: string): string;
 }
-
-const CHROME = ['─'.repeat(40), '❯ ', '─'.repeat(40), '  ⏵⏵ bypass permissions on (shift+tab to cycle)'];
-
-function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  text.split('\n').forEach((para, i) => {
-    let line = i === 0 ? '❯' : ' ';
-    for (const word of para.split(' ')) {
-      if (line.length + 1 + word.length > width && line.trim() !== '' && line !== '❯') {
-        out.push(line);
-        line = ' ';
-      }
-      line += ` ${word}`;
-    }
-    out.push(line);
-  });
-  return out;
-}
-
-function trustDialog(path: string): string[] {
-  return [
-    '─'.repeat(40), ' Accessing workspace:', '', ` ${path}`, '',
-    ' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source',
-    " project, or work from your team). If not, take a moment to review what's in this folder first.", '',
-    ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel',
-  ];
-}
-
-function bypassDialog(): string[] {
-  return [
-    '─'.repeat(40), ' WARNING: Claude Code running in Bypass Permissions mode', '',
-    ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.', '',
-    ' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.', '',
-    ' ❯ No, exit', '   Yes, I accept', '', ' Enter to confirm · Esc to cancel',
-  ];
-}
-
-/** Each Windows shell's prompt, and the error it answers the hopper's POSIX commands with, then the prompt again (issue #367). */
-const WINDOWS_SHELLS = { powershell: ['PS C:\\Users\\dev> ', "The token '&&' is not a valid statement separator in this version."], cmd: ['C:\\Users\\dev>', 'The filename, directory name, or volume label syntax is incorrect.'] } as const;
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
   const turns = [...(o.turns ?? [])];
   const width = o.width ?? 100;
   const panes = new Map<string, Pane>();
   const failures = new Map<string, string>();
-  let n = 0;
+  /** setUnreachable: every call rejects. */
+  let n = 0, unreachable = false;
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;
@@ -160,6 +125,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
     fake.calls.push({ method, args });
+    if (unreachable) throw new HerdrError('client', 'client is not dialled in');
     const code = failures.get(method);
     if (code) {
       failures.delete(method);
@@ -217,6 +183,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       settle(p, 'working');
     },
     failNext(method, code) { failures.set(method, code); },
+    setUnreachable(on) { unreachable = on; },
     screen: (id) => {
       const p = panes.get(id);
       const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];

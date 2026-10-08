@@ -87,7 +87,8 @@ export function createQueries(c: EngineContext): Queries {
         sources: getUsageSources(),
         limits: { soft: c.policy.softLimit, hard: c.policy.hardLimit },
         machines: machines.map((m) => {
-          const { usedFrac, cap, band, executors } = laneEffect(m, readings, c.policy);
+          // At the clock, as the decider reads it: a week window in its burn window shows as not throttling (issue #373).
+          const { usedFrac, cap, band, executors } = laneEffect(m, readings, c.policy, c.clock.now().toISOString());
           return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, executors };
         }),
       };

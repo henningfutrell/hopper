@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
@@ -73,7 +73,9 @@ same Decision. Algorithm, in order:
    `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
-   model only, issue #18) are skipped. No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
+   (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
+   No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
@@ -96,12 +98,16 @@ same Decision. Algorithm, in order:
    is the only behaviour.
 5. **Native holds.** A job not yet accepted at the queue gate (`accepted: false`) → hold
    `awaiting acceptance`, before anything else is judged ("Queue gate"). No online machine runs the job's executor → hold. Pinned machine
-   unknown or offline → hold.
+   unknown or offline → hold. An ended job of the same item (`source.key`) whose cleanup is running or
+   deferred (`DecisionInputs.cleanupDue`, "Deferred cleanup") → hold `job <id> of this item may still run: its
+   cleanup waits for its machine (<error>)`, or `… is being cleaned up` while the first try runs.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
    `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
-   remaining room for that job (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
+   **placement pressure** when reset-aware placement is on ("Usage pacing"), then the most remaining
+   room for that job, then the lowest machine id. No candidate, and the job's priority at or above the
+   **critical priority**: it may take one lane past its caps ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
    #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
    machine with the highest cap for its executor — the executor's when it leaves less room than
@@ -110,7 +116,8 @@ same Decision. Algorithm, in order:
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
    `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
-   min(cap, occupied + assigned)`. `open` = number of this machine's starts with
+   min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
+   this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
    Idle lanes not assigned: kept while `occupied + assigned + kept < cap` and the lane has
    been idle less than `policy.laneIdleGraceMs` (from `idleSince` and `inputs.at`);
@@ -126,6 +133,37 @@ not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
 `decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
 `waits` additive, issue #381).
+
+### Usage pacing (issue #373)
+
+Several accounts that each reset at their own time, each to be used close to 100% a week without
+running dry early. Three parts, each its own setting, all in `DeciderPolicy.pacing`; the decider
+stays pure — every time it compares is `inputs.at`.
+
+- **Burn window** (`HOPPER_BURN_WINDOW_HOURS`, default 18; 0: off). The hard limit keeps a reserve
+  (5% at 0.95) that is right for most of the week, but the reset throws it away. Within the burn
+  window of a week window's `resetsAt`, that window does not throttle unless it is spent
+  (`used >= limit`): steps 1-2 skip it (`burnPhase`, `src/decider/usage.ts`), and the Decision's
+  reasons name it (`m: usage window week of s is in its burn window …: not throttling`). Session
+  windows still apply. The usage report (`GET /api/usage`) reads the same clock, so a burning window
+  shows as not throttling.
+- **Reset-aware placement** (`HOPPER_RESET_AWARE_PLACEMENT`, default `true`). Step 7 picks the
+  machine with the most placement pressure: headroom of the binding (most used) week window — to the
+  hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
+  hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
+  that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
+  pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
+  it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
+- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
+  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
+  machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
+  limit, and not past its cap already — at most one lane over it per machine. The start reason says
+  `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
+  lane cap or the reserved lanes`); step 8 counts a lane over the cap in `target`. From the next
+  Decision on the machine is past its cap: no other job starts there, and step 8 drains a busy lane
+  (the newest), which closes when its job ends.
+
+Decisions stored before issue #373 carry no `pacing`: all three are off for them.
 
 ## The engine
 
@@ -381,6 +419,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
+| `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
+| `job.cleaned_up` | `{ deferredAt, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`) |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -678,7 +718,10 @@ If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then th
 **Cancel** (`ctx.signal`, reason `'cancel'`): `send-keys esc`, then `ctrl+c` twice, then
 `pane close`; outcome `failed` `aborted`. **Shutdown** (reason `'shutdown'`): return
 `failed` `shutdown` at once, pane untouched (the engine discards outcomes during shutdown).
-**cleanup(job)**: same exit-and-close from `job.executorState`; swallow errors; idempotent.
+**cleanup(job)**: same exit-and-close from `job.executorState`; idempotent. Rejects only when the
+pane may still be open: its herdr not reached (a client target not dialled in, ssh failing), or
+`pane close` refused for any reason but `pane_not_found` (a pane already gone resolves). The engine
+then defers it ("Deferred cleanup").
 The executor is `idempotent: false`. `timeoutMs` and the `expectedMs` progress clock apply
 per `run`/`resume` call; time spent waiting for an answer does not count.
 
@@ -845,7 +888,9 @@ so a running job's pane and Claude outlive a restart.
   run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
   and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
   **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
-  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up.
+  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up;
+  a pane its cleanup cannot reach then may still run, so that cleanup is deferred and tried again
+  (issue #371, "Deferred cleanup").
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
@@ -1041,6 +1086,20 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
 - **Panes close on every terminal outcome** (finished, failed, cancelled, restart failure)
   via `executor.cleanup`, unless `HOPPER_KEEP_PANES=true`. Timeouts and failed startups
   close their pane too.
+- **Deferred cleanup** (issue #371). A cleanup that cannot reach the job's machine is not dropped.
+  Seen live (before the reconnect grace): restart recovery failed a job on a client target that had
+  not dialled back in yet; the one cleanup it queued never reached the pane, Claude kept working, and a rerun of the issue started
+  beside it seven minutes later. The two collided until the old pane was closed by hand.
+  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, the job gets `cleanupDeferred { at, error }`
+  and `job.cleanup_deferred { error }` (once per deferral). Every tick tries each deferred cleanup again
+  that is not running; the first that goes through clears the field and records `job.cleaned_up
+  { deferredAt }` (an engine trigger). The deferrals are read back from the store at start, so a
+  restart keeps them. Meanwhile the decider holds a waiting job of the same item (step 5): the
+  engine passes `DecisionInputs.cleanupDue`, the ended jobs whose cleanup is deferred or running now.
+  The UI flags such a job (Ended, the locked entries, Attention). **Mark closed**
+  (`POST /ui/api/jobs/:id/cleaned-up`, operator) ends a deferral by hand — the pane closed by hand, or
+  its machine gone for good — with `job.cleaned_up { by: "user" }`; without it a machine that never
+  comes back would hold its items for good.
 - **herdr unit:** a second `herdr --session X server` exits 1, so
   `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
@@ -2537,6 +2596,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_TICK_MS` | `2000` |
 | `HOPPER_ROUTER_MODE` | *Removed by issue #211: there is no router mode.* |
 | `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_BURN_WINDOW_HOURS` | `18` (0: off) — "Usage pacing" (issue #373) |
+| `HOPPER_RESET_AWARE_PLACEMENT` | `true` — "Usage pacing" |
+| `HOPPER_CRITICAL_PRIORITY` | `100` (0: off) — "Usage pacing" |
 | `HOPPER_ROUTER_CHEAP_BOOST` | `10` |
 | `HOPPER_WEBHOOK_BASE_MS` | `1000` |
 | `HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
@@ -5124,10 +5186,24 @@ job, a lane or a question: from the UI, or on its own with auto-update. Code: `s
 build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
 
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
-`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+`{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
+writes it (`kind: install`) from the clone's `origin`
 and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
+
+**So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
+the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
+default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
+`scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+`localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
+install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
+install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
+rebuilding it, so the UI offers no Update now and the headline says to pull or rebuild. A build whose install.json
+lacks a field → `unavailable`, the reason naming the missing field.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
@@ -5168,7 +5244,9 @@ the installed commit is made of, newest first: each commit on the tracked branch
 that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
 those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
-checked first. Computed once per installed commit. No install.json → none, with the reason.
+checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
+always carries `build`: what install.json does say (issue #409), shown above the list with the version, every
+missing field as `unknown`, and the reason as a short note — never an error in place of the page.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 
@@ -5315,7 +5393,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
 `HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
-still does not apply to a container.
+still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
 start a container whose dependency has exited, so the `secrets` service (run once, then exited) stopped
@@ -5607,7 +5685,7 @@ has it (`git log -- src/migrate/local.ts`).
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
-  configured for none). Self-update does not apply (no install.json; an image is updated by
+  configured for none). Self-update does not apply (an image is updated by
   rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
   deploy is `compose.yaml` at the root ("Docker Compose"; since issue #125 the published image,
 "The published image, with Podman").

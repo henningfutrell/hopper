@@ -12,6 +12,8 @@ export const DISMISSED_CAP = 200;
 export const noticeKey = {
   question: (id: string) => `question:${id}`,
   failed: (jobId: string) => `failed:${jobId}`,
+  /** A job whose cleanup could not reach its machine (issue #371): its pane may still be open. */
+  paneOpen: (jobId: string) => `pane-open:${jobId}`,
   /** A machine's disk running low (issue #401): once per machine, so a dismissal survives the bytes moving. */
   disk: (machineId: string) => `disk:${machineId}`,
   router: (h: Health) => `router:${h.router}`,

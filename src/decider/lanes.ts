@@ -7,7 +7,8 @@ export function planLanes(
 ): LanePlan {
   const mine = lanes.filter((l) => l.machineId === s.machine.id);
   const opening = starts.filter((st) => st.machineId === s.machine.id && st.laneId === null).length;
-  const target = Math.min(s.cap, s.occupied + s.assigned);
+  // A critical job's lane over the cap counts (issue #373): it drains when that job ends, not now.
+  const target = Math.min(s.cap + s.overCap, s.occupied + s.assigned);
 
   const now = Date.parse(at);
   const idleFor = (l: Lane): number => (l.idleSince ? now - Date.parse(l.idleSince) : Infinity);

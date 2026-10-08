@@ -32,7 +32,7 @@ function WhatsNew({ lines }: { lines: string[] }) {
 
 function ApplyButton({ s }: { s: UpdateStatus }) {
   const authed = useCanAdminInstance();
-  if (s.state !== 'available') return null;
+  if (s.state !== 'available' || s.installed?.kind === 'image') return null;
   return (
     <Button size="xs" disabled={!authed} title={authed ? 'Build the update beside the running hopper, then restart; running jobs keep running' : 'Only the hopper\'s admins can update'}
       onClick={() => void updateAct({ action: 'apply' }, 'Updating: running jobs keep running')}>
@@ -92,6 +92,7 @@ export function VersionDetails({ className }: { className?: string }) {
         <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
       </dl>
       {s.state === 'applying' && s.apply && <p className={cn('text-xs', TEXT.warn)}>{s.apply.detail}</p>}
+      {s.installed?.kind === 'image' && <p className="text-xs text-muted-foreground">Runs from a container image: pull or rebuild the image to update it; it is never updated in place.</p>}
       {(s.state === 'error' || s.state === 'unavailable') && s.reason && <p className={cn('text-xs break-words', s.state === 'error' ? TEXT.bad : TEXT.muted)}>{s.reason}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <ApplyButton s={s} />

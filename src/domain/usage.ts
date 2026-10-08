@@ -21,6 +21,16 @@ export interface UsageReading {
   at: string;
 }
 
+/** How the decider paces usage against each usage window's reset (issue #373, design.md "Usage pacing"). */
+export interface UsagePacing {
+  /** The burn window: within this many ms of a week window's reset, it stops throttling unless spent. 0: off. */
+  burnWindowMs: number;
+  /** Reset-aware placement: pick the machine with the most placement pressure first. */
+  resetAwarePlacement: boolean;
+  /** The critical priority: a job at or above it that fits nowhere may take one lane over the cap. 0: off. */
+  criticalPriority: number;
+}
+
 /** Who a part acts as on an outside service (glossary "Account"). Facts only: never a token or a key. */
 export interface Account {
   /** The outside service: `claude`, `github`. */

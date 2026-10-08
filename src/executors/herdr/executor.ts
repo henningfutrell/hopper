@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from '../../domain/ports.ts';
 import type { Job, LaneId } from '../../domain/types.ts';
-import type { HerdrClient } from './client.ts';
+import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
@@ -153,17 +153,22 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     return undefined;
   }
 
-  /** esc, ctrl+c twice, the reap, close. Swallows every error: the pane may already be gone. */
-  async function exitAndClose(pane: HeldPane): Promise<void> {
-    const close = async (herdr: HerdrClient): Promise<void> => {
+  /**
+   * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
+   * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
+   * closed or gone (issue #371).
+   */
+  async function exitAndClose(pane: HeldPane): Promise<string | undefined> {
+    const close = async (herdr: HerdrClient): Promise<string | undefined> => {
       await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
       const said = await reap(herdr, pane).catch(() => undefined);
       if (said) reaped.set(pane.jobId, said);
-      await herdr.closePane(pane.paneId).catch(() => {});
+      return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
     };
-    await Promise.resolve().then(() => close(herdrOn(pane))).catch(() => {});
+    const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
     for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
+    return open;
   }
 
   async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
@@ -370,7 +375,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
     async cleanup(job) {
       const state = paneStateOf(job);
-      if (state) await exitAndClose(heldOf(state, job.id));
+      const open = state ? await exitAndClose(heldOf(state, job.id)) : undefined;
+      if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
       const said = reaped.get(job.id);
       reaped.delete(job.id);
       return said;
