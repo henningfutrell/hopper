@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ExecutionOutcome } from '../../src/domain/ports.ts';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
-import { reapCommand } from '../../src/executors/herdr/reap.ts';
 import { CWD, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
 const ASK = { output: ['● Which language should the greeting be in?', '  HOPPER_QUESTION'] };
@@ -141,18 +140,20 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     expect(await executor.cleanup!(job)).toEqual({ kept: [] });
     expect(herdr.keys).toEqual([{ paneId: 'w1:p1', keys: ['esc'] }, { paneId: 'w1:p1', keys: ['ctrl+c', 'ctrl+c'] }]);
     expect(herdr.closed).toEqual(['w1:p1']);
-    await expect(executor.cleanup!(job)).resolves.toBeUndefined();
+    // Again: the reap runs again on the machine (nothing left to stop), the pane is not closed twice.
+    await expect(executor.cleanup!(job)).resolves.toEqual({ kept: [] });
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 
-  it('cleanup reaps in the pane once Claude has exited, before it closes the pane: the job\'s processes and its scratch dir (issue #401)', async () => {
+  it('cleanup reaps through the machine\'s connection, never the pane, before it closes the pane: the job\'s scope, processes and scratch dir (issues #401, #410)', async () => {
     const { herdr, executor, job } = await parked([ASK]);
+    const typed = herdr.calls.filter((c) => c.method === 'runInPane').length;
     await executor.cleanup!(job);
     const order = herdr.calls.map((c) => c.method);
-    const reap = herdr.calls.find((c) => c.method === 'runInPane' && String(c.args[1]).startsWith('env -u HOPPER_JOB_ID sh -c'));
-    expect(reap?.args).toEqual(['w1:p1', reapCommand(job.id, `${CWD}/.hopper-scratch/${job.id}`)]);
-    expect(order.lastIndexOf('runInPane')).toBeGreaterThan(order.lastIndexOf('sendKeys'));
-    expect(order.lastIndexOf('runInPane')).toBeLessThan(order.indexOf('closePane'));
+    expect(herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.hopper-scratch/${job.id}` }]);
+    expect(order.indexOf('reap')).toBeGreaterThan(order.lastIndexOf('sendKeys'));
+    expect(order.indexOf('reap')).toBeLessThan(order.indexOf('closePane'));
+    expect(herdr.calls.filter((c) => c.method === 'runInPane')).toHaveLength(typed);
   });
 
   it('cleanup answers the repositories the reap kept for their uncommitted or unpushed work (issue #401)', async () => {
@@ -163,15 +164,35 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     expect(await s.executor.cleanup!(job)).toEqual({ kept: ['/w/.hopper-scratch/j/repo'] });
   });
 
-  it('never types the reap into a Claude that has not exited: the pane only closes', async () => {
+  it('reaps a Claude that does not exit by itself: the reap stops it with the job\'s other processes, nothing typed into it (issue #410)', async () => {
     const s = setup({ turns: [ASK], ignoresCtrlC: true });
     const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
     await s.executor.run(first.ctx);
     const runs = s.herdr.calls.filter((c) => c.method === 'runInPane').length;
     const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1) });
-    expect(await s.executor.cleanup!(job)).toBeUndefined();
+    expect(await s.executor.cleanup!(job)).toEqual({ kept: [] });
+    expect(s.herdr.reaps).toHaveLength(1);
     expect(s.herdr.calls.filter((c) => c.method === 'runInPane')).toHaveLength(runs);
     expect(s.herdr.closed).toEqual(['w1:p1']);
+  });
+
+  it('a machine the reap cannot reach: the pane still closes, and nothing is said kept (the sweep reaps it later)', async () => {
+    const s = setup({ turns: [ASK], machineUnreachable: true });
+    const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
+    await s.executor.run(first.ctx);
+    const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1) });
+    expect(await s.executor.cleanup!(job)).toBeUndefined();
+    expect(s.herdr.closed).toEqual(['w1:p1']);
+  });
+
+  it('a job whose pane is gone (the hopper stopped, the machine restarted) is still reaped on its machine (issue #410)', async () => {
+    const s = setup({ turns: [ASK] });
+    const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
+    await s.executor.run(first.ctx);
+    await s.herdr.closePane('w1:p1');
+    const job = jobWith({ prompt: 'Write a greeting' }, { executorState: first.saved.at(-1) });
+    expect(await s.executor.cleanup!(job)).toEqual({ kept: [] });
+    expect(s.herdr.reaps).toEqual([{ jobId: job.id, scratch: `${CWD}/.hopper-scratch/${job.id}` }]);
   });
 
   it('a cancelled job is reaped as its pane closes, and cleanup after still answers what was kept', async () => {
@@ -181,7 +202,7 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
     await until(() => s.herdr.prompts.length === 1);
     ac.abort('cancel');
     await running;
-    expect(s.herdr.calls.some((c) => c.method === 'runInPane' && String(c.args[1]).startsWith('env -u HOPPER_JOB_ID'))).toBe(true);
+    expect(s.herdr.reaps).toHaveLength(1);
     expect(await s.executor.cleanup!(jobWith({ prompt: 'go' }, { executorState: saved.at(-1) }))).toEqual({ kept: ['/w/kept'] });
   });
 

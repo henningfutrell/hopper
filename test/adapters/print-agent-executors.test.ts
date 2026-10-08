@@ -3,7 +3,8 @@
 // per turn; the hopper protocol's marker on its last message decides done, a question (answered by
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
 // that print the JSON events each real one prints.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -11,6 +12,7 @@ import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
+import { userSystemd } from '../support/systemd.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['agent'] };
@@ -38,7 +40,7 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
   const job: Job = {
-    id: 'job-1234', spec: { executor: 'agent', payload }, priority: 50, status: 'running', approved: false,
+    id: 'job-print-1234', spec: { executor: 'agent', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
@@ -81,7 +83,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: session } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch`, HOPPER_JOB_ID: 'job-1234', HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
+    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch/job-print-1234`, HOPPER_JOB_ID: 'job-print-1234', HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
@@ -124,6 +126,39 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     const run = ex.run(ctxFor({ prompt: 'p', cwd: work }, { signal: ac.signal }).ctx);
     setTimeout(() => ac.abort('cancel'), 200);
     expect(await run).toEqual({ kind: 'failed', error: 'aborted' });
+  });
+
+  it.each([
+    ['a process that left its session', 'leave', true],
+    ['a process that cleared its environment too (in the job\'s scope)', 'escape', userSystemd],
+  ] as const)('leaves nothing behind (issue #410): its own scratch dir, and the reap at its end stops %s and removes the dir', async (_what, mode, runs) => {
+    if (!runs) return;
+    const leftover = `jh-410-${agent}-${mode}-${process.pid}`;
+    process.env.FAKE_AGENT_MODE = mode;
+    process.env.FAKE_AGENT_LEFTOVER = leftover;
+    reply('Done.\n\nHOPPER_DONE');
+    const { ctx, saved } = ctxFor({ prompt: 'p', cwd: work });
+    expect(await ex.run(ctx)).toMatchObject({ kind: 'finished' });
+    const scratch = `${work}/.hopper-scratch/job-print-1234`;
+    expect(existsSync(`${scratch}/left.txt`)).toBe(true);
+    expect(saved[0]).toEqual({ cwd: work });
+    const running = (): boolean => spawnSync('pgrep', ['-f', leftover]).status === 0;
+    try {
+      expect(running()).toBe(true);
+      const job = { ...ctx.job, status: 'finished' as const, executorState: saved.at(-1)! };
+      expect(await ex.cleanup!(job)).toEqual({ kept: [] });
+      expect(running()).toBe(false);
+      expect(existsSync(scratch)).toBe(false);
+    } finally {
+      spawnSync('pkill', ['-f', leftover]);
+    }
+  });
+
+  it('reaches this machine and ssh targets for the sweep, never a container or a client target (issue #410)', () => {
+    expect(ex.machineShell!(HERE)).toBeDefined();
+    expect(ex.machineShell!({ ...HERE, ssh: 'box' })).toBeDefined();
+    expect(ex.machineShell!({ ...HERE, docker: 'c' })).toBeUndefined();
+    expect(ex.machineShell!({ ...HERE, client: {} })).toBeUndefined();
   });
 
   it('refuses a container target and a client target, and is not idempotent', async () => {

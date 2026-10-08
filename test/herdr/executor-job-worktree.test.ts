@@ -2,7 +2,6 @@
 // What the commands do to a real repository is test/herdr/job-worktree.test.ts.
 import { describe, expect, it } from 'vitest';
 import { jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
-import { reapCommand } from '../../src/executors/herdr/reap.ts';
 import { CWD, JOB_ID, contextFor, jobWith, setup, until } from './support.ts';
 
 const DONE = { output: ['● Done.', '  HOPPER_DONE'] };
@@ -68,7 +67,7 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
   it('off: no worktree command, the job runs in the work tree', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD] }, { jobWorktrees: false });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(runs(herdr).some((r) => r.includes('hopper-job-'))).toBe(false);
+    expect(runs(herdr).some((r) => r.includes('git worktree'))).toBe(false);
     expect(herdr.prompts[0]!.text).toContain(`This job's work tree is ${CWD}.`);
   });
 
@@ -77,8 +76,8 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
     await executor.run(ctx);
     await executor.cleanup!(jobWith({ prompt: 'go' }, { executorState: saved.at(-1) }));
-    const methods = herdr.calls.map((c) => c.method === 'runInPane' && c.args[1] === reapCommand(JOB_ID, SCRATCH) ? 'reap' : c.method);
-    expect(methods.indexOf('reap')).toBeGreaterThan(-1);
+    const methods = herdr.calls.map((c) => c.method);
+    expect(herdr.reaps).toEqual([{ jobId: JOB_ID, scratch: SCRATCH }]);
     expect(methods.indexOf('reap')).toBeLessThan(methods.indexOf('closePane'));
     expect(herdr.closed).toEqual(['w1:p1']);
   });
@@ -90,7 +89,7 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     await until(() => herdr.prompts.length === 1);
     ac.abort('cancel');
     expect(await running).toEqual({ kind: 'failed', error: 'aborted' });
-    expect(runs(herdr)).toContain(reapCommand(JOB_ID, SCRATCH));
+    expect(herdr.reaps).toEqual([{ jobId: JOB_ID, scratch: SCRATCH }]);
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 
