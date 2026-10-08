@@ -1,7 +1,8 @@
 // A UI edit of the plugins config (design.md "UI and mutation", issue #198): one instance's options —
 // every one of them, command-bearing ones too —, the plugin filling a one-instance role, an instance of
-// a list role added or removed, or an escalation level moved. Each edit changes only that instance's
-// part of the config record and is written against the version it was read at.
+// a list role added or removed, an escalation level moved, or the default escalation machine set. Each
+// edit changes only that instance's part of the config record and is written against the version it was
+// read at.
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { ConfiguredInstance, Detection, InstanceSpec, ListRole, MachineDefaults, PluginsEdit, Role, RoutingEdit, RoutingRule } from '../domain/types.ts';
 import { parseRoutingRules } from '../routing/index.ts';
@@ -23,6 +24,8 @@ export interface EditContext {
   pinned?(name: string): string[];
   /** What the plugins config (or the built-in instances, for a role with no section) names now. */
   configured: readonly ConfiguredInstance[];
+  /** The default escalation machine the plugins config names now (issue #442). */
+  escalationMachine?: string | undefined;
   find(id: string): { definition: PluginDefinition; detection: Detection } | undefined;
 }
 
@@ -46,6 +49,8 @@ export interface Configured {
   routing: RoutingRule[];
   /** `machineDefaults`; absent: none set. */
   machineDefaults: Partial<MachineDefaults>;
+  /** `escalationMachine` (issue #442); absent: none set. */
+  escalationMachine?: string;
 }
 
 /** Every configured instance by role; with no `router` section, the router chosen by detection. */
@@ -161,12 +166,31 @@ function machineProblem(def: PluginDefinition, options: Record<string, unknown>,
   return undefined;
 }
 
-/** What still names machine `name` in a machine option (issue #174): escalation levels, usage sources, any instance of a plugin with one. */
+/**
+ * What still names machine `name` in a machine option (issue #174): escalation levels, usage sources, any
+ * instance of a plugin with one; and the default escalation machine (issue #442).
+ */
 function machineUsers(name: string, ctx: EditContext): string[] {
-  return ctx.configured.filter(({ instance }) => {
-    const def = ctx.find(instance.plugin)?.definition;
-    return def !== undefined && machineOptions(def).some((k) => instance.options?.[k] === name);
-  }).map(({ role, instance }) => `${role} ${instance.name}`);
+  return [
+    ...ctx.configured.filter(({ instance }) => {
+      const def = ctx.find(instance.plugin)?.definition;
+      return def !== undefined && machineOptions(def).some((k) => instance.options?.[k] === name);
+    }).map(({ role, instance }) => `${role} ${instance.name}`),
+    ...(ctx.escalationMachine === name ? ['the default escalation machine'] : []),
+  ];
+}
+
+/** The default escalation machine (issue #442): a configured machine, or none. */
+function applyEscalationMachine(e: Extract<PluginsEdit, { action: 'escalation-machine' }>, ctx: EditContext): EditResult {
+  if (e.machine !== null) {
+    const known = ctx.configured.filter((c) => c.role === 'machine-source').map((c) => c.instance.name);
+    if (!known.includes(e.machine)) return refuse('invalid', `machine ${e.machine} is not a configured machine: ${known.length ? `pick one of ${known.join(', ')}` : 'attach one first'}`);
+  }
+  if ((ctx.escalationMachine ?? null) === e.machine) return { ok: true, changed: false };
+  return writePlugins(ctx.config, e.version, (doc) => {
+    if (e.machine === null) delete doc.escalationMachine;
+    else doc.escalationMachine = e.machine;
+  });
 }
 
 const CHANGED = 'the plugins config changed since it was read; reload and edit again';
@@ -200,8 +224,14 @@ export function applyRoutingEdit(e: RoutingEdit, config: ConfigRecords, targetPr
   return writePlugins(config, e.version, (doc) => { doc.routing = parsed.rules; });
 }
 
+/** One edit, as the log line says it. */
+export const describeEdit = (e: Exclude<PluginsEdit, { action: 'rescan' }>): string => (e.action === 'escalation-machine'
+  ? `the default escalation machine is ${e.machine ?? 'none'}`
+  : `${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}${e.action === 'options' && e.rename && e.rename !== e.name ? ` renamed ${e.rename}` : ''}`);
+
 export function applyEdit(e: Exclude<PluginsEdit, { action: 'rescan' }>, ctx: EditContext): EditResult {
   if (e.action === 'add' || e.action === 'remove') return applyListEdit(e, ctx);
+  if (e.action === 'escalation-machine') return applyEscalationMachine(e, ctx);
   if (e.action === 'move') {
     const levels = ctx.configured.filter((c) => c.role === 'escalation-level');
     const at = levels.findIndex((c) => c.instance.name === e.name);
@@ -255,6 +285,7 @@ function applyRename(name: string, to: string, next: InstanceSpec, version: stri
     if (Array.isArray(doc.routing)) {
       doc.routing = doc.routing.map((rule: unknown) => (isObject(rule) && isObject(rule.set) && rule.set.machine === name ? { ...rule, set: { ...rule.set, machine: to } } : rule));
     }
+    if (doc.escalationMachine === name) doc.escalationMachine = to;
   });
 }
 

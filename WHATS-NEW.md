@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Questions are answered by Claude again on a hopper where no machine was picked for answering them: the job's own machine answers, or the only one that can, or one you choose in Settings, and each question shows which machine answered it. When no machine can, Settings says so plainly and how to fix it, instead of every question silently going to you.
 - You stay signed in while you use the hopper: a session lasts 7 days without use and 30 days at most, both set in Settings → Sign-in. When a session does end, the hopper takes you straight to sign in again and back to the page you were on.
 - The update channels are now dev, beta and stable. A hopper that followed main or release now follows stable, with nothing to do.
 - Jobs leave nothing running and nothing on disk behind them, also when the hopper stopped mid-job or a machine could not be reached at the end: what is left is cleaned up when the hopper starts and then every few minutes, and work not yet pushed is kept until it is. Jobs on the same project share one copy of its packages instead of installing their own. You choose per machine how often this runs and how long finished jobs' files stay.

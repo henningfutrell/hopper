@@ -29,6 +29,7 @@ function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) =>
         <StatusBadge status={a.tier} tone={a.tier === 'human' ? 'question' : 'muted'} />
         {a.role && <span className="text-muted-foreground">{a.role}</span>}
         {a.model && <span className="font-mono text-muted-foreground">{a.model}</span>}
+        {a.machine && <span className="text-muted-foreground" title={`picked: ${a.machine.why}`}>on <span className="font-mono">{a.machine.id}</span> ({a.machine.why})</span>}
         <StatusBadge status={a.outcome} />
         {a.confident != null && <span>confident <Mark ok={a.confident} /></span>}
         {a.escalate != null && <span>escalate <Mark ok={a.escalate} /></span>}

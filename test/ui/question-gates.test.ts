@@ -3,7 +3,7 @@
 // so unsaved edits survive a refresh, sent back with the version it was based on.
 import { describe, expect, it } from 'vitest';
 import type { PluginsReport, RulesView } from '../../src/domain/types.ts';
-import { gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
+import { escalationMachineChoices, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
 
 const base = {
   escalationLevels: [
@@ -41,6 +41,19 @@ describe('gateChain', () => {
     const none = { escalationLevels: [] } as unknown as PluginsReport;
     expect(gateChain(none, 6).map((s) => s.stage)).toEqual(['level', 'risk-rules', 'human']);
     expect(gateChain(none, 6)[0]).toMatchObject({ name: null, label: 'none — straight to the owner', tone: 'muted' });
+  });
+});
+
+describe('escalationMachineChoices (#442)', () => {
+  it('the configured machines claude-cli runs on: this one and the ssh ones', () => {
+    const report = { instances: [
+      { role: 'machine-source', instance: { name: 'here', plugin: 'local' } },
+      { role: 'machine-source', instance: { name: 'desk', plugin: 'ssh' } },
+      { role: 'machine-source', instance: { name: 'phone', plugin: 'client' } },
+      { role: 'machine-source', instance: { name: 'box', plugin: 'docker' } },
+      { role: 'escalation-level', instance: { name: 'level-1', plugin: 'claude-cli' } },
+    ] } as unknown as PluginsReport;
+    expect(escalationMachineChoices(report)).toEqual(['here', 'desk']);
   });
 });
 

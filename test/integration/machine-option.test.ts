@@ -31,14 +31,14 @@ const read = (a: TestApp) => readConfig(a.dbPath, 'plugins') as Record<string, {
 const MACHINES = { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 2 } }, { name: 'box', plugin: 'docker', options: { docker: 'box' } }], escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { model: 'opus', machine: 'local' } }], usageSources: [] };
 
 describe('a machine option is picked from the known machines (#174)', () => {
-  it('GET /api/plugins marks it a machine option, required, and lists every configured machine as its choices', async () => {
+  it('GET /api/plugins marks it a machine option and lists every configured machine as its choices; a stored config may lack it (#442)', async () => {
     const { a } = await start(MACHINES);
     const body = await report(a);
     for (const id of ['claude-cli', 'claude-plan']) {
       const p = body.plugins.find((x) => x.id === id)!;
       const schema = p.options as { properties: Record<string, { machine?: boolean }>; required?: string[] };
       expect(schema.properties.machine!.machine).toBe(true);
-      expect(schema.required).toContain('machine');
+      expect(schema.required ?? []).not.toContain('machine');
       expect(p.choices?.machine?.map((c) => c.value)).toEqual(['local', 'box']);
     }
   });

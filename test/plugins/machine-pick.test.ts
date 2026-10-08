@@ -3,7 +3,7 @@
 // and the stored plugins config is filled where exactly one machine can.
 import { describe, expect, it } from 'vitest';
 import type { InstanceSpec, MachineSnapshot } from '../../src/domain/types.ts';
-import { fillMachines, machineNote, NO_MACHINE_FOR_LEVEL, pickMachine } from '../../src/domain/machine-pick.ts';
+import { fillMachines, machineNote, NO_MACHINE_FOR_LEVEL, NO_MACHINE_FOR_USAGE, pickMachine } from '../../src/domain/machine-pick.ts';
 
 const m = (id: string, over: Partial<MachineSnapshot> = {}): MachineSnapshot => ({ id, label: id, maxLanes: 1, online: true, executors: ['herdr-claude'], ...over });
 const HERE = m('here');
@@ -41,7 +41,8 @@ describe('pickMachine (a level that names no machine)', () => {
 
   it('a usage source reaches any online machine, a client or container target too', () => {
     expect(pickMachine({ reach: 'any', machines: [PHONE] })).toEqual({ machine: 'phone', why: 'the only machine that can run claude' });
-    expect(pickMachine({ reach: 'any', machines: [PHONE, BOX] })).toMatchObject({ none: expect.stringMatching(/^No machine can run claude/) });
+    expect(pickMachine({ reach: 'any', machines: [PHONE, BOX] })).toEqual({ none: expect.stringMatching(/^This usage source names no machine, and phone, box can run claude/) });
+    expect(pickMachine({ reach: 'any', machines: [m('gone', { online: false })] })).toEqual({ none: NO_MACHINE_FOR_USAGE });
   });
 });
 
