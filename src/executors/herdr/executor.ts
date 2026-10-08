@@ -6,6 +6,7 @@ import type { Job, LaneId } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
+import { removeJobWorktreeInPane } from './job-worktree.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
@@ -30,6 +31,8 @@ export interface HerdrClaudeExecutorOptions {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted (issue #267): its warning is accepted at startup. Default false. */
   yolo?: boolean;
+  /** Each job its own git worktree of a work tree that is a git repository's top, removed at its end once pushed (issue #379). Default false. */
+  jobWorktrees?: boolean;
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
   idleNudgeMs: number;
@@ -75,6 +78,9 @@ interface Where { ssh?: string; session?: string; client?: ClientTarget }
 /** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
 interface HeldPane extends Where { paneId: string }
 
+/** A pane to release, with the job worktree in it when it has one (issue #379). */
+type Releasable = HeldPane & Partial<Pick<PaneState, 'agentName' | 'cwd' | 'jobWorktree'>>;
+
 const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
   && (a.ssh !== undefined || a.client !== undefined || a.session === b.session);
 
@@ -103,6 +109,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false,
+    jobWorktrees: o.jobWorktrees ?? false,
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
@@ -113,18 +120,29 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     return null;
   }
 
-  /** esc, ctrl+c twice, close. Swallows every error: the pane may already be gone. */
-  async function exitAndClose(pane: HeldPane): Promise<void> {
+  /** Never aborted: releasing a pane runs to its end. */
+  const unaborted = new AbortController().signal;
+
+  /**
+   * esc, ctrl+c twice, then the job worktree's removal in the pane's shell when it has one, close.
+   * Swallows every error: the pane may already be gone.
+   */
+  async function exitAndClose(pane: Releasable): Promise<void> {
     const close = async (herdr: HerdrClient): Promise<void> => {
       await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
+      if (pane.jobWorktree && pane.agentName && pane.cwd) {
+        const at = { paneId: pane.paneId, agentName: pane.agentName, cwd: pane.cwd, from: pane.jobWorktree.from };
+        const outcome = await removeJobWorktreeInPane(herdr, (ms) => sleep(ms, unaborted), at).catch(() => undefined);
+        if (outcome !== 'removed') console.warn(`hopper: kept the job worktree ${pane.cwd}: ${outcome === 'kept' ? 'it holds uncommitted or unpushed work' : 'its pane never answered'}`);
+      }
       await herdr.closePane(pane.paneId).catch(() => {});
     };
     await Promise.resolve().then(() => close(herdrOn(pane))).catch(() => {});
     for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
   }
 
-  async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
+  async function settle(result: ExecutionOutcome | Interrupt, pane: Releasable): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;
     if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
     await exitAndClose(pane);
@@ -200,7 +218,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   /** Runs `body` with the lane mapped to the pane; never rejects; on error the pane is released. */
-  async function onLane(ctx: ExecutionContext, getPane: () => HeldPane | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
+  async function onLane(ctx: ExecutionContext, getPane: () => Releasable | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
     try {
       const result = await body();
       const pane = getPane();
@@ -252,7 +270,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules)}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(state.cwd, ctx.jobRules, state.jobWorktree?.from)}`, FOOTER_ANCHOR);
       });
     },
 

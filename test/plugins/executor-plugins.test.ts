@@ -152,13 +152,13 @@ describe('herdr-claude', () => {
     expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
   });
 
-  // Issue #379: each job its own git worktree of a checkout, on by default; off, jobs share the work tree.
+  // Issue #379: each job its own git worktree of a git repository work tree, on by default; off, jobs share the work tree.
   it.each([
     [{}, true],
     [{ jobWorktrees: false }, false],
-  ])('makes each job its own worktree of a checkout work tree, on by default (%j)', async (raw, made) => {
+  ])('makes each job its own worktree of a git repository work tree, on by default (%j)', async (raw, made) => {
     const cwd = temp();
-    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], checkouts: [cwd] });
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], repositories: [cwd] });
     const seamed = herdrClaudePlugin(herdr);
     const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
     const trees: string[] = [];

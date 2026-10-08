@@ -1,6 +1,6 @@
 // The job worktree commands (issue #379), run for real: the pane's shell is sh here, the git is the
-// machine's own, the origin a bare repository beside the checkout. Nothing is faked: what these
-// commands do to a checkout is what they do in a job's pane.
+// machine's own, the origin a bare repository beside the work tree. Nothing is faked: what these
+// commands do to a repository is what they do in a job's pane.
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
@@ -11,7 +11,7 @@ import { jobWorktreeOf, makeJobWorktreeCommand, removeJobWorktreeCommand } from 
 const ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_CONFIG_NOSYSTEM: '1' };
 
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8' }).trim();
+const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', stdio: 'pipe' }).trim();
 
 /** Runs the command as the pane's shell would, then `after` in the same shell; what it printed. */
 function sh(cwd: string, command: string, after = ''): string {
@@ -19,8 +19,8 @@ function sh(cwd: string, command: string, after = ''): string {
   return `${r.stdout}${r.stderr}`;
 }
 
-/** A checkout of a bare origin, with one commit on main, and the origin one commit ahead of it. */
-function checkout(): { root: string; tree: string; origin: string } {
+/** A clone of a bare origin, with one commit on main, and the origin one commit ahead of it. */
+function repository(): { root: string; tree: string; origin: string } {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'jh-job-worktree-')));
   const origin = join(root, 'origin.git');
   git(root, 'init', '--quiet', '--bare', '--initial-branch=main', origin);
@@ -39,8 +39,8 @@ function checkout(): { root: string; tree: string; origin: string } {
 }
 
 describe('the job worktree command (issue #379)', () => {
-  it('makes the job its own git worktree of the checkout, detached at the remote default branch as just fetched, and enters it', () => {
-    const { tree, origin } = checkout();
+  it('makes the job its own git worktree of the work tree, detached at the remote default branch as just fetched, and enters it', () => {
+    const { tree, origin } = repository();
     const path = jobWorktreeOf(tree, ID);
     const out = sh(tree, makeJobWorktreeCommand(tree, path), 'pwd; printf "%s %s\\n" "$TMPDIR" "$CLAUDE_CODE_TMPDIR"');
     expect(out).toContain('hopper-job-worktree-made');
@@ -51,8 +51,8 @@ describe('the job worktree command (issue #379)', () => {
     expect(git(tree, 'worktree', 'list')).toContain(path);
   });
 
-  it('leaves the checkout untouched: its branch, its files, and a clean status', () => {
-    const { tree } = checkout();
+  it('leaves the work tree untouched: its branch, its files, and a clean status', () => {
+    const { tree } = repository();
     const before = git(tree, 'rev-parse', 'HEAD');
     sh(tree, makeJobWorktreeCommand(tree, jobWorktreeOf(tree, ID)));
     expect(git(tree, 'rev-parse', 'HEAD')).toBe(before);
@@ -61,8 +61,8 @@ describe('the job worktree command (issue #379)', () => {
     expect(git(jobWorktreeOf(tree, ID), 'status', '--porcelain')).toBe('');
   });
 
-  it('makes no worktree when the work tree is not the top of a git checkout: a plain directory, or one inside a repository', () => {
-    const { root, tree } = checkout();
+  it('makes no worktree when the work tree is not the top of a git repository: a plain directory, or one inside a repository', () => {
+    const { root, tree } = repository();
     const plain = join(root, 'plain');
     mkdirSync(plain);
     expect(sh(plain, makeJobWorktreeCommand(plain, jobWorktreeOf(plain, ID)), 'pwd')).toBe(`hopper-job-worktree-none\n${plain}\n`);
@@ -72,8 +72,8 @@ describe('the job worktree command (issue #379)', () => {
     expect(existsSync(join(inner, '.hopper-jobs'))).toBe(false);
   });
 
-  it('starts from HEAD when the checkout has no remote', () => {
-    const { root } = checkout();
+  it('starts from HEAD when the repository has no remote', () => {
+    const { root } = repository();
     const lone = join(root, 'lone');
     git(root, 'init', '--quiet', '--initial-branch=main', lone);
     writeFileSync(join(lone, 'c.txt'), 'c\n');
@@ -85,7 +85,7 @@ describe('the job worktree command (issue #379)', () => {
   });
 
   it('enters the worktree an earlier run of the job left, as it is', () => {
-    const { tree } = checkout();
+    const { tree } = repository();
     const path = jobWorktreeOf(tree, ID);
     sh(tree, makeJobWorktreeCommand(tree, path));
     writeFileSync(join(path, 'wip.txt'), 'wip\n');
@@ -94,7 +94,7 @@ describe('the job worktree command (issue #379)', () => {
   });
 
   it('says unmade, with what git said, when the worktree cannot be made', () => {
-    const { tree } = checkout();
+    const { tree } = repository();
     const path = jobWorktreeOf(tree, ID);
     mkdirSync(path, { recursive: true });
     writeFileSync(join(path, 'in-the-way'), 'x\n');
@@ -104,7 +104,7 @@ describe('the job worktree command (issue #379)', () => {
   });
 
   it('a path with a quote in it', () => {
-    const { root } = checkout();
+    const { root } = repository();
     const odd = join(root, "it's here");
     git(root, 'clone', '--quiet', join(root, 'origin.git'), odd);
     expect(sh(odd, makeJobWorktreeCommand(odd, jobWorktreeOf(odd, ID)))).toContain('hopper-job-worktree-made');
@@ -113,7 +113,7 @@ describe('the job worktree command (issue #379)', () => {
 
 describe('the job worktree removal command (issue #379)', () => {
   function made(): { tree: string; path: string; origin: string } {
-    const { tree, origin } = checkout();
+    const { tree, origin } = repository();
     const path = jobWorktreeOf(tree, ID);
     sh(tree, makeJobWorktreeCommand(tree, path));
     return { tree, path, origin };

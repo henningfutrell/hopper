@@ -26,6 +26,12 @@ export const SCRATCH_DIR = '.hopper-scratch';
 /** The fixed line naming the job's work tree. */
 export const workTreeRule = (cwd: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
 
+/**
+ * The fixed line of a job that runs in its own git worktree of the work tree it was given (issue #379):
+ * that work tree is shared with the other jobs there, the worktree is the job's alone.
+ */
+export const jobWorktreeRule = (cwd: string, from: string): string => `[hopper job worktree] ${cwd} is a git worktree of ${from} made for this job alone, detached at its remote's default branch as just fetched (at its HEAD when it has no remote). Make your branch in it. ${from} itself is shared with other jobs: never edit files, switch branches or build there. When the job ends, the hopper removes this worktree if nothing in it is uncommitted or unpushed, and keeps it otherwise.`;
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',

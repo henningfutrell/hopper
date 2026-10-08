@@ -551,6 +551,34 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it.
+- **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
+  running at once in one repository stepped on each other — branches, the index lock, uncommitted
+  files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
+  each agent to make its own worktree was followed by some and not others. With the herdr-claude
+  option `jobWorktrees` (default on), after the scratch command the pane's shell runs
+  `makeJobWorktreeCommand` (`src/executors/herdr/job-worktree.ts`): when the work tree is the top of a
+  git repository (`git rev-parse --show-toplevel` is the shell's `pwd -P`; a directory inside a
+  repository, such as a home kept in git, is not), it fetches (`GIT_TERMINAL_PROMPT=0`, a failure
+  ignored), makes `<work tree>/.hopper-jobs/<job id>` with `git worktree add --detach` at
+  `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD` (`.hopper-jobs` ignores
+  itself, as the scratch dir does; `git worktree prune` first), enters it, makes its scratch dir and
+  exports `TMPDIR` and `CLAUDE_CODE_TMPDIR` there, and prints `hopper-job-worktree-made`. A worktree an
+  earlier run of the job left is entered as it is. That path is then the job's work tree: saved in the
+  pane state (`cwd`, with `jobWorktree.from`, the work tree it was made from), reported (`job.workTree`,
+  so the lane shows it), named by the trust dialog and the footer, whose fixed `[hopper job worktree]`
+  line follows the work-tree line: the worktree is the job's alone, the work tree it came from is
+  shared and left as it is. Not a repository's top: `hopper-job-worktree-none`, and the job runs in its
+  work tree as before. Git refusing: `hopper-job-worktree-unmade`, the job fails at once with what git
+  said, pane closed. The wait is up to 120000 ms, for the fetch.
+  **At the end** — finished, failed, cancelled, timed out; never while parked on a question — the
+  executor's exit-and-close waits (up to 5 s) for Claude to leave the pane, so the command is never
+  typed into Claude, then runs `removeJobWorktreeCommand` in the pane's shell: when `git status
+  --porcelain` is empty (ignored files aside) and `git log HEAD --not --remotes` is empty, `git worktree
+  remove --force` and delete the branch the job made (its commits are on a remote);
+  otherwise the worktree is **kept** for whoever looks next, with a warning in the log. A pane gone
+  before its end (a daemon restart, `keepPanes`) leaves its worktree in place, as kept.
+  Print-mode agent executors and the command executor make no job worktree: jobs on them that share a
+  work tree share it, so give each its own lane or work tree, or a job-rules line.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
