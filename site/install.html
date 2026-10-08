@@ -72,7 +72,8 @@ Docker works the same: <code>docker compose</code> in place of <code>podman comp
 <strong>Sign in with GitHub</strong>. The first person to sign in with GitHub is the admin, so sign in yourself
 before anyone else can reach the UI. There is no starting account or password to look up. The UI listens on
 this machine only. From another computer, connect with <code>ssh -L 4790:127.0.0.1:4790 you@your-server</code>
-first, then open <code>http://localhost:4790/</code> there.</p></li>
+first, then open <code>http://localhost:4790/</code> there.</p>
+<figure class="shot"><img src="../docs/screenshots/sign-in.webp" alt="The hopper's sign-in page: a Sign in with GitHub button beside what the hopper does in three steps." width="1440" height="900" loading="lazy" decoding="async"><figcaption>What a signed-out browser sees.</figcaption></figure></li>
 <li><p><strong>Sign in to Claude Code.</strong> Once is enough: it is kept when the hopper restarts or
 upgrades. GitHub needs nothing more: signing in with GitHub in the step before connected it, and the hopper
 reads your issues through that connection.</p>
@@ -105,6 +106,7 @@ not listed, the hopper's app is not installed on it: the panel links to install 
 organization (<a href="https://github.com/apps/hopper-qm/installations/new">github.com/apps/hopper-qm</a>),
 where you pick the repositories it may reach. It asks to read and write issues, pull requests and
 contents, and to read metadata; nothing else.</p>
+<figure class="shot"><img src="../docs/screenshots/sources.webp" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button." width="1440" height="820" loading="lazy" decoding="async"><figcaption>Sources → GitHub account: tick the repositories, then Save.</figcaption></figure>
 <p class="note">Where a job runs: the machine's work tree, unless you set <code>repoPaths</code> on the
 <code>github-account</code> source (Settings → Plugins → Job sources), for example
 <code>{ your-login/your-repo: ~/your-repo }</code>.</p></li>
@@ -122,8 +124,10 @@ The issue's labels show where it is:</p>
 <tr><td><code>hopper:done</code></td><td>it finished, and the issue is closed</td></tr>
 <tr><td><code>hopper:failed</code></td><td>it failed; remove this label to run it again</td></tr>
 </table></div>
+<figure class="shot"><img src="../docs/screenshots/queue.webp" alt="The hopper's overview, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue and recent ended jobs." width="1440" height="1010" loading="lazy" decoding="async"><figcaption>The overview once it has work: every lane, what waits, and what just ended.</figcaption></figure>
 <p>When a job asks something it cannot answer for itself, the question waits for you in the UI's
-<strong>Questions</strong> view.</p></li>
+<strong>Questions</strong> view.</p>
+<figure class="shot"><img src="../docs/screenshots/question.webp" alt="A job's question in the Questions view: it escalated past both escalation levels, each with its suggested answer, and an answer is typed in the box." width="1440" height="760" loading="lazy" decoding="async"><figcaption>A question that waits for you, with what each escalation level suggested.</figcaption></figure></li>
 </ol>
 <details>
 <summary>Installed on the machine itself? Its first step</summary>
