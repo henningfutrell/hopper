@@ -102,7 +102,7 @@ describe('claude-plan plugin', () => {
 
   /** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
   const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined) });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'claude', env: () => undefined, machine: async (id: string) => (id === 'local' ? LOCAL : undefined) });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(claudePlan, { bin: BIN, machine: 'local', ...raw });
     if (!p.ok) throw new Error(p.error);
@@ -227,7 +227,7 @@ describe('claude-plan on an attached machine (issue #139)', () => {
   async function create(machines: MachineSnapshot[]): Promise<UsageSource> {
     const auth = testSshAuth(join(ssh, 'auth'))();
     const ctx = {
-      clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, scratchDir: scratch, instanceName: 'laptop-claude',
+      clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'laptop-claude',
       env: (n: string) => (n === 'HOPPER_SSH_KEY_FILE' ? auth.identityFile : undefined),
       machine: async (id: string) => machines.find((m) => m.id === id),
     };

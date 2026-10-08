@@ -248,7 +248,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
     config: store.config, dataDir, clock, logger, userEnv: cliEnv,
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
-    kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret }),
+    kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams),
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),

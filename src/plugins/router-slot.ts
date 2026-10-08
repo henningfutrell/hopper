@@ -64,7 +64,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   const scratchDir = join(deps.dataDir, 'plugin-data', id);
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
-    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, userEnv: deps.userEnv,
+    clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, secretName: deps.kit.secretName, userEnv: deps.userEnv,
     ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, client: deps.client,
   };
 }
