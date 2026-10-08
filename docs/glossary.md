@@ -69,7 +69,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Graph step** | The time one point of the usage graph stands for: the highest share of the limit used in it. It follows the graph range (issue #502): an hour up to 2 days, 6 hours up to 4, a day up to 60 (the default week is per day), else a week. Day and week steps start at the viewer's midnight, weeks on Monday. | bucket, resolution, period, grain |
 | **Account** | Who a part acts as on an outside service: the Claude account a usage source reads usage for (email, plan), the GitHub App bot the `github-app` source acts as and its installation repos, the **connected account** a `github-account` source acts as. `GET /api/accounts`. Facts only, never a token. | identity (in UI copy), credentials |
 | **Lane effect** | What usage does to one machine's lanes now: per executor it runs, the used fraction, lane cap and band (`free`, `soft`, `hard`, `offline`) — the decider's steps 1-2 over the readings that limit that executor — and the machine's own, its least limited executor's. `GET /api/usage` `machines`. | |
-| **Soft limit / hard limit** | Usage fractions. Past soft, the lane cap scales down; at hard, lanes stop. | |
+| **Soft limit / hard limit** | Usage fractions. Past soft, the lane cap scales down; at hard, lanes stop. Together the **usage limits**: the user's, set on the Usage view and stored (issue #522), else `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT`. Below soft is the **free** band, from soft to hard the **soft** band, at hard and above the **hard** band. | thresholds, throttle bands |
 | **Lane cap** | The most lanes a machine may run given its usage; an executor's lane cap, the most its jobs may hold there. | |
 | **Usage pacing** | How the decider spends each account's usage against the time left before its usage windows reset (issue #373): the burn window, placement pressure and the critical priority. `DeciderPolicy.pacing`. | |
 | **Week window** | A usage window whose name starts with `week` (claude-plan's `week`; `weekly`): the one the burn window applies to. A session window never burns. | |
@@ -349,3 +349,4 @@ synonyms. Rename here first, in the same commit as everything else.
 | FailureResolved (a problem resolved, its held jobs released) | `failure.resolved` |
 | HandoffOpened (a failed job handed off to a person: Needs a person) | `handoff.opened` |
 | HandoffClosed (a hand-off ended: run again, cleared, or its job finished) | `handoff.closed` |
+| UsageLimitsChanged (the soft and hard usage limits set in the UI) | `usage.limits_changed` |

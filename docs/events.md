@@ -1209,3 +1209,25 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
   "nextJobId": "j2"
 }
 ```
+
+## `usage.limits_changed`
+
+Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were set in the UI (issue #522): `from` the soft and hard limits the decider used, `to` the ones it uses from now on. Each is a fraction of a usage budget, from 0 to 1.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "soft": 0.7,
+    "hard": 0.95
+  },
+  "to": {
+    "soft": 0.6,
+    "hard": 0.9
+  }
+}
+```

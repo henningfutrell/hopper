@@ -15,6 +15,7 @@ import { recover } from './recovery.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
+import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limits.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { renewCredentials } from './credentials.ts';
 
@@ -28,15 +29,15 @@ const SHUTDOWN_WAIT_MS = 5000;
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
  * a respecified job may be pinned to another machine; a deferred cleanup that went through
  * frees a waiting job of its item (issue #371); parking frees a lane and a re-queue queues a job (issue #501); a
- * problem grouped or resolved holds or frees jobs (issue #509). */
+ * problem grouped or resolved holds or frees jobs (issue #509); new usage limits change every lane cap (issue #522). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
-  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved',
+  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed',
 ]);
 
-export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {
+export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers {
   /** Registered executor names. */
   /** The runnable executors now: they follow the plugins config (issue #142). */
   readonly executorNames: string[];
@@ -85,6 +86,7 @@ export function createEngine(o: EngineOptions): Engine {
     sourceHost: createSourceHost(c, commands),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
+    ...createUsageLimitCommands(c),
     ...createQueries(c),
     ...createAnswerHandlers(c, cleanup),
     async start() {

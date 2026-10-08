@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, FailureSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
+import type { ConnectedAccountProvider, FailureSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -21,7 +21,7 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321). */
 export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -69,6 +69,15 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setHistoryRetentionDays(days) {
       write('historyRetentionDays', String(days));
+    },
+    getUsageLimits() {
+      const text = read('usageLimits');
+      if (text === undefined) return undefined;
+      const { soft, hard } = JSON.parse(text) as UsageLimitPair;
+      return { soft, hard };
+    },
+    setUsageLimits(limits) {
+      write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard }));
     },
     claimHolder() {
       const kept = read('claimHolder');

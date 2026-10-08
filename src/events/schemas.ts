@@ -19,6 +19,8 @@ const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), la
 // Every auth event (issue #476) names its login, its kind and its tool; never the login's URL or code.
 const login = { loginId: z.string(), kind: z.enum(LOGIN_KINDS), tool: z.string().min(1) };
 
+const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().min(0).max(1) });
+
 const problemScope = strict({ machineId: z.string().optional(), executor: z.string().optional() });
 
 const divergence = strict({
@@ -140,6 +142,8 @@ export const EVENT_SCHEMAS = {
     recordId: z.string().optional(), decision: z.enum(FAILURE_DECISIONS).optional(), class: z.enum(FAILURE_CLASSES).optional(),
   }),
   'handoff.closed': strict({ handoffId: z.string(), end: z.enum(HANDOFF_ENDS), nextJobId: z.string().optional() }),
+  // The usage limits set in the UI (issue #522): what the decider used before, and what it uses from now on.
+  'usage.limits_changed': strict({ from: usageLimits, to: usageLimits }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

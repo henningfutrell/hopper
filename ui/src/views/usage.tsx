@@ -1,8 +1,9 @@
 // Usage: who each part acts as (accounts), every usage reading by source, and what usage does to
-// each machine's lanes now (design.md "Usage and accounts (issue #18)"); and how long the usage history
-// is kept (issue #385), the one setting here, an admin's.
+// each machine's lanes now (design.md "Usage and accounts (issue #18)"); the usage limits on their graph
+// (issue #522) and how long the usage history is kept (issue #385), the settings here, an admin's.
 import { useEffect, useState } from 'react';
-import { Gauge as GaugeIcon, History, Layers, UserRound } from 'lucide-react';
+import { Gauge as GaugeIcon, History, Layers, SlidersHorizontal, UserRound } from 'lucide-react';
+import { UsageLimitsGraph } from '@/charts/usage-limits';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
@@ -13,7 +14,8 @@ import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
-import type { MachineLaneEffect, PartAccount, UsageHistory, UsageReport } from '@/model/wire';
+import { bandAt, capAt, limitsProblem, throttleLine, type LimitBand } from '@/model/usage-limits';
+import type { MachineLaneEffect, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
@@ -97,6 +99,103 @@ function Sources({ usage }: { usage: UsageReport }) {
   );
 }
 
+const BAND_SAYS: Record<LimitBand, string> = { free: 'every lane open', soft: 'lanes scale down', hard: 'nothing new starts' };
+const BAND_TEXT: Record<LimitBand, string> = { free: 'text-ok', soft: 'text-warn', hard: 'text-bad' };
+const same = (a: UsageLimitPair, b: UsageLimitPair) => a.soft === b.soft && a.hard === b.hard;
+const DAY_MS = 86_400_000;
+
+function LimitInput({ id, label, value, disabled, onChange }: { id: string; label: string; value: number; disabled: boolean; onChange: (f: number) => void }) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <Input id={id} type="number" min={0} max={100} step={1} inputMode="numeric" className="num h-8 w-[4.5rem]" disabled={disabled}
+        value={Number.isFinite(value) ? Math.round(value * 100) : ''} onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value) / 100)} />
+      <span className="text-muted-foreground">%</span>
+    </label>
+  );
+}
+
+/**
+ * The usage limits (issue #522): usage now and over the last day against the free, soft and hard bands; an admin
+ * drags a limit (or types it) and sees the bands, the line's colours and each machine's lane cap follow before
+ * saving. A soft limit at or above the hard one is refused here, before the daemon is asked.
+ */
+function UsageLimits({ usage }: { usage: UsageReport }) {
+  const canSet = useHopper((s) => allows(s.user, 'admin'));
+  const recorded = useHopper((s) => s.usageRecorded);
+  const clock = useNow();
+  const saved = usage.limits;
+  // The daemon's limits, until the admin starts an edit.
+  const [edited, setEdited] = useState<UsageLimitPair | null>(null);
+  const draft = edited ?? { soft: saved.soft, hard: saved.hard };
+  const [history, setHistory] = useState<UsageHistory | null>(null);
+  useEffect(() => { get<UsageHistory>('/api/usage/history?range=24h').then(setHistory, () => {}); }, [recorded]);
+  const edit = (l: UsageLimitPair) => setEdited(l);
+  const problem = limitsProblem(draft);
+  const shown = problem ? { soft: saved.soft, hard: saved.hard } : draft;
+  const online = usage.machines.filter((m) => m.online);
+  const now = online.length ? Math.max(...online.map((m) => m.usedFrac)) : 0;
+  const band = bandAt(now, shown);
+  const half = (history?.stepMs ?? 0) / 2;
+  const points = history ? throttleLine(history.series).map((p) => ({ t: p.t + half, v: p.v })) : [];
+  const dirty = !same(draft, saved);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (problem || !dirty) return;
+    if (await act('/ui/api/usage/limits', draft, `Usage limits saved: soft ${pct(draft.soft)}, hard ${pct(draft.hard)}`)) {
+      await refreshUsage().catch(() => {});
+      setEdited(null);
+    }
+  };
+  return (
+    <Panel title="Usage limits" icon={SlidersHorizontal} bodyClassName="space-y-3" className="lg:col-span-2">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+        <div>
+          <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
+          <div className="text-xs text-muted-foreground">used now, the highest throttling reading</div>
+        </div>
+        <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {BAND_SAYS[band]}</div>
+        {online.length > 0 && (
+          <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
+            {online.map((m) => {
+              const cap = capAt(m.maxLanes, m.usedFrac, shown);
+              return (
+                <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
+                  <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}
+                  {cap !== m.cap && <span className="text-muted-foreground line-through">{m.cap}</span>}{cap !== m.cap && ' '}
+                  <span className="font-semibold">{cap}</span>/{m.maxLanes} lanes
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <UsageLimitsGraph points={points} now={now} from={history ? Date.parse(history.from) : clock - DAY_MS} to={clock} limits={shown}
+        {...(canSet ? { onChange: edit } : {})} />
+      <form className="flex flex-wrap items-center gap-x-4 gap-y-2" onSubmit={save}>
+        <LimitInput id="usage-soft-limit" label="Soft" value={draft.soft} disabled={!canSet} onChange={(soft) => edit({ ...draft, soft })} />
+        <LimitInput id="usage-hard-limit" label="Hard" value={draft.hard} disabled={!canSet} onChange={(hard) => edit({ ...draft, hard })} />
+        {canSet && (
+          <div className="ml-auto flex items-center gap-2">
+            {!same(draft, saved.defaults) && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => edit({ ...saved.defaults })}>Defaults ({pct(saved.defaults.soft)} / {pct(saved.defaults.hard)})</Button>
+            )}
+            {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => setEdited(null)}>Undo</Button>}
+            <Button type="submit" size="sm" disabled={!!problem || !dirty}>Save</Button>
+          </div>
+        )}
+      </form>
+      {problem && <p role="alert" className="text-xs text-bad" data-slot="usage-limits-problem">{problem}</p>}
+      <p className="text-xs text-muted-foreground">
+        Below the soft limit every lane is open; between the two a machine's lanes scale down; at the hard limit nothing new starts.
+        Informational readings never throttle. {saved.set
+          ? 'Set here, these win over the HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT settings of the environment, and apply at once.'
+          : 'Until saved here, they come from HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT in the environment.'}
+      </p>
+    </Panel>
+  );
+}
+
 /** How many days the usage graph's samples are kept; older ones are deleted, at once when it is lowered. */
 function HistoryRetention() {
   const canSet = useHopper((s) => allows(s.user, 'admin'));
@@ -135,6 +234,7 @@ export function Usage() {
   usePoll(refreshUsage, 30_000);
   return (
     <div className="grid gap-3 lg:grid-cols-2">
+      {usage && <UsageLimits usage={usage} />}
       <div className="space-y-3">
         <Accounts accounts={accounts} />
         {usage && <LaneEffect usage={usage} />}
