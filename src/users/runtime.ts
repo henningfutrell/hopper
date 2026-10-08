@@ -6,16 +6,15 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
+  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, Router, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
 import { createExecutorRegistry } from '../executors/index.ts';
-import type { HerdrClient } from '../executors/herdr/index.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import { linkToken, mintLinkKey } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
@@ -23,7 +22,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
+import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
@@ -36,11 +35,12 @@ import { splitSources } from './job-sources.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
+import { createLogins, type Logins } from '../logins/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
-import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
+import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
@@ -48,36 +48,9 @@ import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
+import type { UserSeams } from './seams.ts';
 
-/** Doubles at ports.ts seams for one user's parts, for integration tests. Production passes none. */
-export interface UserSeams {
-  /** Replaces the herdr CLI client of every herdr-claude executor instance (detection then says available). */
-  herdr?: HerdrClient;
-  /** Registered after the configured executor instances. */
-  executors?: Executor[];
-  /** Replaces the connected account's adapter of every github-account job source; the account still has to be connected. */
-  github?: GitHubApi;
-  /** Replaces the App adapter of every github-app job source (detection says available; paused() still follows the app file). */
-  githubApp?: GitHubApi;
-  /** A hand-settable usage source the decider reads, set through `engine.setFakeUsage` (tests). */
-  fakeUsage?: SettableUsageSource;
-  /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
-  sources?: JobSource[];
-  /** Every grokbot-routine notifier instance's first retry delay (default 1000) and configured check (default 5000), in ms. */
-  grokbot?: { baseMs?: number; watchMs?: number };
-  /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
-  router?: Router;
-  /** Replace the configured escalation levels, lowest first; [] = none. The report stays the host's. */
-  levels?: EscalationLevel[];
-  /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
-  machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
-  /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its pinned host key once herdr is found there, or a rejection with the reason. */
-  resolveTarget?: (ssh: string, o: { herdr: boolean; hostKey?: string }) => Promise<ResolvedTarget>;
-  /** Replaces reading the host key a new ssh target would be pinned to (issue #293): known_hosts, else what it presents. */
-  hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
-  /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
-  herdrSession?: (session: string) => Promise<void>;
-}
+export type { UserSeams } from './seams.ts';
 
 /** A user's side of the machines that dial in (design.md "Joining a machine", issue #308). */
 export interface UserMachineLink {
@@ -128,6 +101,8 @@ export interface UserRuntime {
   plugins: PluginsView;
   host: PluginHost;
   questions: QuestionService;
+  /** The logins a job or run waits on (issue #476). */
+  logins: Logins;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   /** The user's connected GitHub account (issue #214). */
@@ -301,8 +276,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
+  // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
+  const logins = createLogins({ store, clock });
   const questions = createQuestionService({
-    store, clock, levels, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: o.answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -314,7 +291,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions, queueSorter: host.queueSorter,
+    store, clock, executors, router, questions, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
@@ -352,7 +329,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, logins, dispatcher, executors,
     connectedAccounts,
     usageHistory,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

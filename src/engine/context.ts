@@ -2,6 +2,7 @@ import type {
   Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
 import type { DeciderPolicy, Job } from '../domain/types.ts';
+import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -26,6 +27,8 @@ export interface EngineOptions {
   sweepCheckMs?: number;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
+  /** The logins (issue #476): a login a job waits on; swept on each tick. */
+  logins: Logins;
   /** At most this many questions per job; the next one fails it (design.md B6). */
   maxQuestions: number;
   /** After a restart, how long a running job whose machine does not answer yet stays running before it fails (issue #368). */

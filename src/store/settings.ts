@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
-import { UPDATE_CHANNELS } from '../domain/types.ts';
+import type { ConnectedAccountProvider, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
+import { LOGIN_EXPIRY_ACTIONS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
 /** `settings` rows by key, in whichever schema the context's connection reads. */
@@ -80,6 +80,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setIntakeMigration(source, migration) {
       write(`intakeMigration:${source}`, JSON.stringify({ at: migration.at, changes: migration.changes.map((x) => ({ key: x.key, change: x.change })) }));
+    },
+    getLoginExpiry() {
+      const text = read('loginExpiry');
+      return text !== undefined && (LOGIN_EXPIRY_ACTIONS as readonly string[]).includes(text) ? text as LoginExpiryAction : undefined;
+    },
+    setLoginExpiry(action) {
+      write('loginExpiry', action);
     },
   };
 }

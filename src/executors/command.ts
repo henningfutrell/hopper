@@ -52,10 +52,13 @@ export function commandOn(machine: MachineSnapshot, argv: string[], o: Pick<Comm
 
 export interface Ran { exitCode: number; stdout: string; stderr: string }
 
-/** Runs a program to its end: what it printed and its exit code, or how it was stopped. `userEnv` over the daemon's environment. */
-export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}): Promise<Ran | 'aborted' | 'timeout'> {
+/**
+ * Runs a program to its end: what it printed and its exit code, or how it was stopped. `userEnv` over the daemon's
+ * environment; `onOutput` sees its stdout and stderr as they come (a device code it waits on, issue #476).
+ */
+export function run(file: string, args: string[], timeoutMs: number, signal: AbortSignal, userEnv: Readonly<Record<string, string>> = {}, onOutput?: (chunk: string) => void): Promise<Ran | 'aborted' | 'timeout'> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, {
+    const child = execFile(file, args, {
       env: dockerEnv(userProcessEnv(userEnv)), timeout: timeoutMs, killSignal: 'SIGKILL', signal, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8',
     }, (err, stdout, stderr) => {
       if (!err) return resolve({ exitCode: 0, stdout, stderr });
@@ -65,6 +68,7 @@ export function run(file: string, args: string[], timeoutMs: number, signal: Abo
       if (typeof e.code === 'number') return resolve({ exitCode: e.code, stdout, stderr });
       reject(new Error(`${file}: ${e.message}`));
     });
+    if (onOutput) for (const out of [child.stdout, child.stderr]) out?.on('data', (c: string | Buffer) => onOutput(String(c)));
   });
 }
 

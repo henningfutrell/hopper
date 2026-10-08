@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
 
@@ -47,6 +47,27 @@ export interface ExecutionContext {
    * Absent → the default job rules.
    */
   jobRules?: string;
+  /** The logins (issue #476): a login the job's work waits on goes here, never into a question. Absent → none taken. */
+  logins?: RunLogins;
+}
+
+/**
+ * Where a run reports a login it waits on (issue #476, design.md "Logins"), and reads what the user did with
+ * it. The run waits as its tool does, and says when the tool went on, or when the run ended first.
+ */
+export interface RunLogins {
+  /**
+   * The login's id; one open login per run and tool, so a new code updates it. `renewable`: the run can ask its tool
+   * for a new code. `restore`: the same login read again after a restart: only its URL and code are taken back.
+   * Throws on a report its kind refuses.
+   */
+  report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
+  /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
+  check(id: string): LoginCheck;
+  /** The tool went on. */
+  completed(id: string): void;
+  /** The run ended first, or could not take the login. */
+  failed(id: string, reason: string): void;
 }
 
 /** What the executor needs answered before the job can continue. */
@@ -294,6 +315,8 @@ export interface AnswerRequest {
   level: { number: number; of: number };
   /** The machine the job runs on, or waits on for the answer (issue #442): a level that names no machine runs there when it can. */
   jobMachine?: string;
+  /** Where the level's run reports a login it waits on (issue #476): never an answer, never a climb of its own. */
+  logins?: RunLogins;
 }
 
 /**

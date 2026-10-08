@@ -7,11 +7,15 @@ import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
+import { afterLoginAct, loginWait, restoreLogin, takeLogin, type LoginRef } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
 import { jobScratchOf, openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
+import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, type HeldPane, type PaneOn, type RemoteHerdr, type Where } from './panes.ts';
+
+export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
 const UNBLOCK_POLLS = 10;
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
@@ -63,44 +67,6 @@ export interface HerdrClaudeExecutor extends Executor {
   /** laneId → paneId for the job now running on that lane. */
   lanePanes(): ReadonlyMap<LaneId, string>;
 }
-
-const realSleep: Sleep = (ms, signal) => new Promise((resolve) => {
-  if (signal.aborted) return resolve();
-  const done = (): void => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
-  const timer = setTimeout(done, ms);
-  signal.addEventListener('abort', done, { once: true });
-});
-
-const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).at(-1) ?? text.trim();
-
-const heldOf = (s: PaneState, jobId: string): HeldPane => ({
-  paneId: s.paneId, jobId, agentName: s.agentName, cwd: s.cwd, ...(s.ssh ? { ssh: s.ssh } : {}), ...(s.session ? { session: s.session } : {}),
-  ...(s.client ? { client: { machine: s.client.machine } } : {}),
-});
-
-function paneStateOf(job: Job): PaneState | undefined {
-  const s = job.executorState as Partial<PaneState> | undefined;
-  return s?.paneId && s.agentName ? (s as PaneState) : undefined;
-}
-
-/** A client target (design.md "Client targets"): which machine. Its link and token are the runtime's (issue #308). */
-export interface ClientTarget { machine: string }
-
-/** An attached machine's herdr: an ssh target's (where, which session; herdr by name there, issue #311), or a client target's. */
-export type RemoteHerdr = { ssh: string; session: string } | { client: ClientTarget };
-
-/** Which herdr: a client target's, an ssh target's session, or (neither) this machine's, in `session` when given. */
-interface Where { ssh?: string; session?: string; client?: ClientTarget }
-
-/** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
-interface PaneOn extends Where { paneId: string }
-
-/** A pane a lane holds, with the job it runs, for the reap. */
-interface HeldPane extends PaneOn { jobId: string; agentName: string; cwd: string }
-
-
-const samePane = (a: PaneOn, b: PaneOn): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
-  && (a.ssh !== undefined || a.client !== undefined || a.session === b.session);
 
 export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
   const { clock } = o;
@@ -183,7 +149,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * Nudges so far in a row, and when the turn they belong to began; lost sends of the text in flight; `quiet`
    * once the nudges stopped (issue #491), until Claude works again by itself.
    */
-  interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean }
+  interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean; unreadable?: number }
 
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string, notes?: Notes): Promise<ExecutionOutcome | Interrupt> {
     const herdr = herdrOn(s);
@@ -209,13 +175,31 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * with Enter when it sits in the input box, else sent again, at most MAX_SENDS times in all; then the
    * job fails, so it never stays running on a waiting Claude.
    */
-  async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }): Promise<ExecutionOutcome | Interrupt> {
+  async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }, login?: LoginRef): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
       parked: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
+      ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
     });
+    if ('authPending' in result) {
+      // A login (issue #476): to the logins, never a question; the job waits, no nudge, for Claude to go on by itself.
+      const unreadable = (notes.unreadable ?? 0) + 1;
+      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable);
+      if ('failed' in taken) return { kind: 'failed', error: taken.failed };
+      if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, unreadable });
+      const waiting = { ...s, turn, login: taken.login, parkedSeq: undefined, lapsesAt: undefined };
+      ctx.saveState(waiting);
+      return watch(ctx, waiting, p, turn, { count: 0, startedAt: notes.startedAt, quiet: true }, taken.login);
+    }
+    if ('login' in result) {
+      // The user acted on the login the job waits on (issue #476).
+      const next = afterLoginAct(result.login, login?.tool ?? 'the');
+      if ('failed' in next) return { kind: 'failed', error: next.failed };
+      ctx.progress(0, next.progress);
+      return send(ctx, { ...s, login: undefined }, p, next.say, lastLineOf(next.say), { count: 0, startedAt: notes.startedAt });
+    }
     if ('lostSend' in result) {
       const herdr = herdrOn(s);
       const sends = (notes.lost ?? 0) + 1;
@@ -360,6 +344,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
         lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
+        if (state.login) {
+          // It waited on a login (issue #476): it waits on, its URL and code read back from the screen.
+          restoreLogin(ctx, await herdrOn(state).read(state.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES }), state.turn.anchor, state.login, clock.now());
+          return watch(ctx, state, p, state.turn, { count: 0, startedAt: clock.now().getTime(), quiet: true }, state.login);
+        }
         return watch(ctx, state, p, state.turn);
       });
     },

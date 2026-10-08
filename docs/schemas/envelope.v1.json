@@ -70,6 +70,11 @@
         "source.claim_released",
         "source.intake_migrated",
         "source.issues_assigned",
+        "auth.pending",
+        "auth.completed",
+        "auth.expired",
+        "auth.cancelled",
+        "auth.failed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

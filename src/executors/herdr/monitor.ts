@@ -2,8 +2,10 @@
 // docs/design.md "Phase 2" → "Monitor" and "Turn anchor (B1)".
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
+import type { LoginCheck } from '../../domain/types.ts';
+import { hideCodes } from '../../logins/recognise.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
+import { CTRL_END, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -20,6 +22,19 @@ export type Interrupt = { interrupt: 'cancel' | 'shutdown' | 'timeout' };
  * the footer names background work the job started (issue #491): Claude Code wakes the job when it ends.
  */
 export type StatusNote = { statusNote: string };
+
+/** The turn ended on a login (issue #476): the executor reports it to the logins; never a question. */
+export type AuthPending = { authPending: AuthFields };
+
+/** The user acted on the login the job waits on (issue #476): a new code, a cancel, or the job fails. */
+export type LoginActed = { login: Exclude<LoginCheck, { act: 'wait' }> };
+
+/** The login a watch waits on (issue #476): what the user did with it, and the hook for when Claude goes on. */
+export interface LoginWait {
+  check(): LoginCheck;
+  /** Claude works again: the tool went on. Called once. */
+  wentOn(): void;
+}
 
 /**
  * A lost send (issue #278): Claude has sat ready since the send, its state never moved, and the turn
@@ -57,6 +72,8 @@ export interface TurnWatch {
   startedAt?: number;
   /** Called with state_change_seq when the turn parks on a question, before the outcome returns; with when its dialog lapses, if it does. */
   parked?: (seq: number, lapsesAt?: string) => void;
+  /** The login the job waits on (issue #476), with `untilWorking`: Claude going on completes it. */
+  login?: LoginWait;
 }
 
 export function abortReason(signal: AbortSignal): 'cancel' | 'shutdown' {
@@ -81,10 +98,10 @@ async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionO
   // Claude Code may deny the dialog by itself when a countdown runs out (issue #376).
   const ms = autoDenyMs(text);
   const lapsesAt = ms === undefined ? {} : { lapsesAt: new Date(w.clock.now().getTime() + ms).toISOString() };
-  return { kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked', ...lapsesAt } };
+  return { kind: 'question', question: { text: hideCodes(text, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'blocked', ...lapsesAt } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend> {
+export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
@@ -96,6 +113,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
   /** The background work last reported as waited on, so it is reported once. */
   let waitedOn: string | undefined;
   let errors = 0;
+  /** The login this watch waits on, until Claude goes on. */
+  let login = w.login;
   for (;;) {
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
     const now = clock.now().getTime();
@@ -113,10 +132,16 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const turn = readTurn(recent, w.anchor);
       if (turn.lastLine && turn.lastLine !== lastLine) {
         lastLine = turn.lastLine;
-        ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), lastLine);
+        // A device code on screen never goes into progress (issue #476).
+        ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), hideCodes(lastLine, recent));
       }
       atStart ??= { text: turn.assistantText, lines: turn.outputLines };
       if (agent.status === 'working' || turn.assistantText !== atStart.text || turn.outputLines !== atStart.lines) worked = true;
+      if (login && worked) { login.wentOn(); login = undefined; }
+      if (login) {
+        const said = login.check();
+        if (said.act !== 'wait') return { login: said };
+      }
       const moved = agent.stateChangeSeq > w.seqAtSend;
       const ready = agent.status === 'idle' || agent.status === 'done';
       // A job must never stay running on a Claude that waits (issue #278): ready or at a dialog, its
@@ -130,11 +155,13 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       if (!ended) { idleSince = null; waitedOn = undefined; }
       else if (!moved && (!turn.anchorFound || inputBoxText(recent) !== '')) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
-        return { kind: 'finished', result: { summary: turn.assistantText.slice(0, SUMMARY_CHARS), paneId: w.paneId } };
+        return { kind: 'finished', result: { summary: hideCodes(turn.assistantText, recent).slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
-        return { kind: 'failed', error: turn.failedReason || 'HOPPER_FAILED without a reason' };
+        return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent) };
       } else if (turn.lastMarker === 'question') {
-        return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
+        return park({ kind: 'question', question: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'marker' } });
+      } else if (turn.lastMarker === 'auth') {
+        return { authPending: turn.auth ?? {} };
       } else {
         const work = backgroundWork(recent);
         if (work) {
@@ -144,7 +171,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         } else {
           waitedOn = undefined;
           idleSince ??= now;
-          if (stalled || now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
+          if (stalled || now - idleSince >= w.idleNudgeMs) return { statusNote: hideCodes(turn.assistantText, recent) };
         }
       }
       errors = 0;

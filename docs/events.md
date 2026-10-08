@@ -946,3 +946,106 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
   "assignee": "octocat"
 }
 ```
+
+## `auth.pending`
+
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `expiresAt` | string | yes |
+| `intervalSec` | integer | no |
+| `run` | string | yes |
+| `questionId` | string | no |
+| `renewed` | boolean | no |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh",
+  "expiresAt": "2026-10-08T18:15:00.000Z",
+  "run": "herdr-claude"
+}
+```
+
+## `auth.completed`
+
+Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the login: the tool proceeded (or ended), and the job works again.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh"
+}
+```
+
+## `auth.expired`
+
+Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then fails with the reason (the default) or holds for a new code.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh",
+  "expiresAt": "2026-10-08T18:15:00.000Z"
+}
+```
+
+## `auth.cancelled`
+
+Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login. A herdr job is told to stop waiting for it and to go on without it, or to fail.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `by` | `user` | yes |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh",
+  "by": "user"
+}
+```
+
+## `auth.failed`
+
+Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended first (`reason`: the job ended, the run ended with an error).
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh",
+  "reason": "the job ended: timed out"
+}
+```

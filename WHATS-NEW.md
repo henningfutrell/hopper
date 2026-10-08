@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that waits for you to sign in to a tool, with a code to enter on a web page, no longer turns it into a question: the hopper keeps it as a login and waits for you, the job goes on once you sign in, and it fails with a clear reason if the code runs out first. The code is never written to logs, events or GitHub.
 - The number on Questions in the menu now stays while any question waits on you, even after you have looked at it, and goes away only when none is left to answer.
 - The version at the top left now shows the update channel when it is dev or beta, so you can tell at a glance which builds you run. When the running build comes from another channel than the one you picked, it shows both.
 - A hopper running in a container no longer offers to update itself: when an update is out, it shows the exact commands to pull the image of your channel and restart on it, says when your container runs another channel's image, and how many running jobs a restart would end.

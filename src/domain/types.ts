@@ -468,6 +468,10 @@ export * from './plugins.ts';
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 
 export type { GateActor, PreSort, PreSortReject, QueueGate, QueueGateMode } from './queue-gate.ts';
+
+// ---- Logins (issue #476): src/domain/logins.ts (re-exported here) ----------------------
+
+export * from './logins.ts';
 export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------

@@ -4,7 +4,7 @@
 import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy,
-  Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
+  Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
@@ -103,6 +103,16 @@ export interface QuestionRepository {
   addAttempt(id: string, attempt: QuestionAttempt): Question;
 }
 
+/** Logins (issue #476): what the hopper keeps of each, never its URL or code. */
+export interface LoginRepository {
+  create(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login;
+  get(id: string): Login | undefined;
+  /** Newest first. */
+  list(filter?: { status?: LoginStatus[]; jobId?: JobId; questionId?: string; limit?: number }): Login[];
+  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
+  update(id: string, patch: Partial<Omit<Login, 'id' | 'createdAt'>>): Login;
+}
+
 /** A user's settings (in the user schema). */
 export interface UserSettingsRepository {
   /** The user's queue gate (issue #159); absent: never set. */
@@ -128,6 +138,9 @@ export interface UserSettingsRepository {
   /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */
   getIntakeMigration(source: string): IntakeMigration | undefined;
   setIntakeMigration(source: string, migration: IntakeMigration): void;
+  /** What a job does when its login expires (issue #476); absent: never chosen. */
+  getLoginExpiry(): LoginExpiryAction | undefined;
+  setLoginExpiry(action: LoginExpiryAction): void;
 }
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */
@@ -352,6 +365,7 @@ export interface UserStore {
   events: EventLog;
   webhooks: WebhookRepository;
   questions: QuestionRepository;
+  logins: LoginRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
