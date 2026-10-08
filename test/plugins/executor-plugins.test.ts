@@ -41,11 +41,10 @@ describe('built-in executor plugins are listed', () => {
 
 describe('cursor-agent (issue #142)', () => {
   it('options: Cursor\'s CLI agent, allowed to run its tools and trusting the work tree; every option command-bearing', () => {
-    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: '~/hopper-jobs', sshBin: 'ssh' });
-    // ~ resolves on the job's machine, not here (issue #323).
-    expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe('~/w');
+    // No work tree of its own: a job's is its machine's (issue #361).
+    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], sshBin: 'ssh' });
     const p = props(cursorAgent);
-    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+    for (const key of ['bin', 'args', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
   });
 
   it('detect: available either way, `which` only — a machine over ssh may have Cursor where this one has none', async () => {
@@ -72,10 +71,10 @@ describe.each([
   { def: opencode, bin: 'opencode', args: ['--auto'] },
   { def: omp, bin: 'omp', args: ['--auto-approve'] },
 ])('$bin (issue #307)', ({ def, bin, args }) => {
-  it('options: the CLI on PATH, running its tools without asking, in the jobs directory; every option command-bearing', () => {
-    expect(options(def)).toEqual({ bin, args, cwd: '~/hopper-jobs', sshBin: 'ssh' });
+  it('options: the CLI on PATH, running its tools without asking; no work tree of its own (issue #361); every option command-bearing', () => {
+    expect(options(def)).toEqual({ bin, args, sshBin: 'ssh' });
     const p = props(def);
-    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+    for (const key of ['bin', 'args', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
   });
 
   it('detect: available either way, `which` only — its jobs run on the machines that have it', async () => {
@@ -94,12 +93,12 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: '~/hopper-jobs', trustWorkdir: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
+      trustWorkdir: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 
-  it('keeps ~ in cwd for the job\'s machine to resolve (issue #323) and refuses the default herdr session', () => {
-    expect(options(herdrClaude, { cwd: '~/w' }).cwd).toBe('~/w');
+  it('names no work tree of its own (issue #361) and refuses the default herdr session', () => {
+    expect(options(herdrClaude)).not.toHaveProperty('cwd');
     expect(parseOptions(herdrClaude, { session: 'default' })).toEqual({ ok: false, error: expect.stringMatching(/session/) });
   });
 
@@ -142,11 +141,11 @@ describe('herdr-claude', () => {
   ])('starts Claude with yolo on the command, or without it (%j)', async (raw, args) => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }] });
     const seamed = herdrClaudePlugin(herdr);
-    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd: temp(), pollMs: 1 }));
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, pollMs: 1 }));
     const ac = new AbortController();
     await ex.run({
       job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
-      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: ac.signal,
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: temp() }, signal: ac.signal,
       progress() {}, saveState() {}, workTree() {},
     });
     expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
@@ -160,11 +159,11 @@ describe('herdr-claude', () => {
     const cwd = temp();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], repositories: [cwd] });
     const seamed = herdrClaudePlugin(herdr);
-    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, pollMs: 1 }));
     const trees: string[] = [];
     await ex.run({
       job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
-      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: cwd }, signal: new AbortController().signal,
       progress() {}, saveState() {}, workTree(path) { trees.push(path); },
     });
     expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-scratch/abcdef12-0000/${basename(cwd)}` : cwd);
@@ -183,7 +182,7 @@ describe('test', () => {
 
 describe('command-bearing options carry the mark into JSON Schema (design.md "UI and mutation")', () => {
   it.each([
-    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'yolo', 'args', 'cwd']],
+    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'yolo', 'args']],
     ['claude-cli', claudeCli, ['bin', 'sshBin']],
     ['anthropic-api', anthropicApi, ['apiKeyEnv', 'baseUrl']],
     ['gate-router', gateRouter, ['jevPath', 'python']],

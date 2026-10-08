@@ -24,7 +24,7 @@ async function boot(gh: FakeGitHub) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-    enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp',
+    enabled: true, pollSeconds: 3600, executor: 'scripted',
   } }] };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
@@ -63,7 +63,7 @@ describe('intake by label and assignee (issue #387)', () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-      pollSeconds: 3600, authors: ['someone-else'], executor: 'scripted', defaultCwd: '/tmp',
+      pollSeconds: 3600, authors: ['someone-else'], executor: 'scripted',
     } }] };
     const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
     apps.push(a);

@@ -36,14 +36,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, pure — issue #442), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
-| `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
+| `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") | engine, http, store, plugins, decider |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY` | everything |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -357,9 +357,11 @@ subscription marks its pending/retrying deliveries `failed`.
 2xx within 5 s = delivered. Otherwise attempt `n` schedules the next at
 `now + min(base * 2^(n-1), 300 s)`, `base` = 1 s (configurable for tests); after 6 attempts
 the delivery is `failed`. Due deliveries are swept every 500 ms and on enqueue; pending
-deliveries survive a restart. The secret comes from the runtime: the variable the subscription's
-`secretEnv` names (or the mounted file `<secretEnv>_FILE` names), read at each delivery ("Secrets").
-None given: nothing is sent, and the delivery retries naming the variable.
+deliveries survive a restart. The secret is the subscription's stored signing secret, opened at each
+delivery, so a replaced or rotated one signs from the next ("Webhook signing secrets", issue #451); for a
+subscription from before with none stored, the runtime variable its `secretEnv` names (or the mounted file
+`<secretEnv>_FILE` names). None, or one that cannot be opened: nothing is sent, and the delivery retries
+saying why.
 
 ## Construction contract
 
@@ -575,8 +577,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
-  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
-  (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
+  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
   until the 60000 ms start deadline, then fails the job (`pane … never ran the scratch dir
@@ -596,8 +598,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
   hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
   default for the hopper's session (README "A Windows computer").
-- **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (herdr-claude and
-  cursor-agent `cwd`, the GitHub sources' `defaultCwd` and `repoPaths`), and the executor resolves it
+- **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (a machine's
+  `workTree`, a routing rule's `workTree`: issue #361), and the executor resolves it
   when the job starts, against the home of the lane's machine: this process's for this machine, and
   for an attached one the home its probe found (`MachineSnapshot.home`: an ssh target's
   `printf '%s\n' "$HOME"` over ssh, a client target's `homedir()` in its `/release` answer). A hopper
@@ -619,14 +621,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   starts, when it is that home, above it, or `/`
   (`the work tree <cwd> on <machine> is its home or above it: …`). A machine whose home is not known
   yet still refuses `/`. The default work tree is the **jobs directory** `~/hopper-jobs`
-  (`JOBS_DIR`, `src/domain/types.ts`): the herdr-claude and cursor-agent `cwd` and the GitHub
-  sources' `defaultCwd` default to it, and tenant migration 11 moves a stored `~` (executor `cwd`,
-  source `defaultCwd`, a `repoPaths` value) to it. The jobs directory, and a work tree under it, is
-  made when missing — the scratch command starts `mkdir -p <cwd> &&` — so a fresh machine runs a
-  default job; any other missing work tree still fails as above (#323). Which work tree applies —
-  the job's own, its machine's, its source's, the executor's — is "Default work trees per machine and
-  per repository". This is direction plus refusal, not a sandbox: an agent can still write where
-  its OS user can ("Sandboxing jobs: mechanisms compared").
+  (`JOBS_DIR`, `src/domain/types.ts`): a machine's work tree when it names none (issue #361; tenant
+  migration 11 had moved a stored `~` to it). A machine's work tree is made when missing — the
+  scratch command starts `mkdir -p <cwd> &&` — and one that cannot be made fails as above (#323); a
+  routing rule's is a directory named on purpose, never made. Which work
+  tree applies is "Per-machine work trees" (issue #361). This is direction plus refusal, not a
+  sandbox: an agent can still write where its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it. It sends clones and git worktrees
   made only for this job to the scratch dir, and says the reap below removes it.
@@ -699,13 +699,17 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   ignored), runs `git worktree prune`, makes the **job worktree**
   `<work tree>/.hopper-scratch/<job id>/<work tree's name>` with `git worktree add --detach` at
   `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
-  `hopper-job-worktree-made` (waited for up to 120000 ms, for the fetch). A worktree an earlier run of
+  `hopper-job-worktree-made` (waited for up to 10 minutes, for the fetch or a first clone). A worktree an earlier run of
   the job left is entered as it is. Claude starts there; the pane state keeps the work tree as `cwd`
   (the reap's scratch dir follows from it) and the job worktree as `jobWorktree`; the job reports the
   job worktree (`job.workTree`, so the lane shows it), the trust dialog naming it is accepted, and the
   footer adds the fixed `[hopper job worktree]` line after the work-tree line: work there, it is the
-  job's alone, the work tree is shared and left as it is. Not a repository's top:
-  `hopper-job-worktree-none`, and the job runs in its work tree as before. Git refusing:
+  job's alone, the work tree is shared and left as it is. Not a repository's top, and the job has a repository (a GitHub issue's,
+  issue #361): the command first fetches its **checkout** `<work tree>/<name>`, or clones it there from
+  `https://github.com/<owner/name>.git` the first time, then makes the job worktree
+  `<work tree>/.hopper-scratch/<job id>/<name>` of the checkout the same way, enters it and prints
+  `hopper-job-worktree-checkout`; the pane state keeps the checkout as `checkout`, and the footer names
+  it as what the worktree is of. Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
   remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
@@ -818,7 +822,7 @@ removed. Every `question.*` event carries it — the `machineId` subject (`laneI
 service's one `emit()`, so the event log holds it for every step of the question. Webhooks send the stored event, so
 receivers get it as is; the Grok Bot routine body takes `machineId`, `machineName` and `laneId` from it, not
 from where the job is at send time. The UI names it on the question card, the question history, event
-lines and Attention, and says *machine unknown* when a question has none. Tenant migration 18 fills it on
+lines and Attention, and says *machine unknown* when a question has none. Tenant migration 20 fills it on
 older questions from the `question.asked` lane, then `resumeOn`, then the pin, the name from the machines
 config while the machine is there; past events are not rewritten. Login prompts from machines (the
 device-code component's optional `machine`) carry the same shape.
@@ -893,9 +897,20 @@ hopper in a container has none, so `claude-cli` takes an option `machine`: an at
 that runs claude for that level, through the hopper's ssh connection (`commandOn`), as `sh -c
 ON_MACHINE sh claude <argv>` — the same argv, the prompt on stdin, in a fresh private dir there,
 removed after with the project dir claude keeps for it (`ON_MACHINE`, shared with `claude-plan`).
+On a **client target** (issue #482) the hopper runs no command, so the level sends the call to its
+client, `POST /level {model, effort?, jsonSchema, prompt, timeoutMs}` (`clientLevel`, signed like every
+call on its link): the client builds the same lockdown argv itself (`src/client/level.ts` `levelArgv`, the
+one owner of it — `claudeArgv` here is that function), runs its own claude with the prompt on stdin in a
+fresh private dir removed after with claude's project dir, kills it at the timeout (exit 124, reported as
+`claude timed out after <n> ms`), and answers `{code, stdout, stderr}`; the level parses stdout as on any
+machine. The body names only the model (an alias or id, never an option), the effort, the schema and the
+prompt: a signed call can start nothing but this locked-down run. This is what makes escalation work in a
+container hopper whose only machine joined as a client: there is no `local` and no ssh machine. A client
+release without the call is replaced by the keeper as for any release change ("Client releases").
 The level finds the machine by id through `RoleContext['escalation-level'].machine` (`MachineLookup`,
-as a usage source does); a machine not configured, offline, a client target or a container target
-(`docker exec` passes no stdin) is `{ error }`, so the question escalates. `machine` is not
+as a usage source does) and reaches a client through `client` (`ExecutorContext['client']`); a machine
+not configured, offline, a client not dialled in or a container target (`docker exec` passes no stdin)
+is `{ error }` with why and how to fix it, so the question escalates. `machine` is not
 command-bearing: the owner designates it in the Question gates panel; it can only name a machine
 already configured.
 
@@ -921,7 +936,8 @@ is now optional in the schema, and `src/domain/machine-pick.ts` decides, pure:
 
 - **At run time** (`pickMachine`). A claude-cli level that names no machine picks one per question:
   the job's machine (`AnswerRequest.jobMachine`: `resumeOn`, else its pin) where claude can run there
-  — online, and this machine or an ssh target, never a client or container target (`refusal`) —; else
+  — online, and this machine, an ssh target or a client target (issue #482), never a container target
+  (`refusal`) —; else
   the only machine that can; else the **default escalation machine** (the plugins config's
   `escalationMachine`, `EscalationLevelContext.escalationMachine()`). The reply carries `machine:
   { id, why }`, and the question service puts it on the attempt: the trail says on which machine the
@@ -934,9 +950,14 @@ is now optional in the schema, and `src/domain/machine-pick.ts` decides, pure:
   runs on, or, when none can run it or several can with no default set, `needsMachine` and the plain
   reason. The UI shows the level as *needs a machine*. No question action needs a level, so none is
   hidden: an escalated question waits for the owner as before.
+- **A level that names its machine** (`namedMachineNote`, issue #482): flagged *needs a machine* when that
+  machine can never run it — not configured, or a container target —, and *cannot run* while it is
+  offline (from the machines as the engine last listed them, `lastListed` in the host), each with the
+  plain reason and how to fix it (start the hopper client on a client target; check ssh on an ssh one;
+  or pick another machine). A level that can run there carries no note.
 - **In the store** (`fillMachines`, tenant migration 17, `migration-name-the-machine.ts`): a level or
   source that names none names the one machine that can run it, where exactly one is configured
-  (claude-cli: `local` or `ssh`; claude-plan: any). Anywhere else it is left unnamed, and flagged. The
+  (claude-cli: `local`, `ssh` or `client` — a client since issue #482; claude-plan: any). Anywhere else it is left unnamed, and flagged. The
   plugins config is re-read by version, so the parts follow it live.
 - **The default escalation machine** is set in the Question gates panel (`POST /ui/api/plugins`
   `{ action: 'escalation-machine', machine | null }`): a configured machine, else refused. It is a
@@ -1338,7 +1359,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
-| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (with a `secret` typed in, or none: the hopper makes one), edit (url, events, active), replace (`secret`), rotate, remove one; answers `GET /api/webhooks`, never a secret but one the hopper made, once (`generatedSecret`); `cache-control: no-store` (issues #18, #451) ("Webhook signing secrets") |
 | POST | `/ui/api/webhooks/test` | `{ name }` | Send test event (issue #378): one signed `webhook.test` event to the subscription, one attempt; answers `{ ok, status?, detail }`. No delivery row, nothing appended |
 | POST | `/ui/api/notifiers` | `{ action: test \| send-open, name }` | a running notifier's action (issue #378): a marked test payload, or every question open at the human now; answers `{ ok, status?, detail, sent?, failed? }` ("Grok Bot routine webhook") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
@@ -3162,6 +3183,12 @@ cleanup reach the same client. The command executor refuses a client target (it 
 `-p /usage --output-format json --no-session-persistence` or `auth status --json`, any other argv 400 —
 with no shell, stdin closed, in a fresh `mkdtemp` dir removed after with the project dir claude keeps for
 it. Zero turns, zero tokens: a signed call can read the machine's usage and account, never start a prompt.
+`POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` → `{code, stdout, stderr}` (issue #482): an
+escalation level's run ("Question pipeline", "The machine that answers") — the client's claude in print
+mode, the argv built by the client from those fields alone (no tools, no MCP, no settings, no session),
+the prompt on stdin, the same fresh dir and cleanup, killed at the timeout (at most 15 minutes) with exit
+124; a model that is not an alias or id, an unknown effort, a schema that is not an object or an empty
+prompt is 400 and claude never runs.
 
 **Online** while `status server` through the tunnel says `status: running`, answered and signed by
 the client; offline when there is no tunnel, the token is missing, or the answer does not prove
@@ -4285,7 +4312,8 @@ Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
   `must be an event type or "*"`); 404: no such name; 409: stale `version`, `add` of a name already
   there, an unparseable or invalid webhooks.yaml (never edited from the UI — fix it by hand).
 - **`name`** is the reconcile key and never changes from the UI; renaming is remove + add.
-- **Secrets (issue #56, "Secrets").** The hopper makes, keeps and hands out no secret. An entry names
+- **Secrets (issue #56, "Secrets"; superseded by issue #451, "Webhook signing secrets": the signing
+  secret is the hopper's own, typed in or made in the UI, sealed in the database).** The hopper makes, keeps and hands out no secret. An entry names
   the variable the runtime gives its secret in (`secretEnv`); the operator sets the secret there (a
   variable, or a mounted file `<secretEnv>_FILE`) and gives it to the subscriber, and rotates it
   there — read at each delivery, so a rotated file applies at once; a changed variable at the next
@@ -4757,8 +4785,9 @@ routing:
   `label` means the item has that label. `title` is a substring match. An empty `match` matches
   every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
   `spec.machineId` pin), `executor` (a configured executor instance), `priority` (0..100), or
-  `workTree` (an absolute path or one under `~`: the job's own work tree, issue #324). The
-  schema is strict, so a `lane` anywhere is refused.
+  `workTree` (an absolute path or one under `~`: the job's own work tree, issue #324; only with
+  `machine`, since a path is one machine's, issue #361). The schema is strict, so a `lane` anywhere is
+  refused.
 - **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
   `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
   author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
@@ -5776,17 +5805,23 @@ default (unset: none).
 
 ### Secrets
 
-**Every secret comes from the runtime (owner direction, issue #56).** The hopper's runtime can never
-be guaranteed, so it is given every secret as an environment variable or a mounted secret file, and
-any secret source can feed it: a container's or orchestrator's secrets, a secrets manager, a service
-manager's credentials. A secret named `NAME` is the variable `NAME`, or the file the variable
-`NAME_FILE` names (`src/secrets/runtime.ts`, `runtimeSecrets`) — the `_FILE` convention container
-images use. Both set: refused, naming both (never a silent choice). The file is read at each use, its
-one trailing newline dropped, so a mounted secret the runtime rotates applies at once; an unreadable
-one is refused, naming the variable. The hopper does not store a secret itself — not in the database,
-not in its own files — with one exception: a **connected account**'s token ("Connected accounts", issue
-#214), which no runtime holds: the provider grants it to the hopper's app when the person signs in or
-connects, so it is kept in that user's schema.
+**Two kinds of secret (issue #451, refining issue #56).**
+
+- **Credentials the hopper is given** for an outside service (a database password, an API key, a
+  GitHub App's private key): they come from the runtime. The hopper's runtime can never be
+  guaranteed, so it is given each one as an environment variable or a mounted secret file, and any
+  secret source can feed it: a container's or orchestrator's secrets, a secrets manager, a service
+  manager's credentials.
+- **Secrets the hopper owns**: ones it makes or that are made for it (a webhook signing secret), and
+  ones only it holds (a connected account's tokens). They are kept in the database **sealed** under
+  the runtime's **token key**, `HOPPER_TOKEN_KEY` ("Sealed in the database" below). A realm's own
+  secrets are kept in the database too (issue #216), in clear for now: sealing them is carried work.
+
+A runtime secret named `NAME` is the variable `NAME`, or the file the variable `NAME_FILE` names
+(`src/secrets/runtime.ts`, `runtimeSecrets`) — the `_FILE` convention container images use. Both set:
+refused, naming both (never a silent choice). The file is read at each use, its one trailing newline
+dropped, so a mounted secret the runtime rotates applies at once; an unreadable one is refused,
+naming the variable.
 
 Parts ask through `PluginContext.env(name)` / `DetectionKit.env(name)` (both `runtimeSecrets`;
 `AppSeams.env` in tests). The variable is named by a command-bearing option, so a UI session cannot
@@ -5799,7 +5834,7 @@ redirect a credential:
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
-| webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
+| webhook subscription | none since issue #451: the signing secret is the hopper's own, sealed in the database. A subscription from before keeps its `secretEnv` until a secret is stored for it | `secretEnv` (`WEBHOOK_SECRET_*`), inline `secret` (sealed), `secretFile` |
 | realm (sign-in config) | none since issue #216: `clientSecret` (oidc, github, gateway) and `bindPassword` (ldap) are stored with the realm, set in the UI or by `HOPPER_SIGN_IN_REALM_<NAME>_*` (each also `_FILE`); a SAML `idpCert` is public and inline | `clientSecretEnv`, `bindPasswordEnv` (taken into the database once), `clientSecretFile`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
@@ -5810,31 +5845,66 @@ no `_FILE` form. A job's `GH_TOKEN` is not a runtime secret: the hopper hands it
 token (issue #214; the only GitHub credential of a job since issue #359). The github-gh source and its
 `appKeyEnv` are removed (issue #359).
 
-**What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing), but for the realms' own (issue #216):
+**What the hopper keeps:**
 
 | kept | how |
 |------|-----|
-| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 14, issue #78) |
+| a webhook subscription's signing secret | sealed (below), in the user schema's `webhooks` (`secret_sealed`, with `secret_changed_at`; tenant migration 19, issue #451). Typed in or made by the hopper; write-only ("Webhook signing secrets") |
+| a webhook subscription from before issue #451 | its `secretEnv`, a variable's name (`secret_env`), read from the runtime under the user's secret prefix until a secret is stored for it, then cleared |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
-| **the exception (issue #216)**: a realm's own secrets | in clear, in the config record `sign-in` — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment") |
-| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under the runtime's `HOPPER_TOKEN_KEY` since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
+| a realm's own secrets | in clear, in the config record `sign-in` (issue #216) — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment"). Never answered by a route |
+| a connected account's token | the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under `HOPPER_TOKEN_KEY` by the token box since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route |
 
-`HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
-with no secret to keep there is nothing to seal. (The connected account's tokens are the one thing sealed
-again, under `HOPPER_TOKEN_KEY`, issue #441: the token box is theirs alone.) A leftover `HOPPER_SECRET_KEY` is a leftover
-variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` — sealed or
-clear, from before — was refused at load, and is left out by migration 14 (issue #78) for the same
-reason: the rows stay as the daemon last ran them. The one
-install there was had no subscription when this landed.
+#### Sealed in the database
+
+`src/secrets/sealer.ts` (issue #451). The **token key** `HOPPER_TOKEN_KEY` (32 bytes, 64 hex digits or
+base64; also `_FILE`) is the master key. It never reaches the database: the compose install makes it in
+its `secrets` volume, `install.sh` writes one into `daemon.env`. Each value is sealed so:
+
+- **its own key**: HKDF-SHA256 of the master key, a fresh 32-byte random salt, and the context (where the
+  value is kept: `webhook:<subscription id>/signing-secret`). The master key is the pepper, the salt is
+  per value; no two values share a key, and the master key is never used to encrypt directly;
+- **AES-256-GCM** under that key, with a fresh 12-byte random nonce;
+- **bound to its place**: the context is in the key derivation and in the authenticated data, so a
+  sealed value copied to another row or another kind of secret does not open. The subscription id, not
+  the user, so a fold of one user into another (issue #265) keeps it;
+- **padded** to a block of 64 bytes (its length first), so the stored length does not show the secret's;
+- **marked with the key id**: 16 hex digits of HMAC-SHA256(master key, a fixed label), a fingerprint
+  that does not give the key.
+
+`hs1.<key id>.<salt>.<nonce>.<ciphertext ‖ tag>`, base64url. A value that does not open throws
+`SecretUnreadable` — no key, another key (naming the key id it was sealed under), altered, or moved — and
+is never read as "no secret". The derived key and the plaintext buffers are zeroed after use (a
+JavaScript string cannot be).
+
+**Key rotation.** Give the new key as `HOPPER_TOKEN_KEY` and the old one as `HOPPER_TOKEN_KEY_PREVIOUS`
+(one per line, or comma- or space-separated; also `_FILE`) and restart: each user's runtime seals every
+webhook secret an older key sealed again under the new one (`resealAll`, logged as a count), keeping when
+it last changed. Once the log says so, drop the old key. A previous key only opens. (The token box's
+`sealed:v1:` has no key id: rotating the token key asks to connect GitHub again, as issue #441 says.)
+
+**No key, a wrong key.** A token key that is no key stops the daemon (fails closed). None: the daemon
+starts and says at start that webhook signing secrets cannot be stored or opened; adding a subscription
+or storing a secret answers 503 naming `HOPPER_TOKEN_KEY`; a subscription with a stored secret sends
+nothing, and its card, its test event and its deliveries say the stored secret cannot be opened.
+
+`HOPPER_SECRET_KEY` and the secret box of issue #55 stay gone: a leftover `HOPPER_SECRET_KEY` is a
+leftover variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` —
+sealed or clear, from before — was refused at load, and is left out by migration 14 (issue #78).
 
 **systemd credentials.** `LoadCredential=<name>:<path>` (or `LoadCredentialEncrypted=`) in a drop-in
 for `hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
 `daemon.env`.
 
-**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets, and a job on the
-hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file). The
-database and its backups hold no secret but the realms' own (issue #216); the database URL is the one credential that opens it.
+**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets and the token key, and a
+job on the hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file).
+The database and its backups hold no usable secret but the realms' own (issue #216): the sealed ones need
+the token key, which is kept beside the database, never in it. The compose install keeps it in the same
+volume as the database password, readable only by the hopper's user; a host that holds both volumes holds
+both. Keep the token key with the database's backups but not in them: a database restored without it
+asks for every webhook secret again (Replace or Rotate) and for GitHub to be connected again. A secret is
+in the daemon's memory while it signs or is sealed.
 
 ### Login codes
 
@@ -5850,8 +5920,8 @@ directory for escalation level calls, each plugin's scratch dir, ssh control soc
 `gate-router-runs.jsonl` debug log (grok-bot-jev's run log, not the hopper's state), self-update's mirror and next
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
 (`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
-gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,
-the GitHub sources' `defaultCwd`), resolved on the job's machine (issue #323).
+gone: `jevSrc` has no default, and a job's work tree is its machine's (issue #361), the jobs
+directory `~/hopper-jobs` by default, resolved on the job's machine (issue #323).
 
 ### Operator CLI
 
@@ -7148,6 +7218,9 @@ filter, Choose shown, Save sends the whole list, an unreached chosen repository)
 
 ## Default work trees per machine and per repository (issue #324, 2026-10-07)
 
+**Superseded in part by issue #361** ("Per-machine work trees"): the source's `repoPaths` and
+`defaultCwd` and the executor's `cwd` are gone, and a routing rule's work tree needs its machine.
+
 Owner request: default job directories set per machine and per repository, with a fallback, resolved on
 the machine that runs the job, never in the hopper's own home; a repository routed to the right machine
 and tree; the chosen machine and directory shown on the job's lane; a misconfigured directory failing at
@@ -7567,3 +7640,139 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
   field; v1 and v2 keep their old lane plan (`legacyLanePlan`).
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
   is the user's act from Sources, never the hopper's own.
+
+## Per-machine work trees (issue #361, 2026-10-08)
+
+Owner request: jobs failed when routed to a machine that did not have the configured work tree — four
+jobs went to an agent box while the host's lanes were full, carried the host-only path the GitHub source
+set, and failed the scratch check within seconds. Each machine has its own work tree, set in the UI; the
+hopper provisions it on the machine itself (directory, the job's repository, scratch, trust) with no
+manual setup; a path valid on one machine never reaches another; the router never picks a machine whose
+work tree cannot be made usable — the job stays queued, with why, never failed; ephemeral agent boxes
+work the same way. Configured on the machine, as the issue recommended: the work tree belongs to the
+machine; a routing rule may still override it per repository, on the machine it names. The issue's word
+"workspace" is the glossary's **machine work tree** (herdr's own workspaces are something else).
+
+**As built:**
+- **The work tree is the machine's.** `resolvePayload` (`src/executors/herdr/payload.ts`, herdr-claude
+  and the print agents): the job's own `cwd` — only a routing rule's, which pins the job to the rule's
+  machine — applies only on the machine the job is pinned to (`spec.machineId`); anywhere else the
+  lane's machine's `workTree`; absent, the jobs directory. No other path exists: the GitHub sources'
+  `repoPaths` and `defaultCwd` and the herdr-claude and print agent executors' `cwd` are gone
+  (`SourceItem.cwd`/`defaultCwd` and `SpecFromConfig.defaultCwd` too), because none of them names a
+  machine. A routing rule's `workTree` without `machine` is refused (`src/routing/`, and the Routing view
+  says so first).
+- **Set in the Machines view.** An attached machine's Edit form has a `work tree` field (ssh and client
+  targets; a container target runs commands only and has none), this machine's Edit form too; empty
+  removes the option. The machine panel shows the work tree (the jobs directory when none is set) and
+  its work tree problem.
+- **Made on the machine when it is probed.** The probe that finds a machine online (at attach, then
+  every 30 s) makes its work tree there and says what is wrong — `MachineSnapshot.workTreeProblem`:
+  - this machine: `createLocalMachineSource` makes it in the background (`src/client/work-tree.ts`
+    `makeWorkTree`: `mkdir -p`, writable, never the home or above it), at most once per 30 s;
+  - an ssh target (an agent box is one): in the same ssh call that asks its home and its disk
+    (`probeSsh`), a shell `mkdir -p` and a write check, `~` as `"$HOME"` there; the answer's last line
+    says made or not. A box made again from its image, with an empty home, has its work tree again at
+    the first probe after attach;
+  - a client target running the hopper's client release: `POST /work-tree {workTree}` on its link
+    (`src/client/server.ts`, signed like every call), answered `{workTreeProblem?}`. The call is in a new
+    client file (`work-tree.ts`), so the release id changes and the release keeper loads it onto every
+    client first; a client on another release is not asked.
+  A probe that cannot run the check (the client call fails) reports that as the problem.
+- **Never routed there.** The decider (`src/decider/assign.ts`, `workTreeHolds`) takes a machine with a
+  work tree problem for no new job, as a machine whose disk is low. A job no other machine can take is
+  held — `no machine running executor <x> has a usable work tree: <m>: <problem>`, or `pinned machine
+  <m>: <problem>` — and starts once a probe finds the work tree usable or another machine has room; a job
+  that waits for the other machines' lanes says that. A job already running there keeps its lane, and a
+  job resuming there returns to its pane. The hold reason is the job's `holdReason`, shown in the UI;
+  the attached machine's log line says it takes no new job and why.
+- **The repository, at each start** (`src/executors/herdr/job-worktree.ts`). A work tree that is the top
+  of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
+  and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
+  jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
+  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>`, whose
+  `origin` must be that repository, or clones it there from `https://github.com/<owner/name>.git` the
+  first time (into `<name>.hopper-clone-<pid>`, then moved in, so two jobs cloning at once leave one),
+  and makes the job's worktree of it, `<work tree>/.hopper-scratch/<job id>/<name>`. Git takes github.com
+  credentials from `GH_TOKEN` when the pane has it, else from `gh auth git-credential` (the job's
+  credentials dir, issue #441), through `GIT_CONFIG_*` variables naming a helper: the token is never on
+  a command line. `GIT_TERMINAL_PROMPT=0`: git never waits for a person. A checkout of another
+  repository under that name, or a refused clone, fails the job at once with what git said. With
+  `jobWorktrees` off, the checkout is fetched or cloned and the job runs in the work tree. The print
+  agents run the same command, worktrees off, before their first turn, its output on stderr.
+- **Scratch and trust.** The scratch dir is made first, as before; the machine's work tree is made by the
+  scratch command too (`mkdir -p`), a routing rule's never. Claude's folder-trust dialog for the job
+  worktree is accepted at startup (`trustWorkdir`, default on) — on a fresh box too; no trust is written
+  into any file of Claude's, which running Claude processes also write.
+- **Migration.** Tenant migration 18 (`src/store/migration-machine-work-trees.ts`): the path jobs fell
+  back to (the first job source's `defaultCwd`, else the first work tree executor's `cwd`) becomes the
+  `workTree` of each `local`, `ssh` and `client` machine that has none — not when it is the jobs
+  directory, the default — so every job runs where it ran before; a `repoPaths` entry that is not that
+  path becomes a routing rule `{ name: '<source> <repo>', match: { source, repo }, set: { machine,
+  workTree } }` after the existing rules when there is exactly one such machine, else it is dropped; a
+  routing rule's `workTree` without a machine gets the one machine there is, else loses the work tree (a
+  rule left setting nothing goes); every executor `cwd` and source `repoPaths`/`defaultCwd` goes. Stored
+  jobs lose `defaultCwd`, and `cwd` unless a rule set it with the machine the job is pinned to; their
+  `fromConfig` follows. A machine that got a path it does not have is then held off by its probe, with
+  why, instead of failing jobs: fix its work tree in Machines. The build before runs on the migrated
+  store: it reads a machine's `workTree` (issue #324) and defaults the gone options.
+
+**Residual.** A failure at start (a clone refused for credentials, a disk filled since the probe) still
+fails that job with what the shell said: the probe checks that the work tree can be made and written,
+not that every repository can be cloned there. A work tree a routing rule names is not probed (only the
+machine's own is); a missing one fails the job at start, as a misconfigured path should (issue #324).
+
+**Verification:** `test/herdr/machine-work-tree.test.ts` (the machine's work tree, the jobs directory,
+a job's own path only on its pinned machine, made wherever it is, the job's repository named to the job
+worktree command), `test/herdr/job-worktree.test.ts` (against real git: a clone into a plain work tree
+and its job worktree, a fetch of an existing checkout, a checkout of another repository refused, a work
+tree that is a repository left without a clone), `test/decider/work-tree.test.ts`,
+`test/adapters/ssh-machine.test.ts` (`probeSsh` makes the work tree, the jobs directory by default,
+one that cannot be made, the home), `test/adapters/machine-usage.test.ts` (this machine),
+`test/adapters/client-transport.test.ts` (the client's `/work-tree`), `test/store/tenant-migration-18.test.ts`,
+`test/integration/attached-machines.test.ts` (held with why through the real composition root, then run
+once the probe finds it usable), `test/routing/rules.test.ts`, `test/ui/machines.test.ts`,
+`test/ui/routing.test.ts`, `test/sources/config.test.ts`.
+
+## Webhook signing secrets (issue #451, 2026-10-08)
+
+Owner request: a webhook subscription's signing secret is made by the hopper's operator for the hopper,
+so the hopper stores and manages it, instead of the form naming a runtime variable. Held to current
+practice for secrets at rest: a key per value (salted), a master key outside the database (the pepper),
+authenticated encryption bound to the value's place, and a key id for rotation.
+
+- **Entered in the UI.** `add` takes `secret` (typed in: 32 to 4096 printable ASCII characters, no
+  spaces) or none, and then the hopper makes one (32 random bytes, 64 hex digits). `add` no longer takes
+  `secretEnv`, from the UI or anywhere: no route names a variable for a subscription.
+- **Encrypted at rest** under the token key ("Sealed in the database"): the subscription id is the
+  context. Stored in `webhooks.secret_sealed` with `secret_changed_at` (tenant migration 19). Never in
+  clear, never logged (an audit line names the subscription and how it changed: typed in, made by the
+  hopper, replaced, rotated), never in an event, never answered.
+- **Write-only.** `GET /api/webhooks` and every answer carry `secretChangedAt` only. The actions are
+  `replace` (`{ action, name, secret }`) and `rotate` (`{ action, name }`: the hopper makes one).
+  A secret the hopper made is answered once, as `generatedSecret`, in the answer to the edit that made
+  it; the UI shows it in a box to copy and never puts it in its store. Every answer of the route is
+  `cache-control: no-store`. `remove` deletes the row, and the sealed secret with it.
+- **Applies without a restart.** The dispatcher opens the stored secret at each delivery (and each test
+  event), so a new, replaced or rotated secret signs from the next one (issue #356).
+- **Subscriptions from before (M1).** A row with `secret_env` and no stored secret keeps reading that
+  variable under the user's secret prefix, exactly as before; its card says "secret from runtime variable
+  X: replace to store it in hopper". Storing a secret (replace or rotate) clears `secret_env`: it is no
+  longer read, and the variable can be removed from the runtime. Nothing is imported from the runtime on
+  its own (M2 not taken): the operator decides when each moves.
+- **The key.** The token key of issue #441, not a second one: one runtime value to keep, which the
+  compose install and `install.sh` already make. Its derivations are separated by context, so the
+  connected account's tokens and the webhook secrets never share a key. Rotation, missing and wrong keys:
+  "Sealed in the database".
+- **Messages.** `secretProblem` (on `GET /api/webhooks`), a test event's `detail` and a delivery's
+  `lastError` say: a runtime variable not set (`WEBHOOK_SECRET_X is not set`), no secret set (`replace
+  or rotate it`), or the stored secret cannot be opened (no key: `HOPPER_TOKEN_KEY is not set`; another
+  key: the key id it was sealed under; altered or moved).
+- **One key for every user.** Each user's secrets are in their own schema; the per-user secret prefix is
+  no longer needed for a stored secret (it stays for a subscription from before).
+
+Carried, not in this change (the issue's audit, rows 2–10): the Grok Bot routine's URL and key, the
+anthropic-api and TypeSafe API keys, the GitHub App's private key, the realms' secrets (sealed and
+write-only), client machine keys, the hopper's ssh and link keys, and moving the connected account's
+tokens onto the sealer (a key id, so its key can rotate; and never kept in clear without a key).
+

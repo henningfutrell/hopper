@@ -3,7 +3,8 @@
 // link (src/machines/links.ts), and the client serves HTTP/2 on it. A herdr call is `POST /herdr` on that
 // HTTP/2 session, signed with the client token (src/client/signature.ts); an answer the client did not
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
-// release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /reap` and `POST /survey`
+// release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /level` an escalation
+// level's run (issue #482); `POST /reap` and `POST /survey`
 // its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
@@ -55,6 +56,11 @@ export function clientClaude(t: ClientTransport, args: string[], timeoutMs: numb
   return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
 }
 
+/** An escalation level's run on the client target (issue #482): the client runs its own claude, locked down, the prompt on stdin. */
+export function clientLevel(t: ClientTransport, call: { model: string; effort?: string; jsonSchema: Record<string, unknown>; prompt: string }, timeoutMs: number): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, '/level', { ...call, timeoutMs }, timeoutMs);
+}
+
 /** The id of the client release the client target runs, and its home when it says (a client before issue #323 does not). */
 export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; home?: string; disk?: DiskReading }> {
   const { release, home, disk } = await clientCall<{ release?: unknown; home?: unknown; disk?: unknown }>(t, '/release', {}, 15000);
@@ -80,6 +86,15 @@ function clientHome(home: unknown): string | undefined {
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
 export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential', body: Record<string, unknown>): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, path, body, 60000);
+}
+
+/**
+ * Makes the client target's work tree there (issue #361): what is wrong with it, or nothing. Only a
+ * client running the hopper's release has the call (`/work-tree`); rejects as any call does.
+ */
+export async function clientWorkTree(t: ClientTransport, workTree: string): Promise<{ workTreeProblem?: string }> {
+  const { workTreeProblem } = await clientCall<{ workTreeProblem?: unknown }>(t, '/work-tree', { workTree }, 15000);
+  return typeof workTreeProblem === 'string' ? { workTreeProblem } : {};
 }
 
 /** Loads a client release onto the client target; it restarts to run it. */

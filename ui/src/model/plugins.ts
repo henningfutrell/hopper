@@ -98,11 +98,13 @@ export interface InstanceState {
 
 /**
  * A part that runs claude and names no machine (issue #442): needing one, it is flagged with the plain
- * reason; else its state, with the machine it runs on said.
+ * reason; one whose machine cannot run it now (offline, issue #482) cannot run, with why and how to fix it;
+ * else its state, with the machine it runs on said.
  */
 function onMachine(st: InstanceState, machine: InstanceStatus['machine']): InstanceState {
   if (!machine || st.label === 'cannot run') return st;
   if (machine.needsMachine) return { ...st, tone: 'bad', label: 'needs a machine', reason: machine.note };
+  if (machine.cannotRun) return { ...st, tone: 'bad', label: 'cannot run', reason: machine.note };
   return st.reason ? st : { ...st, reason: machine.note };
 }
 

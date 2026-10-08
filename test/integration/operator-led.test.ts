@@ -24,7 +24,7 @@ async function boot(gh: FakeGitHub) {
   const plugins = {
     machines: lanes(1),
     jobSources: [{ name: 'github', plugin: 'github-account', options: {
-      enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp',
+      enabled: true, pollSeconds: 3600, executor: 'scripted',
     } }],
   };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });

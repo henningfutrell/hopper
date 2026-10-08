@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -23,7 +23,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
+import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
@@ -38,13 +38,15 @@ import { githubAccountPlugin } from '../plugins/job-source/github-account/index.
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
+import { sealerOf } from '../secrets/sealer.ts';
+import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
 import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
-import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
+import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 
 /** Doubles at ports.ts seams for one user's parts, for integration tests. Production passes none. */
@@ -131,8 +133,8 @@ export interface UserRuntime {
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccountsService;
   webhooksEditor: WebhooksEditor;
-  /** Why the user's runtime gives no secret for a webhook subscription's variable; undefined when it does. */
-  secretProblem: (secretEnv: string) => string | undefined;
+  /** Why a webhook subscription has no secret to sign with (issue #451); undefined when it has one. Never the secret. */
+  secretProblem: (sub: WebhookSubscription) => string | undefined;
   /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
   machineLink: UserMachineLink;
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
@@ -216,12 +218,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0)
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
-          // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
-          // One after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (found) => ({
+          // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
+          // and its work tree is made there (issue #361). One after the other, over the one shared ssh connection.
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}) }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             ...found,
           })))),
@@ -288,7 +290,14 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const router = seams.router ?? host.router;
   // Seam doubles win over the host's live instances (looked up per question).
   const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
-  const dispatcher = createWebhookDispatcher({ store, clock, secret, baseMs: config.webhookBaseMs });
+  // The webhook signing secrets (issue #451): sealed in the user's store under the runtime's token key; one
+  // an older key sealed is sealed again under the current one now. A subscription from before reads its variable.
+  const keys = sealerOf(runtimeSecrets(o.env));
+  if (keys.problem) logger.warn(`hopper: ${keys.problem}: webhook signing secrets cannot be stored, and a stored one is not opened`);
+  const webhookSecrets = createWebhookSecrets({ store, keys, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix, logger });
+  const resealed = webhookSecrets.resealAll();
+  if (resealed > 0) logger.info(`hopper: ${resealed} webhook signing secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);
+  const dispatcher = createWebhookDispatcher({ store, clock, secretOf: (sub) => webhookSecrets.of(sub), baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
@@ -330,7 +339,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
-  const raw = runtimeSecrets(o.env);
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   const stopFailureLog = logFailures(store);
   dispatcher.start();
@@ -347,9 +355,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, dispatcher, executors,
     connectedAccounts,
     usageHistory,
-    webhooksEditor: createWebhooksEditor({ store }),
-    // The variable the user's runtime reads: the subscription's, under the user's prefix.
-    secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
+    webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
+    secretProblem: (sub) => webhookSecrets.problem(sub),
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

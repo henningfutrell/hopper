@@ -53,18 +53,23 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values
   (`plugins`, `rules`, `job-rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML
-  (issue #198) — and the webhook subscriptions, rows of its own. **Every secret comes from the runtime**
-  (issue #56): the variable `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`),
-  named by a command-bearing option. The hopper stores no secret — not in the database, not in a file
-  of its own; a token or code it mints is only hashed (`docs/design.md` "Secrets"). One exception, by
-  owner direction (issue #216): a realm's own secrets (`clientSecret`, `bindPassword`) are stored in the
-  database, set in the UI or from the `HOPPER_SIGN_IN_*` environment, and never answered back by any route. A second: a **connected account**'s token (issue #214), which the
-  provider grants the hopper's app and no runtime holds — kept in that user's schema, never answered
-  by any route. A third (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`): the
-  **hopper's ssh key**, minted by the hopper when the runtime mounts none, kept in that user's schema,
-  written to the work dir for ssh at each start, and never answered by any route but its public half. A fourth, for the
-  same reason (issue #308): the hopper's **link key** for each user, the private half of the key a machine's client token is
-  derived from, kept in that user's schema and never answered by any route but its public half. No default names a path on one
+  (issue #198) — and the webhook subscriptions, rows of its own. **Two kinds of secret** (issue #451, `docs/design.md`
+  "Secrets"). A credential the hopper is *given* for an outside service comes from the runtime: the variable
+  `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`), named by a command-bearing
+  option. A secret the hopper *owns* — one made by or for the hopper (a webhook signing secret), or one
+  only it holds (a **connected account**'s token, issue #214) — is kept in the database, **sealed** under
+  the runtime's token key `HOPPER_TOKEN_KEY` (`src/secrets/sealer.ts`: a key per value from the token key
+  and a salt, AES-256-GCM, bound to its place, a key id for rotation; the connected account's tokens by the
+  token box of issue #441, which keeps them in clear while the runtime gives no key), never logged, never
+  in an event, and never answered by any route but, once, a secret the hopper made in the answer that made
+  it. A value that cannot be opened is said so, never read as no secret. A token or code it mints is only
+  hashed. Kept in the database in clear for now, by owner direction (issue #216): a realm's own secrets
+  (`clientSecret`, `bindPassword`), set in the UI or from the `HOPPER_SIGN_IN_*` environment, never answered
+  back by any route. Kept in that user's schema, never answered by any route but its public half: the
+  **hopper's ssh key** (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`), minted
+  when the runtime mounts none and written to the work dir for ssh at each start; and the hopper's **link
+  key** for each user (issue #308), the private half of the key a machine's client token is derived from.
+  No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
   `hopper`) writes the database directly: whoever runs it holds its credentials. Its operator actions
   (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one

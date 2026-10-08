@@ -87,7 +87,7 @@ describe('an install from before (issue #238: its default admin account stays)',
     a.events.append({ type: 'job.queued', jobId: job.id, data: {} });
     a.config.write('rules', 'a rules', 'missing');
     a.settings.setQueueGate({ mode: 'review', autoAcceptPerHour: null });
-    a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], secretEnv: 'S', active: true });
+    a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], active: true });
     expect(b.jobs.list()).toEqual([]);
     expect(b.jobs.get(job.id)).toBeUndefined();
     expect(b.questions.list()).toEqual([]);

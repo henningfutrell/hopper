@@ -68,9 +68,16 @@ export interface InstanceEvents {
 
 export interface WebhookRepository {
   /** A new subscription; undefined (nothing written) when the name is taken. The table is the source of truth (issue #78). */
-  add(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription | undefined;
+  add(input: { name: string; url: string; events: string[]; active: boolean }): WebhookSubscription | undefined;
   /** Changes only the fields given; undefined when there is no such subscription. */
   update(id: string, patch: { url?: string; events?: string[]; active?: boolean }): WebhookSubscription | undefined;
+  /**
+   * Keeps the subscription's signing secret, already sealed (issue #451), with when it changed (default now),
+   * and stops reading its runtime variable; undefined when there is no such subscription.
+   */
+  setSecret(id: string, sealed: string, changedAt?: string): WebhookSubscription | undefined;
+  /** The subscription's sealed signing secret; undefined when none is stored. Never part of a subscription. */
+  sealedSecret(id: string): string | undefined;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */

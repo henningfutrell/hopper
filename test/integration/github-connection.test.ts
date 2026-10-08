@@ -19,7 +19,7 @@ afterEach(async () => {
 async function boot(gh: FakeGitHub) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins: { jobSources: [githubSource({ executor: 'scripted', defaultCwd: '/tmp' })] } });
+  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins: { jobSources: [githubSource({ executor: 'scripted' })] } });
   apps.push(a);
   connectGitHub(a, [REPO]);
   return a;

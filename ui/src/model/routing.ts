@@ -83,6 +83,8 @@ export function draftsProblem(drafts: readonly RuleDraft[]): string | undefined 
     if (!machine.trim() && !executor.trim() && !priority.trim() && !workTree.trim()) return `${label}: set a machine, an executor, a priority or a work tree`;
     const tree = workTree.trim();
     if (tree !== '' && !(tree.startsWith('/') || tree === '~' || tree.startsWith('~/'))) return `${label}: the work tree is an absolute path or starts with ~`;
+    // A path is one machine's (issue #361).
+    if (tree !== '' && !machine.trim()) return `${label}: a work tree is one machine's: pick the machine too`;
     if (priority.trim() !== '') {
       const p = Number(priority);
       if (!Number.isInteger(p) || p < 0 || p > 100) return `${label}: priority is a whole number 0..100`;

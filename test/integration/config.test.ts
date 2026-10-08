@@ -33,6 +33,11 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(loadConfig({ ...DB, HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key' }).leftoverEnv).toEqual({});
   });
 
+  it('HOPPER_TOKEN_KEY_PREVIOUS and its _FILE are read: the older keys that still open what they sealed (issue #451)', () => {
+    expect(loadConfig({ ...DB, HOPPER_TOKEN_KEY_PREVIOUS: 'k' }).leftoverEnv).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_TOKEN_KEY_PREVIOUS_FILE: '/run/hopper-secrets/token_key_previous' }).leftoverEnv).toEqual({});
+  });
+
   it('HOPPER_DB is no longer read: it is a leftover variable', () => {
     expect(loadConfig({ ...DB, HOPPER_DB: '/x.db' }).leftoverEnv).toEqual({ HOPPER_DB: '/x.db' });
   });

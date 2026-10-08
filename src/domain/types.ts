@@ -61,8 +61,8 @@ export interface JobSpec {
   routedBy?: RoutedBy;
 }
 
-/** What a job's source and routing rules give its spec (issue #375); `cwd`, `defaultCwd`, `model`: the payload's. */
-export interface SpecFromConfig { executor: string; model?: string; cwd?: string; defaultCwd?: string; machineId?: MachineId; rule?: string }
+/** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
+export interface SpecFromConfig { executor: string; model?: string; cwd?: string; machineId?: MachineId; rule?: string }
 
 export interface Job {
   id: JobId;
@@ -197,8 +197,10 @@ export interface MachineSnapshot {
   herdr?: { session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
-  /** Its default work tree (issue #324): a job's when the job names none of its own; `~` resolves on it. Absent: its source's or executor's. */
+  /** Its work tree (issues #324, #361): every job's there but one a routing rule pinned here with a path; `~` resolves on it. Absent: the jobs directory. */
   workTree?: string;
+  /** Why its work tree cannot be made usable, as its last probe found (issue #361): no job is routed to it. Absent: usable, or not probed yet. */
+  workTreeProblem?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
   /** A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
@@ -319,8 +321,13 @@ export interface WebhookSubscription {
   url: string;
   /** Event types to deliver; ['*'] = all. */
   events: string[];
-  /** The variable the runtime gives the HMAC-SHA256 key in (design.md "Secrets"): a name, never the secret. */
-  secretEnv: string;
+  /**
+   * Only a subscription from before issue #451 with no stored secret: the runtime variable that gives its
+   * HMAC-SHA256 key (design.md "Secrets"), a name, never the secret. Gone once a secret is stored.
+   */
+  secretEnv?: string;
+  /** When its stored signing secret last changed (issue #451); the secret itself is never part of a subscription. */
+  secretChangedAt?: string;
   active: boolean;
   createdAt: string;
 }

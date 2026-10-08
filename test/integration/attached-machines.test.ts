@@ -76,4 +76,30 @@ describe('attached machines', () => {
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.result).toEqual({ machine: 'local', ssh: null });
   });
+
+  // Issue #361: a machine whose work tree cannot be made takes no job. The job waits, held with why,
+  // never failed; the machines API says what is wrong; once a probe finds the work tree usable, it runs.
+  it('a machine whose work tree cannot be made: the job is held with why, then runs there once it can be', async () => {
+    const dbPath = configure(2);
+    writePlugins(dbPath, {
+      version: 1,
+      executors: [{ name: 'test', plugin: 'test' }, { name: 'where', plugin: 'where' }],
+      machines: [
+        { name: 'local', plugin: 'local', options: { executors: ['test'] } },
+        { name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 1, executors: ['where'], workTree: '/srv/owner-only' } },
+      ],
+    });
+    let problem: string | undefined = 'its work tree /srv/owner-only cannot be made: Permission denied';
+    const a = await startTestApp({ dbPath, seams: { machineProbe: () => Promise.resolve({ online: true, home: '/home/far', ...(problem ? { workTreeProblem: problem } : {}) }) } });
+    apps.push(a);
+    await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; workTreeProblem?: string }) => m.id === 'laptop' && m.workTreeProblem));
+    const job = await a.pull({}, { executor: 'where' });
+    await waitFor(async () => (await a.api('GET', `/api/jobs/${job.id}`)).body.holdReason?.includes('usable work tree'));
+    const held = (await a.api('GET', `/api/jobs/${job.id}`)).body;
+    expect(held.status).toBe('held');
+    expect(held.holdReason).toBe(`no machine running executor where has a usable work tree: laptop: ${problem}`);
+    problem = undefined;
+    const done = await a.waitForStatus(job.id, 'finished', 90000);
+    expect(done.result).toEqual({ machine: 'laptop', ssh: 'laptop' });
+  }, 120000);
 });

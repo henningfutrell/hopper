@@ -15,8 +15,6 @@ const SHARED_DEFAULTS = {
   hopperName: null,
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
-  repoPaths: {},
-  defaultCwd: '~/hopper-jobs',
   executor: 'herdr-claude',
   model: null,
   recentComments: 10,
@@ -30,16 +28,16 @@ const ok = (r: ReturnType<typeof parseOptions>) => {
 };
 
 describe('the GitHub sources\' shared options', () => {
-  it('the source config keeps ~ in defaultCwd and repoPaths for the job\'s machine to resolve (issue #323) and keeps a configured model', () => {
-    const o = ok(parseOptions(githubApp, {
-      ...AUTHORS, defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' }, model: 'claude-sonnet-5', enabled: false,
-    }));
-    const c = sourceConfig(o as never);
-    expect(c).toMatchObject({
-      defaultCwd: '~/work', repoPaths: { 'owner/sandbox': '~/code/sandbox', 'o/abs': '/srv/abs' },
-      model: 'claude-sonnet-5', enabled: false,
-    });
+  it('keeps a configured model', () => {
+    const c = sourceConfig(ok(parseOptions(githubApp, { ...AUTHORS, model: 'claude-sonnet-5', enabled: false })) as never);
+    expect(c).toMatchObject({ model: 'claude-sonnet-5', enabled: false });
     expect(sourceConfig(ok(parseOptions(githubApp, AUTHORS)) as never)).not.toHaveProperty('model');
+  });
+
+  // Issue #361: a path is one machine's; a source runs jobs on every machine, so it names none.
+  it.each(['repoPaths', 'defaultCwd'])('refuses %s: the work tree is the machine\'s', (key) => {
+    const r = parseOptions(githubApp, { ...AUTHORS, [key]: key === 'repoPaths' ? { 'o/r': '/srv/r' } : '/srv' });
+    expect(r.ok).toBe(false);
   });
 
   it('parses project priority config in both modes', () => {

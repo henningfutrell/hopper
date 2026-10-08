@@ -122,20 +122,21 @@ describe('editing a machine\'s name and details', () => {
   it('the Edit form starts from the instance: its name, and the details of its connection as set (empty when unset)', () => {
     expect(editDraft(desk)).toEqual({
       name: 'desk', lanes: '1', executors: ['test'], label: '', herdr: true,
-      details: { ssh: 'desk', session: '', hostKey: '' },
+      details: { ssh: 'desk', session: '', hostKey: '', workTree: '' },
     });
     expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { docker: 'box' } });
     // No herdr binary to name (issue #311): herdr is called by name there, from its PATH.
-    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey']);
+    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey', 'workTree']);
     // There is never an ssh config (issue #309): no hint names one.
     expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
     expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
-    expect(DETAILS.client).toEqual([]);
+    // A client target dials in: nothing of how it is reached to type, only its work tree (issue #361).
+    expect(DETAILS.client!.map((f) => f.key)).toEqual(['workTree']);
   });
 
   it('a new name is sent as rename, trimmed; the details as typed, trimmed; an emptied optional detail goes', () => {
     const d = editDraft(desk);
-    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', hostKey: '' } }, 'v1')).toEqual({
+    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', hostKey: '', workTree: '' } }, 'v1')).toEqual({
       action: 'options', role: 'machine-source', name: 'desk', rename: 'study', version: 'v1',
       options: { ssh: 'laptop', session: 'work', lanes: 1, executors: ['test'] },
     });

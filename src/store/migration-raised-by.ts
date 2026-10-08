@@ -1,4 +1,4 @@
-// Tenant migration 18 (issue #485): a question stored before the raising machine was recorded gets it where
+// Tenant migration 20 (issue #485): a question stored before the raising machine was recorded gets it where
 // it can be known — the lane of its `question.asked` event, else its job's `resumeOn`, else its job's machine
 // pin — with the name from the machines config while that machine is still in it (its `label` option, else
 // its instance name). A question with no source stays without one. Only `raisedBy` is added; a question that

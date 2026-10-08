@@ -1,8 +1,8 @@
-// The Webhooks view's model (issue #18): the events picker, the variable a new subscription's secret
-// is in (issue #56), and the last delivery a subscription card shows. Pure; tested from
+// The Webhooks view's model (issue #18): the events picker, the last delivery a subscription card
+// shows, and what it says about the signing secret (issue #451). Pure; tested from
 // test/ui/webhooks.test.ts.
 import { EVENT_TYPES } from './event-types.ts';
-import type { WebhookDelivery } from './wire.ts';
+import type { WebhookDelivery, WebhookView } from './wire.ts';
 
 /** What a subscription may name: "*" (every event) or event types. */
 export const EVENT_CHOICES: readonly string[] = ['*', ...EVENT_TYPES];
@@ -22,7 +22,19 @@ export function lastDelivery(deliveries: readonly WebhookDelivery[], subscriptio
   return last;
 }
 
-/** The WEBHOOK_SECRET_* variable suggested for a new subscription named `name`: the only kind a UI session may name. */
-export function secretEnvFor(name: string): string {
-  return `WEBHOOK_SECRET_${name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_')}`;
+/**
+ * A subscription's signing secret as its card shows it (issue #451): stored in the hopper (and when it
+ * changed), read from the runtime variable a subscription from before names, or none; with why it cannot
+ * sign, if so. Never the secret: the hopper answers none.
+ */
+export type SecretState =
+  | { kind: 'stored'; changedAt: string; problem?: string }
+  | { kind: 'runtime'; variable: string; problem?: string }
+  | { kind: 'none'; problem?: string };
+
+export function secretOf(sub: WebhookView): SecretState {
+  const problem = sub.secretProblem !== undefined ? { problem: sub.secretProblem } : {};
+  if (sub.secretChangedAt !== undefined) return { kind: 'stored', changedAt: sub.secretChangedAt, ...problem };
+  if (sub.secretEnv !== undefined) return { kind: 'runtime', variable: sub.secretEnv, ...problem };
+  return { kind: 'none', ...problem };
 }

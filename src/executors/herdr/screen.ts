@@ -13,12 +13,12 @@ export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, 
 
 /**
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
- * its work tree (then its own git worktree of it, when it has one: issue #379), the protocol. The job rules
- * are editable; the work tree and the protocol are not.
+ * its work tree (then its own git worktree of it, or of `checkout`, its repository's checkout in it, when it
+ * has one: issues #379, #361), the protocol. The job rules are editable; the work tree and the protocol are not.
  */
-export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string, sharedDependencies = false): string {
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string, sharedDependencies = false, checkout?: string): string {
   const rules = jobRules.trim();
-  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, cwd, sharedDependencies)] : []), ...PROTOCOL_LINES].join('\n');
+  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, checkout ?? cwd, sharedDependencies)] : []), ...PROTOCOL_LINES].join('\n');
 }
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */

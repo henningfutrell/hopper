@@ -10,7 +10,7 @@
 // UI edits (edit.ts, attached-edit.ts) replace the plugins config in the store and apply like any other change.
 import type { MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type InstanceStatus, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type InstanceStatus, type MachineSnapshot, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
 import { withMachineNote as withNote } from '../domain/machine-pick.ts';
 import { createMachinesEditor } from './attached-slot.ts';
@@ -185,9 +185,9 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     });
   }
 
-  const liveMachines: MachineSource = {
-    list: async () => (await Promise.all((machines.built ?? []).map((b) => b.instance?.list() ?? []))).flat(),
-  };
+  /** The machines as last listed (the engine lists them every tick): whether a level's machine is online, for Settings (issue #482). */
+  let lastListed: MachineSnapshot[] | undefined;
+  const liveMachines: MachineSource = { list: async () => (lastListed = (await Promise.all((machines.built ?? []).map((b) => b.instance?.list() ?? []))).flat()) };
   /** The attached machines the configured instances name, those whose options are valid. */
   const targets = (): AttachedMachine[] => (configured?.machines ?? []).flatMap((spec) => {
     try { return targetOf(spec) ?? []; } catch { return []; }
@@ -218,8 +218,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   }
 
   const fileVersion = (): string => o.config.version(PLUGINS);
-  /** A part that runs claude and names no machine (issue #442): which machine it runs on, or that it needs one, in plain words. */
-  const withMachineNote = (st: InstanceStatus): InstanceStatus => withNote(st, configured?.machines ?? [], configured?.escalationMachine);
+  /** A part that runs claude (issues #442, #482): which machine it runs on, that it needs one, or that its machine cannot run it now, in plain words. */
+  const withMachineNote = (st: InstanceStatus): InstanceStatus => withNote(st, configured?.machines ?? [], configured?.escalationMachine, lastListed);
 
   const instances = (): ConfiguredInstance[] => (configured ? configuredInstances(configured, need().current().spec) : []);
 

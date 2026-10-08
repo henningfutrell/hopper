@@ -1,102 +1,129 @@
-// Tenant migration 18 (issue #485): a question stored before the raising machine was recorded gets it
-// where it can be known — the lane of its `question.asked` event, else its job's `resumeOn`, else its
-// job's machine pin — and the name from the machines config while that machine is still in it. A
-// question with no source stays without one (the UI says "machine unknown"). Only the field is added;
-// nothing else in the body changes, a snapshot already there is kept, and a second run changes nothing.
+// Tenant migration 18 (issue #361): a work tree is set per machine. The paths that named no machine — a
+// job source's `defaultCwd` and `repoPaths`, an executor's `cwd`, a routing rule's `workTree` without a
+// machine — leave the plugins config: the one jobs fell back to becomes the work tree of each machine
+// that has none; a repository's own path becomes a routing rule on the one machine there is. Waiting
+// jobs keep only a work tree a rule pinned to its machine.
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../../src/store/db.ts';
-import { raisedByBackfill } from '../../src/store/migration-raised-by.ts';
 import { migrateTenant } from '../../src/store/tenant-migrations.ts';
 import { useTempStore } from './helpers.ts';
 
 const t = useTempStore();
 
-const PLUGINS = {
-  version: 1,
-  machines: [
-    { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', label: 'Desk tower' } },
-    { name: 'here', plugin: 'local', options: { lanes: 2 } },
-  ],
-};
-
-function job(raw: Db, id: string, extra: Record<string, unknown> = {}, pin?: string): void {
-  const body = { id, status: 'finished', spec: { executor: 'test', payload: {}, ...(pin ? { machineId: pin } : {}) }, ...extra };
-  raw.run('INSERT INTO jobs (id, status, created_at, body) VALUES (?, ?, ?, ?)', id, 'finished', '2026-10-01T00:00:00.000Z', JSON.stringify(body));
-}
-
-function question(raw: Db, id: string, jobId: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  const body = {
-    id, jobId, text: `q ${id}`, recentOutput: 'line', detectedBy: 'marker', status: 'answered', tier: 'human',
-    attempts: [{ tier: 'human', role: 'human', startedAt: 'x', answer: 'a', outcome: 'accepted' }], answer: 'a', notifyCount: 0,
-    createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z', ...extra,
-  };
-  raw.run('INSERT INTO questions (id, job_id, status, created_at, body) VALUES (?, ?, ?, ?, ?)', id, jobId, 'answered', body.createdAt, JSON.stringify(body));
-  return body;
-}
-
-function asked(raw: Db, questionId: string, jobId: string, laneId: string | null): void {
-  raw.run(
-    'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, data, question_id, schema_version) VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, 1)',
-    `e-${questionId}`, 'question.asked', '2026-10-01T00:00:00.000Z', jobId, laneId, JSON.stringify({ questionId, text: 'x', detectedBy: 'marker' }), questionId,
-  );
-}
-
-const body = (raw: Db, id: string) => JSON.parse(String(raw.get('SELECT body FROM questions WHERE id = ?', id)!.body)) as Record<string, unknown>;
-
-function seeded(): { raw: Db; before: Record<string, Record<string, unknown>> } {
+function at17(plugins?: unknown): Db {
   const raw = t.tenantAt(t.url(), 17);
-  raw.run("INSERT INTO config (name, value, updated_at) VALUES ('plugins', ?, 'x')", JSON.stringify(PLUGINS));
-  const before: Record<string, Record<string, unknown>> = {};
-  // The asking lane wins over the job's resumeOn and pin.
-  job(raw, 'j1', { resumeOn: 'here' }, 'here');
-  before.q1 = question(raw, 'q1', 'j1');
-  asked(raw, 'q1', 'j1', 'desk/lane-2');
-  // No lane on the event: the job's resumeOn, a machine no longer configured (no name).
-  job(raw, 'j2', { resumeOn: 'gone' }, 'desk');
-  before.q2 = question(raw, 'q2', 'j2');
-  asked(raw, 'q2', 'j2', null);
-  // No event, no resumeOn: the pin; a local machine's name is its label option, else its instance name.
-  job(raw, 'j3', {}, 'here');
-  before.q3 = question(raw, 'q3', 'j3');
-  // Nothing to go on.
-  job(raw, 'j4');
-  before.q4 = question(raw, 'q4', 'j4');
-  // Its job is gone too.
-  before.q5 = question(raw, 'q5', 'missing');
-  // Already recorded: kept as it is.
-  job(raw, 'j6', { resumeOn: 'here' });
-  before.q6 = question(raw, 'q6', 'j6', { raisedBy: { machineId: 'old', name: 'Old box', laneId: 'old/lane-1' } });
-  return { raw, before };
+  if (plugins !== undefined) raw.run("INSERT INTO config (name, value, updated_at) VALUES ('plugins', ?, 'x')", JSON.stringify(plugins));
+  return raw;
 }
 
-describe('tenant migration 18: the raising machine is filled where it can be known', () => {
-  it('the asked lane, then resumeOn, then the pin; the name from the machines config; nothing else changes', () => {
-    const { raw, before } = seeded();
+const plugins = (raw: Db) => JSON.parse(String(raw.get("SELECT value FROM config WHERE name = 'plugins'")!.value)) as Record<string, unknown>;
+
+describe('tenant migration 18: work trees are per machine', () => {
+  it('the source default becomes the work tree of each machine without one; the unscoped paths go', () => {
+    const raw = at17({
+      version: 1,
+      machines: [
+        { name: 'archbox', plugin: 'ssh', options: { ssh: 'me@host', lanes: 6 } },
+        { name: 'kept', plugin: 'local', options: { lanes: 2, workTree: '~/own' } },
+        { name: 'box', plugin: 'docker', options: { docker: 'c' } },
+      ],
+      executors: [
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '/home/owner/exec', trustWorkdir: true } },
+        { name: 'cursor', plugin: 'cursor-agent', options: { cwd: '~/cursor', args: [] } },
+        { name: 'cmd', plugin: 'command', options: { cwd: '~/cmd' } },
+      ],
+      jobSources: [
+        { name: 'github', plugin: 'github-account', options: { defaultCwd: '/home/owner/work', repoPaths: { 'o/work': '/home/owner/work' } } },
+        { name: 'gh', plugin: 'github-account', options: { defaultCwd: '/home/owner/other' } },
+      ],
+    });
     migrateTenant(raw, 18);
-    expect(body(raw, 'q1')).toEqual({ ...before.q1, raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-2' } });
-    expect(body(raw, 'q2')).toEqual({ ...before.q2, raisedBy: { machineId: 'gone' } });
-    expect(body(raw, 'q3')).toEqual({ ...before.q3, raisedBy: { machineId: 'here', name: 'here' } });
-    expect(body(raw, 'q4')).toEqual(before.q4);
-    expect(body(raw, 'q5')).toEqual(before.q5);
-    expect(body(raw, 'q6')).toEqual(before.q6);
+    expect(plugins(raw)).toEqual({
+      version: 1,
+      machines: [
+        { name: 'archbox', plugin: 'ssh', options: { ssh: 'me@host', lanes: 6, workTree: '/home/owner/work' } },
+        { name: 'kept', plugin: 'local', options: { lanes: 2, workTree: '~/own' } },
+        { name: 'box', plugin: 'docker', options: { docker: 'c' } },
+      ],
+      executors: [
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { trustWorkdir: true } },
+        { name: 'cursor', plugin: 'cursor-agent', options: { args: [] } },
+        { name: 'cmd', plugin: 'command', options: { cwd: '~/cmd' } },
+      ],
+      jobSources: [
+        { name: 'github', plugin: 'github-account', options: {} },
+        { name: 'gh', plugin: 'github-account', options: {} },
+      ],
+    });
     raw.close();
   });
 
-  it('a second run changes nothing', () => {
-    const { raw } = seeded();
+  it('no source default: the executor\'s; the jobs directory itself is no work tree to set', () => {
+    const raw = at17({
+      machines: [{ name: 'm', plugin: 'ssh', options: { ssh: 'h' } }, { name: 'n', plugin: 'client', options: { client: { key: 'k' } } }],
+      executors: [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '~/exec' } }],
+    });
     migrateTenant(raw, 18);
-    const once = raw.all('SELECT id, body FROM questions ORDER BY id');
-    raisedByBackfill(raw);
-    expect(raw.all('SELECT id, body FROM questions ORDER BY id')).toEqual(once);
+    expect(plugins(raw).machines).toEqual([
+      { name: 'm', plugin: 'ssh', options: { ssh: 'h', workTree: '~/exec' } },
+      { name: 'n', plugin: 'client', options: { client: { key: 'k' }, workTree: '~/exec' } },
+    ]);
+    const jobsDir = at17({ machines: [{ name: 'm', plugin: 'ssh', options: { ssh: 'h' } }], jobSources: [{ name: 'g', plugin: 'github-account', options: { defaultCwd: '~/hopper-jobs' } }] });
+    migrateTenant(jobsDir, 18);
+    expect(plugins(jobsDir)).toEqual({ machines: [{ name: 'm', plugin: 'ssh', options: { ssh: 'h' } }], jobSources: [{ name: 'g', plugin: 'github-account', options: {} }] });
+    raw.close();
+    jobsDir.close();
+  });
+
+  it('a repository\'s own path elsewhere: a routing rule pinning it to the one machine there is, after the rules there are', () => {
+    const raw = at17({
+      machines: [{ name: 'm', plugin: 'ssh', options: { ssh: 'h' } }],
+      jobSources: [{ name: 'g', plugin: 'github-account', options: { defaultCwd: '/w', repoPaths: { 'o/app': '/code/app', 'o/w': '/w' } } }],
+      routing: [{ name: 'first', match: { label: 'x' }, set: { priority: 90 } }],
+    });
+    migrateTenant(raw, 18);
+    expect(plugins(raw).routing).toEqual([
+      { name: 'first', match: { label: 'x' }, set: { priority: 90 } },
+      { name: 'g o/app', match: { source: 'g', repo: 'o/app' }, set: { machine: 'm', workTree: '/code/app' } },
+    ]);
     raw.close();
   });
 
-  it('no plugins config: machines get no name, the id is still filled', () => {
-    const raw = t.tenantAt(t.url(), 17);
-    job(raw, 'j1', { resumeOn: 'desk' });
-    const q = question(raw, 'q1', 'j1');
+  it('a routing rule\'s work tree without a machine: pinned to the one machine there is; with several, the work tree goes', () => {
+    const one = at17({ machines: [{ name: 'm', plugin: 'local', options: {} }], routing: [{ name: 'r', match: { repo: 'o/a' }, set: { workTree: '~/a' } }] });
+    migrateTenant(one, 18);
+    expect(plugins(one).routing).toEqual([{ name: 'r', match: { repo: 'o/a' }, set: { workTree: '~/a', machine: 'm' } }]);
+    const two = at17({
+      machines: [{ name: 'm', plugin: 'local', options: {} }, { name: 'n', plugin: 'ssh', options: { ssh: 'h' } }],
+      routing: [{ name: 'r', match: { repo: 'o/a' }, set: { workTree: '~/a', priority: 80 } }, { name: 'only', match: {}, set: { workTree: '~/b' } }, { name: 'kept', match: {}, set: { machine: 'n', workTree: '~/c' } }],
+    });
+    migrateTenant(two, 18);
+    expect(plugins(two).routing).toEqual([{ name: 'r', match: { repo: 'o/a' }, set: { priority: 80 } }, { name: 'kept', match: {}, set: { machine: 'n', workTree: '~/c' } }]);
+    one.close();
+    two.close();
+  });
+
+  it('a job keeps only a work tree a rule pinned to its machine; a source default leaves every job', () => {
+    const raw = at17();
+    const spec = (payload: Record<string, unknown>, more: Record<string, unknown> = {}) => ({ executor: 'herdr-claude', payload: { prompt: 'p', ...payload }, ...more });
+    const jobs = {
+      plain: spec({ cwd: '/home/owner/work', defaultCwd: '/home/owner/work' }),
+      ruled: spec({ cwd: '~/a', defaultCwd: '/w' }, { machineId: 'm', routedBy: { rule: 'r', set: { machine: 'm', workTree: '~/a' } } }),
+    };
+    for (const [id, s] of Object.entries(jobs)) {
+      raw.run("INSERT INTO jobs (id, status, created_at, body) VALUES (?, 'queued', 'x', ?)", id, JSON.stringify({ id, status: 'queued', spec: s }));
+    }
     migrateTenant(raw, 18);
-    expect(body(raw, 'q1')).toEqual({ ...q, raisedBy: { machineId: 'desk' } });
+    const body = (id: string) => JSON.parse(String(raw.get('SELECT body FROM jobs WHERE id = ?', id)!.body)) as { spec: { payload: Record<string, unknown> } };
+    expect(body('plain').spec.payload).toEqual({ prompt: 'p' });
+    expect(body('ruled').spec.payload).toEqual({ prompt: 'p', cwd: '~/a' });
     raw.close();
+  });
+
+  it('a user with no plugins config: nothing changes', () => {
+    const none = at17();
+    migrateTenant(none, 18);
+    expect(none.get("SELECT value FROM config WHERE name = 'plugins'")).toBeUndefined();
+    none.close();
   });
 });
