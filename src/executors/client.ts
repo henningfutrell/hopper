@@ -3,7 +3,7 @@
 // link (src/machines/links.ts), and the client serves HTTP/2 on it. A herdr call is `POST /herdr` on that
 // HTTP/2 session, signed with the client token (src/client/signature.ts); an answer the client did not
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
-// release.ts, issue #70). One session per link: a client that dials in again is a new link.
+// release.ts, issue #70); `POST /reap` and `POST /survey` its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
@@ -57,6 +57,11 @@ export async function clientRunningRelease(t: ClientTransport): Promise<{ releas
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
   const read = d && typeof d.freeBytes === 'number' && typeof d.totalBytes === 'number' ? { disk: diskOf(d.freeBytes, d.totalBytes) } : {};
   return { release, ...(typeof home === 'string' && home.startsWith('/') ? { home } : {}), ...read };
+}
+
+/** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey', body: Record<string, unknown>): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, path, body, 60000);
 }
 
 /** Loads a client release onto the client target; it restarts to run it. */

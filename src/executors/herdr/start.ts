@@ -7,6 +7,8 @@ import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { JOB_WORKTREE_MARK, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
+import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
+import { scopeUnitOf } from '../../client/server.ts';
 import { SCRATCH_DIR, isBypassDialog, isTrustDialog } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
@@ -61,6 +63,8 @@ export interface PaneState {
   cwd: string;
   /** The job's own git worktree of `cwd`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
   jobWorktree?: string;
+  /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
+  scope?: string;
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
@@ -191,6 +195,31 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
 }
 
 /**
+ * Move the pane's shell into the job's own systemd user scope (issue #410, job-scope.ts), when the machine
+ * has a user manager: everything the job starts is then in it, and the reap stops it. The shell is replaced
+ * by a new one, which drops what is typed before its prompt, so the check runs again until it answers.
+ * A machine without systemd, or a shell that did not land in the scope, goes on without one. Null when
+ * done, else the failure (the shell never answered: the pane is gone or hung).
+ */
+async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+  await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id));
+  for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
+    if (ctx.signal.aborted) return null;
+    if (await d.herdr.waitOutput(s.paneId, SCOPE_MARK, SCRATCH_WAIT_MS)) {
+      const outcome = scopeOutcome(await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 }));
+      if (outcome === 'entered') {
+        s.scope = scopeUnitOf(ctx.job.id);
+        ctx.saveState({ ...s });
+        return null;
+      }
+      if (outcome) return null;
+    }
+    await d.herdr.runInPane(s.paneId, scopeCheckCommand(ctx.job.id));
+  }
+  return { kind: 'failed', error: `pane ${s.paneId} never answered where its shell runs within ${START_TIMEOUT_MS} ms` };
+}
+
+/**
  * Make the job its own git worktree of the work tree, when that is the top of a git repository, and move
  * the pane's shell into it (issue #379): `s` then names it, saved, and it is reported as the job's work
  * tree. A work tree that is no repository's top is used as it is. Git refusing fails the job with what
@@ -221,6 +250,8 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
 export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
+  const unscoped = await enterScope(d, ctx, s);
+  if (unscoped || ctx.signal.aborted) return unscoped;
   if (d.jobWorktrees) {
     const unentered = await enterJobWorktree(d, ctx, s);
     if (unentered || ctx.signal.aborted) return unentered;

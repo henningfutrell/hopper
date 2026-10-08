@@ -2,6 +2,7 @@
 // engine's integration tests). Each prompt plays the next scripted turn: while working it
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
+import type { Survey } from '../../domain/ports.ts';
 import { HerdrError } from './client.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
@@ -39,6 +40,12 @@ export interface FakeHerdrOptions {
   shellDropsRuns?: number;
   /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
   reapKeeps?: string[];
+  /** The machine cannot be reached for the reap or the survey (issue #410): both reject. */
+  machineUnreachable?: boolean;
+  /** What the survey finds on the machine (issue #410). Default nothing. */
+  survey?: Survey;
+  /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
+  scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
   ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
@@ -83,6 +90,8 @@ interface Pane {
   input?: string;
   /** Lines at the end of `lines` that are the dialog on screen (FakeTurn.dialog), removed when it closes. */
   dialogLines?: number;
+  /** The shell runs in the job's scope (issue #410). */
+  scoped?: boolean;
 }
 
 export interface FakeHerdrClient extends HerdrClient {
@@ -92,6 +101,8 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly texts: { paneId: string; text: string }[];
   readonly closed: string[];
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
+  /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
+  readonly reaps: { jobId: string; scratch?: string }[];
   addTurns(...turns: FakeTurn[]): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */
   dropPrompts(n: number): void;
@@ -198,7 +209,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [],
     addTurns: (...more) => { turns.push(...more); },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
@@ -318,9 +329,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
-      // The reap at job end (reap.ts): what it kept, then its last line.
-      if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
-        p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
+      // The job's scope (issue #410, job-scope.ts): with systemd the shell is replaced by one in the scope and
+      // prints nothing; without, it says none. Asked where it runs, it says whether that is the scope.
+      if (command.includes('exec systemd-run --user --scope')) {
+        if (o.scopes) { p.lines.push(`$ ${command}`, '$ '); p.scoped = true; } else p.lines.push(`$ ${command}`, 'hopper-scope-none', '$ ');
+        return;
+      }
+      if (command.startsWith('case "$(cat /proc/self/cgroup')) {
+        p.lines.push(`$ ${command}`, `hopper-scope-${p.scoped ? 'entered' : 'outside'}`, '$ ');
         return;
       }
       // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
@@ -347,6 +363,18 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('waitOutput', paneId, text, timeoutMs);
       livePane(paneId);
       return fake.screen(paneId).includes(text);
+    },
+    async reap(jobId, scratch) {
+      record('reap', jobId, scratch);
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}) });
+      return { kept: [...(o.reapKeeps ?? [])] };
+    },
+    async survey(roots) {
+      record('survey', roots);
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      const s = o.survey ?? { scopes: [], processes: [], scratch: [] };
+      return { scopes: [...s.scopes], processes: [...s.processes], scratch: s.scratch.filter((d) => roots.some((r) => d.path.startsWith(`${r}/`))) };
     },
     async closePane(paneId) {
       record('closePane', paneId);

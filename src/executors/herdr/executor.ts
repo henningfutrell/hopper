@@ -9,23 +9,19 @@ import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
-import { readReap, reapCommand, REAP_DONE } from './reap.ts';
 import { jobScratchOf, openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
 const UNBLOCK_POLLS = 10;
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
 const MAX_SENDS = 3;
-/** How long Claude has to exit before its pane closes; the reap is never typed into a Claude still up. */
+/** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
 const EXIT_WAIT_MS = 5000;
 /**
  * How early a dialog may count as lapsed (issue #376): its countdown is read when the job parks, in whole
  * seconds and up to a poll after the dialog showed, so Claude Code's own deadline can come a little sooner.
  */
 const LAPSE_SLACK_MS = 5000;
-/** Tries at the reap, each waited on this long: a shell can drop what is typed, and stopping processes takes seconds. */
-const REAP_TRIES = 3;
-const REAP_WAIT_MS = 10000;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -134,23 +130,16 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   /**
-   * The reap (issue #401, reap.ts) in the pane's shell, once Claude has exited: the job's processes
-   * stopped, its scratch dir removed unless it holds work not pushed. Undefined when Claude never exited
-   * (the reap is never typed into it) or the shell never finished it.
+   * The reap (issues #401, #410): Claude gets a moment to exit by itself, then the job's machine — through
+   * its own connection, never the pane — stops the job's scope and its processes, Claude among them if it
+   * is still up, and removes its scratch dir unless it holds work not pushed. Undefined when the machine
+   * could not be reached: the sweep reaps it later.
    */
   async function reap(herdr: HerdrClient, pane: HeldPane): Promise<Reaped | undefined> {
-    for (let waited = 0; await herdr.getAgent(pane.agentName) !== null; waited += o.pollMs) {
-      if (waited >= EXIT_WAIT_MS) return undefined;
+    for (let waited = 0; waited < EXIT_WAIT_MS && await herdr.getAgent(pane.agentName).catch(() => null) !== null; waited += o.pollMs) {
       await sleep(o.pollMs, new AbortController().signal);
     }
-    const command = reapCommand(pane.jobId, jobScratchOf(pane.cwd, pane.jobId));
-    for (let i = 0; i < REAP_TRIES; i++) {
-      await herdr.runInPane(pane.paneId, command);
-      if (!await herdr.waitOutput(pane.paneId, REAP_DONE, REAP_WAIT_MS)) continue;
-      const said = readReap(await herdr.read(pane.paneId, { source: 'recent-unwrapped', lines: 200 }));
-      if (said) return { kept: [...new Set(said.kept)] };
-    }
-    return undefined;
+    return herdr.reap(pane.jobId, jobScratchOf(pane.cwd, pane.jobId));
   }
 
   /** esc, ctrl+c twice, the reap, close. Swallows every error: the pane may already be gone. */
@@ -373,6 +362,14 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const said = reaped.get(job.id);
       reaped.delete(job.id);
       return said;
+    },
+
+    machineShell(machine) {
+      try {
+        return herdrOn(whereOn(machine));
+      } catch {
+        return undefined;
+      }
     },
   };
 }

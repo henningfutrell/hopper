@@ -116,10 +116,37 @@ export interface Executor {
    * Answers what the reap kept, when it ran. Must not throw; idempotent.
    */
   cleanup?(job: Job): Promise<Reaped | void>;
+  /**
+   * The machine as this executor reaches it, for the sweep (issue #410); undefined when it cannot reach
+   * that machine. Absent → the sweep reaches no machine through it.
+   */
+  machineShell?(machine: MachineSnapshot): MachineShell | undefined;
 }
 
 /** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
 export interface Reaped { kept: string[] }
+
+/** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
+export interface Survey {
+  /** Jobs with a running scope (`hopper-job-<id>.scope`). */
+  scopes: string[];
+  /** Jobs with a process carrying their HOPPER_JOB_ID. */
+  processes: string[];
+  /** Each `<work tree>/.hopper-scratch/<job id>` under the work trees asked about. */
+  scratch: { jobId: string; path: string; ageMs: number }[];
+}
+
+/**
+ * A machine as the reap and the sweep reach it (issue #410): the fixed scripts run there through its own
+ * connection — this machine, ssh, or a client target's `/reap` and `/survey` — never in a pane. Each
+ * rejects when the machine cannot be reached or the script did not finish.
+ */
+export interface MachineShell {
+  /** Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not pushed. */
+  reap(jobId: string, scratch?: string): Promise<Reaped>;
+  /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
+  survey(roots: string[]): Promise<Survey>;
+}
 
 // ---- Inputs the decider is made over ---------------------------------------------------
 
