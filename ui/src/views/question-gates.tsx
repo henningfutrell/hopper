@@ -9,11 +9,11 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Empty, Panel } from '@/components/panel';
-import { AddInstance, InstanceForm, pluginEditsUnsaved } from '@/components/plugin-form';
+import { AddInstance, InstanceForm, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
-import { DRAFT_KEY, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
-import type { QuestionGatesView, RulesView } from '@/model/wire';
+import { DRAFT_KEY, escalationMachineChoices, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
+import type { PluginsReport, QuestionGatesView, RulesView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -94,6 +94,35 @@ function RulesEditorPanel({ server, onSaved }: { server: RulesView; onSaved: (v:
   );
 }
 
+const SELECT = 'h-8 rounded-lg border border-input bg-transparent px-2 text-base md:text-sm dark:bg-input/30';
+
+/**
+ * The default escalation machine (issue #442): where a level that names no machine runs when the job's
+ * machine cannot run claude and several machines can.
+ */
+function EscalationMachine({ report }: { report: PluginsReport }) {
+  const authed = useCanAdmin();
+  const [busy, setBusy] = useState(false);
+  const choices = escalationMachineChoices(report);
+  const current = report.escalationMachine ?? '';
+  const set = async (machine: string) => {
+    setBusy(true);
+    await sendPluginsEdit({ action: 'escalation-machine', machine: machine || null, version: report.config.version }, machine ? `Default escalation machine: ${machine}` : 'No default escalation machine');
+    setBusy(false);
+  };
+  return (
+    <div data-slot="escalation-machine" className="flex flex-wrap items-center gap-2 text-xs">
+      <label htmlFor="escalation-machine" className="text-muted-foreground">Default escalation machine</label>
+      <select id="escalation-machine" className={SELECT} value={current} disabled={!authed || busy} onChange={(e) => void set(e.target.value)}>
+        <option value="">none</option>
+        {choices.map((m) => <option key={m} value={m}>{m}</option>)}
+        {current && !choices.includes(current) && <option value={current}>{current}</option>}
+      </select>
+      <span className="text-muted-foreground">for a level that names no machine, when the job's machine cannot run claude and several machines can</span>
+    </div>
+  );
+}
+
 export function QuestionGates() {
   const report = useHopper((s) => s.plugins);
   const pluginsError = useHopper((s) => s.pluginsError);
@@ -120,6 +149,7 @@ export function QuestionGates() {
           {report && (
             <Stage n={1} title="Escalation levels" what="lowest first: each answers the question or escalates it to the next; one that fails or cannot run escalates">
               <AddInstance role="escalation-level" />
+              <EscalationMachine report={report} />
               {levels.length
                 ? levels.map((inst) => <InstanceForm key={inst.name} role="escalation-level" inst={inst} />)
                 : <div className="text-xs text-muted-foreground">none — questions go straight to the owner</div>}

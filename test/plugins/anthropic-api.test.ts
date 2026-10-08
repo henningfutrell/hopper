@@ -58,7 +58,7 @@ function opts(raw: Record<string, unknown>): never {
 const env = (vars: Record<string, string>) => (n: string): string | undefined => vars[n];
 const level = (raw: Record<string, unknown> = {}, vars: Record<string, string> = { ANTHROPIC_API_KEY: 'test-key' }) => anthropicApi.create({
   clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: '/nonexistent', userEnv: {}, secretName: (n: string) => n, scratchDir: '/nonexistent', instanceName: 'api',
-  env: env(vars), machine: async () => undefined,
+  env: env(vars), machine: async () => undefined, machines: async () => [], escalationMachine: () => undefined,
 }, opts({ baseUrl: url, timeoutMs: 5000, ...raw }));
 
 describe('anthropic-api (escalation level)', () => {

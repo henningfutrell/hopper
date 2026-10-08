@@ -197,7 +197,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         return id === undefined ? undefined : instance.users.get(id);
       },
     },
-    port: () => port, sessionHours: config.uiSessionHours, signIn, signInEnvironment,
+    port: () => port, signIn, signInEnvironment,
     lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });

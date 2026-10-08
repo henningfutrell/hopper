@@ -14,7 +14,15 @@ const GH = { type: 'github' };
 
 describe('loadSignInConfig', () => {
   it('no config: local sign-in only', () => {
-    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [] });
+    expect(load(undefined)).toEqual({ local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [], sessions: { idleHours: 168, maxHours: 720 } });
+  });
+
+  it('session lengths (issue #439): 7 days idle and 30 days at most unless set; idle never past the maximum', () => {
+    expect(load({ version: 1 }).sessions).toEqual({ idleHours: 168, maxHours: 720 });
+    expect(load({ version: 1, sessions: { idleHours: 8, maxHours: 24 } }).sessions).toEqual({ idleHours: 8, maxHours: 24 });
+    expect(() => load({ version: 1, sessions: { idleHours: 48, maxHours: 24 } })).toThrow(/sessions\.idleHours: must not be longer than maxHours/);
+    expect(() => load({ version: 1, sessions: { idleHours: 0, maxHours: 24 } })).toThrow(/sessions\.idleHours/);
+    expect(() => load({ version: 1, sessions: { idleHours: 1, maxHours: 9000 } })).toThrow(/sessions\.maxHours/);
   });
 
   it('the super admins: the first GitHub admin until the record names them (issue #242)', () => {

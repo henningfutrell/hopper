@@ -52,7 +52,7 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
   octo.connectedAccounts.put({ provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
   octo.close();
 
-  instance.uiSessions.create({ tokenHash: 'octo-session', expiresAt: FUTURE, role: 'admin', identity, userId: 'octo' });
+  instance.uiSessions.create({ tokenHash: 'octo-session', startedAt: NOW, lastSeenAt: NOW, checkedAt: NOW, role: 'admin', identity, userId: 'octo' });
   instance.loginCodes.create('admin-code', FUTURE, 'admin');
   if (o.recordAdmin !== false) {
     const store = instance.signInConfig;
@@ -71,7 +71,7 @@ describe('the leftover default admin account is folded into the first GitHub adm
     // Sign-ins, sessions and login codes of either are the real user's.
     expect(instance.identities.userOf('github', '42')).toBe('octo');
     expect(instance.identities.userOf('none', 'anonymous')).toBe('octo');
-    expect(instance.uiSessions.find('octo-session', NOW)?.userId).toBe('octo');
+    expect(instance.uiSessions.get('octo-session')?.userId).toBe('octo');
     expect(instance.loginCodes.live('admin-code', NOW)).toBe('octo');
 
     const store = instance.userStore(instance.users.get('octo')!);

@@ -4,8 +4,9 @@
 // events costs one round of requests.
 import { toast } from 'sonner';
 import { create } from 'zustand';
-import { get, post, SessionRejected, clearToken, readSession } from '@/lib/api';
-import { signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
+import { get, onSessionEnded, post, SessionRejected, clearToken, readSession } from '@/lib/api';
+import { beginSignIn, signInThroughGateway, signInWithoutCredential, wantsGatewaySignIn, wantsNoSignIn } from '@/lib/login';
+import { reauthFor, rememberReturn, takeReturn } from '@/lib/reauth';
 import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { reloadNeeded } from '@/model/update';
@@ -159,8 +160,46 @@ export async function checkSession() {
     if (wantsGatewaySignIn(s.authenticated, s.signIn) && (await signInThroughGateway()) === null) s = await readSession();
     if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
     set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
+    // Signed in again after a session ended (issue #439): back to the page the person was on.
+    const back = s.authenticated ? takeReturn() : null;
+    if (back && (location.hash === '' || location.hash === '#')) location.hash = back;
   } catch { /* daemon unreachable: the landing page says so */ }
   set({ sessionRead: true });
+}
+
+let ending = false;
+/**
+ * The daemon says the session is over (issue #439): its idle timeout or maximum passed, its realm changed, or
+ * the gateway's token no longer checks out. Straight to sign-in with the realm it was made with, keeping the
+ * page to come back to; never a page whose calls fail one by one.
+ */
+export async function sessionEnded(): Promise<void> {
+  if (ending) return;
+  ending = true;
+  const realm = state().user?.realm ?? null;
+  rememberReturn(location.hash);
+  set({ authed: false, user: null });
+  try {
+    const offer = (await readSession()).signIn;
+    set({ signIn: offer });
+    const next = reauthFor(realm, offer);
+    if (next.kind === 'redirect') { beginSignIn(next.realm, offer.origin); return; }
+    if (next.kind === 'gateway') { location.reload(); return; }
+  } catch { /* daemon unreachable: the landing page says so */ }
+  ending = false;
+}
+onSessionEnded(() => { void sessionEnded(); });
+
+/** How often an open page asks whether its session still lives, so one that ended is noticed without a failing call. */
+export const SESSION_CHECK_MS = 60_000;
+/** Ask now: a session that ended while the page was open goes to sign-in. */
+export async function recheckSession(): Promise<void> {
+  if (!state().authed || ending) return;
+  try {
+    const s = await readSession();
+    if (!s.authenticated) await sessionEnded();
+    else set({ user: s.user ?? null });
+  } catch { /* daemon unreachable: the stream says so */ }
 }
 
 /** A UI mutation. Failures toast; a rejected session drops to the landing page. Resolves true on success. */

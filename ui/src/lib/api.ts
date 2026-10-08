@@ -9,6 +9,11 @@ export const readToken = (): string | null => { try { return localStorage.getIte
 export const clearToken = (): void => { try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked: stay logged out */ } };
 
 export class SessionRejected extends Error {}
+
+/** What the store does when the daemon says the stored session is over (issue #439): sign in again. */
+let sessionEnded: () => void = () => {};
+export const onSessionEnded = (fn: () => void): void => { sessionEnded = fn; };
+const rejected = (why: string): SessionRejected => { clearToken(); sessionEnded(); return new SessionRejected(why); };
 /** A live session whose role is short of what the mutation needs: the session stays. */
 export class RoleRefused extends Error {}
 
@@ -16,6 +21,8 @@ export async function get<T>(path: string): Promise<T> {
   const token = readToken();
   const res = await fetch(path, token ? { headers: { 'x-hopper-session': token } } : {});
   const body = await res.json().catch(() => ({}));
+  // Across the LAN a read needs a live session: 401 with one sent means it ended.
+  if (res.status === 401 && token) throw rejected(body.error || 'session ended');
   if (!res.ok) throw new Error(body.error || `${res.status} ${path}`);
   return body as T;
 }
@@ -28,7 +35,7 @@ export async function post<T = unknown>(path: string, body: unknown = {}): Promi
   });
   const out = await res.json().catch(() => ({}));
   if (res.status === 403 && out.needs) throw new RoleRefused(out.error);
-  if (res.status === 403) { clearToken(); throw new SessionRejected(out.error || 'session rejected'); }
+  if (res.status === 403) throw rejected(out.error || 'session rejected');
   if (!res.ok) throw new Error(out.error || `${res.status} ${path}`);
   return out as T;
 }

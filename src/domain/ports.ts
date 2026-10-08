@@ -291,6 +291,8 @@ export interface AnswerRequest {
   previous: QuestionAttempt[];
   /** Where this level stands: `number` of `of` (1 is the lowest). Above level `of` is the owner. */
   level: { number: number; of: number };
+  /** The machine the job runs on, or waits on for the answer (issue #442): a level that names no machine runs there when it can. */
+  jobMachine?: string;
 }
 
 /**
@@ -304,6 +306,8 @@ export interface LevelReply {
   reason: string;
   /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
   model?: string;
+  /** The machine it ran on and why, when the level named none and picked it (issue #442): on the trail. */
+  machine?: { id: string; why: string };
 }
 
 /**

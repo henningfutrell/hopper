@@ -1,11 +1,12 @@
 # Builds the Dockerfile and publishes it as the public image ghcr.io/henningfutrell/hopper (issue #125),
-# the image compose.yaml pulls: `latest` follows main, `sha-<commit>` pins one build. Intel/AMD and ARM
+# the image compose.yaml pulls. One tag per update channel (issue #423): `dev`, `beta` and `stable` follow
+# the branch of that name, `latest` follows `stable`, and `sha-<commit>` pins one build. Intel/AMD and ARM
 # (arm64 is built under QEMU). Pushed with the workflow's own token; the package is public.
 name: image
 
 on:
   push:
-    branches: [main]
+    branches: [dev, beta, stable]
   workflow_dispatch:
 
 permissions:
@@ -13,10 +14,10 @@ permissions:
   packages: write
 
 # Runs queue, never cancel: a newer push waits for the build in progress, and GitHub keeps only the
-# newest pending run. Cancelling left `latest` hours behind main whenever merges came a few minutes
-# apart (issue #156).
+# newest pending run. Cancelling left `latest` hours behind whenever merges came a few minutes apart
+# (issue #156). One queue per branch: a promotion is not held behind a dev build.
 concurrency:
-  group: image
+  group: image-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -35,8 +36,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/henningfutrell/hopper
+          flavor: latest=false
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref_name == 'stable' }}
+            type=ref,event=branch
             type=sha,format=short
       - uses: docker/build-push-action@v6
         with:
@@ -54,8 +57,8 @@ jobs:
           cache-to: type=gha,mode=max
 
   # The sandbox boxes Add machine's line runs (issue #308, scripts/box/Dockerfile): tags of the same public
-  # package, `box-<agent>` following main and `box-<agent>-sha-<commit>` pinning one build, so a box pulls
-  # with no sign-in as the hopper's image does.
+  # package, `box-<agent>` following stable, `box-<agent>-<branch>` following each channel's branch and
+  # `box-<agent>-sha-<commit>` pinning one build, so a box pulls with no sign-in as the hopper's image does.
   box:
     runs-on: ubuntu-latest
     strategy:
@@ -77,7 +80,8 @@ jobs:
           images: ghcr.io/henningfutrell/hopper
           flavor: latest=false
           tags: |
-            type=raw,value=box-${{ matrix.agent }}
+            type=raw,value=box-${{ matrix.agent }},enable=${{ github.ref_name == 'stable' }}
+            type=ref,event=branch,prefix=box-${{ matrix.agent }}-
             type=sha,format=short,prefix=box-${{ matrix.agent }}-sha-
       - uses: docker/build-push-action@v6
         with:

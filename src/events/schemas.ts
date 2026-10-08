@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -70,7 +70,7 @@ export const EVENT_SCHEMAS = {
   'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
   // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
   'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string() }),
-  // Self-update (issue #44): commits are full shas; `ref` is the branch or the release tag.
+  // Self-update (issue #44): commits are full shas; `ref` is the branch of the channel.
   'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),
@@ -100,6 +100,8 @@ export const EVENT_SCHEMAS = {
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
   'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),
+  // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
+  'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

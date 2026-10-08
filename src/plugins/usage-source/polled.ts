@@ -13,7 +13,7 @@ export type Budget = Pick<UsageReading, 'used' | 'limit' | 'unit' | 'window' | '
  * What one read found: budgets or why not, and the account if it read one. `notReady`: what it reads
  * was not there yet (a machine not listed or not probed online): read again soon, not an interval later.
  */
-export type Read = ({ budgets: Budget[] } | { problem: string }) & { account?: Account; notReady?: boolean };
+export type Read = ({ budgets: Budget[]; machineId?: string } | { problem: string }) & { account?: Account; notReady?: boolean };
 
 export interface PolledContext {
   clock: { now(): Date };
@@ -32,6 +32,8 @@ export function createPolledUsageSource(
 ): UsageSource {
   const staleMs = STALE_INTERVALS * o.intervalSeconds * 1000;
   let budgets: Budget[] = [];
+  /** The machine the last good read was of, when the source names none (issue #442). */
+  let readOf: string | undefined;
   let refreshedAt: Date | undefined;
   let lastError: string | undefined;
   let account: Account | undefined;
@@ -53,6 +55,7 @@ export function createPolledUsageSource(
     retryAt = r.notReady ? ctx.clock.now().getTime() + NOT_READY_RETRY_MS : undefined;
     if ('budgets' in r) {
       budgets = r.budgets;
+      readOf = r.machineId;
       refreshedAt = ctx.clock.now();
     }
     note('problem' in r ? r.problem : undefined);
@@ -83,8 +86,9 @@ export function createPolledUsageSource(
       if (!refreshedAt || stale(now)) return [];
       const at = refreshedAt.toISOString();
       // A budget past its reset no longer says anything: it is left out until the next read.
+      const machineId = o.machineId ?? readOf;
       return budgets.filter((b) => !b.resetsAt || Date.parse(b.resetsAt) > now.getTime()).map((b) => ({
-        source: ctx.instanceName, ...(o.machineId ? { machineId: o.machineId } : {}), ...b, ...(o.executors ? { executors: [...o.executors] } : {}), at,
+        source: ctx.instanceName, ...(machineId ? { machineId } : {}), ...b, ...(o.executors ? { executors: [...o.executors] } : {}), at,
       }));
     },
     state(): UsageSourceState {

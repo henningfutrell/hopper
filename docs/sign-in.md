@@ -43,7 +43,7 @@ Sign-in is not a file. Everything about it — the realms, their settings, the l
 sign-in — is kept in the daemon's database and changed in **Settings → Sign-in**,
 by an admin. Every setting is a field of a form; nothing is written as YAML or JSON.
 
-The page is laid out the way sign-in works (issue #256), in four parts. Every switch says **On** or
+The page is laid out the way sign-in works (issue #256), in five parts. Every switch says **On** or
 **Off** in words beside it.
 
 1. **GitHub**: people sign in with GitHub through the hopper's app ([GitHub](#github)), and signing in
@@ -58,10 +58,12 @@ The page is laid out the way sign-in works (issue #256), in four parts. Every sw
    with the identity provider, ready to copy. The part says that whoever signs in one of these ways
    still connects their GitHub in **Sources** for their jobs ([GitHub](#github)); it names no username
    and password form, since the hopper keeps no passwords of its own. None: GitHub is the only way to sign in.
-3. **Device links**: the login code on or off. On, someone signed in can open the hopper on another
+3. **Sessions**: how long a session lasts — the idle timeout and the longest a session may last, in
+   hours, saved together ([Sessions and logout](#sessions-and-logout)).
+4. **Device links**: the login code on or off. On, someone signed in can open the hopper on another
    device by a one-time link or QR code, and an admin can give a new user a link that signs them in.
    Off, neither works.
-4. **No sign-in**: off, or the role anyone who reaches the hopper gets ([No sign-in](#no-sign-in)).
+5. **No sign-in**: off, or the role anyone who reaches the hopper gets ([No sign-in](#no-sign-in)).
 
 - **Add realm** (in Other ways to sign in): pick a type, fill in its fields (every one: [Realm settings](#realm-settings)) and
   **Save**. A field left empty takes its default, shown greyed in the field.
@@ -335,6 +337,9 @@ spec:
     clientSecret: { name: hopper-gateway-secret }
     redirectURL: https://hopper.example.com/oauth2/callback
     forwardAccessToken: true
+    refreshToken: true              # renew the access token, so the hopper session renews too
+    defaultRefreshTokenTTL: 720h    # used only when the refresh token names no expiry
+    cookieConfig: { sameSite: Lax }
 ```
 
 and in Settings → Sign-in (or the sign-in config), the realm:
@@ -358,9 +363,31 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
 - **Several gateway realms** are tried in order; the first that accepts the token signs in. A token
   refused by all of them is 403 with the reasons; an issuer that could not be reached is 502, naming
   the realm.
-- **The session is the hopper's own**, as for every realm: it outlives the gateway's sign-in until it
-  expires or the realm changes. Logging out of the hopper ends the hopper session only; with the
-  gateway still signed in, the next visit takes a new one.
+- **The gateway stays the authority.** The session is the hopper's own, as for every realm, but it renews
+  only while the token the gateway forwards still checks out for the same person: at most once a minute,
+  on a request of the session's, the hopper checks that token again. Refused (expired, revoked, no token,
+  another person's), the session ends (`refresh-refused`) and the page goes through the gateway again. An
+  issuer that cannot be reached does not end it at once: it ends only 5 minutes after the last good check
+  (`provider-unreachable`), and until then it is not renewed. Logging out of the hopper ends the hopper
+  session only; with the gateway still signed in, the next visit takes a new one.
+- **The gateway's own settings decide how long people stay signed in at the gateway.** The token it
+  forwards lives as long as the identity provider's access token; the gateway keeps it fresh only if it
+  refreshes it. For Envoy Gateway, in the `SecurityPolicy`'s `oidc`:
+
+  | field | what it does |
+  |---|---|
+  | `refreshToken` | `true` (Envoy's default): when the access and ID tokens expire, Envoy gets new ones with the refresh token. `false`: the person goes back through the identity provider each time the access token expires, and the hopper session ends with it. |
+  | `defaultTokenTTL` | The access and ID tokens' lifetime when the identity provider's answer gives none. With an answer that does, Envoy uses that. |
+  | `defaultRefreshTokenTTL` | The refresh token's lifetime when it carries no `exp` or is not a JWT. Default `604800s` (one week): past it the person signs in at the identity provider again. |
+  | `cookieDomain` | The domain of the access and ID token cookies; unset, the request's host (no subdomains). |
+  | `cookieNames` | Names of those cookies (`accessToken`, `idToken`), when two gateways share a domain. |
+  | `cookieConfig.sameSite` | The cookies' SameSite attribute (`Lax`, `Strict`, `None`); unset by default. |
+  | `forwardAccessToken` | Must be `true`: it is the token the hopper checks. |
+
+  The identity provider's own settings bound all of these: its access token lifetime, its refresh token
+  (or SSO session) idle and maximum lifetimes, and whether it rotates refresh tokens. Set the hopper's
+  [session lengths](#sessions-and-logout) no longer than the gateway's refresh token lifetime, or the
+  hopper session outlives the gateway's and ends at the next check.
 - The gateway realm composes with the others: with an LDAP realm also on, the sign-in page shows
   both, and **Sign in through the gateway** tries the token again.
 
@@ -880,12 +907,32 @@ The same for every realm, no sign-in and the login code:
 - A session is a random token in the browser's `localStorage` for the exact origin, sent as the
   `x-hopper-session` header. The daemon stores only its SHA-256, with the role, the identity and the
   user it acts for.
-- It lasts `HOPPER_UI_SESSION_HOURS` (default 12) and survives daemon restarts.
+- It is the hopper's own, never the identity provider's token: no realm keeps the provider's access, ID or
+  refresh token for it (an OIDC realm reads who signed in and drops them). It survives daemon restarts.
+- **Every request renews it** (written at most once a minute). It ends after the **idle timeout** without a
+  request (default 168 hours, 7 days), and at the **longest a session lasts** however much it is used
+  (default 720 hours, 30 days). Both are set in **Settings → Sign-in → Sessions**, or the sign-in config's
+  `sessions: { idleHours, maxHours }`; the idle timeout is at most the maximum, both at most 8760 hours. A
+  change applies at once to every session there is, without a restart. An open page counts as use: it reads
+  the daemon while it is shown. `HOPPER_UI_SESSION_HOURS` is no longer read.
+- A session a [gateway realm](#behind-an-auth-gateway) made renews only while the gateway's token checks out.
+- **When a session ends while the page is open**, the page notices at its next call or within a minute,
+  and goes straight to sign-in with the realm the session was made with: the identity provider of an OIDC
+  or SAML realm (or GitHub, when the hopper can send the browser there), the gateway again, or the sign-in
+  page for a directory, a GitHub code or the login code. Signed in, it opens the page you were on.
+- **Every end has a reason**, logged to the journal (`hopper: UI session ended (<reason>): …`) and recorded as
+  the event `ui_session.ended` of the session's user ([events](events.md)): `expired-idle`,
+  `expired-absolute`, `refresh-refused` and `provider-unreachable` (a gateway realm's), `realm-changed` (the
+  change below) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
+  the database was reset, or it is another hopper's) is logged once. Read them to tell why someone was
+  sent back to sign-in: `journalctl --user -u hopper | grep 'UI session'`.
 - **Log out** (the header's button) ends the hopper session. It does not sign you out of the
   identity provider: signing in again may need no password.
 - Every change saved in Settings → Sign-in, and every start, applies the sign-in config to the stored
   sessions: a realm removed or turned off, no sign-in turned off, or an
-  account no rule grants a role any more, loses its session; a changed rule (or `none` role) changes its role. To cut someone off at once: change the realm in Settings → Sign-in.
+  account no rule grants a role any more, loses its session (`realm-changed`); a changed rule (or `none` role) changes its role. To cut someone off at once: change the realm in Settings → Sign-in.
+- Other ways a browser loses its session: another address than the one it signed in on (the token is kept
+  per exact origin), cleared site data, or a database reset.
 - Sign-ins, refusals and logouts are logged to the journal
   (`journalctl --user -u hopper | grep 'UI session\|sign-in'`).
 
@@ -910,3 +957,4 @@ The same for every realm, no sign-in and the login code:
 | "another browser began it" | The callback page ran in a browser (or private window) other than the one that clicked *Sign in*. |
 | SAML "Invalid signature" | `idpCert` is not the IdP's current signing certificate, or the IdP signs only the response — sign the assertion. |
 | 421 through the proxy | The proxy rewrites `Host`; pass the original host. |
+| Sent back to sign-in sooner than expected | The journal line `UI session ended (<reason>)` says why ([Sessions and logout](#sessions-and-logout)). `expired-idle`/`expired-absolute`: raise the session lengths. `refresh-refused` behind a gateway: the gateway stopped forwarding a valid token — turn its token refresh on and check its refresh token lifetime. No such line, but `a request carried a UI session token this hopper holds no session for`: the session ended earlier, the database was reset, or the page is on another address. |

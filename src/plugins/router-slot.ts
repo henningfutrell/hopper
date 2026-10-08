@@ -26,6 +26,10 @@ export interface SlotDeps {
   target: MachineSourceContext['target'];
   /** A machine by its id, as the machine sources list it now (RoleContext['usage-source'], RoleContext['escalation-level']). */
   machine: UsageSourceContext['machine'];
+  /** Every machine the machine sources list now (the same contexts, issue #442). */
+  machines: UsageSourceContext['machines'];
+  /** The default escalation machine, as the plugins config names it now (RoleContext['escalation-level'], issue #442). */
+  escalationMachine(): string | undefined;
   /** A client target's link (RoleContext['executor'], issue #308). */
   client: ExecutorContext['client'];
   find(id: string): PluginDefinition | undefined;
@@ -65,7 +69,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
   mkdirSync(scratchDir, { recursive: true, mode: 0o700 });
   return {
     clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, secretName: deps.kit.secretName, userEnv: deps.userEnv,
-    ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, client: deps.client,
+    ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, machines: deps.machines, escalationMachine: deps.escalationMachine, client: deps.client,
   };
 }
 

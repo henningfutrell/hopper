@@ -4,17 +4,17 @@
 // ways to sign in, optional (a directory, an identity provider, an auth gateway): each on or off, moved
 // among themselves, edited in a form of its type's fields or removed; one added from the form of the
 // chosen type; whoever signs in one of those ways connects their GitHub in Sources for their jobs.
-// Then device links (the login code) and no sign-in, each saying what it does. Every switch
-// says On or Off in words. The hopper keeps no password accounts of its own. No YAML: every setting is a
-// field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms against the
-// version read, and applies at once; the daemon refuses one that would not load, or that would end your
-// own admin session, and the refusal is shown where the change was made.
-// Admins: ./admins.tsx (issue #242).
+// Then how long a session lasts (./session-lengths.tsx, issue #439), device links (the login code) and no sign-in,
+// each saying what it does. Every switch says On or Off in words. The hopper keeps no password accounts of its own.
+// No YAML: every setting is a field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms
+// against the version read, and applies at once; the daemon refuses one that would not load, or that would end your
+// own admin session, and the refusal is shown where the change was made. Admins: ./admins.tsx (issue #242).
 import { ArrowDown, ArrowUp, Copy, KeyRound, Link, Pencil, Plus, ShieldOff, Trash2, Users, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Admins } from '@/views/admins';
+import { SessionLengthsPanel } from '@/views/session-lengths';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -64,9 +64,7 @@ export function Realms() {
       if (editing) setError((err as Error).message);
       else toast.error((err as Error).message);
       return false;
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   if (!canAdmin) return <Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admins manage sign-in.</Empty></Panel>;
@@ -133,6 +131,7 @@ export function Realms() {
           {others.length === 0 ? <Empty>None: GitHub is the only way to sign in.</Empty> : list(others)}
         </div>
       </Panel>
+      <SessionLengthsPanel key={`${view.sessions.idleHours}/${view.sessions.maxHours}`} lengths={view.sessions} busy={busy} onSave={(sessions) => void change({ action: 'settings', sessions, version }, 'Saved: every session follows it now')} />
       <Panel title="Device links" icon={Link}>
         <div data-section="device-links" className="text-sm">
           <label className="flex items-start gap-2">

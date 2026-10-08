@@ -47,7 +47,7 @@ describe('scripts/build-image.sh, the local image build', () => {
     expect(r.status, r.stderr).toBe(0);
     expect(r.args[0]).toBe('build');
     expect(r.args).toEqual(expect.arrayContaining([
-      '--build-arg', 'HOPPER_REPO=https://example.invalid/o/hopper.git', 'HOPPER_BRANCH=main', `HOPPER_COMMIT=${c.head}`, '-t', 'localhost/hopper',
+      '--build-arg', 'HOPPER_REPO=https://example.invalid/o/hopper.git', 'HOPPER_BRANCH=stable', `HOPPER_COMMIT=${c.head}`, '-t', 'localhost/hopper',
     ]));
     expect(r.args.at(-1)).toBe(c.repo);
   });
@@ -122,6 +122,19 @@ describe('every build path records what it was built from', () => {
     expect(workflow).toContain('HOPPER_REPO=${{ github.server_url }}/${{ github.repository }}.git');
     expect(workflow).toContain('HOPPER_BRANCH=${{ github.ref_name }}');
     expect(workflow).toContain('HOPPER_COMMIT=${{ github.sha }}');
+  });
+
+  it('the published image follows dev, beta and stable: a tag for each branch, and latest is stable (issue #423)', () => {
+    const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'image.yml'), 'utf8');
+    expect(workflow).toMatch(/branches: \[dev, beta, stable\]/);
+    expect(workflow).toContain("type=raw,value=latest,enable=${{ github.ref_name == 'stable' }}");
+    expect(workflow).toContain('type=ref,event=branch');
+    expect(workflow).not.toMatch(/\bmain\b/);
+  });
+
+  it('every build defaults to the stable branch (issue #423)', () => {
+    expect(dockerfile).toMatch(/^ARG HOPPER_BRANCH=stable$/m);
+    expect(readFileSync(join(ROOT, 'scripts', 'install.sh'), 'utf8')).toContain('BRANCH="${HOPPER_UPDATE_BRANCH:-stable}"');
   });
 
   it('scripts/install.sh writes install.json with the same script', () => {

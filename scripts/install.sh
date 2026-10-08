@@ -41,7 +41,7 @@ if [ -n "$INTO" ]; then
   COMMIT="${HOPPER_INSTALL_COMMIT:?build-only mode needs HOPPER_INSTALL_COMMIT}"
 else
   REPO="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
-  BRANCH="${HOPPER_UPDATE_BRANCH:-main}"
+  BRANCH="${HOPPER_UPDATE_BRANCH:-stable}"
   COMMIT="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
   if [ -n "$COMMIT" ] && [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     echo "warning: $APP_DIR has uncommitted changes; install.json names $COMMIT, which they are not part of" >&2
