@@ -87,6 +87,8 @@ export interface FakeHerdrClient extends HerdrClient {
   addTurns(...turns: FakeTurn[]): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */
   dropPrompts(n: number): void;
+  /** Claude denies its dialog by itself, its countdown run out (issue #376): it goes on with the next scripted turn, nothing typed. */
+  lapseDialog(name: string): void;
   /** Claude disappears from its pane (crashed, closed by hand). */
   killAgent(name: string): void;
   /** The next call of `method` rejects with a HerdrError of this code. */
@@ -189,6 +191,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     addTurns: (...more) => { turns.push(...more); },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
+    lapseDialog(name) {
+      const p = byAgent(name);
+      if (!p || p.status !== 'blocked') return;
+      p.lines.push('  ⎿  Denied: no response within 2 minutes');
+      p.turn = turns.shift() ?? { output: [] };
+      p.step = 0;
+      settle(p, 'working');
+    },
     failNext(method, code) { failures.set(method, code); },
     screen: (id) => {
       const p = panes.get(id);

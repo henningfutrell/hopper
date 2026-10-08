@@ -51,7 +51,7 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID } }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
@@ -62,6 +62,14 @@ describe('herdr-claude executor: run', () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: 'forged' } })).ctx);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
+  });
+
+  // Issue #376: Claude Code denies a dangerous-rm dialog by itself after two minutes; the escalation to
+  // a human takes longer, so the countdown is off in every job's tab, and a payload cannot turn it on.
+  it("turns off Claude Code's countdown that denies a dangerous rm by itself", async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '0' } })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } });
   });
 
   it('keeps the job in its work tree: Claude\'s scratchpad and temp files point at a scratch dir inside it, which a payload cannot move', async () => {

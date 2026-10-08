@@ -1,6 +1,6 @@
 // Issue #377: the question a dialog asks is the dialog, not the screen above it.
 import { describe, expect, it } from 'vitest';
-import { dialogText, readTurn } from '../../src/executors/herdr/screen.ts';
+import { autoDenyMs, dialogText, readTurn } from '../../src/executors/herdr/screen.ts';
 
 // As seen live (paths shortened): a permission dialog under earlier tool output.
 const RM_DIALOG = [
@@ -72,6 +72,23 @@ describe('dialogText', () => {
 
   it('without a cursor on an option, is the last block under the transcript', () => {
     expect(dialogText(['● Bash(make)', '  ⎿  Running…', '', ' Something needs you', ' Press enter'].join('\n'))).toBe('Something needs you\nPress enter');
+  });
+});
+
+// Issue #376: Claude Code denies some dialogs by itself when its countdown runs out.
+describe('autoDenyMs', () => {
+  it('reads the countdown as minutes and seconds', () => {
+    expect(autoDenyMs(RM_DIALOG)).toBe(119_000);
+    expect(autoDenyMs(' ⚠ Claude Code will automatically deny this request in 0:05, to avoid blocking progress on an unattended session')).toBe(5_000);
+  });
+
+  it('reads the rounded form', () => {
+    expect(autoDenyMs('Claude Code will automatically deny this request in about 2 minutes, to avoid blocking progress')).toBe(120_000);
+    expect(autoDenyMs('Claude Code will automatically deny this request in about 1 second, to avoid blocking progress')).toBe(1_000);
+  });
+
+  it('is undefined for a dialog with no countdown', () => {
+    expect(autoDenyMs(HOOK_DIALOG)).toBeUndefined();
   });
 });
 
