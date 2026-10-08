@@ -35,6 +35,12 @@ if (mode === 'leave' || mode === 'escape') {
   writeFileSync(join(process.env.TMPDIR, 'left.txt'), 'x');
   spawn('setsid', ['sh', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
 }
+// `device-code`, `device-code-fails` (issue #476): a tool of the agent's waits on a login and prints codex's device
+// code, as `codex login --device-auth` does; the turn then answers as usual, or its CLI fails.
+if (mode === 'device-code' || mode === 'device-code-fails') {
+  process.stderr.write('Follow these steps to sign in with ChatGPT using device code authorization:\n\n1. Open this link in your browser and sign in to your account\n   https://auth.openai.com/codex/device\n\n2. Enter this one-time code (expires in 15 minutes)\n   ABCD-EFGHJ\n\n');
+  if (mode === 'device-code-fails') { process.stderr.write('login timed out; the code was ABCD-EFGHJ\n'); process.exit(1); }
+}
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (kind === 'codex') {
   // `codex exec resume … -- <thread id> <prompt>` resumes; `codex exec … -- <prompt>` starts a thread.
