@@ -4,7 +4,7 @@
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
 // that print the JSON events each real one prints.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,8 @@ import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
+// Its own per run: the job's TMPDIR is a link in /tmp named for the job id (issue #506), and runs share /tmp.
+const ID = `job-print-${process.pid}`;
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['agent'] };
 let dir: string;
 let work: string;
@@ -40,7 +42,7 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
   const job: Job = {
-    id: 'job-print-1234', spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
+    id: ID, spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
@@ -83,7 +85,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: session } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch/job-print-1234`, HOPPER_JOB_ID: 'job-print-1234', HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
+    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
@@ -139,8 +141,9 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     reply('Done.\n\nHOPPER_DONE');
     const { ctx, saved } = ctxFor({ prompt: 'p', cwd: work });
     expect(await ex.run(ctx)).toMatchObject({ kind: 'finished' });
-    const scratch = `${work}/.hopper-scratch/job-print-1234`;
+    const scratch = `${work}/.hopper-scratch/${ID}`;
     expect(existsSync(`${scratch}/left.txt`)).toBe(true);
+    expect(readlinkSync(`/tmp/hopper-${ID}`)).toBe(scratch);
     expect(saved[0]).toEqual({ cwd: work });
     const running = (): boolean => spawnSync('pgrep', ['-f', leftover]).status === 0;
     try {
@@ -149,6 +152,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
       expect(await ex.cleanup!(job)).toEqual({ kept: [] });
       expect(running()).toBe(false);
       expect(existsSync(scratch)).toBe(false);
+      expect(() => lstatSync(`/tmp/hopper-${ID}`)).toThrow();
     } finally {
       spawnSync('pkill', ['-f', leftover]);
     }

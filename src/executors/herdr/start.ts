@@ -130,18 +130,39 @@ export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}
 export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
 
 /**
+ * The job's temp link (issue #506), its TMPDIR: a short link to its scratch dir. A Unix socket path takes at most 108
+ * bytes, and a tool binds its sockets under TMPDIR (Chromium's `org.chromium.Chromium.XXXXXX/SingletonSocket`
+ * alone takes 45), so the scratch dir's own path left too little room. What is written through it lands in
+ * the scratch dir all the same; the reap removes the link.
+ */
+export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
+
+/** Points the job's temp link at its scratch dir; fails when the link there is not that. */
+export const linkTmpCommand = (scratch: string, jobId: string): string => {
+  const link = shellQuote(jobTmpOf(jobId));
+  return `ln -sfn ${shellQuote(scratch)} ${link} && [ "$(readlink ${link})" = ${shellQuote(scratch)} ]`;
+};
+
+/** Makes the job's scratch dir, git-ignored, and its temp link; prints the ready or unusable marker. */
+export const scratchCommand = (cwd: string, jobId: string, make: boolean): string => {
+  const scratch = jobScratchOf(cwd, jobId);
+  return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)}`
+    + ` && ${linkTmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+};
+
+/**
  * Create the tab and record it at once, before anything can fail in it. The tab's environment
  * points Claude's scratchpad and every temp file at the scratch dir.
  */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
-  const scratch = jobScratchOf(cwd, ctx.job.id);
+  const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
-    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
@@ -199,9 +220,7 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * shell is PowerShell or cmd fails the job at once, naming it (issue #367). Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
-  const scratch = jobScratchOf(s.cwd, ctx.job.id);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
-    + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+  const command = scratchCommand(s.cwd, ctx.job.id, make);
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     await d.herdr.runInPane(s.paneId, command);

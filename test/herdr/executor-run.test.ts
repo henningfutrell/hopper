@@ -5,6 +5,7 @@ import { CWD, JOB_ID, LANE, LOCAL, contextFor, jobWith, setup, until } from './s
 
 /** The job's own scratch dir (issue #401): the reap removes it when the job ends. */
 const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
+const TMP = `/tmp/hopper-${JOB_ID}`;
 const DONE = { output: ['● Wrote hello.txt.', '  HOPPER_DONE'] };
 
 describe('herdr-claude executor: shape and validation', () => {
@@ -51,7 +52,7 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
@@ -64,16 +65,16 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
   });
 
-  it('keeps the job in its work tree: Claude\'s scratchpad and temp files point at a scratch dir inside it, which a payload cannot move', async () => {
+  it('keeps the job in its work tree: Claude\'s scratchpad and temp files point, through a short link (issue #506), at a scratch dir inside it, which a payload cannot move', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { TMPDIR: '/tmp', CLAUDE_CODE_TMPDIR: '/tmp' } })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH } });
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP } });
   });
 
   it('prepares the scratch dir in the pane before Claude starts, inside the work tree the shell enters, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${CWD}' && cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${CWD}' && cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && ln -sfn '${SCRATCH}' '${TMP}' && [ "$(readlink '${TMP}')" = '${SCRATCH}' ] && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
@@ -97,7 +98,7 @@ describe('herdr-claude executor: run', () => {
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' }), LANE, { ...LOCAL, workTree: "/w/it's here" }).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here' && cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here' && cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && ln -sfn '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' '${TMP}' && [ "$(readlink '${TMP}')" = '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' ] && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {
