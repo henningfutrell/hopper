@@ -183,6 +183,12 @@ describe('the machine-source role', () => {
     ]);
   });
 
+  it('local: its reserved lanes reach its machine (issue #372)', async () => {
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 4, reservedLanes: 1 } }] } });
+    await host.start();
+    expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 4, reservedLanes: 1 })]);
+  });
+
   it('no machines section: local with 4 lanes', async () => {
     const { host } = start({ file: { version: 1 } });
     await host.start();

@@ -99,14 +99,16 @@ same Decision. Algorithm, in order:
    unknown or offline → hold.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
-   its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most remaining room
-   (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
+   its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
+   `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
+   remaining room for that job (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
    #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
    machine with the highest cap for its executor — the executor's when it leaves less room than
    the machine's (or ties and is lower), else the machine's — with its number and lanes in use
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
-   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)`).
+   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
+   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap, occupied + assigned)`. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
@@ -827,6 +829,14 @@ so a running job's pane and Claude outlive a restart.
   `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
   re-run: a second run repeats real side effects. A non-idempotent executor without
   `reattach` always takes this path.
+- Same job, its machine **not answering yet** (issue #368: `canReattach` rejects — a client target
+  not dialled in, an ssh target not replying; recovery runs before either can) → in the tx the job
+  stays `running` with its `laneId` and its lane is kept, as a reattached one, but no event yet.
+  After it the runner asks `canReattach` again every second, the job held by the runner as any
+  run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
+  and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
+  **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
+  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up.
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
@@ -2527,6 +2537,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
@@ -7028,3 +7039,39 @@ was already true of `config set` and of the database itself.
 from the CLI — no caller yet.
 
 Tests: `test/integration/operator-cli.test.ts`.
+
+## Reserved lanes (issue #372, 2026-10-07)
+
+Reported: every lane of a machine was taken by jobs that could run on any machine, while a job a
+routing rule had pinned to it (work only that machine can do) waited for one to free. With long jobs it
+would wait hours while other machines had free lanes. Nothing in placement kept room for the jobs that
+can only run there.
+
+Three ways were offered: a per-machine count of reserved lanes, a placement rule that sends unpinned
+jobs elsewhere while pinned demand exists, or requeueing an unpinned job off the machine. Built the
+first: it is the smallest, it is per machine, and it needs no job moved once placed. The second would
+make one job's placement read every other job's pin; the third would stop work already begun.
+
+**As built:**
+- **`reservedLanes`**, an optional option of every machine-source plugin (`local`, `ssh`, `docker`,
+  `client`; a whole number ≥ 0, not command-bearing), reaches the decider on
+  `MachineSnapshot.reservedLanes`. Edited in the Plugins view's options form like any machine option;
+  the machine's card in the Machines view says how many it keeps.
+- **The decider (step 7).** A job is pinned to a machine when `pinOf(job)` names it (its
+  `spec.machineId`, or for a resuming job the machine holding its pane). A job not pinned to `m` may
+  take a lane there only while `unpinned(m) < max(0, cap(m) - reservedLanes(m))`, where `unpinned(m)`
+  counts the lanes busy or draining with jobs not pinned to `m` — a lane whose job is not among the
+  inputs counts as unpinned, so the reserve stays free — plus this Decision's starts of such jobs.
+  Pinned jobs may use every lane. The room an unpinned job sees on `m` is that smaller figure, so it
+  goes to a machine with more room for it first. It counts against the **lane cap**, not `maxLanes`:
+  past a usage soft limit the reserve stays whole and unpinned jobs give way first.
+- **At or above the cap**, only jobs pinned to the machine run there.
+- **Wait reason.** An unpinned job with room on its machine save the reserved lanes waits with
+  `waiting for a lane: machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`.
+- A running job is never moved: the reserve applies to new starts. Absent or 0, placement is as before.
+
+**Verification:** `test/decider/reserved.test.ts` (cap less the reserve, the wait reason, a pinned job
+takes a reserved lane, pinned jobs use every lane, pinned lanes do not count against unpinned ones,
+unpinned jobs go elsewhere first, a reserve at the cap), `test/plugins/machine-targets.test.ts`,
+`test/plugins/host-sources.test.ts`, `test/adapters/ssh-machine.test.ts`,
+`test/adapters/machine-usage.test.ts`, `test/ui/machines.test.ts` (`reservedText`).

@@ -20,6 +20,10 @@ describe('local machine source', () => {
     const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '~/trees' });
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
   });
+  it('carries this machine\'s reserved lanes (issue #372)', async () => {
+    const src = createLocalMachineSource({ maxLanes: 4, executors: () => [], reservedLanes: 1 });
+    expect((await src.list())[0]).toMatchObject({ maxLanes: 4, reservedLanes: 1 });
+  });
   it('honours id and label', async () => {
     const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one', disk: () => undefined });
     expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);

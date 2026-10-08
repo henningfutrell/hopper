@@ -175,6 +175,8 @@ export interface MachineSnapshot {
   label: string;
   /** Hard ceiling on lanes this machine may run. */
   maxLanes: number;
+  /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
+  reservedLanes?: number;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];
@@ -488,5 +490,4 @@ export { BRANCH_CHANNELS, isBranchChannel, UPDATE_CHANNELS } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
-export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA } from './connected-accounts.ts';
-export type { AppInstallation, ConnectedAccountProvider, ConnectedAccountStatus } from './connected-accounts.ts';
+export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
