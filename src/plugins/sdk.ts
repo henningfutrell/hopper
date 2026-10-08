@@ -33,6 +33,8 @@ export interface DetectionKit {
   pythonImports(python: string, module: string): Promise<boolean>;
   /** A value the runtime gives, as PluginContext.env. */
   env(name: string): string | undefined;
+  /** The runtime's name for secret `name`, as PluginContext.secretName. */
+  secretName(name: string): string;
 }
 
 export interface PluginLogger {
@@ -56,6 +58,11 @@ export interface PluginContext {
    * set or the file cannot be read.
    */
   env(name: string): string | undefined;
+  /**
+   * The runtime's name for secret `name`: the user's secret prefix and the name (issue #158), so
+   * `HOPPER_USER_<ID>_<name>` for a user added later. What to tell the person to set; `env` reads it.
+   */
+  secretName(name: string): string;
   /**
    * What the user's processes add to the daemon's environment (issue #158): the gh and claude CLIs'
    * config dirs (`GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`) of a user added later; empty for the first

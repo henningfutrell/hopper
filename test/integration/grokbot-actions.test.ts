@@ -189,10 +189,9 @@ describe('Grok Bot routine of a user with a secret prefix', () => {
     const u = await a.addUser('Second Person');
     const prefix = `HOPPER_USER_${u.id.toUpperCase()}_`;
     setHook(secrets, r.url);
-    const before = a.user(u.id).plugins.report().notifiers.instances[0]!;
-    expect(before.detection.status).toBe('needs-setup');
-    expect(before.detection.reason).toContain(`${prefix}GROKBOT_WEBHOOK_URL`);
-    expect(before.detection.command).toContain(`${prefix}GROKBOT_WEBHOOK_KEY_FILE`);
+    expect(a.user(u.id).plugins.report().notifiers.instances[0]!.detection).toMatchObject({
+      status: 'needs-setup', reason: expect.stringContaining(`${prefix}GROKBOT_WEBHOOK_URL`), command: expect.stringContaining(`${prefix}GROKBOT_WEBHOOK_KEY_FILE`),
+    });
     const refused = await a.user(u.id).plugins.notifierAction('grok-bot', 'test');
     expect(refused).toMatchObject({ ok: true, result: { ok: false } });
     expect(refused.ok && refused.result.detail).toContain(`${prefix}GROKBOT_WEBHOOK_URL`);

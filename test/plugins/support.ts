@@ -19,6 +19,7 @@ export function fakeKit(over: Partial<DetectionKit> = {}): DetectionKit {
     pythonImports: async () => true,
     output: async () => undefined,
     env: () => undefined,
+    secretName: (name) => name,
     ...over,
   };
 }

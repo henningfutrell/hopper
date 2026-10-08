@@ -1878,11 +1878,12 @@ question reaches the owner (questions never go onto the issue), and when intake 
   `account`, `reason`). Never `job.finished` or `job.failed`.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
   `GROKBOT_WEBHOOK_KEY`) name two runtime secrets ("Secrets"): the variable, or the mounted file the
-  variable `<name>_FILE` names. Read at each use, so a file written or changed later applies without a
-  restart. Only the `_FILE` variables must be there at start; `compose.yaml` sets both by default to
-  files in the hopper's home volume (`~/.config/hopper/grokbot-webhook-url` and `-key`), so the routine is
-  set up, or its key rotated, by writing those files into the running container. A file named but not
-  there yet, or either value unset: needs-setup, and nothing is sent. (Before issue #378 this section
+  variable `<name>_FILE` names, both with the user's **secret prefix** (`HOPPER_USER_<ID>_` for every user
+  signed in with GitHub; empty only for the default admin account), so a user's routine is
+  `HOPPER_USER_<ID>_GROKBOT_WEBHOOK_URL` and `_KEY`. Read at each use: once the `_FILE` variables are in
+  the runtime, the files can be written, or the key rotated, without a restart. Detection, its command
+  and the test event name the variables as the runtime reads them (`PluginContext.secretName`). Missing
+  or a named file not there yet: needs-setup, and nothing is sent. (Before issue #378 this section
   described an `envFile` option the plugin never had.)
 - Open questions (issue #378): a question escalated while the routine is not configured is not lost.
   The notifier checks every 5 s; when the routine **becomes** configured it sends each question open at
