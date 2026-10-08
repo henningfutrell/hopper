@@ -165,6 +165,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         ...(install ? { installUrl: install } : {}),
         ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}),
         ...(trouble ? { renewal: trouble } : {}),
+        ...(a.expiresAt && !a.refreshToken ? { unrenewable: `${PROVIDER_NAME[provider]} gave this connection no refresh token, so its token cannot be renewed` } : {}),
       };
     }
     const error = failed.get(provider);

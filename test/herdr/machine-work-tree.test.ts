@@ -54,7 +54,7 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     const r = await run({}, { ...FAR, workTree: '/srv/trees' }, fromRepo);
     expect(r.out).toMatchObject({ kind: 'finished' });
     const command = r.runs.find((c) => c.includes('hopper-worktree'))!;
-    expect(command).toMatch(/^cd '\/srv\/trees' && \{ o=\$\(sh -c '.*' hopper-worktree '[^']*' '\/srv\/trees\/\.hopper-scratch\/[^/']+\/app' 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' '1'/s);
+    expect(command).toMatch(/^cd '\/srv\/trees' && \{ printf 'hopper-%s-%s\\n' worktree running; o=\$\(sh -c '.*' hopper-worktree '[^']*' '\/srv\/trees\/\.hopper-scratch\/[^/']+\/app' 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' '1'/s);
     // The token stays in the pane's environment: the command names the variable, never a value.
     expect(command).toContain('$GH_TOKEN');
     expect(r.workTrees.at(-1)).toMatch(/^\/srv\/trees\/\.hopper-scratch\/[^/]+\/app$/);

@@ -551,9 +551,14 @@ started while a dialog is up — the executor polls `agent get` and judges each 
 per `state_change_seq`, so keys meant for one dialog never land on the next: the folder-trust dialog
 naming the job's cwd (with `trustWorkdir`) → `down enter`, `trusted workdir <cwd>`; the bypass
 permissions warning ("WARNING: Claude Code running in Bypass Permissions mode", options `No, exit` /
-`Yes, I accept`) with `yolo` → `down enter`, `accepted bypass permissions mode`. Anything else, the
-warning on an instance that is not yolo, or more than 4 dialogs → `failed`, `claude blocked at
-startup: <screen>`.
+`Yes, I accept`) with `yolo` → `down enter`, `accepted bypass permissions mode`; Claude's external imports
+dialog ("Allow external CLAUDE.md file imports?", options `No, disable external imports` / `Yes, allow
+external imports`, the refusing one first and focused) with `trustWorkdir` → `down enter`, `allowed the
+external CLAUDE.md imports of the trusted work tree` (issue #518: a job worktree lies inside the work tree,
+so the work tree's `CLAUDE.md` importing its `AGENTS.md` imports a file outside the job's cwd; the owner
+trusts the work tree, and nothing is written into Claude's own files). Anything else, the warning on an
+instance that is not yolo, the imports dialog without `trustWorkdir`, or more than 4 dialogs → `failed`,
+`claude blocked at startup: <screen>`.
 
 **Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
 of its options — its number, or its own words, case and spacing aside (`dialogOption` in
@@ -706,7 +711,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `<work tree>/.hopper-scratch/<job id>/<work tree's name>` with `git worktree add --detach` at
   `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
   `hopper-job-worktree-made` (waited for up to 10 minutes, for the fetch or a first clone). A worktree an earlier run of
-  the job left is entered as it is. Claude starts there; the pane state keeps the work tree as `cwd`
+  the job left is entered as it is, nothing fetched. The command is one line that prints
+  `hopper-worktree-running` first (issue #518): a zsh whose start-up files were busy lost or mangled the
+  command of many lines typed into it, so the hopper waits 10 s for that line and, when it never shows,
+  clears the line (`ctrl+c`) and types the command again, 3 times at most; a shell that never runs it times
+  the start out (tried again in a new pane: "A start that times out is tried again"). Every wait for a line the pane prints — the
+  scratch command's, the worktree's, the dependencies' — reads the screen and runs to the hopper's own
+  deadline by its clock: on two machines herdr's `pane wait-output` answered within seconds while the
+  worktree was still being made, so its answer only says when to look. The outcome is read wherever it
+  stands on its line. Claude starts there; the pane state keeps the work tree as `cwd`
   (the reap's scratch dir follows from it) and the job worktree as `jobWorktree`; the job reports the
   job worktree (`job.workTree`, so the lane shows it), the trust dialog naming it is accepted, and the
   footer adds the fixed `[hopper job worktree]` line after the work-tree line: work there, it is the
@@ -6864,7 +6877,11 @@ its expiry if any, when. Every answer carries facts only, never a token.
   `state: 'expired'` with why — never `connected` — offers no login (so a gh source with `enabled: auto`
   runs again), its source pauses with `GitHub's sign-in expired: Sources → Connect GitHub again`, and
   `connected_account.expired { provider, account, reason }` is recorded once, which the notifiers send.
-  Connecting again replaces the record.
+  A report, a run again, an intake action or a close of its jobs says the same, never that GitHub is not
+  connected (issue #518). Connecting again replaces the record. **Cannot renew** (issue #518): a token that
+  expires with no refresh token beside it reads `connected` while it lives, with `unrenewable` (why) and
+  `expiresAt`; the panel says it cannot renew and when it ends, and offers Connect GitHub again (signed in
+  with GitHub: sign out and in again).
 
 **Intake** (`job-source/github-account`; a built-in instance, added to every existing plugins config by
 tenant migration 8, since job sources are a restart role): the GitHub source logic (`createGitHubSource`,

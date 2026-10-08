@@ -43,6 +43,11 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     expiresAt?: string;
     /** Why the last renewal failed, while it is tried again (issue #441): GitHub not answering, or this hopper set up so it cannot renew. The sign-in goes on. */
     renewal?: string;
+    /**
+     * Why the token cannot be renewed at all (issue #518): GitHub gave it no refresh token. It ends at `expiresAt`, and
+     * only connecting again (or signing in with GitHub again) gets one that renews.
+     */
+    unrenewable?: string;
   }
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */

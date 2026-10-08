@@ -1,5 +1,6 @@
 // Opening a job's pane and getting Claude ready in it: workspace, tab, agent start, and the
-// startup dialogs (folder trust; the bypass permissions warning when yolo). docs/design.md "Phase 2" → "Start".
+// startup dialogs (folder trust; external CLAUDE.md imports in a trusted work tree; the bypass permissions
+// warning when yolo). docs/design.md "Phase 2" → "Start".
 
 import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
@@ -7,11 +8,11 @@ import { HerdrError, type HerdrClient } from './client.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { JOB_WORKTREE_MARK, checkoutOf, checkoutWorktreeOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
+import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, checkoutOf, checkoutWorktreeOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
-import { SCRATCH_DIR, isBypassDialog, isTrustDialog, windowsShellOf } from './screen.ts';
+import { SCRATCH_DIR, isBypassDialog, isImportsDialog, isTrustDialog, windowsShellOf } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
@@ -24,11 +25,14 @@ const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
 const SCRATCH_WAIT_MS = 1000;
 /** How long the job worktree command may take: it fetches first (issue #379), or clones the job's repository (issue #361). */
 const JOB_WORKTREE_WAIT_MS = 10 * 60000;
+/** How long the shell has to start the job worktree command, and how often it is typed, before the start is tried again (issue #518). */
+const JOB_WORKTREE_RUNNING_WAIT_MS = 10000;
+const JOB_WORKTREE_TYPINGS = 3;
 /** How long sharing dependencies may take: the first job with a lockfile installs them (issue #410). */
 const DEPS_WAIT_MS = 15 * 60000;
 /** A machine's scratch age when it sets none: an entry of shared dependencies nothing links to goes after it. */
 const SCRATCH_MAX_AGE_HOURS = 24;
-/** Startup dialogs answered at most: folder trust and the bypass permissions warning, with room to spare. */
+/** Startup dialogs answered at most: folder trust, external imports and the bypass permissions warning, with room to spare. */
 const MAX_STARTUP_DIALOGS = 4;
 
 /** What grants Claude every permission: the flag, and the permission mode that means the same. */
@@ -182,8 +186,9 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
 
 /**
  * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
- * folder-trust dialog naming the job's cwd (when `trustWorkdir`), and the bypass permissions warning
- * (when yolo). Any other dialog fails the job with the screen. A dialog is judged once per state
+ * folder-trust dialog naming the job's cwd and the external CLAUDE.md imports dialog (issue #518; both when
+ * `trustWorkdir`: the work tree is trusted, the CLAUDE.md that imports is its own or above it), and the
+ * bypass permissions warning (when yolo). Any other dialog fails the job with the screen. A dialog is judged once per state
  * change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
  * ready, so anything but a dialog is; else herdr found it held at one. Null when ready (or aborted),
  * else the failure.
@@ -201,9 +206,10 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
       const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
       const dir = s.jobWorktree ?? s.cwd;
       const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
-        : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
+        : d.trustWorkdir && isImportsDialog(screen) ? 'allowed the external CLAUDE.md imports of the trusted work tree'
+          : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
       if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
-      // Both dialogs open on their refusing option; the next one down accepts.
+      // Each dialog opens on its refusing option; the next one down accepts.
       await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
       ctx.progress(0, dialog);
       answeredAt = agent.stateChangeSeq;
@@ -215,6 +221,26 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
   const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
   return { startTimedOut: `claude not ready at startup: ${tail(screen, 30)}` };
 }
+
+/**
+ * What `parse` reads on the pane once it shows, waiting up to `ms` by the hopper's own clock (issue #518): herdr's
+ * wait-output on some machines answered within seconds, the text not there yet, so its answer only says when to
+ * look at the screen, never what is on it. Undefined when `ms` passed (or the signal fired) first, with the screen.
+ */
+async function awaitOnScreen<T>(d: StartDeps, ctx: ExecutionContext, paneId: string, mark: string, parse: (screen: string) => T | undefined, ms: number): Promise<{ found?: T; screen: string }> {
+  const until = d.clock.now().getTime() + ms;
+  for (;;) {
+    await d.herdr.waitOutput(paneId, mark, Math.max(1, until - d.clock.now().getTime()));
+    const screen = await d.herdr.read(paneId, { source: 'recent-unwrapped', lines: 40 });
+    const found = parse(screen);
+    if (found !== undefined) return { found, screen };
+    if (ctx.signal.aborted || d.clock.now().getTime() >= until) return { screen };
+    await d.sleep(d.pollMs, ctx.signal);
+  }
+}
+
+/** Whether a line of the screen is `line`. */
+const shows = (line: string) => (screen: string): true | undefined => (screen.split('\n').some((l) => l.trim() === line) ? true : undefined);
 
 /**
  * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
@@ -230,9 +256,11 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     await d.herdr.runInPane(s.paneId, command);
-    if (await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS)) return null;
+    await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS);
+    // herdr's answer is not taken for the screen (issue #518): the line itself shows it ran.
     const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-    if (screen.split('\n').some((l) => l.trim() === SCRATCH_UNUSABLE)) {
+    if (shows(SCRATCH_READY)(screen)) return null;
+    if (shows(SCRATCH_UNUSABLE)(screen)) {
       return { kind: 'failed', error: `the work tree ${s.cwd} is not usable on ${ctx.machine.id}: ${tail(screen, 10)}` };
     }
     const shell = windowsShellOf(screen);
@@ -273,16 +301,27 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  * tree when that is the top of a git repository; else of the checkout of the job's repository in it,
  * fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
  * With job worktrees off, only the checkout is made, and the job runs in the work tree. Git refusing fails
- * the job with what it said. The scratch command has run, so the shell is at its prompt: the command is
- * typed once.
+ * the job with what it said. The command says first that it runs: a shell that lost or mangled it (issue
+ * #518, a zsh whose start-up files were busy) gets the line cleared and the command typed again, and one
+ * that never runs it times the start out, to be tried again in a new pane. A run again finds the worktree
+ * the first one made and enters it.
  */
-async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | null> {
+async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
   if (repo) ctx.progress(0, `fetching or cloning ${repo} in the work tree`);
-  await d.herdr.runInPane(s.paneId, makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees }));
-  const seen = await d.herdr.waitOutput(s.paneId, JOB_WORKTREE_MARK, JOB_WORKTREE_WAIT_MS);
-  const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-  const outcome = seen ? jobWorktreeOutcome(screen) : undefined;
-  if (outcome === 'none') return null;
+  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees });
+  for (let typed = 1; ; typed++) {
+    await d.herdr.runInPane(s.paneId, command);
+    const running = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_RUNNING, shows(JOB_WORKTREE_RUNNING), JOB_WORKTREE_RUNNING_WAIT_MS);
+    if (running.found || ctx.signal.aborted) break;
+    if (typed >= JOB_WORKTREE_TYPINGS) {
+      return { startTimedOut: `pane ${s.paneId} never ran the job worktree command (typed ${typed} times): ${tail(running.screen, 10)}` };
+    }
+    ctx.progress(0, `the shell did not run the job worktree command; typing it again (${typed + 1} of ${JOB_WORKTREE_TYPINGS})`);
+    await d.herdr.sendKeys(s.paneId, ['ctrl+c']);
+  }
+  if (ctx.signal.aborted) return null;
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_MARK, jobWorktreeOutcome, JOB_WORKTREE_WAIT_MS);
+  if (outcome === 'none' || ctx.signal.aborted) return null;
   const path = outcome === 'checkout' && repo ? checkoutWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
   if (outcome !== 'made' && outcome !== 'checkout') {
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
@@ -303,11 +342,9 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
 async function shareDependencies(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
   ctx.progress(0, 'sharing dependencies with the repository\'s other jobs');
   await d.herdr.runInPane(s.paneId, shareDepsCommand(s.cwd, s.jobWorktree!, ctx.machine.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS));
-  if (!await d.herdr.waitOutput(s.paneId, DEPS_MARK, DEPS_WAIT_MS)) {
-    const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-    return { kind: 'failed', error: `pane ${s.paneId} never shared dependencies within ${DEPS_WAIT_MS} ms: ${tail(screen, 10)}` };
-  }
-  const outcome = depsOutcome(await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 }));
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, DEPS_MARK, depsOutcome, DEPS_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (!outcome) return { kind: 'failed', error: `pane ${s.paneId} never shared dependencies within ${DEPS_WAIT_MS} ms: ${tail(screen, 10)}` };
   if (outcome === 'linked' || outcome === 'installed') {
     s.sharedDependencies = true;
     ctx.saveState({ ...s });
