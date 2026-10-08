@@ -27,7 +27,7 @@ export const jobSpec = strict({
   }).optional(),
 });
 
-// What a job's source and routing rules give its spec (issue #375).
+// What a job's source and routing rules give its spec (issue #375). `defaultCwd` only in events recorded before issue #361.
 export const specFromConfig = strict({
   executor: z.string(), model: z.string().optional(), cwd: z.string().optional(), defaultCwd: z.string().optional(),
   machineId: z.string().optional(), rule: z.string().optional(),

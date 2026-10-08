@@ -22,14 +22,13 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
 }
 
 /**
- * What the item and the routing rule give a job's spec (issue #375). The work tree (issue #324): a routing
- * rule's, else the item's own (its repository's path); the source's default stays a default, so the lane's
- * machine's work tree comes before it.
+ * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
+ * rule's, which pins the job to its machine (issues #324, #361); anything else runs in its machine's.
  */
 function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined): SpecFromConfig {
   return specFromConfig({
-    executor: routedBy?.set.executor ?? item.executor, model: item.model || undefined, cwd: routedBy?.set.workTree ?? item.cwd,
-    defaultCwd: item.defaultCwd, machineId: routedBy?.set.machine, rule: routedBy?.rule,
+    executor: routedBy?.set.executor ?? item.executor, model: item.model || undefined, cwd: routedBy?.set.workTree,
+    machineId: routedBy?.set.machine, rule: routedBy?.rule,
   });
 }
 
@@ -37,7 +36,7 @@ function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined): SpecFr
 function fromSpec(spec: JobSpec): SpecFromConfig {
   const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
   return specFromConfig({
-    executor: spec.executor, model: text(spec.payload.model), cwd: text(spec.payload.cwd), defaultCwd: text(spec.payload.defaultCwd),
+    executor: spec.executor, model: text(spec.payload.model), cwd: text(spec.payload.cwd),
     machineId: spec.machineId, rule: spec.routedBy?.rule,
   });
 }
@@ -46,7 +45,7 @@ function fromSpec(spec: JobSpec): SpecFromConfig {
 function specFromConfig(f: { executor: string } & { [K in Exclude<keyof SpecFromConfig, 'executor'>]: SpecFromConfig[K] | undefined }): SpecFromConfig {
   return {
     executor: f.executor, ...(f.model !== undefined ? { model: f.model } : {}), ...(f.cwd !== undefined ? { cwd: f.cwd } : {}),
-    ...(f.defaultCwd !== undefined ? { defaultCwd: f.defaultCwd } : {}), ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
+    ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
     ...(f.rule !== undefined ? { rule: f.rule } : {}),
   };
 }
@@ -55,11 +54,11 @@ const same = (a: SpecFromConfig, b: SpecFromConfig): boolean => JSON.stringify(a
 
 /** `spec` with the parts `f` gives: set where `f` has one, removed where it has none. */
 function withParts(spec: JobSpec, f: SpecFromConfig, routedBy: RoutedBy | undefined): JobSpec {
-  const { cwd: _c, defaultCwd: _d, model: _m, ...rest } = spec.payload;
+  const { cwd: _c, model: _m, ...rest } = spec.payload;
   const { machineId: _p, routedBy: _r, ...base } = spec;
   return {
     ...base, executor: f.executor,
-    payload: { ...rest, ...(f.cwd !== undefined ? { cwd: f.cwd } : {}), ...(f.defaultCwd !== undefined ? { defaultCwd: f.defaultCwd } : {}), ...(f.model !== undefined ? { model: f.model } : {}) },
+    payload: { ...rest, ...(f.cwd !== undefined ? { cwd: f.cwd } : {}), ...(f.model !== undefined ? { model: f.model } : {}) },
     ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
     ...(routedBy ? { routedBy } : {}),
   };
@@ -84,7 +83,7 @@ function respecified(job: Job, to: SpecFromConfig, routedBy: RoutedBy | undefine
   const now = fromSpec(job.spec);
   const was = job.fromConfig ?? now;
   const pick = <K extends keyof SpecFromConfig>(k: K): SpecFromConfig[K] | undefined => (now[k] === was[k] ? to[k] : now[k]);
-  const parts = specFromConfig({ executor: pick('executor')!, model: pick('model'), cwd: pick('cwd'), defaultCwd: pick('defaultCwd'), machineId: pick('machineId'), rule: to.rule });
+  const parts = specFromConfig({ executor: pick('executor')!, model: pick('model'), cwd: pick('cwd'), machineId: pick('machineId'), rule: to.rule });
   return withParts(job.spec, parts, routedBy);
 }
 

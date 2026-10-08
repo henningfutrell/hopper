@@ -6,7 +6,6 @@
 // own herdr (its session from its `ssh` machine instance, herdr by name there), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
-import { JOBS_DIR } from '../../../domain/types.ts';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import type { ClientTransport } from '../../../executors/client.ts';
@@ -19,7 +18,6 @@ export interface HerdrClaudeOptions {
   session: string;
   yolo: boolean;
   args: string[];
-  cwd: string;
   trustWorkdir: boolean;
   jobWorktrees: boolean;
   sharedDependencies: boolean;
@@ -49,8 +47,6 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       args: z.array(z.string()).default([])
         .meta({ commandBearing: true, description: "Claude Code's other arguments: allowed tools, MCP config (yolo decides the permissions)" }),
-      cwd: z.string().min(1).default(JOBS_DIR)
-        .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
       // Issue #379: jobs at one work tree share it; a git repository's top gets each job a worktree of its own.
       jobWorktrees: z.boolean().default(true).meta({
@@ -106,7 +102,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       // (which starts the session's server) and every pane, through its tab's environment.
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
-        clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
+        clock: ctx.clock, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
         jobWorktrees: o.jobWorktrees, sharedDependencies: o.sharedDependencies, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });
     },

@@ -17,7 +17,9 @@ const set = z.strictObject({
   priority: z.number().int().min(0).max(100).optional(),
   workTree: text.refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'workTree must be an absolute path or start with ~').optional(),
 }).refine((s) => s.machine !== undefined || s.executor !== undefined || s.priority !== undefined || s.workTree !== undefined,
-  'set at least one of machine, executor, priority, workTree');
+  'set at least one of machine, executor, priority, workTree')
+  // A path is one machine's (issue #361): the rule pins the job to the machine its work tree is on.
+  .refine((s) => s.workTree === undefined || s.machine !== undefined, "a work tree is one machine's: set the machine too");
 
 const rule = z.strictObject({ name: text, match: match.default({}), set });
 

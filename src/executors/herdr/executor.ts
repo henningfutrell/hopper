@@ -31,7 +31,6 @@ export interface HerdrClaudeExecutorOptions {
   /** Another herdr session on this machine: the one this machine was added with (issue #260). Absent → `herdr`'s. */
   local?: (session: string) => HerdrClient;
   clock: Clock;
-  defaultCwd: string;
   /** Claude's arguments as it starts: `claudeArgsFor(yolo, args)`. */
   claudeArgs: string[];
   trustWorkdir: boolean;
@@ -265,11 +264,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       if (ctx.machine.docker) return { kind: 'failed', error: `herdr-claude does not run on container target ${ctx.machine.id}: it has no herdr; give it the command executor` };
       // An ssh target that runs no herdr (issue #142): without this the job would run in this machine's herdr.
       if (ctx.machine.ssh && !ctx.machine.herdr) return { kind: 'failed', error: `herdr-claude does not run on ${ctx.machine.id}: it runs no herdr; give it another executor` };
-      const asked = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+      const asked = resolvePayload(ctx.job, ctx.machine);
       // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
       const tree = workTreeOn(ctx.machine, asked.cwd);
       if ('error' in tree) return { kind: 'failed', error: tree.error };
-      const p = { ...asked, cwd: tree.cwd, makeWorkTree: tree.make };
+      const p = { ...asked, cwd: tree.cwd };
       ctx.workTree(p.cwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
@@ -291,14 +290,14 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree, state.sharedDependencies === true)}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree, state.sharedDependencies === true, state.checkout)}`, FOOTER_ANCHOR);
       });
     },
 
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
-      const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+      const p = resolvePayload(ctx.job, ctx.machine);
       const refused = heldElsewhere(ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
       return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
@@ -328,7 +327,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
     reattach(ctx) {
       const saved = paneStateOf(ctx.job);
-      const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+      const p = resolvePayload(ctx.job, ctx.machine);
       // A job started before an install that reported work trees has none on it yet: the one its pane opened in.
       const tree = saved ? { cwd: saved.jobWorktree ?? saved.cwd } : workTreeOn(ctx.machine, p.cwd);
       if ('cwd' in tree) ctx.workTree(tree.cwd);
