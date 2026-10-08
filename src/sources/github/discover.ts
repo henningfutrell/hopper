@@ -163,22 +163,28 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     else candidates.push(i);
   }
 
-  const claimed = candidates.filter((i) => i.labels.includes(LABEL_CLAIMED)).map((i) => i.url);
+  // Claims are judged on the issues the hopper would take, and on those only not assigned to the user: a stale
+  // claim there is released too, so assigning the issue later is enough. Such an issue keeps its reason.
+  const judged = [...candidates, ...issues.filter((i) => reasons.get(i.url)?.reason === NOT_ASSIGNED)];
+  const claimed = judged.filter((i) => i.labels.includes(LABEL_CLAIMED)).map((i) => i.url);
   const known = scope.knownKeys && claimed.length > 0 ? scope.knownKeys(claimed) : new Set<string>();
   const unheld = claimed.filter((url) => !known.has(url));
   const elsewhere = scope.othersKnown && unheld.length > 0 ? scope.othersKnown(unheld) : new Set<string>();
   const released: Released[] = [];
-  for (const i of candidates.filter((c) => unheld.includes(c.url))) {
-    if (!scope.knownKeys) { reasons.set(i.url, { reason: CLAIMED_UNKNOWN }); continue; }
+  for (const i of judged.filter((c) => unheld.includes(c.url))) {
+    const taking = !reasons.has(i.url);
+    const skip = (reason: string, action?: IntakeOutcome['action']) => { if (taking) reasons.set(i.url, { reason, ...(action ? { action } : {}) }); };
+    if (!scope.knownKeys) { skip(CLAIMED_UNKNOWN); continue; }
     const v = claimVerdict(i, { ...scope, migrating: migrated }, elsewhere.has(i.url));
-    if (v.kind === 'skip') { reasons.set(i.url, { reason: v.reason, ...(v.action ? { action: v.action } : {}) }); continue; }
+    if (v.kind === 'skip') { skip(v.reason, v.action); continue; }
     if (v.kind !== 'release') continue;
     try {
       await api.removeLabels(i.repo, i.number, claimLabels(scope.holder));
       i.labels = i.labels.filter((l) => l !== LABEL_CLAIMED && !l.startsWith(HOLDER_PREFIX));
+      listed.set(i.url, [...i.labels]);
       released.push(v.released);
     } catch (err) {
-      reasons.set(i.url, { reason: `${CLAIMED_STALE}; releasing it failed: ${(err as Error).message}` });
+      skip(`${CLAIMED_STALE}; releasing it failed: ${(err as Error).message}`);
     }
   }
 
