@@ -327,10 +327,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const withJob = (x: IntakeOutcome): IntakeOutcome => {
-    const job = store.jobs.getBySourceKey(x.key);
-    return job ? { ...x, jobId: job.id } : x;
-  };
+  const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = store.jobs.getBySourceKey(x.key); return job ? { ...x, jobId: job.id } : x; };
 
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 

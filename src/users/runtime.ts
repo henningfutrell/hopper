@@ -9,8 +9,8 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, isRerunnable, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User } from '../domain/types.ts';
-import { rejectionOf } from '../domain/rejection.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User } from '../domain/types.ts';
+import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -252,19 +252,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams),
-    jobSourceContext: {
-      knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
-      rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
-      rejections: (keys) => new Map(keys.flatMap((k) => { const r = rejectionOf(store.jobs.getBySourceKey(k)); return r ? [[k, r] as const] : []; })),
-      connectedAccounts,
-      intake: (name) => ({
-        holder: store.settings.claimHolder(),
-        othersKnown: (keys) => o.otherUsersKnow?.(keys) ?? new Set(),
-        migration: () => store.settings.getIntakeMigration(name),
-        migrated: (m) => store.settings.setIntakeMigration(name, m),
-        record: (type, data) => { store.events.append({ type, data }); },
-      }),
-    },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,

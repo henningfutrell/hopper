@@ -17,7 +17,7 @@ import { checkJobs } from './check.ts';
 import { closedAsComplete, completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
-import { NOT_ASSIGNED, claimLabels, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
+import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
 import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';

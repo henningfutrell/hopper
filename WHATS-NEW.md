@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Sources now lists every issue labelled for the hopper and says, for each one, whether it was taken or why not: not assigned to you, parked, failed, done but still open, or held by another hopper. You can assign issues to yourself or release a claim left behind with one click, repositories outside your chosen ones that have work for you are pointed out with a button to add them, and an idle lane on the Overview says why it is idle.
 - Escalation levels are now changed in one place, Settings → Question gates. The Plugins page lists them with a link there.
 - Questions are answered by Claude again on a hopper where no machine was picked for answering them: the job's own machine answers, or the only one that can, or one you choose in Settings, and each question shows which machine answered it. When no machine can, Settings says so plainly and how to fix it, instead of every question silently going to you.
 - You stay signed in while you use the hopper: a session lasts 7 days without use and 30 days at most, both set in Settings → Sign-in. When a session does end, the hopper takes you straight to sign in again and back to the page you were on.
