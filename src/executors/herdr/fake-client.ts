@@ -109,6 +109,8 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
   /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
   readonly reaps: { jobId: string; scratch?: string }[];
+  /** Each credential file kept on the machine through its connection (issue #441), in order. */
+  readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
   addTurns(...turns: FakeTurn[]): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */
   dropPrompts(n: number): void;
@@ -183,7 +185,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [],
     addTurns: (...more) => { turns.push(...more); },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
@@ -324,6 +326,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('survey', roots);
       if (o.machineUnreachable) throw new Error('the machine cannot be reached');
       return o.survey ?? { scopes: [], processes: [], scratch: [] };
+    },
+    async keepCredential(jobId, dir, file, content, make) {
+      record('keepCredential', jobId, dir, file);
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      fake.credentials.push({ jobId, dir, file, content, ...(make ? { make } : {}) });
     },
     async closePane(paneId) {
       record('closePane', paneId);

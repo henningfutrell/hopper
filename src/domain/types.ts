@@ -97,6 +97,8 @@ export interface Job {
   attempts: number;
   /** The job's work tree on its machine, as its executor reported it (issue #166); absent for an executor with none. */
   workTree?: string;
+  /** Where its credential files are kept on its machine (issue #441): each renewal of its connection rewrites them there. Absent: none kept. */
+  credentialsDir?: string;
   /** Executor-owned state (e.g. herdr pane/agent ids), written via ExecutionContext.saveState. */
   executorState?: Record<string, unknown>;
   /** The open question this job waits on (status waiting_answer). */

@@ -43,15 +43,15 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets") | everything |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") | engine, http, store, plugins, decider |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY` | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -5700,10 +5700,11 @@ token (issue #214; the only GitHub credential of a job since issue #359). The gi
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
 | **the exception (issue #216)**: a realm's own secrets | in clear, in the config record `sign-in` — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment") |
-| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
+| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under the runtime's `HOPPER_TOKEN_KEY` since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
 
 `HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
-with no secret to keep there is nothing to seal. A leftover `HOPPER_SECRET_KEY` is a leftover
+with no secret to keep there is nothing to seal. (The connected account's tokens are the one thing sealed
+again, under `HOPPER_TOKEN_KEY`, issue #441: the token box is theirs alone.) A leftover `HOPPER_SECRET_KEY` is a leftover
 variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` — sealed or
 clear, from before — was refused at load, and is left out by migration 14 (issue #78) for the same
 reason: the rows stay as the daemon last ran them. The one
@@ -6595,16 +6596,13 @@ its expiry if any, when. Every answer carries facts only, never a token.
 - **Install status**: `GET /api/connected-accounts` gives `installUrl` (the app's install page) and
   `installations` (`GET /user/installations`: the accounts the app is installed on that the user sees).
   The Sources panel says where and links to install.
-- **Tokens** (issue #358): a GitHub App's user tokens expire after 8 h, with a refresh token (6 months).
-  Both are kept with the account (`refreshToken`, `refreshTokenExpiresAt`), from the device flow, the web
-  flow and a GitHub sign-in alike. `token()` renews the pair (`src/connected-accounts/renewal.ts`,
-  `@octokit/oauth-methods` `refreshToken`) once an hour or less is left (`RENEW_AHEAD_MS`, so a job given
-  it has an hour at least), and `renew()` does on a 401 (the account API makes the call once more with the
-  new token); one renewal at a time, the new pair kept at once. A device flow grant renews without the
-  client secret; the secret goes when the runtime gives one (`HOPPER_GITHUB_CLIENT_SECRET`, which a web flow
-  grant needs). GitHub not answering ends nothing: a still-valid token is used and the next ask renews.
-  **Expired**: GitHub refusing the renewal (an OAuth error), a 401 with no refresh token, or a token past
-  its expiry with no live refresh token ends the sign-in: kept on the record (`ended`), the account reads
+- **Tokens** (issue #358; how they are kept alive since issue #441: "Keeping the connection"): a GitHub
+  App's user tokens expire after 8 h, with a refresh token (6 months). Both are kept with the account
+  (`refreshToken`, `refreshTokenExpiresAt`), from the device flow, the web flow and a GitHub sign-in alike,
+  with the flow that granted them (`grantedBy`). The renewer renews the pair ahead of expiry whether or
+  not anything asks, and on a 401 (the account API makes the call once more with the new token).
+  **Expired**: GitHub refusing the refresh token itself (`bad_refresh_token`) with no newer pair stored, a
+  401 with no refresh token, or a token past its expiry with no live refresh token ends the sign-in: kept on the record (`ended`), the account reads
   `state: 'expired'` with why — never `connected` — offers no login (so a gh source with `enabled: auto`
   runs again), its source pauses with `GitHub's sign-in expired: Sources → Connect GitHub again`, and
   `connected_account.expired { provider, account, reason }` is recorded once, which the notifiers send.
@@ -6621,23 +6619,25 @@ connected: Sources → Connect GitHub`, and `GET /api/accounts` carries the same
 paused while an account was connected; it is removed by issue #359.)
 
 **Jobs act through it** (`JobSource.credentials`, `ExecutionContext.credentials`): when a job of the
-connected account starts, the engine asks its source for `GH_TOKEN` (the account's token now), and the
-herdr-claude executor puts it in the job's pane environment. So `gh` in the job (pull requests, issue
-reads) acts as the user, and GitHub shows the hopper's app on it. Never stored on the job or its payload.
-A job resumed after a question keeps its pane, and the token it started with.
+connected account starts, the engine asks its source for its credentials and keeps them on the job's
+machine, where every renewal rewrites them ("Keeping the connection", issue #441): `gh` in the job (pull
+requests, issue reads) reads the account's token from its config dir there, acts as the user, and GitHub
+shows the hopper's app on it. Never stored on the job or its payload. A machine whose connection keeps no
+files runs the job with `GH_TOKEN`, the token as it is at its start.
 
 **The app-as-itself source** (`github-app`, an admin's own GitHub App and its private key) is no longer a
 built-in instance: an admin adds it in Plugins where it suits; existing configs keep theirs.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`) | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`, issue #441) | engine, http, store, plugins, decider |
 | `src/sources/github/account/` | the issue port over a connected GitHub account's token | engine, http, store, plugins |
 
-**Residual risk, stated.** Tokens are in the database in clear, as the realm secrets are (#216): whoever
-holds its credentials or a dump (backups included) holds them. A token reaches what the user may do on
-the repositories the app is installed on. A job's token is in its pane's environment and, while the herdr
-CLI creates the tab, its argv; any process of the daemon's account on that machine can read it. The
+**Residual risk, stated.** Tokens are in the database sealed under `HOPPER_TOKEN_KEY` since issue #441, in
+clear where the runtime gives no key (as the realm secrets are, #216): then whoever holds its credentials
+or a dump (backups included) holds them. A token reaches what the user may do on the repositories the app
+is installed on. A job's token is in a file of its own on its machine (mode 600), and in its pane's
+environment only where that file cannot be kept; any process of the daemon's account on that machine can read it. The
 command and Cursor executors run without it (their variables would sit in a long-lived argv): not built.
 Until someone signs in with GitHub, whoever reaches the UI first and signs in with GitHub becomes admin:
 sign in yourself before you expose the hopper (#239). GitHub Enterprise's GraphQL (`<url>/api/graphql`)
@@ -6654,6 +6654,93 @@ earlier GitHub sign-ins makes nobody admin; another browser or site refused),
 and labels through the account's token, a job running with `GH_TOKEN` that is never stored, disconnect, a
 denied code, users apart), `test/store/migration-23.test.ts`, `test/store/tenant-migration-8.test.ts`,
 `test/ui/sign-in-device.test.ts`, `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts`.
+
+## Keeping the connection (issue #441, 2026-10-08)
+
+A connection made through the hopper's GitHub App had to be made again within about a day. GitHub App user
+tokens last 8 hours and come with a refresh token good for about 6 months, so one connection can last
+months, renewed by the hopper alone. #358 renewed only when something asked for a token, not atomically
+across processes, and ended the connection on any refusal; and GitHub invalidates both the refresh token
+and the access token it came with the moment the refresh token is used, so every renewal cut off the jobs
+already running. (The live hopper had no `connected_account.expired` event when this was built: its
+connection then came from a GitHub sign-in that adopted a new grant.)
+
+**The renewer** (`src/connected-accounts/renewer.ts`). It looks at the account every `RENEW_EVERY_MS`
+(60 s) and at the runtime's start, and renews the token once `RENEW_AHEAD_MS` (an hour) or less of it is
+left, whether or not anything asked for one; a hopper that was down past the 8 hours renews at start with
+the stored refresh token. `token()` renews the same way when it is asked first, and `renew(refused)` after
+a 401. One renewal:
+1. in this process, one at a time per account (`renewing`);
+2. across processes on one database — an old and a new container overlapping, another runtime — the
+   account's **advisory lock** (`pg_try_advisory_lock(hashtext('hopper connected account ' ||
+   current_schema() || ' ' || provider))`, `ConnectedAccountRepository.lock`), session-level, so a crashed
+   process lets it go; waited for up to 30 s, polling, and given up for now when the stored refresh token
+   changes meanwhile (another process renewed: its pair is used);
+3. under the lock the row is read again: a pair another process rotated is used, and GitHub is not called;
+4. GitHub's answer is kept at once, before anything else awaits — `swap(provider, refreshToken, next)`: one
+   transaction, the row `FOR UPDATE`, written only while its refresh token is still the one used (a
+   compare-and-swap). A crash can only lose a rotation in the time between GitHub's answer reaching the
+   process and that synchronous write; tested by reading the row from another connection at the first
+   moment anything else could run.
+
+**What ends it, and what does not.** The sign-in ends only when GitHub refuses the refresh token itself
+(`bad_refresh_token`: used, revoked, expired, or the app's authorization removed) and the row, read again,
+holds no newer pair — an older hopper that takes no lock may have rotated it first, and then that pair is
+used, once — or when the refresh token is past its own expiry. Everything else is a **renewal trouble**,
+never an end: GitHub not answering, a 5xx, a rate limit, the lock held too long, GitHub refusing the app's
+own credentials (`incorrect_client_credentials`, `invalid_client`, `unauthorized_client`), or a grant this
+hopper cannot renew as it is set up. It is logged, shown on the account (`ConnectedAccountStatus.renewal`,
+the Sources panel's **could not be renewed yet**), and tried again after 30 s, 1, 2, 5, 10, then every 15
+minutes (`RETRY_MS`); an ask before then gets the current token while it is still good, else the trouble
+as an error. An ended connection reads `expired` (never `connected`), is told once
+(`connected_account.expired`, which the notifiers send), pauses its source, and asks to connect again in
+the Sources panel and in the header, on every screen (`detail.expired` on the source's status).
+
+**A browser grant** (the web flow, #258) renews only with the app's client secret; a device flow grant
+without it. The account keeps which flow granted it (`grantedBy`); a web flow grant in a runtime with no
+`HOPPER_GITHUB_CLIENT_SECRET` is not sent to GitHub at all (`RenewalBlocked`): a renewal trouble naming the
+variable, renewed once it is set. A grant kept before #441 has no `grantedBy` and renews as #358 did.
+
+**At rest** (`src/connected-accounts/at-rest.ts`, `src/secrets/token-box.ts`). The access and refresh
+tokens are sealed with AES-256-GCM (node:crypto) under the runtime's `HOPPER_TOKEN_KEY` (32 bytes, 64 hex
+digits or base64; also `_FILE`), `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext). The compose install
+makes the key on Postgres's first start, beside the database password in the secrets volume
+(`/run/hopper-secrets/token_key`, `HOPPER_TOKEN_KEY_FILE`); `install.sh` writes one into `daemon.env`
+once. A key that is no key stops the runtime (fails closed); no key keeps the tokens in clear, said at start.
+A row kept in clear — from before, or before a key was given — is sealed by the renewer's next look. A
+sealed row the runtime cannot open (no key, another key) reads `failed` with what to do — never connected,
+never ended. Everything a renewal needs is in Postgres and the runtime's key, so a fresh container on the
+same database and secrets carries on without a new sign-in.
+
+**Running jobs** (`src/engine/credentials.ts`). A job's source answers its credentials as `files` (kept
+in the job's **credentials dir**, `<scratch>/credentials`, on its machine), `paths` (variables pointing
+there) and `env` (the token as it is now). The executor asks with the job's scratch dir
+(`ExecutionContext.credentials(scratch, makeWorkTree)`); the engine records the dir on the job
+(`credentialsDir`), writes the files through the machine's own connection — this machine's shell, ssh, or a
+client target's `POST /credential` (`src/client/credential.ts`: a fixed script, the content on stdin, the
+file replaced whole, mode 600, only under `…/.hopper-scratch/<job id>/credentials`, never making a work
+tree that is not there unless it is the jobs dir) — and answers the variables. For GitHub: `gh/hosts.yml`
+with the token under the host, and `GH_CONFIG_DIR` pointing at it; `gh` reads it at each run, and so does
+gh's git credential helper. After every renewal (`onRenewed` → `engine.renewCredentials()`), each job in
+flight with a `credentialsDir` has its files rewritten; a machine that cannot be reached is logged and
+keeps the files it has until the next renewal reaches it. A machine whose connection keeps no files (an
+executor with no machine shell) runs the job with `env` — `GH_TOKEN` as at its start — and says so in its
+progress. The reap removes the credentials dir whatever else it keeps.
+
+**Hopper sessions are not bound to the token.** A token expiring, renewing or failing to renew never ends a
+hopper UI session; its lifetime is #439's.
+
+**Verification:** `test/connected-accounts/rotation.test.ts` (real Postgres, two connections to one user
+schema as two processes, the real renewal over HTTP to the fake GitHub, a fake clock: renewed by the
+scheduler with nothing asking; renewed at start after 10 hours down; two processes at once, one GitHub
+call, both with the new pair; the pair stored before anything else runs; `bad_refresh_token` after an
+older process rotated, recovered; a revocation ends it, told once; 5xx and network errors end nothing and
+back off; a web flow grant with no secret is not sent; sealed at rest, a fresh process with the key carries
+on, another key reads unreadable), `test/integration/connected-account-renewal.test.ts` (a running job's
+credential file on its machine rewritten with the renewed token, GitHub refusing the one it started with),
+`test/client/machine-shell.test.ts` (the credential script on this machine and a client target),
+`test/secrets/token-box.test.ts`, `test/ui/sources-view.test.ts` (the header prompt, the renewal trouble),
+`test/scripts/compose.test.ts`, `test/integration/unit-file.test.ts`.
 
 ## The hopper's app, for everyone (issue #352, 2026-10-07)
 

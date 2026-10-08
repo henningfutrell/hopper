@@ -8,6 +8,7 @@ import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
 import { readJobRules } from '../job-rules/index.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 
@@ -137,13 +138,13 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const progress = progressReporter(job.id, claim.laneId);
     let outcome: ExecutionOutcome;
     try {
-      // Asked now, never stored: the job acts through its source's connection as it is at this start.
       const waited = machine && executor && launch === 'reattach-when-reachable'
         ? await whenReachable(executor, started, claim, machine.id, entry.controller.signal) : undefined;
-      const credentials = machine && !waited ? await c.credentials(started) : {};
       outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, {
         // The job rules as they are at this start (issue #172): an edit reaches the next job.
-        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, credentials, jobRules: readJobRules(store.config),
+        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, jobRules: readJobRules(store.config),
+        // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
+        credentials: (scratch, make = false) => placeCredentials(c, started, executor?.machineShell?.(machine), scratch, make, (line) => progress.report(0, line)),
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
