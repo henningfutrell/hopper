@@ -45,7 +45,7 @@ function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, un
   };
   const ctx: ExecutionContext = {
     job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress() {}, saveState: (s) => { saved.push(s); },
-    workTree() {}, ...(o.credentials ? { credentials: o.credentials } : {}),
+    workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}),
   };
   return { ctx, saved };
 }

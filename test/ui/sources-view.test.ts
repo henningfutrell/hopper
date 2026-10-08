@@ -9,7 +9,8 @@
 // Sign out, never Disconnect; signed in another way, forgetting it says it keeps the sign-in (issue #322).
 // Of the repositories the app reaches the person chooses which ones jobs may use, filtering a long list,
 // with a count of chosen against available (issue #321). A sign-in that expired says so and asks for a
-// new one (issue #359).
+// new one (issue #359), in the header too, on every screen (issue #441); a renewal that failed for a reason
+// that may pass shows on the panel, and the connection reads as connected (issue #441).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -96,7 +97,7 @@ describe('Sources view: GitHub', () => {
   it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
     const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
     await boot({
-      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused })] },
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused, expired: true })] },
       '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'expired', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error: 'GitHub refused the refresh token (bad_refresh_token)' }] },
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
@@ -104,9 +105,25 @@ describe('Sources view: GitHub', () => {
     expect(panel()!.textContent).toContain('The sign-in of octo-user expired');
     expect(document.body.textContent).toContain('sign-in expired');
     expect(document.querySelector('[data-github-summary]')?.textContent).toBe(`No issue is read through your GitHub connection: ${paused}.`);
+    // The header says so on every screen, and leads to Sources (issue #441).
+    const header = document.querySelector('header [data-connection-ended]') as HTMLAnchorElement | null;
+    expect(header?.textContent).toBe('GitHub sign-in expired: connect again');
+    expect(header?.getAttribute('href')).toBe('#sources');
     const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Connect GitHub again')!;
     await act(async () => { button.click(); });
     await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
+  });
+
+  it('a renewal that failed shows on the panel; the connection reads as connected, and the header stays quiet (#441)', async () => {
+    await boot({
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [], renewal: 'GitHub: could not renew the token: connect ECONNREFUSED' }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-renewal]')).not.toBeNull());
+    expect(panel()!.querySelector('[data-renewal]')!.textContent).toContain('connect ECONNREFUSED');
+    expect(panel()!.querySelector('[data-renewal]')!.textContent).toContain('tries again by itself');
+    expect(document.querySelector('header [data-connection-ended]')).toBeNull();
   });
 
   it('connects GitHub from the GitHub account panel: how the hopper connects, then the code to enter (#214)', async () => {

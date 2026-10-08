@@ -15,7 +15,11 @@ function service(record: ConnectedAccount | undefined, refresh = async (): Promi
   const told: string[] = [];
   const s = createConnectedAccounts({
     store: {
-      connectedAccounts: { get: () => kept, put: (a: ConnectedAccount) => { kept = a; }, delete: () => { const had = kept !== undefined; kept = undefined; return had; } },
+      connectedAccounts: {
+        get: () => kept, put: (a: ConnectedAccount) => { kept = a; }, delete: () => { const had = kept !== undefined; kept = undefined; return had; },
+        swap: (_p: string, from: string, next: ConnectedAccount) => { if (kept?.refreshToken !== from) return false; kept = next; return true; },
+        lock: () => true, unlock: () => undefined,
+      },
       settings: { getJobRepositories: () => ['octo-user/tools'], setJobRepositories: () => undefined },
     } as never,
     apps: hopperApps({ github: {} }),
