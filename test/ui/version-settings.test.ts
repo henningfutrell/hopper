@@ -15,6 +15,7 @@ const UPDATE = {
   state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [],
   installed: { kind: 'install', repo: 'git@github.com:o/r.git', branch: 'stable', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
   installedWhatsNew: ['You can now do the newest thing.', 'An older change.'],
+  restartBlockers: 0,
   checkedAt: '2026-10-06T10:01:00Z',
 };
 let root: Root | undefined;
@@ -155,13 +156,56 @@ describe('a build that does not know all of itself (issue #409)', () => {
     expect(document.querySelectorAll('[data-slot="version-history"] [data-slot="version"]')).toHaveLength(2);
   });
 
-  it('an image build offers no Update now: it says to pull or rebuild the image', async () => {
+  it('an image build offers no Update now: it says to pull the image', async () => {
     window.location.hash = '#settings/version';
     const target = { commit: 'beef'.padEnd(40, '0'), ref: 'stable' };
     await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...UPDATE, state: 'available', target, installed: { ...UPDATE.installed, kind: 'image' } } });
     const details = document.querySelector('[data-slot="version-details"]');
     expect([...details!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
-    expect(details!.textContent).toMatch(/pull or rebuild the image/);
+    expect(details!.textContent).toMatch(/pull the stable image/);
+  });
+});
+
+describe('a container install is updated by its user (issue #494)', () => {
+  const target = { commit: 'beef'.padEnd(40, '0'), ref: 'dev' };
+  const image = { ...UPDATE, state: 'available', channel: 'dev', target, restartBlockers: 2, installed: { ...UPDATE.installed, kind: 'image' } };
+  const autoUpdate = () => document.querySelector('[data-slot="version-details"] [aria-label="Auto-update"]');
+
+  it('Version offers no Auto-update switch on an image install, and says why', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...image, autoUpdate: true } });
+    expect(autoUpdate()).toBeNull();
+    expect(document.querySelector('[data-slot="auto-update-image"]')?.textContent).toMatch(/Auto-update does not apply to a container/);
+  });
+
+  it('a host install keeps the Auto-update switch', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    expect(autoUpdate()).not.toBeNull();
+    expect(document.querySelector('[data-slot="image-update"]')).toBeNull();
+  });
+
+  it('Version gives the copyable commands for the selected channel\'s tag, the tag mismatch and the restart-blocker count', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: image });
+    const block = document.querySelector('[data-slot="image-update"]')!;
+    const text = block.textContent ?? '';
+    expect(text).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
+    expect(text).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
+    expect(text).toContain('docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper');
+    expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
+    expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
+    expect(text).toContain('2 running jobs would be lost');
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('the update notice gives the same commands and the restart-blocker count', async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: image });
+    const notice = document.querySelector('[data-update-notice]')!;
+    expect(notice.textContent).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
+    expect(notice.textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
+    expect(notice.textContent).toContain('2 running jobs would be lost');
+    expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
   });
 });
 

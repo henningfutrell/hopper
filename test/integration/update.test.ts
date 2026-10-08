@@ -68,6 +68,27 @@ describe('self-update over HTTP', () => {
     expect((await app.events()).filter((e) => e.type.startsWith('update.')).map((e) => e.type)).toEqual(['update.available', 'update.started']);
   });
 
+  it('an image install ignores auto-update and refuses apply (issue #494)', async () => {
+    const w = world();
+    const root = tempDir('jh-update-it-');
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const restarts: number[] = [];
+    const appDir = createInstall(root, w.up.dir, w.c1, 'stable', 'image');
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
+    apps.push(app);
+    const token = await app.login();
+    const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', autoUpdate: true }, { token });
+    expect(set.status).toBe(200);
+    expect(set.body.autoUpdate).toBe(false);
+    expect((await app.ui<UpdateStatus>('/ui/api/update', { action: 'check' }, { token })).body).toMatchObject({ state: 'available', autoUpdate: false, restartBlockers: 0 });
+    const apply = await app.ui<{ error: string }>('/ui/api/update', { action: 'apply' }, { token });
+    expect(apply.status).toBe(409);
+    expect(JSON.stringify(apply.body)).toMatch(/container image/);
+    await new Promise((res) => setTimeout(res, 50));
+    expect(restarts).toEqual([]);
+    expect(readInstall(appDir).commit).toBe(w.c1);
+  });
+
   it('answers the version history at GET /api/update/history (issue #246)', async () => {
     const w = world();
     const root = tempDir('jh-update-it-');
