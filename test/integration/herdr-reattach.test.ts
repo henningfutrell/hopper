@@ -2,7 +2,7 @@
 // instances over one database and ONE fake herdr, which stands for the herdr server that
 // outlives the daemon. The job's pane and Claude survive, so the job is reattached, not failed.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Job } from '../../src/domain/types.ts';
+import { DEFAULT_FAILURE_SETTINGS, type Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
 import { openAdminStore } from '../support/files.ts';
 import { databaseUrlFor } from '../support/database.ts';
@@ -41,9 +41,13 @@ async function boot(herdr: FakeHerdrClient, laneCount = 4, env: Record<string, s
   return a;
 }
 
-/** Pull a herdr-claude job, wait until its prompt is in the pane, stop the daemon. */
-async function runThenStop(herdr: FakeHerdrClient): Promise<{ job: Job; paneId: string; agentName: string }> {
+/**
+ * Pull a herdr-claude job, wait until its prompt is in the pane, stop the daemon. `manual`: the failure assessor
+ * (issue #509) acts on nothing by itself, so only a person runs a failed job again.
+ */
+async function runThenStop(herdr: FakeHerdrClient, o: { manual?: boolean } = {}): Promise<{ job: Job; paneId: string; agentName: string }> {
   const first = await boot(herdr);
+  if (o.manual) first.user().store.settings.setFailureSettings({ ...DEFAULT_FAILURE_SETTINGS, auto: { retry: false, hold: false, redirect: false } });
   const pulled = await first.pull({}, item);
   await waitFor(() => herdr.prompts.length === 1);
   const job = await first.waitForStatus(pulled.id, 'running');
@@ -206,7 +210,7 @@ describe('herdr-claude job across a daemon restart', () => {
   it('a pane the restart could not reach stays due for cleanup; a rerun of its item is held until it is closed', async () => {
     freshDb();
     const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG, { output: ['● Done.', '  HOPPER_DONE'] }] }));
-    const { job, paneId, agentName } = await runThenStop(herdr);
+    const { job, paneId, agentName } = await runThenStop(herdr, { manual: true });
     link.down = true;
 
     const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
@@ -237,7 +241,7 @@ describe('herdr-claude job across a daemon restart', () => {
   it('Mark closed ends a deferred cleanup by hand: it is no longer tried, and the held rerun is admitted', async () => {
     freshDb();
     const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
-    const { job, paneId } = await runThenStop(herdr);
+    const { job, paneId } = await runThenStop(herdr, { manual: true });
     link.down = true;
     const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
     await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });

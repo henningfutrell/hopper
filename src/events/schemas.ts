@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, LOGIN_KINDS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, LOGIN_KINDS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -18,6 +18,8 @@ const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), la
 
 // Every auth event (issue #476) names its login, its kind and its tool; never the login's URL or code.
 const login = { loginId: z.string(), kind: z.enum(LOGIN_KINDS), tool: z.string().min(1) };
+
+const problemScope = strict({ machineId: z.string().optional(), executor: z.string().optional() });
 
 const divergence = strict({
   jobId: z.string(), advice: adviceAction,
@@ -94,7 +96,8 @@ export const EVENT_SCHEMAS = {
   // Operator-led work (issue #318): an operator took the waiting job by hand; it holds no lane and is never run.
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
-  'job.rerun': strict({ by: z.enum(['user']) }),
+  // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
+  'job.rerun': strict({ by: z.enum(['user', 'assessor']) }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
@@ -120,6 +123,17 @@ export const EVENT_SCHEMAS = {
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime() }),
   'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),
   'auth.failed': strict({ ...login, reason: z.string().min(1) }),
+  // The failure assessor (issue #509): its judgement of a failed job, and the problems it groups shared causes into.
+  'job.assessed': strict({
+    recordId: z.string(), signature: z.string(), class: z.enum(FAILURE_CLASSES), decision: z.enum(FAILURE_DECISIONS),
+    reasons: z.array(z.string()), summary: z.string(), attempt: z.number().int().min(1), auto: z.boolean(),
+    causeId: z.string().optional(), problemId: z.string().optional(), retryAt: z.iso.datetime().optional(),
+  }),
+  'failure.grouped': strict({
+    problemId: z.string(), signature: z.string(), title: z.string(), opened: z.boolean(), general: z.boolean(),
+    decision: z.enum(['hold', 'redirect']), scope: problemScope, affected: z.number().int().min(1),
+  }),
+  'failure.resolved': strict({ problemId: z.string(), title: z.string(), by: z.enum(['user', 'check']), released: z.number().int().min(0) }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

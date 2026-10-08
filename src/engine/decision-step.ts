@@ -27,6 +27,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       unavailableExecutors: c.executors.unavailable(),
       queueOrder: queueOrder(c, waiting),
       cleanupDue: cleanupDue(),
+      problems: c.problems(),
       policy: c.policy,
     };
   };

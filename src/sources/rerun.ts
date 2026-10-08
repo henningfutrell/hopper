@@ -3,7 +3,7 @@
 // queued in the same step (`SourceHost.rerun`), so the user sees it at once. The sync loop (sync.ts)
 // hands it the job's report chain.
 
-import type { JobSource, RerunResult, SourceHost } from '../domain/ports.ts';
+import type { JobSource, RerunBy, RerunResult, SourceHost } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 
 export interface RerunContext {
@@ -37,7 +37,7 @@ export function createRerun(c: RerunContext) {
   }
 
   return {
-    async rerun(jobId: string): Promise<RerunResult> {
+    async rerun(jobId: string, by: RerunBy = 'user'): Promise<RerunResult> {
       const checked = check(jobId);
       if ('ok' in checked) return checked;
       let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
@@ -51,7 +51,7 @@ export function createRerun(c: RerunContext) {
           result = { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
           return;
         }
-        result = { ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }) };
+        result = { ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by) };
       });
       // The new job's claim is reported at once, not at the next poll.
       if (result.ok) c.syncSoon(checked);

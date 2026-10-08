@@ -163,7 +163,7 @@ describe('herdr-claude executor: run', () => {
 
   it('fails on HOPPER_FAILED with its reason', async () => {
     const { executor } = setup({ turns: [{ output: ['● I cannot.', '  HOPPER_FAILED no network access'] }] });
-    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toEqual({ kind: 'failed', error: 'no network access' });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toEqual({ kind: 'failed', error: 'no network access', tail: expect.stringContaining('HOPPER_FAILED no network access') });
   });
 
   it('asks on HOPPER_QUESTION, keeps the pane, and frees the lane mapping', async () => {

@@ -35,6 +35,7 @@ import { splitSources } from './job-sources.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
+import { createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, type Logins } from '../logins/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
@@ -103,6 +104,8 @@ export interface UserRuntime {
   questions: QuestionService;
   /** The logins a job or run waits on (issue #476). */
   logins: Logins;
+  /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
+  failures: Failures;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   /** The user's connected GitHub account (issue #214). */
@@ -309,11 +312,20 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     credentials: async (job) => sourceOf(job)?.credentials?.(job),
+    // Read at each Decision; reached only after `failures` exists.
+    problems: () => failures.blocks(),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
     sources: jobSources(), host: engine.sourceHost, clock,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
+  });
+  // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
+  const failures = createFailures({
+    store, clock, logger, sweepMs: config.tickMs,
+    rerun: (jobId, by) => sync.rerun(jobId, by),
+    machines: () => host.machines().list(),
+    trigger: (reason) => engine.trigger(reason),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
@@ -329,7 +341,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, logins, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, logins, failures, dispatcher, executors,
     connectedAccounts,
     usageHistory,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -345,10 +357,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       sync.start();
       usageHistory.start();
+      failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
     },
     stop() {
       stopped ??= (async () => {
+        await failures.stop();
         await sync.stop();
         usageHistory.stop();
         connectedAccounts.stop();

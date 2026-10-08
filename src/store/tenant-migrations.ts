@@ -223,6 +223,29 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX logins_status ON logins (status);
   CREATE INDEX logins_job ON logins (job_id)`,
+  // 22: the failure assessor (issue #509): a record per assessed failed job, and the problems shared causes are grouped into.
+  `CREATE TABLE failures (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    at TEXT NOT NULL,
+    pending_at TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX failures_job ON failures (job_id);
+  CREATE INDEX failures_signature ON failures (signature, at);
+  CREATE INDEX failures_at ON failures (at);
+  CREATE INDEX failures_pending ON failures (pending_at);
+  CREATE TABLE problems (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    signature TEXT NOT NULL,
+    status TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX problems_status ON problems (status, signature)`,
 ];
 
 /** A user schema's version once migrated. */

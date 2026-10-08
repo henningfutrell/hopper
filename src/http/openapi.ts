@@ -9,6 +9,7 @@ import { jobsQuery } from './jobs.ts';
 import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
 import { loginSettingsBody } from './ui/logins.ts';
+import { failureCauseBody, failureForgetBody, failureSettingsBody } from './ui/failures.ts';
 import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
@@ -21,7 +22,7 @@ import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody,
 import { deliveriesQuery } from './webhooks.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Logins' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Logins' | 'Failures' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -86,6 +87,13 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/logins/:id/cancel', tag: 'Logins', summary: 'Cancel a login', description: 'The login ends `cancelled` (`auth.cancelled`) and its code is dropped. A herdr job waiting on it is told to stop waiting and go on without it, or to fail. 409: it ended, or what waited on it is no longer running.', role: 'operator', returns: 'the `Login`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/logins/:id/new-code', tag: 'Logins', summary: 'Ask for a new code', description: 'A herdr job waiting on the login is told to start it again and report the new code; the same login takes it (`auth.pending` again, `renewed: true`). Also on an expired login, while its job waits (logins setting `onExpiry: hold`). 409: it ended, what waited on it is no longer running, or its run cannot ask its tool again (a print-mode run).', role: 'operator', returns: 'the `Login`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/logins/settings', tag: 'Logins', summary: 'Change the logins settings', description: 'Either setting, or both; one left out keeps its value. `onExpiry` `fail` (the default): the job fails, its reason the expiry. `hold`: the job keeps waiting for a new code until its own timeout. Applies to the next expiry, without a restart. `warnSec` (10 to 3600, default 60): how long before a code runs out the Logins view warns, or a fifth of the code\'s life when that is longer.', role: 'admin', body: loginSettingsBody, returns: '`LoginSettings`' },
+  { method: 'get', path: '/api/failures', tag: 'Failures', summary: 'The failures', description: 'What the failure assessor made of the failed jobs (issue #509): `problems` — the open ones, then those resolved in the last day, each with its jobs (`jobIds`), the jobs that wait on its release (`held`) and its `actions`; `recent` — the newest assessed failures, each with its decision, reasons, summary, evidence and `actions`; `profile` — per signature counts and a daily trend over 14 days, and breakdowns by machine, repo and executor; `causes` — the known causes, the named ones first; and the failures `settings`. An action\'s `{ ok: false, why }` is the reason its route refuses it now.', returns: '`FailuresView`' },
+  { method: 'post', path: '/ui/api/failures/problems/:id/resolve', tag: 'Failures', summary: 'Resolve a problem', description: 'The problem ends `resolved` (`failure.resolved`, `by: "user"`): new jobs are no longer held for it, and its held jobs run again through the normal queue. 409: it is already resolved.', role: 'operator', returns: 'the `Problem`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/failures/problems/:id/release', tag: 'Failures', summary: 'Release a problem\'s held jobs', description: 'Its held jobs run again now, through the normal queue (`job.rerun`, `by: "assessor"`); while the problem is open, a job it covers is held there again or placed on another machine. 409: no job is held.', role: 'operator', returns: 'the `Problem`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/failures/:id/retry', tag: 'Failures', summary: 'Run a failure\'s job again', description: 'A failure surfaced to a person (or one whose run again was refused): its job\'s item runs again, as Run again does. 409: it already ran again, runs again by itself, waits on its problem, or a newer job of its item exists.', role: 'operator', returns: 'the new `Job`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/failures/settings', tag: 'Failures', summary: 'Change the failures settings', description: 'Any of them; one left out keeps its value. `maxAttempts` (0 to 10, default 3): retries per job. `backoffSec` (default 60), `backoffFactor` (default 2), `backoffMaxSec` (default 1800): the wait before each retry. `groupThreshold` (default 3) items failed with one signature within `groupWindowMin` minutes (default 60) flag it as a general cause. `auto.retry`, `auto.hold`, `auto.redirect` (default on): whether each decision acts by itself; off, it waits for a person, and with `auto.hold` off no job is held for a problem. `retentionDays` (default 90): how long failure records and resolved problems are kept. Applies without a restart.', role: 'admin', body: failureSettingsBody, returns: '`FailureSettings`' },
+  { method: 'post', path: '/ui/api/failures/causes', tag: 'Failures', summary: 'Name a cause', description: 'Names the cause of a signature, with a description and its default decision (`retry`, `hold`, `redirect` or `person`): the next failure with that signature follows it, before any built-in cause. Naming it again replaces it.', role: 'admin', body: failureCauseBody, returns: 'the `KnownCause`' },
+  { method: 'post', path: '/ui/api/failures/causes/forget', tag: 'Failures', summary: 'Forget a named cause', description: 'The signature\'s failures follow the built-in causes again. 404: no cause is named for it.', role: 'admin', body: failureForgetBody, returns: '`{ forgotten }`', errors: [404] },
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'every machine (name, connection, options), the executors, the machine defaults, the detected ssh targets and which of them are this machine, the hopper\'s own public ssh key, why this machine cannot be added (in a container), the plugins config version' },
@@ -140,6 +148,7 @@ const TAGS: Record<Tag, string> = {
   Jobs: 'Jobs and the job sources they are pulled from.',
   Questions: 'Questions a running job asks, and the gates they pass.',
   Logins: 'Logins a job or run waits on (a CLI showing a device code): never a question.',
+  Failures: 'What the failure assessor made of the failed jobs: problems grouped from shared causes, assessed failures, the failure profile, and its settings.',
   'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
@@ -175,7 +184,7 @@ const openApiPath = (path: string): string => path.replace(/:([A-Za-z]+)/g, '{$1
 
 function parameters(op: Operation): unknown[] {
   const out: unknown[] = [];
-  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : op.tag === 'Logins' ? 'login' : 'decision'));
+  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : op.tag === 'Logins' ? 'login' : op.tag === 'Failures' ? (op.path.includes('/problems/') ? 'problem' : 'failure record') : 'decision'));
   if (op.path.includes(':name')) out.push(name);
   if (op.query) {
     const s = schemaOf(op.query) as { properties?: Record<string, Record<string, unknown>>; required?: string[] };

@@ -157,7 +157,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: hideCodes(turn.assistantText, recent).slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
-        return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent) };
+        return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent), tail: hideCodes(tail(recent, OUTPUT_LINES), recent) };
       } else if (turn.lastMarker === 'question') {
         return asked({ kind: 'question', question: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'marker' } });
       } else if (turn.lastMarker === 'auth') {

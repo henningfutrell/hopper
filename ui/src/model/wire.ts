@@ -7,6 +7,7 @@ import type {
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
+  Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, JobAssessment, KnownCause, ProblemView, SignatureStat,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -16,6 +17,7 @@ export type {
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
+  Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, JobAssessment, KnownCause, ProblemView, SignatureStat,
 };
 
 export interface Queue {

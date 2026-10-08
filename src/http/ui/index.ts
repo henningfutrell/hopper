@@ -24,11 +24,8 @@ import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
-import { registerJobActionRoutes } from './job-actions.ts';
-import { registerLoginRoutes } from './logins.ts';
-import { registerSourceIntakeRoutes } from './source-intake.ts';
+import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
-
 
 export interface UiRouteOptions {
   /** The request's user's parts (the session's user). */
@@ -279,8 +276,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
-  // A job source's intake actions (issue #440), and the logins' (issue #476).
-  for (const register of [registerJobActionRoutes, registerSourceIntakeRoutes, registerLoginRoutes]) register(app, { operator, admin, tenant: o.tenant });
+  // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
+  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

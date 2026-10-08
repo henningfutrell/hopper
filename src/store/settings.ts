@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
+import type { ConnectedAccountProvider, FailureSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -97,6 +97,20 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setLoginWarnSec(seconds) {
       write('loginWarnSec', String(seconds));
+    },
+    getFailureSettings() {
+      const text = read('failureSettings');
+      return text === undefined ? undefined : JSON.parse(text) as FailureSettings;
+    },
+    setFailureSettings(settings) {
+      write('failureSettings', JSON.stringify(settings));
+    },
+    getNamedCauses() {
+      const text = read('failureCauses');
+      return text === undefined ? [] : JSON.parse(text) as NamedCause[];
+    },
+    setNamedCauses(causes) {
+      write('failureCauses', JSON.stringify(causes.map((c) => ({ signature: c.signature, name: c.name, description: c.description, decision: c.decision }))));
     },
   };
 }

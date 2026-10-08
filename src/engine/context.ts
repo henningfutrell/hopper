@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import type { DeciderPolicy, Job } from '../domain/types.ts';
+import type { DeciderPolicy, Job, ProblemBlock } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -39,6 +39,8 @@ export interface EngineOptions {
   notComplete: (job: Job) => Promise<string | undefined>;
   /** What a job's processes act with, from its source's connection (JobSource.credentials, issues #214, #441). */
   credentials: (job: Job) => Promise<JobCredentials | undefined>;
+  /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
+  problems: () => ProblemBlock[];
 }
 
 /** What the engine's modules share. */

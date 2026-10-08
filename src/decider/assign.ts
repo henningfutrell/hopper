@@ -1,4 +1,4 @@
-import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -30,6 +30,8 @@ export interface MachineState {
   unpinned: number;
   /** Per executor the machine runs (issue #140). */
   executors: Map<string, ExecutorState>;
+  /** Open problems on this machine (issue #509): a new job of an executor one names is placed elsewhere. */
+  problems?: ProblemBlock[];
 }
 
 export interface Candidate {
@@ -163,9 +165,29 @@ function roomForJob(s: MachineState, job: Job): number {
   return pinOf(job) === s.machine.id ? r : Math.min(r, unpinnedCap(s) - s.unpinned);
 }
 
+/** Whether an open problem names this machine, or every machine, and the job's executor (or none). */
+const problemHits = (b: ProblemBlock, machineId: string, job: Job): boolean =>
+  (b.machineId === undefined || b.machineId === machineId) && (b.executor === undefined || b.executor === job.spec.executor);
+
+/** A job resuming returns to the pane it holds: no problem keeps it from it. */
+const problemFree = (s: MachineState, job: Job): boolean => job.pendingAnswer !== undefined || !(s.problems ?? []).some((b) => problemHits(b, s.machine.id, job));
+
+/**
+ * Issue #509: the hold of a job an open problem keeps from every machine it may run on — its pinned one, or every
+ * online machine of its executor —, naming the problem; undefined when one is free of them, or it resumes.
+ */
+export function problemHold(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[]): string | undefined {
+  if (problems.length === 0 || job.pendingAnswer !== undefined) return undefined;
+  const pin = pinOf(job);
+  const places = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin));
+  const blocking = places.map((m) => problems.find((b) => problemHits(b, m.id, job)));
+  if (places.length === 0 || blocking.some((b) => b === undefined)) return undefined;
+  return `held by problem: ${blocking[0]!.title}`;
+}
+
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }

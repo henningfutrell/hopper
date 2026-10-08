@@ -12,6 +12,7 @@ export const EVENT_TYPES = [
   'job.parked', 'job.unparked',
   'source.stalled', 'connected_account.expired', 'ui_session.ended', 'source.claim_released', 'source.intake_migrated', 'source.issues_assigned',
   'auth.pending', 'auth.completed', 'auth.expired', 'auth.cancelled', 'auth.failed',
+  'job.assessed', 'failure.grouped', 'failure.resolved',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -32,4 +33,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'source.stalled': 1, 'connected_account.expired': 1, 'ui_session.ended': 1,
   'source.claim_released': 1, 'source.intake_migrated': 1, 'source.issues_assigned': 1,
   'auth.pending': 1, 'auth.completed': 1, 'auth.expired': 1, 'auth.cancelled': 1, 'auth.failed': 1,
+  'job.assessed': 1, 'failure.grouped': 1, 'failure.resolved': 1,
 };
