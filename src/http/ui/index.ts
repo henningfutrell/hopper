@@ -308,7 +308,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // design.md "Routing rules (issue #18)": the whole ordered list into the plugins config `routing:`.
-  // Answers the new GET /api/routing report. A rule change applies to new jobs only.
+  // Answers the new GET /api/routing report. A rule change applies to new jobs and, on the next sync, to waiting jobs that have not started (issue #375).
   app.post('/ui/api/routing', admin, async (req) => {
     const r = await o.tenant(req).plugins.editRouting(parseWith(routingEditBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);

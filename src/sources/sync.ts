@@ -230,7 +230,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     for (const item of items) {
       const existing = store.jobs.getBySourceKey(item.key);
       if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
-      if (existing && !isRerunnable(existing)) host.reprioritize(existing.id, item.priority, item.priorityReason);
+      if (existing && !isRerunnable(existing)) host.refresh(existing.id, item, { name: slot.source.name, kind: slot.source.kind });
       else if (host.ingest(item, { name: slot.source.name, kind: slot.source.kind })) created++;
     }
     for (const n of notRerun) {
