@@ -28,10 +28,31 @@ export interface ImageUpdate {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * The channel the running build came from, when it is not the selected one (issue #497): the branch in `install.json`
+ * against the selected channel. A branch older than the channel names (issue #423) is no channel, so never a mismatch.
+ */
+function channelMismatch(s: UpdateStatus): { running: UpdateStatus['channel']; selected: UpdateStatus['channel'] } | undefined {
+  const running = CHANNELS.find((c) => c.channel === s.installed?.branch)?.channel;
+  return running && running !== s.channel ? { running, selected: s.channel } : undefined;
+}
+
+/** The running build and the selected channel, in the words the update notice and the header badge share (issues #494, #497). */
+const runsWords = (s: UpdateStatus, m: NonNullable<ReturnType<typeof channelMismatch>>) =>
+  `runs the ${m.running} ${s.installed?.kind === 'image' ? 'image' : 'build'}; the selected channel is ${m.selected}`;
+
+/** The header version badge's channel (issue #497): a tag on dev and beta, none on stable; both channels, marked, when the running build is another channel's. `label` names it for the badge's title and aria-label. */
+export function channelBadge(s: UpdateStatus): { tag?: string; mismatch: boolean; label: string } {
+  const m = channelMismatch(s);
+  if (m) return { tag: `${m.running} → ${m.selected}`, mismatch: true, label: runsWords(s, m) };
+  return { tag: s.channel === 'stable' ? undefined : s.channel, mismatch: false, label: `${s.channel} channel` };
+}
+
 /** The update of an image install with an update available; none otherwise. An image is never updated in place (issues #51, #409). */
 export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   if (s.state !== 'available' || s.installed?.kind !== 'image') return undefined;
   const n = s.restartBlockers;
+  const mismatch = channelMismatch(s);
   return {
     env: `HOPPER_IMAGE=${IMAGE}:${s.channel}`,
     // --force-recreate: podman-compose keeps the old container on a newly pulled image without it.
@@ -40,7 +61,7 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
       update: `${cli} compose pull hopper && ${cli} compose up -d --force-recreate --no-deps hopper`,
       prune: `${cli} ${PRUNE}`,
     })),
-    mismatch: s.installed.branch !== s.channel ? `this container runs the ${s.installed.branch} image; the selected channel is ${s.channel}: switch the image tag` : undefined,
+    mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,
     blockers: n > 0
       ? `${plural(n, 'running job', 'running jobs')} would be lost by recreating the container: wait until none runs.`
       : 'No running job would be lost: jobs that reattach keep running across the recreate.',

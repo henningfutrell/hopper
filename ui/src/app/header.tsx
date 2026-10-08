@@ -2,6 +2,7 @@
 // router health, uptime, the API reference, who you are at every width (issue #167: the user the session
 // acts for with its role), logout, and a device link for another browser. Shown only signed in (issue #213).
 // A GitHub connection that ended asks to connect again here, on every screen (issue #441).
+// On a phone the wordmark and the API reference give way, so the version badge with its channel and who you are fit (issue #497).
 import { BookOpen, LogOut, Moon, Sun } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
@@ -25,14 +26,14 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const ended = useHopper((s) => connectionEnded(s.sources));
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
-      <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
+      <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
         {nav}
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <img src={logo} alt="" className="h-7 w-auto" />
-          hopper
+          <span className="max-sm:sr-only">hopper</span>
         </div>
         <UpdateButton version={health?.version} />
-        <div className="ml-auto flex items-center gap-2 text-xs sm:gap-3">
+        <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
           {ended && (
             <a data-connection-ended href="#sources" title={ended}
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub sign-in expired: connect again</a>
@@ -48,7 +49,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           </span>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-sm" asChild>
+              <Button variant="ghost" size="icon-sm" className="max-sm:hidden" asChild>
                 <a href="/docs/" target="_blank" rel="noopener" aria-label="API reference"><BookOpen /></a>
               </Button>
             </TooltipTrigger>

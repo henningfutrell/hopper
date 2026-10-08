@@ -1,7 +1,7 @@
 // The update notice's words and links (issue #44): pure, from GET /api/update.
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { CHANNELS, headline, imageUpdate, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
+import { CHANNELS, channelBadge, headline, imageUpdate, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -59,6 +59,31 @@ describe('update model', () => {
     it('none for an install, or with no update', () => {
       expect(imageUpdate(status({ state: 'available', target: { commit: B, ref: 'stable' } }))).toBeUndefined();
       expect(imageUpdate(image('stable', 'stable', { state: 'current' }))).toBeUndefined();
+    });
+  });
+
+  describe('the header badge names the channel (issue #497)', () => {
+    const on = (channel: UpdateStatus['channel'], branch: string, kind: 'install' | 'image' = 'install') =>
+      status({ channel, installed: { ...installed, kind, branch } });
+
+    it('dev and beta: the channel as its tag; stable: no tag', () => {
+      expect(channelBadge(on('dev', 'dev'))).toEqual({ tag: 'dev', mismatch: false, label: 'dev channel' });
+      expect(channelBadge(on('beta', 'beta'))).toEqual({ tag: 'beta', mismatch: false, label: 'beta channel' });
+      expect(channelBadge(on('stable', 'stable'))).toEqual({ tag: undefined, mismatch: false, label: 'stable channel' });
+    });
+
+    it('the running build is another channel\'s than the selected one: both, in the words of the update notice', () => {
+      expect(channelBadge(on('dev', 'stable', 'image'))).toEqual({ tag: 'stable → dev', mismatch: true, label: 'runs the stable image; the selected channel is dev' });
+      expect(channelBadge(on('stable', 'beta'))).toEqual({ tag: 'beta → stable', mismatch: true, label: 'runs the beta build; the selected channel is stable' });
+      // The same rule as the notice: the running build's branch against the selected channel.
+      expect(imageUpdate({ ...on('dev', 'stable', 'image'), state: 'available' })!.mismatch).toBe('this container runs the stable image; the selected channel is dev: switch the image tag');
+    });
+
+    it('a build from a branch older than the channels (issue #423), or no install record: the selected channel alone', () => {
+      expect(channelBadge(on('stable', 'main'))).toEqual({ tag: undefined, mismatch: false, label: 'stable channel' });
+      expect(channelBadge(on('dev', 'main'))).toEqual({ tag: 'dev', mismatch: false, label: 'dev channel' });
+      expect(channelBadge(status({ channel: 'beta', installed: undefined }))).toEqual({ tag: 'beta', mismatch: false, label: 'beta channel' });
+      expect(imageUpdate({ ...on('dev', 'main', 'image'), state: 'available' })!.mismatch).toBeUndefined();
     });
   });
 

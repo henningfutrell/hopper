@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The version at the top left now shows the update channel when it is dev or beta, so you can tell at a glance which builds you run. When the running build comes from another channel than the one you picked, it shows both.
 - A hopper running in a container no longer offers to update itself: when an update is out, it shows the exact commands to pull the image of your channel and restart on it, says when your container runs another channel's image, and how many running jobs a restart would end.
 - A job that waits on work it left running in the background is no longer prompted again and again: the hopper lets it wait until that work wakes it. A job that keeps ending without a marker is reminded less and less often, then shows as waiting.
 - Every question now says which machine asked it, in Questions, the question history, events and notifications, even after the job moves on or the machine is renamed.
