@@ -37,6 +37,14 @@ describe('resume pin', () => {
     expect(d.hold).toEqual([{ jobId: 'r', reason: 'pinned machine b offline' }]);
   });
 
+  it('a re-queued parked job (issue #501) waits for its machine while it is offline, with the reason, and never starts elsewhere', () => {
+    const machines = [machine({ id: 'a' }), machine({ id: 'b', online: false })];
+    const back = resuming('p', { resumeOn: 'b', parked: { at: '2026-10-01T00:00:00Z', from: 'running' } });
+    const d = decide(inputs({ machines, waiting: [back] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.hold).toEqual([{ jobId: 'p', reason: 'pinned machine b offline' }]);
+  });
+
   it('holds natively when the resumeOn machine is unknown', () => {
     const d = decide(inputs({ waiting: [resuming('r', { resumeOn: 'ghost' })] }), 'd1');
     expect(d.hold).toEqual([{ jobId: 'r', reason: 'pinned machine ghost unknown' }]);
