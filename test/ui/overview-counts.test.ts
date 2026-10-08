@@ -17,7 +17,7 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
 /** What /api/queue answers: the daemon's partition of the jobs it holds. */
 function queueOf(jobs: Job[]) {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed', 'cancelled'), locked: [] };
+  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [] };
 }
 
 function fakeDaemon(initial: Job[]) {
@@ -121,5 +121,17 @@ describe('Overview cards and lists', () => {
     const after = cardsAndLists();
     expect(agree(after)).toEqual({ running: true, waiting: true, waitingAnswer: true, finished: true, failed: true });
     expect(after).toMatchObject({ running: [2, 2], waiting: [1, 1], finished: [3, 3] });
+  });
+
+  it('a parked job (issue #501) is in its own group: not running, not waiting, on no lane; a viewer is offered neither Park nor Re-queue', async () => {
+    await boot([
+      job('p1', 'parked', { resumeOn: 'm1', parked: { at: hoursAgo(1), from: 'running' }, agentSession: 's' }),
+      job('r1', 'running', { laneId: 'm1/lane-1', startedAt: hoursAgo(1), agentSession: 's' }),
+    ]);
+    await vi.waitFor(() => expect(rows('parked')).toBe(1));
+    expect(cardsAndLists()).toMatchObject({ running: [1, 1], waiting: [0, 0], waitingAnswer: [0, 0] });
+    expect(document.querySelector('[data-kpi="waiting"]')!.textContent).toContain('1 parked');
+    const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent);
+    expect(buttons.filter((t) => t === 'Park' || t === 'Re-queue')).toEqual([]);
   });
 });

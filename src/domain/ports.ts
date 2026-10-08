@@ -18,9 +18,9 @@ export interface ExecutionContext {
   /** The machine the lane is on: an executor that runs work outside the process runs it there. */
   machine: MachineSnapshot;
   /**
-   * Aborted on cancel or daemon shutdown; `signal.reason` is the string `'cancel'` or
-   * `'shutdown'`. On cancel an executor stops the work and releases it; on shutdown it
-   * returns promptly and leaves external work (a herdr pane) as it is.
+   * Aborted on cancel, park or daemon shutdown; `signal.reason` is the string `'cancel'`, `'park'`
+   * or `'shutdown'`. On cancel an executor stops the work and releases it; on park or shutdown it
+   * returns promptly and leaves external work (a herdr pane) as it is: `park` then releases it.
    */
   signal: AbortSignal;
   /** Report progress 0..1 with an optional message. Emits job.progressed. */
@@ -32,6 +32,8 @@ export interface ExecutionContext {
   saveState(state: Record<string, unknown>): void;
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
+  /** Report the agent session the job's agent runs in, once its agent is up (`job.agentSession`, issue #501): a parked job resumes it. */
+  agentSession?(id: string): void;
   /**
    * The variables the job's own processes run with, from its source's connection (issue #214): the GitHub
    * account the job came from, so what the job does on GitHub acts as that user with the hopper's app marked
@@ -112,8 +114,8 @@ export interface Executor {
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
   /**
-   * Continue a job that returned `question`: deliver `answer` (from `ctx.job.executorState`)
-   * and run until the next outcome. Absent → the executor never asks questions.
+   * Continue a job that returned `question`, or a parked one re-queued (`ctx.job.parked`, issue #501): deliver
+   * `answer` (from `ctx.job.executorState`) and run until the next outcome. Absent → the executor never asks questions.
    */
   resume?(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome>;
   /**
@@ -132,10 +134,16 @@ export interface Executor {
   /**
    * A `waiting_answer` job whose question the owner answered outside the hopper (typed into its
    * pane): its work runs again. Returns the typed text when it can be read reliably, and the
-   * executor state that lets `reattach` watch the new turn; null while still parked. Absent →
+   * executor state that lets `reattach` watch the new turn; null while it still waits. Absent →
    * never. Must not throw (an error is null). The engine polls it on every tick.
    */
   answeredInPane?(job: Job): Promise<PaneAnswer | null>;
+  /**
+   * Park a job (issue #501): end its pane and its agent, and stop its processes, keeping its work tree and
+   * its agent session, so a later `resume` reopens that session (`ctx.job.parked` set). Absent → the executor
+   * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.
+   */
+  park?(job: Job): Promise<void>;
   /**
    * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
    * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
@@ -419,6 +427,11 @@ export interface QuestionService {
   lapsedInPane(questionId: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
+  /**
+   * A parked job's question (issue #501) is waited on again: at the human stage, its timeout starts again
+   * from now and its timers are armed. While its job is parked, a question never expires and is not renotified.
+   */
+  unparked(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */
   recover(): void;
   stop(): Promise<void>;

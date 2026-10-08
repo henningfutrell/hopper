@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canRerun, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canPark, canRequeue, canRerun, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -19,6 +19,7 @@ describe('jobBoard', () => {
     expect(b.waiting.map((j) => j.status).sort()).toEqual(['held', 'queued']);
     expect(b.waitingAnswer.map((j) => j.status)).toEqual(['waiting_answer']);
     expect(b.operatorLed.map((j) => j.status)).toEqual(['operator_led']);
+    expect(b.parked.map((j) => j.status)).toEqual(['parked']);
     expect(b.running.map((j) => j.status).sort()).toEqual(['claimed', 'running']);
     expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished', 'rejected']);
     expect(Object.values(b).flat()).toHaveLength(STATUSES.length);
@@ -42,7 +43,7 @@ describe('kpis', () => {
     const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
     expect(k).toEqual({
       running: b.running.length, waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
-      waitingAnswer: b.waitingAnswer.length,
+      waitingAnswer: b.waitingAnswer.length, parked: b.parked.length,
       finished: b.ended.filter((j) => j.status === 'finished').length, failed: b.ended.filter((j) => j.status === 'failed').length,
       cancelled: b.ended.filter((j) => j.status === 'cancelled').length,
       lanesBusy: 2, lanesOpen: 3, lanesMax: 4,
@@ -53,6 +54,23 @@ describe('kpis', () => {
     const k = kpis(b, []);
     expect([k.waiting, k.waitingAnswer]).toEqual([0, 1]);
     expect(waitingRows(b, undefined)).toEqual([]);
+  });
+});
+
+describe('Park and Re-queue (issue #501): offered only where the daemon takes them', () => {
+  it('Park: a running job or one on a question, whose executor recorded its agent session', () => {
+    const offered = STATUSES.filter((status) => canPark(job(status, { status, agentSession: 's' })));
+    expect(offered.sort()).toEqual(['running', 'waiting_answer']);
+    expect(canPark(job('r', { status: 'running' }))).toBe(false);
+  });
+  it('Re-queue: a parked job only', () => {
+    expect(STATUSES.filter((status) => canRequeue(job(status, { status, agentSession: 's' })))).toEqual(['parked']);
+  });
+  it('a parked job is in no other group: never running, never waiting, never on a lane', () => {
+    const b = jobBoard([job('p', { status: 'parked', resumeOn: 'm1' })], []);
+    const k = kpis(b, [machine([lane('lane-1', 'idle')])]);
+    expect([k.running, k.waiting, k.waitingAnswer, k.lanesBusy, k.parked]).toEqual([0, 0, 0, 0, 1]);
+    expect(laneRows([machine([lane('lane-1', 'idle')])], b.running).every((r) => r.job === undefined)).toBe(true);
   });
 });
 

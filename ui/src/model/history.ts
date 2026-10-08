@@ -23,20 +23,20 @@ export function throughput(ended: Job[], now: number, bucketMs: number, buckets:
   return out;
 }
 
-export type SpanOutcome = 'running' | 'operator-led' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question';
+export type SpanOutcome = 'running' | 'operator-led' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question' | 'parked';
 /** The lane timeline's row for jobs claimed as operator-led (issue #318): worked by hand, on no lane. */
 export const OPERATOR_LED_ROW = 'operator-led';
 
 export interface LaneSpan { laneId: string; jobId: string; start: number; end: number | null; outcome: SpanOutcome }
 
 const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
-  'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'cancelled', 'job.requeued': 'requeued', 'question.asked': 'question',
+  'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'cancelled', 'job.requeued': 'requeued', 'question.asked': 'question', 'job.parked': 'parked',
 };
 
 /** How a span ends when the job store says its job no longer runs. */
 const LEFT: Record<JobStatus, SpanOutcome> = {
   finished: 'finished', failed: 'failed', cancelled: 'cancelled', rejected: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
-  claimed: 'running', running: 'running', operator_led: 'operator-led',
+  claimed: 'running', running: 'running', operator_led: 'operator-led', parked: 'parked',
 };
 
 /** Whether the job store says the job still works: on a lane, or by hand. */
@@ -94,7 +94,7 @@ function allSpans(events: DomainEvent[], jobs: ReadonlyMap<string, Job>): LaneSp
 }
 
 /** How a question wait ended, or `waiting` while the job still sits on its question. */
-export type WaitEnd = 'waiting' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed';
+export type WaitEnd = 'waiting' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'parked';
 export interface QuestionWait { laneId: string; jobId: string; start: number; end: number | null; how: WaitEnd }
 
 const WAIT_ENDS: Partial<Record<DomainEvent['type'], WaitEnd>> = {
@@ -102,10 +102,12 @@ const WAIT_ENDS: Partial<Record<DomainEvent['type'], WaitEnd>> = {
   'question.lapsed': 'lapsed',
   // Answered in the job's pane: it runs again. A dismissed question cancels the job; an expired one fails it.
   'job.started': 'answered', 'job.reattached': 'answered', 'job.cancelled': 'dismissed', 'job.failed': 'expired',
+  // Parked on its question (issue #501): it waits off its lane, its question still open.
+  'job.parked': 'parked',
 };
 
 /** How a wait ends when the job store says its job no longer waits. */
-const WAIT_LEFT = (status: JobStatus): WaitEnd => (status === 'cancelled' ? 'dismissed' : status === 'failed' ? 'expired' : 'answered');
+const WAIT_LEFT = (status: JobStatus): WaitEnd => (status === 'cancelled' ? 'dismissed' : status === 'failed' ? 'expired' : status === 'parked' ? 'parked' : 'answered');
 
 /**
  * One question wait per lane span that ended on a question: the job sits on it from the ask until it

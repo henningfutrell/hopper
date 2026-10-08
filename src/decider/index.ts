@@ -13,8 +13,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const { policy, machines, lanes } = inputs;
   const reasons: string[] = [];
 
-  const parked = [...inputs.waiting, ...inputs.running].filter((j) => j.status === 'waiting_answer');
-  for (const j of parked) reasons.push(`ignored ${j.id}: status waiting_answer is not an input`);
+  const onQuestion = [...inputs.waiting, ...inputs.running].filter((j) => j.status === 'waiting_answer');
+  for (const j of onQuestion) reasons.push(`ignored ${j.id}: status waiting_answer is not an input`);
   const waiting = inputs.waiting.filter((j) => j.status !== 'waiting_answer');
 
   const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));

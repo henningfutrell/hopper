@@ -48,7 +48,8 @@ export function KpiRow() {
       <Kpi kpi="running" label="Running" icon={Activity} tone="busy" value={k.running} sub="lanes in use · 6 h" spark={series.running} />
       <Kpi kpi="lanes" label="Lanes" icon={Layers} tone="busy" value={<>{k.lanesBusy}<span className="text-muted-foreground">/{k.lanesMax}</span></>}
         sub={`${k.lanesOpen} open · ${Math.max(0, k.lanesMax - k.lanesOpen)} unopened`} />
-      <Kpi kpi="waiting" label="Waiting" icon={Timer} tone={k.held ? 'warn' : 'muted'} value={k.waiting} sub={k.held ? `${k.held} held` : 'none held'} />
+      <Kpi kpi="waiting" label="Waiting" icon={Timer} tone={k.held ? 'warn' : 'muted'} value={k.waiting}
+        sub={[k.held ? `${k.held} held` : 'none held', ...(k.parked ? [`${k.parked} parked`] : [])].join(' · ')} />
       <Kpi kpi="waitingAnswer" label="On a question" icon={MessageCircleQuestion} tone="question" value={k.waitingAnswer} sub={k.waitingAnswer ? 'needs an answer' : 'nothing asked'} alert={k.waitingAnswer > 0} />
       <Kpi kpi="finished" label="Finished" icon={CircleCheck} tone="ok" value={k.finished} sub="in 24 h" spark={series.finished} />
       <Kpi kpi="failed" label="Failed" icon={CircleX} tone={k.failed ? 'bad' : 'muted'} value={k.failed} sub={k.cancelled ? `in 24 h · ${k.cancelled} cancelled` : 'in 24 h'} spark={series.failed} />

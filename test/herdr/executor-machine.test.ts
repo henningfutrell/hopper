@@ -125,7 +125,7 @@ describe('herdr-claude executor: ~ in a work tree resolves on the lane\'s machin
     const { remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
     const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', ...(cwd ? { cwd } : {}) }), 'laptop/lane-1', FAR);
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
-    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: expected, env: { TMPDIR: `${expected}/.hopper-scratch/${JOB_ID}` } });
+    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: expected, env: { TMPDIR: `/tmp/hopper-${JOB_ID}` } });
     expect(workTrees).toEqual([expected]);
   });
 

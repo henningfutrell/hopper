@@ -12,7 +12,7 @@ step() { printf '==> %s\n' "$*"; }
 step "systemctl --user disable --now hopper"
 systemctl --user disable --now hopper || echo "  (not enabled or not running)"
 
-echo "WARNING: stopping hopper-herdr closes every pane in herdr session 'hopper' (running and parked Claude jobs)."
+echo "WARNING: stopping hopper-herdr closes every pane in herdr session 'hopper' (running Claude jobs and those waiting on a question)."
 step "systemctl --user disable --now hopper-herdr"
 systemctl --user disable --now hopper-herdr || echo "  (not enabled or not running)"
 

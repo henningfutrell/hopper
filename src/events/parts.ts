@@ -41,7 +41,7 @@ export const advice = strict({
   action: adviceAction, reason: z.string(), details: z.record(z.string(), z.unknown()),
   source: z.string(), at: z.string(),
 });
-export const jobStatus = z.enum(['queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'finished', 'failed', 'cancelled', 'rejected']);
+export const jobStatus = z.enum(['queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'parked', 'finished', 'failed', 'cancelled', 'rejected']);
 
 export const startPlan = strict({
   jobId: z.string(), laneId: z.string().nullable(), machineId: z.string(),

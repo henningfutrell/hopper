@@ -27,12 +27,13 @@ const SHUTDOWN_WAIT_MS = 5000;
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
  * a respecified job may be pinned to another machine; a deferred cleanup that went through
- * frees a waiting job of its item (issue #371); a problem grouped or resolved holds or frees jobs (issue #509). */
+ * frees a waiting job of its item (issue #371); parking frees a lane and a re-queue queues a job (issue #501); a
+ * problem grouped or resolved holds or frees jobs (issue #509). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
-  'failure.grouped', 'failure.resolved',
+  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {

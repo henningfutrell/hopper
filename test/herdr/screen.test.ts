@@ -61,7 +61,7 @@ describe('protocol footer', () => {
 
   it('names the job\'s own scratch dir when it has one, and says the hopper stops its processes and removes it at the end (issue #401)', () => {
     const footer = protocolFooter('/w/repo', '', '/w/repo/.hopper-scratch/j1');
-    expect(footer).toContain('Temporary files, and clones or git worktrees made only for this job, go in /w/repo/.hopper-scratch/j1: git ignores it, and TMPDIR and your scratchpad point there.');
+    expect(footer).toContain('Temporary files, and clones or git worktrees made only for this job, go in /w/repo/.hopper-scratch/j1: git ignores it, and TMPDIR and your scratchpad point there, through a short link in /tmp, so a Unix socket path under TMPDIR fits.');
     expect(footer).toContain('When the job ends, the hopper stops every process the job started and removes that directory, unless a repository in it holds uncommitted or unpushed work.');
   });
 

@@ -15,7 +15,7 @@ const MAX_CONSECUTIVE_ERRORS = 3;
 export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>;
 
 /** Why the turn stopped without an outcome; the executor decides what to do with the pane. */
-export type Interrupt = { interrupt: 'cancel' | 'shutdown' | 'timeout' };
+export type Interrupt = { interrupt: 'cancel' | 'park' | 'shutdown' | 'timeout' };
 
 /**
  * The turn ended without a marker (issue #163): progress, never a question. The executor nudges. Never while
@@ -70,14 +70,14 @@ export interface TurnWatch {
   expectedMs: number;
   /** When the job's turn began, for `timeoutMs` and progress: a nudge goes on the same turn. Default now. */
   startedAt?: number;
-  /** Called with state_change_seq when the turn parks on a question, before the outcome returns; with when its dialog lapses, if it does. */
-  parked?: (seq: number, lapsesAt?: string) => void;
+  /** Called with state_change_seq when the turn stops on a question, before the outcome returns; with when its dialog lapses, if it does. */
+  onQuestion?: (seq: number, lapsesAt?: string) => void;
   /** The login the job waits on (issue #476), with `untilWorking`: Claude going on completes it. */
   login?: LoginWait;
 }
 
-export function abortReason(signal: AbortSignal): 'cancel' | 'shutdown' {
-  return signal.reason === 'shutdown' ? 'shutdown' : 'cancel';
+export function abortReason(signal: AbortSignal): 'cancel' | 'park' | 'shutdown' {
+  return signal.reason === 'shutdown' || signal.reason === 'park' ? signal.reason : 'cancel';
 }
 
 export const tail = (text: string, lines: number): string => text.split('\n').slice(-lines).join('\n').trim();
@@ -149,8 +149,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       if (ready || agent.status === 'blocked') waitingSince ??= now;
       else waitingSince = null;
       const stalled = !moved && waitingSince !== null && now - waitingSince >= w.stallMs;
-      const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
-      if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return park(await blockedQuestion(w, recent));
+      const asked = (o: ExecutionOutcome): ExecutionOutcome => { w.onQuestion?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
+      if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return asked(await blockedQuestion(w, recent));
       const ended = worked && ready && (moved || stalled);
       if (!ended) { idleSince = null; waitedOn = undefined; }
       else if (!moved && (!turn.anchorFound || inputBoxText(recent) !== '')) return { lostSend: true };
@@ -159,7 +159,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'failed') {
         return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent), tail: hideCodes(tail(recent, OUTPUT_LINES), recent) };
       } else if (turn.lastMarker === 'question') {
-        return park({ kind: 'question', question: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'marker' } });
+        return asked({ kind: 'question', question: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'marker' } });
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {

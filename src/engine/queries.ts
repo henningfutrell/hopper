@@ -14,6 +14,8 @@ export interface QueueView {
   waitingAnswer: Job[];
   /** Jobs claimed as operator-led (issue #318), oldest first: worked by hand, on no lane. */
   operatorLed: Job[];
+  /** Parked jobs (issue #501), oldest first: on no lane, no pane, no agent, until re-queued. */
+  parked: Job[];
   /** The locked entries (issue #355): failed jobs that stay in the queue until run again or dismissed, highest priority first, then oldest. */
   locked: Job[];
   /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
@@ -62,12 +64,13 @@ export function createQueries(c: EngineContext): Queries {
       const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
       const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
       const operatorLed = all.filter((j) => j.status === 'operator_led').reverse();
+      const parked = all.filter((j) => j.status === 'parked').reverse();
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;
       const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, locked: lockedOf(all), ended, gate: gateOf(c), presort };
+      return { waiting, running, waitingAnswer, operatorLed, parked, locked: lockedOf(all), ended, gate: gateOf(c), presort };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
@@ -95,8 +98,8 @@ export function createQueries(c: EngineContext): Queries {
     },
     jobsOnMachine(machineId) {
       const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
-      const parked = c.store.jobs.list({ status: ['waiting_answer'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
-      return [...new Set([...onLanes, ...parked])];
+      const waitingPanes = c.store.jobs.list({ status: ['waiting_answer'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
+      return [...new Set([...onLanes, ...waitingPanes])];
     },
   };
 }

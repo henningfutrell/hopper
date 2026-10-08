@@ -188,7 +188,7 @@ Decisions stored before issue #373 carry no `pacing`: all three are off for them
   runner never awaits one job before starting the next). A source sync ingests every new item in
   one pass, so they reach the same Decision; the source's claim report (label) runs off
   the decision path and never gates a start. A question frees its lane in the transaction that
-  parks the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
+  pauses the job; `question.asked` wakes the Decision that hands the lane to the next waiting job,
   while the answer pipeline runs. The only things that keep an admissible job waiting:
   - the **lane cap** — `maxLanes` per machine (the machine instance's `lanes` option, default 4), scaled down
     past the usage soft limit, 0 at the hard limit (a wait, `waiting for a lane: …`, not a hold);
@@ -500,8 +500,8 @@ forbids driving a user's session from outside it. Spawned processes get an envir
 `<laneId> · <jobId first 8>`; its root pane hosts Claude. The executor keeps `laneId →
 paneId` for the job now on that lane and saves `{ session, workspaceId, tabId, paneId,
 agentName, cwd }` with `ctx.saveState` the moment the pane exists. A job in
-`waiting_answer` keeps its pane ("parked") while its lane is freed; on resume the lane it
-is claimed onto maps to the parked pane.
+`waiting_answer` keeps its pane (the waiting pane) while its lane is freed; on resume the lane it
+is claimed onto maps to the waiting pane.
 
 **Start.** `agent start jh-<jobId first 8> --kind claude --pane <pane> --timeout 60000 --
 <claudeArgsFor(yolo, args)> [--model <payload.model>]`; the default instance is yolo
@@ -542,7 +542,7 @@ which one runs a job. `claudeArgsFor(yolo, args)` (`src/executors/herdr/start.ts
   is answered on screen instead.
 - **not yolo** — the args, minus every argument that would grant every permission
   (`--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`, `--permission-mode
-  bypassPermissions`). Claude asks before it acts; each permission dialog parks the job as a
+  bypassPermissions`). Claude asks before it acts; each permission dialog pauses the job on a
   question (`detectedBy: blocked`, the dialog as its text), and the escalation levels or the
   owner answer it.
 
@@ -558,7 +558,7 @@ startup: <screen>`.
 **Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
 of its options — its number, or its own words, case and spacing aside (`dialogOption` in
 `screen.ts`: the options around the last `❯ N.` line, so a numbered list in the transcript is not a
-dialog) — the executor types that digit and watches the parked turn go on (its anchor kept, no new
+dialog) — the executor types that digit and watches the waiting turn go on (its anchor kept, no new
 prompt). Any other answer dismisses the dialog with `esc` and is typed to Claude as text, as before.
 
 **Migration** (tenant migration 9, `src/store/migration-yolo.ts`). A herdr-claude instance in the
@@ -572,14 +572,18 @@ outside it (`/tmp` or anywhere else). Opening the pane there is not enough on it
 Code's scratchpad lives under `/tmp` by default and its system prompt sends temp files there,
 which is how a job drifted out of its tree. So the hopper directs it three ways:
 
-- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch/<job id>`,
-  the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
-  tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
-  cannot move them. (The print agents get the same scratch dir as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
+- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `/tmp/hopper-<job id>`, the
+  job's **temp link** to its **scratch dir** `<cwd>/.hopper-scratch/<job id>`: Claude's scratchpad and
+  every tool's temp files land inside the tree, in a directory that is the job's alone (issue #401), so
+  the reap can remove it. The payload cannot move them. Not the scratch dir's own path (issue #506): a
+  Unix socket path takes at most 108 bytes, tools bind sockets under `TMPDIR`, and Chromium's
+  `org.chromium.Chromium.XXXXXX/SingletonSocket` alone takes 45 — under a real work tree Chromium
+  aborted at startup in every job. `/tmp/hopper-` and a UUID job id take 48. (The print agents get the
+  same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
-  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
@@ -588,7 +592,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 - **A work tree the machine cannot use fails the job at once** (issue #323). herdr opens a tab
   whose cwd does not exist in the user's home instead, silently (herdr 0.8.2), so `tab create` says
   nothing; the `cd` does. When the shell cannot enter the work tree or make the scratch dir, it
-  prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
+  or the temp link there is not the job's (another user's, or a directory), prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
   with what the shell said (`the work tree <cwd> is not usable on <machine>: …`), the pane closed,
   instead of retrying for 60000 ms.
 - **The pane's shell must be POSIX** (issue #367). Every command the hopper types into a pane (the
@@ -614,7 +618,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   is such a machine (`no machine that runs executor <x> has its home known yet: …`) or the job is pinned
   to one (issue #365: a burst of jobs once failed on one at once). The executor still fails a job under
   `~` at once if one gets there; an absolute work tree needs no home.
-- **0 lanes parks a machine** (issue #365). An attached machine's `lanes` may be 0: it stays a machine —
+- **0 lanes rests a machine** (issue #365). An attached machine's `lanes` may be 0: it stays a machine —
   a client target still dials in and shows online — and the decider gives it no job. Adding a machine
   and the machine defaults still take at least 1.
 - **Never the home** (issue #314). A job never runs with its machine's home as its work tree. The
@@ -794,7 +798,7 @@ gutter. The prompt echo contains the markers mid-line only, never as a whole lin
 Progress: on change of the last non-empty assistant line, `ctx.progress(min(0.9,
 elapsed / expectedMs), line)` (`expectedMs` default 600000).
 
-**Parked.** When a turn parks on a question (any `question` outcome) the monitor saves
+**Stopped on a question.** When a turn stops on a question (any `question` outcome) the monitor saves
 `parkedSeq` = the `state_change_seq` it saw, for `answeredInPane` ("Questions" → "Answered in
 the pane"). The next send drops it.
 
@@ -1044,7 +1048,7 @@ so a running job's pane and Claude outlive a restart.
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
-  pane is its parked pane, which the next resume uses.
+  pane is its waiting pane, which the next resume uses.
 - `running` job of an idempotent executor → requeued as before.
 - `waiting_answer` jobs, by their question: `open` → leave it (QuestionService.recover
   restarts every open non-human question at the answer stage, whatever its `tier`, and re-arms
@@ -1102,7 +1106,7 @@ anywhere, and the hopper writes nothing of a question to GitHub (it writes only 
 
 **Lapsed** (issue #376). Claude Code may deny a dialog by itself when its countdown runs out ("Claude
 Code will automatically deny this request in 1:59, …"; `autoDenyMs` in `screen.ts`). The monitor reads
-the countdown when the job parks: the question gets `lapsesAt`, the pane state too, the human stage's
+the countdown when the turn stops on the question: the question gets `lapsesAt`, the pane state too, the human stage's
 `question.escalated`/`question.escalated_to_human` carry it, and the UI shows it on the open question.
 When the job's work runs again (below) with nothing typed, at or after `lapsesAt` (less 5 s: the
 countdown is read in whole seconds, up to a poll late), nobody answered: one tx, question `lapsed`,
@@ -1110,11 +1114,11 @@ countdown is read in whole seconds, up to a poll late), nobody answered: one tx,
 reattached as below with `reason: "the dialog lapsed"`. A key pressed in the pane before the countdown
 ends is still the owner's answer.
 
-**Answered in the pane.** The owner may type the answer straight into a parked pane instead of
+**Answered in the pane.** The owner may type the answer straight into a waiting pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
 `waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
 is untouched). herdr-claude: the monitor saves `parkedSeq` (the `state_change_seq` at which the
-turn parked) in `executorState`; a job parked before that field existed uses its turn's send
+turn stopped on its question; the name predates parked jobs, issue #501, and is kept for the state jobs hold) in `executorState`; a job that stopped before that field existed uses its turn's send
 `seq`. Answered when `agent get` shows the same pane with `state_change_seq > parkedSeq` **and**
 either status `working` or a typed echo below the question (`typedAfterQuestion` in
 `screen.ts`: the first `❯` block after Claude's reply to the turn anchor, above the input box).
@@ -1273,7 +1277,7 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
   `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
   because panes inherit the server's environment. `install.sh` never restarts an active
-  herdr unit — that would kill every parked pane.
+  herdr unit — that would kill every waiting pane.
 - **The level's reply schema is a literal draft-07 object.** zod's `toJSONSchema` stamps `$schema`
   draft 2020-12, which the claude CLI rejects ("no schema with key or ref"); every tier then
   exits 1 and every question reaches the human. Found live; the unit tests' fake `claude`
@@ -3389,12 +3393,12 @@ target, never a container or client target — in the job's work tree, one run p
 `timeoutMs`), the first turn's text the prompt and `protocolFooter(cwd)`, the job's credentials
 (`GH_TOKEN`, issue #214 — which `cursor-agent` did not pass before) and `HOPPER_JOB_ID` and `TMPDIR` in
 its environment. The last message's marker decides: `HOPPER_DONE` finished `{ machine, summary, chatId }`,
-`HOPPER_FAILED <reason>` failed, `HOPPER_QUESTION` a question that parks the job with `{ chatId, cwd }`
+`HOPPER_FAILED <reason>` failed, `HOPPER_QUESTION` a question that pauses the job with `{ chatId, cwd }`
 (the agent's session id, under the name `cursor-agent` already stored), no marker a status note nudged in
 the same session at most three times in a row (issue #163). Not idempotent, nothing to reattach.
 
-Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the job's own scratch dir
-`<cwd>/.hopper-scratch/<job id>`, named in the footer; each turn runs in the job's scope
+Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the temp link to the job's own scratch dir
+`<cwd>/.hopper-scratch/<job id>` (issue #506), the scratch dir named in the footer; each turn runs in the job's scope
 `hopper-job-<job id>` where the machine has a systemd user manager (`systemd-run --user --scope … --
 env … <agent> </dev/null`; the scope a turn before left is stopped first, since a print-mode turn never
 waits on background work); the job keeps `{ cwd, ssh? }` from its start; and when it ends its `cleanup`
@@ -4633,7 +4637,7 @@ view's Edit form showed lanes, executors and label only, and nothing renamed an 
   it (issue #174) and every routing rule whose `set.machine` names it follow in the same write; a section
   that was absent is written out, as `place` does. The same name is a plain options edit.
 - **Refused (409, naming the jobs)** while the machine is in use as for a removal (a busy or draining
-  lane, a pane parked there) or while a job not ended is pinned to it (`spec.machineId`): those name the
+  lane, a waiting pane there) or while a job not ended is pinned to it (`spec.machineId`): those name the
   machine by id, and the job spec is not rewritten. A name another machine has: 409.
 - **Persisted state**: lanes are stored under the machine id, so the old id's idle lanes are closed as
   any gone machine's (`planGoneLanes`) and the new id opens its own. Events keep the id they were
@@ -6259,7 +6263,7 @@ supported; defaults must be configurable. Read as three changes; none breaks a d
 | `cwd` | `~` | the work tree of a job whose payload names none (command-bearing) |
 | `sshBin` | `ssh` | the ssh client, for ssh targets (command-bearing) |
 
-- **One turn is one print-mode run**: `sh -c 'mkdir -p <scratch> && printf "*\n" > <scratch>/.gitignore && cd <cwd> && exec env <payload env> TMPDIR=<scratch> HOPPER_JOB_ID=<id> <bin> -p --output-format json --workspace <cwd> <args> [--model m] [--resume <chat>] -- <text>'`,
+- **One turn is one print-mode run**: `sh -c 'mkdir -p <scratch> && printf "*\n" > <scratch>/.gitignore && ln -sfn <scratch> <temp link> && … && cd <cwd> && exec env <payload env> TMPDIR=<temp link> HOPPER_JOB_ID=<id> <bin> -p --output-format json --workspace <cwd> <args> [--model m] [--resume <chat>] -- <text>'`,
   through the machine's connection (`commandOn`: here, or POSIX-quoted over ssh with the hopper's key). The
   payload is herdr-claude's (`prompt`, `cwd`, `model`, `env`, `timeoutMs`; `cwd` resolved here and the same
   path there). The first turn's text is the prompt and `protocolFooter(cwd)`; a resumed turn's is the answer.
@@ -6272,7 +6276,7 @@ supported; defaults must be configurable. Read as three changes; none breaks a d
 - **Where it runs**: this machine and ssh targets, with or without herdr. A container target (no agent,
   issue #58) and a client target (serves herdr only) are refused with the reason.
 - **Not idempotent, nothing to reattach**: the process ends with its turn, so a restart fails a running job
-  and never runs the agent twice; a parked job resumes its chat after a restart. Cancel kills the client process.
+  and never runs the agent twice; a job on a question resumes its chat after a restart. Cancel kills the client process.
 - **Detection** is `which` only and always `available`: absent here, its detail says jobs run only on
   machines that have it (a WSL or server target may have Cursor where the hopper's host has none).
 - **Credentials**: Cursor signs in on each machine (`cursor-agent login`, or `CURSOR_API_KEY` in that
@@ -7572,7 +7576,7 @@ holds the database's credentials, the daemon's own trust, so acting from it wide
   `--user <id>` as on `config` (default the one user). Each prints the daemon's answer as JSON.
 - **Through the daemon, never around it.** Each command is the UI's own route on the running daemon, so its
   checks, its events (`job.accepted` by `user`, `queue.gate_changed`, `question.answered` by `human`, …) and
-  its runtime (the source told; an answer typed into a parked pane) are the click's. Accept is the Queue
+  its runtime (the source told; an answer typed into a waiting pane) are the click's. Accept is the Queue
   view's Accept: the accepted waiting jobs in queue order, then the job, posted as the user order.
 - **The session.** The CLI mints a UI session in the database (`ui_sessions`, only the token's hash stored)
   for the one call, with the least role the route names (operator; admin for the queue gate), and drops it
@@ -7986,3 +7990,55 @@ under its error in the Queue and the Overview.
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
+
+## Parked jobs (issue #501, 2026-10-08)
+
+A person takes a running job, or one on a question, out of its lane for an open-ended time — days or weeks —
+and re-queues it later on the same machine, where it resumes its agent session. Distinct from a job on a
+question (`waiting_answer` keeps its waiting pane and Claude in it) and from a job's own wait for something
+(issue #483, not built): parking is a person shelving a job, and holds nothing live.
+
+- **Park.** `POST /ui/api/jobs/:id/park` (least role `operator`, the same as cancel). Accepted for a `running`
+  job or a `waiting_answer` one whose executor has `park` and recorded its **agent session**
+  (`job.agentSession`); else 409 with the reason (`parkRefusal`, `src/engine/park.ts`). A running job is
+  interrupted at once (abort reason `park`): the herdr-claude executor leaves its pane as it is, the runner
+  records the park and frees the lane in one transaction (`recordPark`), then `Executor.park` ends Claude,
+  stops the job's scope and processes through the machine's own connection (the reap without a scratch dir),
+  and closes the pane. A job that ended done in that moment is recorded as done. A job on a question is
+  parked the same way, without the runner. The job is `parked`, `parked: { at, from }`, `resumeOn` its
+  machine; `job.parked { from, machineId }`. A machine that cannot be reached is logged; the sweep stops what
+  still runs there (a parked job is not live).
+- **Kept.** The work tree, the job worktree and branch in the scratch dir, the agent's own session data, the
+  machine, the open question. The sweep removes scratch dirs of ended jobs only; the reap runs only at a job's
+  end; the deferred cleanup is of ended jobs: none touches a parked job. Restart recovery leaves it as it is.
+  Credential files left in the scratch dir are not renewed while parked (no process reads them) and are
+  written again at the re-queue's start.
+- **Its question.** Stays open in Questions and counts for the badge. While its job is parked it never
+  expires and is not renotified (`QuestionService`: `expire`, `renotify` and `armHuman` skip it). An answer
+  or a close is kept as `pendingAnswer`; the job stays parked. Dismissing it cancels the job, as for any job
+  on its question.
+- **Re-queue.** `POST /ui/api/jobs/:id/requeue` (least role `operator`), `job.unparked { to }`. With its
+  question still open: back to `waiting_answer` (`to: waiting_answer`), the human timeout started again
+  (`QuestionService.unparked`); the answer then re-queues it as any. Else `queued` (`to: queued`) with
+  `pendingAnswer` the answer kept, or `PARKED_RESUME` (it was parked; go on). A pending answer pins it to
+  `resumeOn` and gives it the resume boost, so it waits for its machine — held `pinned machine <m> offline`
+  while it is — and never starts elsewhere. A fresh start elsewhere is not offered: cancel it and Run again.
+- **Resume.** The claim calls `Executor.resume`; with `job.parked` set, herdr-claude reopens: it stops
+  whatever of the job still runs there (two agents in one session would interleave), opens a new pane in the
+  recorded work tree, enters the same job worktree (the worktree command uses the one there), starts
+  `claude --resume <agentSession>`, and sends the answer. No session recorded fails the job; it never
+  starts fresh. The next outcome clears `job.parked`.
+- **Agent session.** herdr-claude starts Claude with a session id it chose (`--session-id`, a UUID) and
+  reports it once Claude is up (`ExecutionContext.agentSession`). Jobs started before this change have none
+  and cannot be parked; executors that record none (the print-mode agent executors, the test executor) do not
+  offer it.
+- **UI.** Park on a running lane's job and on a job on a question; Re-queue and Cancel on a parked job; both
+  only where `canPark` / `canRequeue` (`ui/src/model/board.ts`) say the daemon takes them, and only for a role
+  that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
+  (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
+- **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
+  ended`); the resumed session meets its tool again and reports a new one.
+- **Settings.** None of its own: who may park is the operator role, as for cancel, and roles apply live. No
+  reminder or limit for parked jobs.
+- **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
+  this one, on a store holding a parked job, shows it in no group and never runs it.

@@ -148,7 +148,8 @@ describe('herdr-claude', () => {
       laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: temp() }, signal: ac.signal,
       progress() {}, saveState() {}, workTree() {},
     });
-    expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
+    // Then the session the hopper chose (issue #501).
+    expect(herdr.agentStarts.map((s) => s.args)).toEqual([[...args, '--session-id', expect.stringMatching(/^[0-9a-f-]{36}$/)]]);
   });
 
   // Issue #379: each job its own git worktree of a git repository work tree, on by default; off, jobs share the work tree.

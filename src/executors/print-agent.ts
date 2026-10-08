@@ -1,7 +1,7 @@
 // The print-mode agent executors (design.md "Print-mode agent executors"; issue #142 for Cursor's agent,
 // #307 for codex, opencode and omp): one job is an agent CLI in print mode, run on the job's machine
 // through its connection — this machine or an ssh target — in the job's work tree. Each turn is one run;
-// its last message ends with the hopper protocol's marker. A question parks the job with the agent's
+// its last message ends with the hopper protocol's marker. A question pauses the job with the agent's
 // session id, and the answer resumes that session. Not idempotent: a restart fails a running job and
 // never runs the agent twice. As a herdr-claude job (issue #410): its own scratch dir, each turn in the
 // job's systemd user scope where the machine has one (the turn before stopped first), and the reap when
@@ -14,7 +14,7 @@ import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
 import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
-import { jobScratchOf, scratchDirOf } from './herdr/start.ts';
+import { jobScratchOf, jobTmpOf, linkTmpCommand, scratchDirOf } from './herdr/start.ts';
 import { localShell, sshShell } from './machine-shell.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
@@ -44,7 +44,7 @@ export interface PrintAgentExecutorOptions {
 
 /**
  * What a job keeps: the work tree it runs in and the ssh target it runs on (absent: this machine), for the
- * reap; once parked, the agent's session (its chat) to resume.
+ * reap; once on a question, the agent's session (its chat) to resume.
  */
 type PrintAgentState = { cwd: string; ssh?: string; chatId?: string };
 
@@ -99,17 +99,18 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     if (refused) return { kind: 'failed', error: refused };
     const p = resolvePayload(ctx.job, ctx.machine);
     // The job's own scratch dir (issue #410), so the reap can remove it; the work tree's scratch dirs ignore themselves.
+    // TMPDIR is its temp link (issue #506), so a Unix socket path under TMPDIR fits.
     const scratch = jobScratchOf(cwd, ctx.job.id);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
     // The job's credentials (issue #214, kept current on its machine for the turn: #441), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
-    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's credentials; what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
-    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
+    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });

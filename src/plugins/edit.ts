@@ -16,7 +16,7 @@ export type EditResult = { ok: true; changed: boolean } | EditRefusal;
 export interface EditContext {
   config: ConfigRecords;
   /**
-   * Jobs that need instance `name` of `role` — a machine (busy lanes there, panes parked there) or an
+   * Jobs that need instance `name` of `role` — a machine (busy lanes there, waiting panes there) or an
    * executor (a job naming it that has not ended, issue #142): its removal is refused while any do.
    */
   inUse(role: Role, name: string): string[];

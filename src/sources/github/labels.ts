@@ -1,5 +1,5 @@
 // The labels the hopper owns on an issue, with the colour/description it creates them with,
-// and the ones a person sets: `hopper:backburner` parks an issue (never picked up);
+// and the ones a person sets: `hopper:backburner` keeps an issue out (never picked up);
 // `hopper:complete-at-merge` / `hopper:complete-at-pr` set the issue's completion (issue #187).
 // An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159).
 

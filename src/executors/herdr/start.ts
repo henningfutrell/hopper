@@ -1,10 +1,11 @@
 // Opening a job's pane and getting Claude ready in it: workspace, tab, agent start, and the
 // startup dialogs (folder trust; the bypass permissions warning when yolo). docs/design.md "Phase 2" → "Start".
 
+import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
-import type { Sleep } from './monitor.ts';
-import { tail } from './monitor.ts';
+import type { Interrupt, Sleep } from './monitor.ts';
+import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { JOB_WORKTREE_MARK, checkoutOf, checkoutWorktreeOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
@@ -77,9 +78,12 @@ export interface PaneState {
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
-  /** state_change_seq when the turn parked on a question: Claude moving past it means the owner answered in the pane. */
+  /**
+   * state_change_seq when the turn stopped on a question: Claude moving past it means the owner answered in the pane.
+   * Named before parked jobs (issue #501), which it has nothing to do with; kept, as jobs on a question hold it.
+   */
   parkedSeq?: number;
-  /** The parked turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
+  /** The waiting turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
   lapsesAt?: string;
   /** The login the turn waits on (issue #476): Claude going on by itself completes it. */
   login?: { id: string; tool: string };
@@ -110,6 +114,8 @@ export interface StartDeps {
   jobWorktrees: boolean;
   /** A job worktree's node_modules is linked to dependencies shared with the repository's other jobs (issue #410). */
   sharedDependencies: boolean;
+  /** A new agent session id (issue #501); default a random UUID, as Claude's `--session-id` takes. */
+  newSession?: () => string;
 }
 
 /**
@@ -130,18 +136,39 @@ export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}
 export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
 
 /**
+ * The job's temp link (issue #506), its TMPDIR: a short link to its scratch dir. A Unix socket path takes at most 108
+ * bytes, and a tool binds its sockets under TMPDIR (Chromium's `org.chromium.Chromium.XXXXXX/SingletonSocket`
+ * alone takes 45), so the scratch dir's own path left too little room. What is written through it lands in
+ * the scratch dir all the same; the reap removes the link.
+ */
+export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
+
+/** Points the job's temp link at its scratch dir; fails when the link there is not that. */
+export const linkTmpCommand = (scratch: string, jobId: string): string => {
+  const link = shellQuote(jobTmpOf(jobId));
+  return `ln -sfn ${shellQuote(scratch)} ${link} && [ "$(readlink ${link})" = ${shellQuote(scratch)} ]`;
+};
+
+/** Makes the job's scratch dir, git-ignored, and its temp link; prints the ready or unusable marker. */
+export const scratchCommand = (cwd: string, jobId: string, make: boolean): string => {
+  const scratch = jobScratchOf(cwd, jobId);
+  return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)}`
+    + ` && ${linkTmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+};
+
+/**
  * Create the tab and record it at once, before anything can fail in it. The tab's environment
  * points Claude's scratchpad and every temp file at the scratch dir.
  */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
-  const scratch = jobScratchOf(cwd, ctx.job.id);
+  const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
-    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
@@ -199,9 +226,7 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * shell is PowerShell or cmd fails the job at once, naming it (issue #367). Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
-  const scratch = jobScratchOf(s.cwd, ctx.job.id);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
-    + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+  const command = scratchCommand(s.cwd, ctx.job.id, make);
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     await d.herdr.runInPane(s.paneId, command);
@@ -308,9 +333,11 @@ async function startAgent(d: StartDeps, s: PaneState, args: string[]): Promise<A
 /**
  * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
  * when Claude is ready for the prompt (or the signal fired — the caller checks), a start that timed out
- * (issue #462), else the failure to report; the caller closes the pane.
+ * (issue #462), else the failure to report; the caller closes the pane. Claude starts in a session whose id
+ * the hopper chose, or (`resume`) resumes that session (issue #501); once it is up, the id is the job's
+ * `agentSession`. A parked job's worktree is still there: the worktree command finds it and enters it.
  */
-export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | StartTimedOut | null> {
+export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, resume?: string): Promise<ExecutionOutcome | StartTimedOut | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
   const unscoped = await enterScope(d, ctx, s);
@@ -323,7 +350,8 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
       if (unshared || ctx.signal.aborted) return unshared;
     }
   }
-  const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
+  const session = resume ?? (d.newSession ?? randomUUID)();
+  const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : []), ...(resume ? ['--resume', resume] : ['--session-id', session])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
   let started = await startAgent(d, s, args);
   // A pane spawned a moment ago is not at its shell prompt yet; herdr refuses `agent start` until it is.
@@ -335,5 +363,52 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   }
   if ('startTimedOut' in started) return started;
   // Started, or held at a dialog (herdr's agent_not_ready): either way, a dialog may stand before the prompt.
-  return settleStartup(d, ctx, s, started.ok);
+  const settled = await settleStartup(d, ctx, s, started.ok);
+  if (!settled && !ctx.signal.aborted) ctx.agentSession?.(session);
+  return settled;
+}
+
+/**
+ * Starts of one run (issue #462): a start that times out is tried again in a new pane, after a pause
+ * that grows and is spread at random, so lanes that filled at once do not start again at once.
+ */
+const START_ATTEMPTS = 3;
+const START_PAUSES_MS = [10000, 30000];
+const START_PAUSE_SPREAD = 0.5;
+
+/** What the executor does around each start of `startInPane`. */
+export interface StartHooks {
+  /** The pane's environment, placed afresh for each start: the close of a failed one reaped the scratch dir, credentials too. */
+  env(): Promise<Record<string, string>>;
+  /** A pane just opened: the outcome that refuses it (another lane holds it), or null once the executor holds it. */
+  opened(s: PaneState): ExecutionOutcome | null;
+  /** A start that failed: its pane is closed. */
+  close(s: PaneState): Promise<void>;
+  /** Spreads the pause before a start is tried again. */
+  random(): number;
+  /** The agent session a parked job resumes (issue #501). */
+  resume?: string;
+}
+
+/**
+ * Open the job's pane in `p.cwd` and start Claude there, tried again in a new pane when the start times out
+ * (issue #462): nothing of the job has run yet. The pane's state once Claude is ready, else the outcome or
+ * interrupt that ends the run.
+ */
+export async function startInPane(d: StartDeps, ctx: ExecutionContext, p: ClaudeJobPayload, h: StartHooks): Promise<PaneState | ExecutionOutcome | Interrupt> {
+  for (let attempt = 1; ; attempt++) {
+    const s = await openPane(d, ctx, p.cwd, await h.env());
+    const refused = h.opened(s);
+    if (refused) return refused;
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+    const failed = await startClaude(d, ctx, s, p, h.resume);
+    if (!failed) return ctx.signal.aborted ? { interrupt: abortReason(ctx.signal) } : s;
+    await h.close(s);
+    if (!('startTimedOut' in failed)) return failed;
+    if (attempt >= START_ATTEMPTS) return { kind: 'failed', error: `claude did not start in ${attempt} attempts: ${failed.startTimedOut}` };
+    const pause = Math.round(START_PAUSES_MS[attempt - 1]! * (1 + START_PAUSE_SPREAD * h.random()));
+    ctx.progress(0, `claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
+    await d.sleep(pause, ctx.signal);
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+  }
 }

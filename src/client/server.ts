@@ -287,6 +287,8 @@ const REAP_SCRIPT = [
   '    l=$(pids); [ -n "$l" ] && kill -KILL $l 2>/dev/null;',
   '  fi;',
   'fi;',
+  // The job's temp link /tmp/hopper-<job id> (issue #506), only while it points at this scratch dir.
+  't=/tmp/hopper-$id; [ -n "$s" ] && [ -L "$t" ] && [ "$(readlink "$t")" = "$s" ] && rm -f "$t";',
   // Only ever this job's own scratch dir: <work tree>/.hopper-scratch/<job id>.
   'case $s in */.hopper-scratch/"$id") ;; *) printf "%s\\n" hopper-reaped; exit 0;; esac;',
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.

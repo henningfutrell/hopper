@@ -72,6 +72,24 @@ afterEach(() => {
 });
 
 describe('the reap at job end (issue #401)', () => {
+  it('removes the job\'s TMPDIR link to its scratch dir (issue #506), never a link that points elsewhere', () => {
+    const id = `job-506-${process.pid}`;
+    const own = join(root, 'work', '.hopper-scratch', id);
+    mkdirSync(own, { recursive: true });
+    const link = `/tmp/hopper-${id}`;
+    try {
+      symlinkSync(own, link);
+      expect(reap(id, own)).toContain(REAP_DONE);
+      expect(() => lstatSync(link)).toThrow();
+      symlinkSync(root, link);
+      mkdirSync(own, { recursive: true });
+      expect(reap(id, own)).toContain(REAP_DONE);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    } finally {
+      rmSync(link, { force: true });
+    }
+  });
+
   it.runIf(existsSync('/proc/self/environ'))('stops every process carrying the job\'s HOPPER_JOB_ID, never another job\'s, nor itself when run with that id', () => {
     const mine = [straggler(JOB), straggler(JOB)];
     const theirs = straggler(OTHER);

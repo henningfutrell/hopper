@@ -83,14 +83,18 @@ function QuestionCard({ q }: { q: Question }) {
     setSending(false);
     refreshQuestions().catch(() => {});
   };
-  const movedOn = job && (job.status !== 'waiting_answer' || job.questionId !== q.id);
+  // A parked job (issue #501) still waits on its question: the answer is kept until it is re-queued.
+  const parked = job?.status === 'parked' && job.questionId === q.id;
+  const movedOn = job && !parked && (job.status !== 'waiting_answer' || job.questionId !== q.id);
   return (
     <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.tier === 'human' ? 'border-question/40' : ''}
       action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)} <RaisedOn raisedBy={q.raisedBy} className="align-bottom" />{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
-        {q.tier === 'human' && q.expiresAt && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}</span>}
+        {q.tier === 'human' && q.expiresAt && !parked && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}
+        {parked && <> · its job is parked: never expires</>}</span>}
       bodyClassName="space-y-3">
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
-        {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}</div>}
+        {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
+        {parked && <StatusBadge status="parked" label="job parked" title="The answer is kept, and the job resumes with it when it is re-queued." />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>

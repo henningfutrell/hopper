@@ -158,7 +158,7 @@ step "systemctl --user enable hopper-herdr hopper"
 systemctl --user enable hopper-herdr hopper
 
 if systemctl --user is-active --quiet hopper-herdr; then
-  step "hopper-herdr is active: NOT restarted (restarting it would kill every parked pane and its Claude job)"
+  step "hopper-herdr is active: NOT restarted (restarting it would kill every waiting pane and its Claude job)"
 else
   step "systemctl --user start hopper-herdr"
   systemctl --user start hopper-herdr
