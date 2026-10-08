@@ -43,11 +43,11 @@ export function createUpstream(root: string): Upstream {
   };
 }
 
-/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md when the commit has one). */
-export function createInstall(root: string, repo: string, commit: string, branch = 'main'): string {
+/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md when the commit has one). `kind` `image`: the copy an image build bakes in (issue #409). */
+export function createInstall(root: string, repo: string, commit: string, branch = 'main', kind: InstallInfo['kind'] = 'install'): string {
   const appDir = join(root, 'app');
   mkdirSync(join(appDir, 'src'), { recursive: true });
-  const info: InstallInfo = { repo, branch, commit, installedAt: '2026-10-04T00:00:00.000Z' };
+  const info: InstallInfo = { kind, repo, branch, commit, installedAt: '2026-10-04T00:00:00.000Z' };
   writeFileSync(join(appDir, 'install.json'), JSON.stringify(info));
   writeFileSync(join(appDir, 'app.txt'), git(repo, 'show', `${commit}:app.txt`));
   writeFileSync(join(appDir, 'src', 'main.ts'), 'export {};\n');

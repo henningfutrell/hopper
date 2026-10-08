@@ -5115,10 +5115,24 @@ job, a lane or a question: from the UI, or on its own with auto-update. Code: `s
 build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
 
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
-`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+`{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
+writes it (`kind: install`) from the clone's `origin`
 and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
+
+**So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
+the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
+default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
+`scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+`localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
+install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
+install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
+rebuilding it, so the UI offers no Update now and the headline says to pull or rebuild. A build whose install.json
+lacks a field → `unavailable`, the reason naming the missing field.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
@@ -5159,7 +5173,9 @@ the installed commit is made of, newest first: each commit on the tracked branch
 that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
 those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
-checked first. Computed once per installed commit. No install.json → none, with the reason.
+checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
+always carries `build`: what install.json does say (issue #409), shown above the list with the version, every
+missing field as `unknown`, and the reason as a short note — never an error in place of the page.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 
@@ -5306,7 +5322,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
 `HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
-still does not apply to a container.
+still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
 start a container whose dependency has exited, so the `secrets` service (run once, then exited) stopped
@@ -5598,7 +5614,7 @@ has it (`git log -- src/migrate/local.ts`).
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
-  configured for none). Self-update does not apply (no install.json; an image is updated by
+  configured for none). Self-update does not apply (an image is updated by
   rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
   deploy is `compose.yaml` at the root ("Docker Compose"; since issue #125 the published image,
 "The published image, with Podman").

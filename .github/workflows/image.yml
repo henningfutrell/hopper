@@ -41,6 +41,11 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          # What the image is built from, written into it (issue #409): Settings → Version history and the update check.
+          build-args: |
+            HOPPER_REPO=${{ github.server_url }}/${{ github.repository }}.git
+            HOPPER_BRANCH=${{ github.ref_name }}
+            HOPPER_COMMIT=${{ github.sha }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

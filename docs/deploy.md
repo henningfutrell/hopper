@@ -91,9 +91,13 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   repeated upgrades do not pile up images. It recreates the hopper's container, so it ends the running jobs' panes: upgrade when none
   runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
 - **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
-- **An image from a checkout:** `podman build -t localhost/hopper .`, then `HOPPER_IMAGE=localhost/hopper`
-  in `.env`. Without the claude CLI: `--build-arg INSTALL_CLAUDE=false` (then jobs need attached machines, and
-  the escalation levels a designated machine or an API key).
+- **An image from a checkout:** `bash scripts/build-image.sh` (Docker, else Podman; `HOPPER_BUILDER` picks one),
+  then `HOPPER_IMAGE=localhost/hopper` in `.env`. It builds `localhost/hopper` with the checkout's repository,
+  branch and commit written into the image, so Settings → Version history and the update check work as for an
+  install; a bare `docker build .` cannot see the commit and the hopper then says it lacks it. Without the claude
+  CLI: `bash scripts/build-image.sh --build-arg INSTALL_CLAUDE=false` (then jobs need attached machines, and
+  the escalation levels a designated machine or an API key). An image is updated by pulling or rebuilding it:
+  the update check says when one is newer, and self-update never replaces an image in place.
 - **Who answers questions:** the container has no Claude sign-in of its own, so its escalation levels
   escalate every question to you until one can run. In Settings → Question gates: set a level's
   `machine` (picked from the machines) to an attached ssh machine signed in to claude, or add an `anthropic-api` level and give the

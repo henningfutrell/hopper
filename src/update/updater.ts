@@ -208,7 +208,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   async function run(installed: InstallInfo, target: { commit: string; ref: string }): Promise<void> {
     // On a branch channel the install now comes from its branch; a release keeps the branch it had.
     const branch = isBranchChannel(target.ref) ? target.ref : installed.branch;
-    await build({ repo: installed.repo, branch, commit: target.commit, installedAt: now() });
+    await build({ kind: 'install', repo: installed.repo, branch, commit: target.commit, installedAt: now() });
     for (;;) {
       const blockers = o.restartBlockers();
       if (blockers === 0) break;
@@ -228,6 +228,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     if (applying) return { ok: false, error: 'an update is already being applied' };
     const { installed, target } = checked;
     if (checked.state !== 'available' || !installed || !target) return { ok: false, error: 'no update available' };
+    // An image is replaced by pulling or rebuilding it (issue #409): its files are not the hopper's to swap.
+    if (installed.kind === 'image') return { ok: false, error: 'this hopper runs from a container image: pull or rebuild the image to update it (docs/deploy.md "Upgrade")' };
     applying = { phase: 'building', detail: `building ${target.ref} ${short(target.commit)} beside the running install`, target: target.commit, startedAt: now() };
     applyError = undefined;
     append('update.started', { from: installed.commit, to: target.commit, ref: target.ref });
@@ -265,14 +267,15 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
 
   async function versionHistory(): Promise<VersionHistory> {
     const read = readInstallInfo(o.appDir);
-    if (!read.ok) return { versions: [], reason: read.reason };
+    const build = read.known;
+    if (!read.ok) return { versions: [], build, reason: read.reason };
     const { commit } = read.info;
-    if (history?.commit === commit) return { versions: history.versions };
+    if (history?.commit === commit) return { versions: history.versions, build };
     if (!(await mirror.has(commit))) await check();
-    if (!(await mirror.has(commit))) return { versions: [], reason: checked.reason ?? `the installed commit ${short(commit)} is not in ${read.info.repo}` };
+    if (!(await mirror.has(commit))) return { versions: [], build, reason: checked.reason ?? `the installed commit ${short(commit)} is not in ${read.info.repo}` };
     const versions = (await mirror.added(commit, WHATS_NEW_FILE)).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
     history = { commit, versions };
-    return { versions };
+    return { versions, build };
   }
 
   return {
