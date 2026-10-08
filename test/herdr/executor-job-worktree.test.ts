@@ -100,4 +100,37 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     await executor.reattach!(ctx);
     expect(workTrees).toEqual([JOB_TREE]);
   });
+
+  it('shares dependencies in the job worktree after it is made and before Claude starts; the prompt says the link is read-only (issue #410)', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: true });
+    const { ctx, saved, progress } = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    const order = herdr.calls.map((c) => (c.method === 'runInPane' ? `run:${String(c.args[1]).includes('worktree add') ? 'worktree' : String(c.args[1]).includes('.hopper-scratch/deps') ? 'deps' : 'other'}` : c.method));
+    expect(order.indexOf('run:deps')).toBeGreaterThan(order.indexOf('run:worktree'));
+    expect(order.indexOf('run:deps')).toBeLessThan(order.indexOf('startAgent'));
+    expect(runs(herdr).find((r) => r.includes('.hopper-scratch/deps'))).toContain(`'${CWD}' '${JOB_TREE}' 1440`);
+    expect(saved.at(-1)).toMatchObject({ sharedDependencies: true });
+    expect(progress.map((p) => p.message)).toContain('dependencies: linked');
+    expect(herdr.prompts[0]!.text).toContain('Its node_modules is a link to dependencies shared with the other jobs of this repository: read-only.');
+    expect(herdr.prompts[0]!.text).toContain('make no other clone or worktree of it for this job');
+  });
+
+  it('dependencies not shared (no lockfile, or the install failed): the job goes on, and the prompt says nothing of a link', async () => {
+    for (const deps of ['none', 'failed'] as const) {
+      const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], deps }, { jobWorktrees: true, sharedDependencies: true });
+      const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
+      expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+      expect(saved.at(-1)).not.toHaveProperty('sharedDependencies');
+      expect(herdr.prompts[0]!.text).not.toContain('node_modules');
+    }
+  });
+
+  it('off, or no job worktree: no dependencies command', async () => {
+    const off = setup({ turns: [DONE], repositories: [CWD], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: false });
+    await off.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(runs(off.herdr).some((r) => r.includes('.hopper-scratch/deps'))).toBe(false);
+    const plain = setup({ turns: [DONE], deps: 'linked' }, { jobWorktrees: true, sharedDependencies: true });
+    await plain.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(runs(plain.herdr).some((r) => r.includes('.hopper-scratch/deps'))).toBe(false);
+  });
 });
