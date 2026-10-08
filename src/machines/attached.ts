@@ -89,7 +89,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk } : {}) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];

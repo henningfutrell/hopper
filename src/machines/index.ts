@@ -11,6 +11,8 @@ const SESSION_EVERY_MS = 30000;
 
 export function createLocalMachineSource(o: {
   maxLanes: number;
+  /** Lanes kept for jobs pinned to it (issue #372). */
+  reservedLanes?: number;
   /** The executors registered now; asked on every list(). */
   executors: () => string[];
   id?: string;
@@ -55,6 +57,7 @@ export function createLocalMachineSource(o: {
           id: o.id ?? 'local',
           label: o.label ?? hostname(),
           maxLanes: o.maxLanes,
+          ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
           online: true,
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),

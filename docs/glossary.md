@@ -70,6 +70,7 @@ synonyms. Rename here first, in the same commit as everything else.
 | **Lane effect** | What usage does to one machine's lanes now: per executor it runs, the used fraction, lane cap and band (`free`, `soft`, `hard`, `offline`) — the decider's steps 1-2 over the readings that limit that executor — and the machine's own, its least limited executor's. `GET /api/usage` `machines`. | |
 | **Soft limit / hard limit** | Usage fractions. Past soft, the lane cap scales down; at hard, lanes stop. | |
 | **Lane cap** | The most lanes a machine may run given its usage; an executor's lane cap, the most its jobs may hold there. | |
+| **Reserved lanes** | A machine's `reservedLanes` option (issue #372): lanes it keeps for jobs pinned to it. A job not pinned to it holds at most its lane cap less these; jobs pinned to it may use every lane. At or above the cap, only pinned jobs run there. Never moves a running job. | kept lanes, held lanes, lane quota |
 | **Decider** | The pure function `decide()`: inputs in, one Decision out. | scheduler |
 | **Engine** | The loop that gathers inputs, calls the decider, applies the Decision. | daemon (the daemon is the whole process) |
 | **Trigger** | What woke the engine: `tick` or an event type. | |
