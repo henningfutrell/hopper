@@ -10,15 +10,16 @@
 // UI edits (edit.ts, attached-edit.ts) replace the plugins config in the store and apply like any other change.
 import type { MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import {
-  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
+  ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type InstanceStatus, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
+import { withMachineNote as withNote } from '../domain/machine-pick.ts';
 import { createMachinesEditor } from './attached-slot.ts';
 import { createRoutingConfig } from './routing-config.ts';
 import { BUILTIN_PLUGINS } from './builtin.ts';
 import { createDetectionKit } from './detect.ts';
 import { loadCustomPlugins, type LoadedPlugin, type LoadResult } from './loader.ts';
 import { machineOptions, optionsJsonSchema, parseOptions, withMachineChoices } from './options.ts';
-import { applyEdit, configuredInstances, type Configured } from './edit.ts';
+import { applyEdit, configuredInstances, describeEdit, type Configured } from './edit.ts';
 import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
@@ -89,6 +90,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     jobSource: o.jobSourceContext ?? NO_SOURCE_CONTEXT, executors: o.machineContext?.executors ?? runnableExecutors,
     target: o.machineContext?.target ?? createTargetPool({ probe: async () => ({ online: false }) }),
     machine: async (id) => (await liveMachines.list()).find((m) => m.id === id),
+    machines: () => liveMachines.list(), escalationMachine: () => configured?.escalationMachine,
     client: o.executorContext?.client ?? (() => undefined),
   };
 
@@ -131,6 +133,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       machines: file?.machines ?? defaults.machines,
       usageSources: file?.usageSources ?? defaults.usageSources,
       notifiers: file?.notifiers ?? defaults.notifiers,
+      ...(file?.escalationMachine ? { escalationMachine: file.escalationMachine } : {}),
     };
     const error = 'error' in r ? r.error : undefined;
     if (error) {
@@ -215,6 +218,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   }
 
   const fileVersion = (): string => o.config.version(PLUGINS);
+  /** A part that runs claude and names no machine (issue #442): which machine it runs on, or that it needs one, in plain words. */
+  const withMachineNote = (st: InstanceStatus): InstanceStatus => withNote(st, configured?.machines ?? [], configured?.escalationMachine);
 
   const instances = (): ConfiguredInstance[] => (configured ? configuredInstances(configured, need().current().spec) : []);
 
@@ -293,11 +298,11 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         // Act on what the config says now, not on a reload the watch timer has not run yet.
         if (sign() !== signature) await enqueue();
         const r = applyEdit(e, {
-          config: o.config, configured: instances(), find: (id) => entries.find((x) => x.definition.id === id), inUse: (role, name) => (role === 'machine-source' ? o.attached?.inUse?.(name) ?? [] : role === 'executor' ? o.executorInUse?.(name) ?? [] : []), pinned: (name) => o.attached?.pinned?.(name) ?? [],
+          config: o.config, configured: instances(), escalationMachine: configured?.escalationMachine, find: (id) => entries.find((x) => x.definition.id === id), inUse: (role, name) => (role === 'machine-source' ? o.attached?.inUse?.(name) ?? [] : role === 'executor' ? o.executorInUse?.(name) ?? [] : []), pinned: (name) => o.attached?.pinned?.(name) ?? [],
         });
         if (!r.ok) return r;
         if (r.changed) {
-          o.logger.info(`hopper: plugins config edited in the UI: ${e.action} ${e.role} ${e.action === 'select' ? String(e.plugin) : e.name}${e.action === 'options' && e.rename && e.rename !== e.name ? ` renamed ${e.rename}` : ''}`);
+          o.logger.info(`hopper: plugins config edited in the UI: ${describeEdit(e)}`);
           await enqueue();
         }
       }
@@ -315,11 +320,12 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
           ...(status.reason === undefined ? {} : { reason: status.reason }),
         },
         queueSorter: started(sorter).status(),
-        escalationLevels: started(levels).map(levelStatus),
+        escalationLevels: started(levels).map((l) => withMachineNote(levelStatus(l))),
+        ...(configured?.escalationMachine ? { escalationMachine: configured.escalationMachine } : {}),
         executors: { instances: (executors.built ?? []).map(executorStatus) },
         jobSources: { instances: (jobSources.built ?? []).map(instanceStatus) },
         machines: { instances: (machines.built ?? []).map(instanceStatus) },
-        usageSources: { instances: (usageSources.built ?? []).map(instanceStatus) },
+        usageSources: { instances: (usageSources.built ?? []).map((b) => withMachineNote(instanceStatus(b))) },
         notifiers: { instances: (notifiers.built ?? []).map(notifierStatus) },
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,

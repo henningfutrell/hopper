@@ -102,7 +102,7 @@ export interface RoleInstance {
 export interface RoleContext {
   router: object;
   'queue-sorter': object;
-  'escalation-level': MachineLookup;
+  'escalation-level': EscalationLevelContext;
   executor: ExecutorContext;
   'job-source': JobSourceContext;
   'machine-source': MachineSourceContext;
@@ -110,9 +110,16 @@ export interface RoleContext {
   notifier: object;
 }
 
-/** A machine by its id, as the machine sources list it now (absent: not configured, or its source cannot run). */
+/** A machine by its id, as the machine sources list it now (absent: not configured, or its source cannot run); and all of them. */
 export interface MachineLookup {
   machine(id: string): Promise<MachineSnapshot | undefined>;
+  /** Every machine the machine sources list now: a part that names no machine picks one of them (issue #442). */
+  machines(): Promise<MachineSnapshot[]>;
+}
+
+/** What an escalation level learns: the machines, and the default escalation machine of the plugins config (issue #442), read at each call. */
+export interface EscalationLevelContext extends MachineLookup {
+  escalationMachine(): string | undefined;
 }
 
 /**

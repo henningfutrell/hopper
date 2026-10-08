@@ -32,7 +32,7 @@ describe('command-usage plugin', () => {
     if (saved === undefined) delete process.env.FAKE_USAGE_DIR; else process.env.FAKE_USAGE_DIR = saved;
   });
 
-  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'codex', env: () => undefined, machine: async () => undefined, client: () => undefined });
+  const ctx = () => ({ clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch, instanceName: 'codex', env: () => undefined, machine: async () => undefined, machines: async () => [], client: () => undefined });
   async function create(raw: Record<string, unknown> = {}): Promise<UsageSource> {
     const p = parseOptions(commandUsage, { command: [BIN, '--json'], executors: ['herdr-codex'], ...raw });
     if (!p.ok) throw new Error(p.error);
