@@ -282,21 +282,39 @@ line carries a one-time join code: it works once, for 10 minutes.
   jobs run as you there. Sign `claude` in there once, and keep it running after you log out:
   `loginctl enable-linger`. For the computer a hopper container runs on, open the UI at
   `http://localhost:4790` there first: the line names the URL the page is open at.
+- **A Windows computer**, outside WSL: the hopper types POSIX shell commands into each job's pane,
+  and herdr opens panes in PowerShell there, so a job fails at once with `… is PowerShell, and the
+  hopper needs a POSIX shell …`. Give the client's herdr session Git Bash as its shell: start that
+  session with `HERDR_CONFIG_PATH` naming a herdr config of its own, and with `CHERE_INVOKING=1` so
+  bash stays in the pane's directory. The config:
+
+  ```toml
+  [terminal]
+  default_shell = 'C:/Program Files/Git/usr/bin/bash.exe'
+  shell_mode = 'login'
+  ```
+
+  Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
+  bash, and herdr then sees the pane as busy.
+
+  With no systemd there, start that herdr session (`herdr --session hopper-client server`) and the
+  client yourself, from your home directory, never from the client's own directory: Windows cannot
+  replace a directory a process is in, and that breaks a release load. Start the client again when it
+  exits 75, as it does after each new client release:
+
+  ```powershell
+  Set-Location $HOME
+  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
+  ```
+
+  For the machine's Claude usage, `claude` must be on the client's PATH as `claude.exe` (the native
+  installer's): the client runs it with no shell.
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
   nothing of the computer mounted. Sign its agent in once:
   `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
   so a recreated box is the same machine.
-- **Windows, without WSL** (no systemd): once the client is installed and joined there, start herdr
-  (`herdr --session hopper-client server`) and the client from your home directory, never from the
-  client's own directory (Windows cannot replace a directory a process is in, which breaks a release
-  load), and start the client again when it exits 75 — it does so after each new client release:
-  ```powershell
-  Set-Location $HOME
-  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
-  ```
-  `claude` must be on its PATH as `claude.exe` (the native installer's); the client runs it with no shell.
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working
