@@ -147,7 +147,7 @@ export interface SealerState {
  */
 export function sealerOf(secret: RuntimeSecrets): SealerState {
   const key = secret(TOKEN_KEY_VARIABLE);
-  if (!key) return { problem: `${TOKEN_KEY_VARIABLE} is not set (docs/deploy.md "Secrets")` };
+  if (!key) return { problem: `${TOKEN_KEY_VARIABLE} is not set (docs/deploy.md "What every deploy needs")` };
   const previous = (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean);
   return { sealer: createSealer(key, previous) };
 }
