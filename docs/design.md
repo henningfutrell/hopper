@@ -4182,7 +4182,12 @@ each level's instance and state, and edits what is configuration:
   `POST /ui/api/plugins` `add` / `remove` / `move` / `options`. A level's state comes from
   `GET /api/plugins` `escalationLevels[]`: active plugin, detection, and the reason one cannot run
   (it escalates every question). The levels are live: an edit applies to the next question,
-  never `restart pending`. The form is shared with the Plugins and Routing views:
+  never `restart pending`. **This panel is their one editor** (issue #444, owner decision
+  2026-10-08): the Plugins view shows the levels read-only (order, plugin, state) with a link here,
+  and the shipped-plugin switches leave the escalation-level plugins out, as they do machines. A level
+  whose plugin has a machine option and names none cannot save its options until one is picked: Save
+  waits for it, as the server refuses them without one (issue #174). UI only: the stored
+  `escalationLevels` is unchanged, so no migration. The form is shared with the Plugins and Routing views:
   `ui/src/components/plugin-form.tsx` (`InstanceForm { role, inst }`, `AddInstance { role }`,
   `PluginSelector { role }`, `sendPluginsEdit`, `pluginEditsUnsaved`); each form holds its own
   unsaved edits.
@@ -6137,7 +6142,8 @@ never edit plugins.yaml**: for now the shipped plugins are enabled and disabled 
 plugins from a store URL is a separate issue.
 
 - **The switch.** The Plugins view lists every **shipped plugin** (built-in) of a list role but
-  `machine-source` (attached in the Machines view) with a switch. On sends `POST /ui/api/plugins`
+  `machine-source` (attached in the Machines view) and, since issue #444, `escalation-level` (edited in
+  Question gates alone) with a switch. On sends `POST /ui/api/plugins`
   `{ action: 'add', role, plugin: <id>, name: <id> }` (the plugin's defaults); off sends
   `{ action: 'remove', name: <its one instance> }`. Blocked, with the reason, when the plugin is not
   available here (its detection reason: `needs-setup` for one whose options have no defaults), when

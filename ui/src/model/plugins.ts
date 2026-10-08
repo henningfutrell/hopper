@@ -145,10 +145,13 @@ export const ROLE_TITLES: Record<Role, string> = {
  */
 export interface ShippedPlugin { id: string; role: ListRole; describe: string; enabled: boolean; instances: string[]; blocked?: string }
 
-/** The built-in plugins of the list roles, machines left out (they are attached in the Machines view). */
+/**
+ * The built-in plugins of the list roles, machines left out (they are attached in the Machines view) and
+ * escalation levels too (issue #444: edited in Question gates alone).
+ */
 export function shippedPlugins(report: PluginsReport): ShippedPlugin[] {
   return report.plugins.flatMap((p): ShippedPlugin[] => {
-    if (!p.builtin || !isListRole(p.role) || p.role === 'machine-source') return [];
+    if (!p.builtin || !isListRole(p.role) || p.role === 'machine-source' || p.role === 'escalation-level') return [];
     const instances = report.instances.filter((i) => i.role === p.role && i.instance.plugin === p.id).map((i) => i.instance.name);
     const enabled = instances.length > 0;
     const blocked = enabled
