@@ -43,6 +43,8 @@ export interface FakeHerdrOptions {
   ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
   unusableDirs?: string[];
+  /** The pane's shell is a Windows shell, not a POSIX one (issue #367): it answers every command with its own error and prompt. */
+  windowsShell?: 'powershell' | 'cmd';
   /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
   repositories?: string[];
   /** Git refuses to make a job worktree. */
@@ -318,6 +320,14 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      if (o.windowsShell === 'powershell') {
+        p.lines.push(`PS C:\\Users\\dev> ${command}`, 'At line:1 char:20', "The token '&&' is not a valid statement separator in this version.", '    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException', '', 'PS C:\\Users\\dev> ');
+        return;
+      }
+      if (o.windowsShell === 'cmd') {
+        p.lines.push(`C:\\Users\\dev>${command}`, 'The filename, directory name, or volume label syntax is incorrect.', '', 'C:\\Users\\dev>');
+        return;
+      }
       // The reap at job end (reap.ts): what it kept, then its last line.
       if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
         p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');

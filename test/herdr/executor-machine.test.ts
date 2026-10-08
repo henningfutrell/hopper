@@ -167,6 +167,19 @@ describe('herdr-claude executor: a work tree the machine cannot use fails the jo
   });
 });
 
+// Issue #367: herdr opens panes in the machine's default shell, PowerShell on Windows; the hopper's pane commands are POSIX shell.
+describe('herdr-claude executor: a pane whose shell is a Windows shell fails the job at once', () => {
+  it.each([['powershell', 'PowerShell'], ['cmd', 'cmd']] as const)('%s: failed naming the shell and what the hopper needs, pane closed, no 60 s wait and no Claude', async (windowsShell, named) => {
+    const { remotes, executor } = setup({}, { defaultCwd: '/srv/jobs', remote: { laptop: { turns: [DONE], windowsShell } } });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' }), 'laptop/lane-1', LAPTOP).ctx);
+    expect(out).toEqual({ kind: 'failed', error: `the shell of pane w1:p1 on laptop is ${named}, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr's default shell for the hopper's herdr session on that machine (README "A Windows computer")` });
+    const there = remotes.get('laptop')!;
+    expect(there.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
+    expect(there.agentStarts).toEqual([]);
+    expect(there.closed).toEqual(['w1:p1']);
+  });
+});
+
 // Issue #314: no job runs with the home of its machine, or anything above it, as its work tree.
 describe('herdr-claude executor: never the home as the work tree', () => {
   const FAR = { ...LAPTOP, home: '/home/far' };
