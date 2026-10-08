@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, autoDenyMs, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
+import { CTRL_END, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -15,7 +15,10 @@ export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>;
 /** Why the turn stopped without an outcome; the executor decides what to do with the pane. */
 export type Interrupt = { interrupt: 'cancel' | 'shutdown' | 'timeout' };
 
-/** The turn ended without a marker (issue #163): progress, never a question. The executor nudges. */
+/**
+ * The turn ended without a marker (issue #163): progress, never a question. The executor nudges. Never while
+ * the footer names background work the job started (issue #491): Claude Code wakes the job when it ends.
+ */
 export type StatusNote = { statusNote: string };
 
 /**
@@ -30,11 +33,15 @@ export interface TurnWatch {
   clock: Clock;
   sleep: Sleep;
   pollMs: number;
-  /**
-   * How long the turn sits idle without a marker before it counts as a status note; also how long Claude
-   * may sit waiting with its state unmoved since the send before the turn counts as over all the same.
-   */
+  /** How long the turn sits idle without a marker, and no background work running, before it counts as a status note. */
   idleNudgeMs: number;
+  /** How long Claude may sit waiting with its state unmoved since the send before the turn counts as over all the same. */
+  stallMs: number;
+  /**
+   * The turn counts as over only once Claude has worked in this watch (issue #491): the hopper sent nothing,
+   * and waits for Claude to go on by itself, woken by a background notification or a person in its pane.
+   */
+  untilWorking?: boolean;
   ctx: ExecutionContext;
   agentName: string;
   paneId: string;
@@ -83,6 +90,11 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
   let lastLine = '';
   let idleSince: number | null = null;
   let waitingSince: number | null = null;
+  let worked = w.untilWorking !== true;
+  /** Under `untilWorking`, the turn on screen when the watch began: new output is work too, though no poll saw Claude working. */
+  let atStart: { text: string; lines: number } | undefined;
+  /** The background work last reported as waited on, so it is reported once. */
+  let waitedOn: string | undefined;
   let errors = 0;
   for (;;) {
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
@@ -103,17 +115,19 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         lastLine = turn.lastLine;
         ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), lastLine);
       }
+      atStart ??= { text: turn.assistantText, lines: turn.outputLines };
+      if (agent.status === 'working' || turn.assistantText !== atStart.text || turn.outputLines !== atStart.lines) worked = true;
       const moved = agent.stateChangeSeq > w.seqAtSend;
       const ready = agent.status === 'idle' || agent.status === 'done';
       // A job must never stay running on a Claude that waits (issue #278): ready or at a dialog, its
       // state unmoved since the send for idleNudgeMs, the turn is over though herdr never said so.
       if (ready || agent.status === 'blocked') waitingSince ??= now;
       else waitingSince = null;
-      const stalled = !moved && waitingSince !== null && now - waitingSince >= w.idleNudgeMs;
+      const stalled = !moved && waitingSince !== null && now - waitingSince >= w.stallMs;
       const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
       if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return park(await blockedQuestion(w, recent));
-      const ended = ready && (moved || stalled);
-      if (!ended) idleSince = null;
+      const ended = worked && ready && (moved || stalled);
+      if (!ended) { idleSince = null; waitedOn = undefined; }
       else if (!moved && (!turn.anchorFound || inputBoxText(recent) !== '')) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: turn.assistantText.slice(0, SUMMARY_CHARS), paneId: w.paneId } };
@@ -122,8 +136,16 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'question') {
         return park({ kind: 'question', question: { text: turn.assistantText, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'marker' } });
       } else {
-        idleSince ??= now;
-        if (stalled || now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
+        const work = backgroundWork(recent);
+        if (work) {
+          idleSince = null;
+          if (work !== waitedOn) ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), `waiting on background work (${work}): no nudge while it runs`);
+          waitedOn = work;
+        } else {
+          waitedOn = undefined;
+          idleSince ??= now;
+          if (stalled || now - idleSince >= w.idleNudgeMs) return { statusNote: turn.assistantText };
+        }
       }
       errors = 0;
     } catch (err) {

@@ -35,6 +35,8 @@ export interface TurnView {
   assistantText: string;
   /** Last non-empty, non-marker output line after the anchor, gutter stripped. Drives progress. */
   lastLine: string;
+  /** Output lines after the anchor, chrome left out: more of them is new output (issue #491). */
+  outputLines: number;
   anchorFound: boolean;
 }
 
@@ -115,6 +117,27 @@ const NEW_MESSAGES_LINE = /\d+ new messages? \(ctrl\+End\)/;
  */
 const UPDATE_NOTICE = /^\s*[✔✓✗✘⚠]?\s*(Update installed|Update available|Auto-update failed)\b/;
 
+/**
+ * A count of background work in the footer, between its "·" separators: "1 shell", "2 background tasks".
+ * Captured live: "⏵⏵ bypass permissions on · 1 shell · ← for agents · ↓ to manage".
+ */
+const BACKGROUND_WORK = /(?:^|·)\s*(\d+ (?:shells?|background tasks?|monitors?|agents?))\s*(?=·|$)/;
+
+/**
+ * The background work the footer under the input box names, e.g. "1 shell", or undefined (issue #491).
+ * Claude Code wakes the job when it ends, so a job that waits on it needs no nudge.
+ */
+export function backgroundWork(text: string): string | undefined {
+  const lines = text.split('\n');
+  const rule = lines.findLastIndex((l) => SEPARATOR.test(l));
+  if (rule < 0) return undefined;
+  for (const line of lines.slice(rule + 1)) {
+    const found = BACKGROUND_WORK.exec(line.trim());
+    if (found) return found[1];
+  }
+  return undefined;
+}
+
 /** The xterm sequence for Ctrl+End: scrolls Claude Code's transcript to the end. */
 export const CTRL_END = '\x1b[1;5F';
 
@@ -188,6 +211,7 @@ export function readTurn(text: string, anchor: string): TurnView {
     lastMarker: markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null,
     assistantText: lines.length ? blockText(lines, markerIndex >= 0 ? markerIndex : lines.length - 1) : '',
     lastLine: nonEmpty.at(-1) ?? '',
+    outputLines: lines.length,
     anchorFound: at >= 0,
   };
   if (view.lastMarker === 'failed') view.failedReason = failedReason(lines, markerIndex);
