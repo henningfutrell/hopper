@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
 import type { AttachedMachine, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
 import type { DiskReading } from '../domain/machines.ts';
-import { DF_COMMAND, readDf } from './disk.ts';
+import { DF_COMMAND, judged, readDf } from './disk.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
@@ -89,7 +89,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk } : {}) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];

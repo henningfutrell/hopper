@@ -61,6 +61,7 @@
         "job.unassigned",
         "job.reassigned",
         "job.work_kept",
+        "job.work_removed",
         "job.cleanup_deferred",
         "job.cleaned_up",
         "source.stalled",

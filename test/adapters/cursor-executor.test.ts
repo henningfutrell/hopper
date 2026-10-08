@@ -43,7 +43,7 @@ function ctxFor(payload: Record<string, unknown>, machine: MachineSnapshot, o: {
   const saved: Record<string, unknown>[] = [];
   const workTrees: string[] = [];
   const job: Job = {
-    id: 'job-1234', spec: { executor: 'cursor', payload }, priority: 50, status: 'running', approved: false,
+    id: 'job-cursor-1234', spec: { executor: 'cursor', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
@@ -63,7 +63,7 @@ describe('cursor-agent executor', () => {
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: 'chat-1' } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch`, HOPPER_JOB_ID: 'job-1234', HOPPER_REPO: 'o/r' });
+    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch/job-cursor-1234`, HOPPER_JOB_ID: 'job-cursor-1234', HOPPER_REPO: 'o/r' });
     expect(call!.argv.slice(0, -1)).toEqual(['-p', '--output-format', 'json', '--workspace', work, '--force', '--trust', '--model', 'sonnet-4', '--']);
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
     expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');

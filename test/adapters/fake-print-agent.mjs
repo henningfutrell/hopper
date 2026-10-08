@@ -7,7 +7,8 @@
 // The reply is $FAKE_AGENT_REPLY; $FAKE_AGENT_REPLIES (a JSON array) gives the reply of each call in
 // turn. $FAKE_AGENT_MODE `error` answers the CLI's own error, `hang` never answers. Like the real CLIs, it
 // reads stdin to its end first.
-import { appendFileSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // As the real codex and opencode do when stdin is not a terminal: read it to its end before the turn.
@@ -28,6 +29,12 @@ const reply = replies ? replies[Math.min(calls, replies.length) - 1] : (process.
 const after = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i + 1] : undefined; };
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
 
+// `leave`, `escape`: what a careless turn leaves (issue #410): a temp file, and a process that left its session,
+// named $FAKE_AGENT_LEFTOVER — with `escape`, one that cleared its environment too.
+if (mode === 'leave' || mode === 'escape') {
+  writeFileSync(join(process.env.TMPDIR, 'left.txt'), 'x');
+  spawn('setsid', ['sh', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
+}
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (kind === 'codex') {
   // `codex exec resume … -- <thread id> <prompt>` resumes; `codex exec … -- <prompt>` starts a thread.

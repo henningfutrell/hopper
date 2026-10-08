@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
-import { reapCommand } from '../../src/executors/herdr/reap.ts';
+import { reapArgv } from '../../src/client/server.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
 const ID = 'abcdef12-3456-7890-abcd-ef1234567890';
@@ -119,7 +119,12 @@ describe('the reap ends a job worktree (issues #379, #401)', () => {
     const { tree } = repository();
     const path = jobWorktreeOf(tree, ID);
     sh(tree, makeJobWorktreeCommand(tree, path));
-    return { tree, path, reap: () => sh(path, reapCommand(ID, jobScratchOf(tree, ID))) };
+    const reap = (): string => {
+      const [file, ...args] = reapArgv(ID, jobScratchOf(tree, ID));
+      const r = spawnSync(file!, args, { cwd: tree, env: GIT_ENV, encoding: 'utf8' });
+      return `${r.stdout}${r.stderr}`;
+    };
+    return { tree, path, reap };
   }
 
   it('removes a worktree with nothing uncommitted and nothing unpushed, with the scratch dir, and its repository keeps no entry for it', () => {

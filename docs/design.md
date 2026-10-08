@@ -558,8 +558,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 - **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch/<job id>`,
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
   tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
-  cannot move them. (cursor-agent and the other print agents keep the shared `<cwd>/.hopper-scratch`;
-  they have no reap.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
+  cannot move them. (The print agents get the same scratch dir as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
@@ -618,26 +617,64 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it. It sends clones and git worktrees
   made only for this job to the scratch dir, and says the reap below removes it.
-- **The reap** (issue #401, `src/executors/herdr/reap.ts`). A job left processes and copies
-  behind: dev servers and watchers started with `&` or `setsid` outlive the pane (herdr's close
-  hangs up only the pane's own session), and every job's clone and `npm install` stayed on disk. On
-  one machine that filled the home and left dozens of processes in deleted work trees. So when a
-  job's pane closes — every terminal outcome, a cancel, a timeout, a reclaim at restart — the
-  executor sends `esc`, `ctrl+c` twice, waits up to 5000 ms for Claude to exit (`agent get` finds no
-  agent; if Claude is still up, the reap is never typed into it and the pane only closes), and then
-  the pane's shell runs the reap, on whichever machine the job ran:
-  1. every process whose environment carries the job's `HOPPER_JOB_ID` (the tab sets it, and every
-     child inherits it) gets `SIGTERM`, then `SIGKILL` after 3 s; the pane's shell is spared, and the
-     reap runs with the variable unset so it never matches itself. Linux only (`/proc`); elsewhere
-     this step is skipped.
-  2. the job's scratch dir is removed — only a path that is `…/.hopper-scratch/<job id>` — unless a
-     repository in it (`.git`, outside `node_modules`) has uncommitted changes, or commits no remote
-     has (a worktree: its `HEAD`; a clone: `HEAD` and every branch). Then nothing is removed and each
-     such repository is printed; a pushed git worktree of a repository outside is removed through
-     `git worktree remove`, so its repository keeps no stale entry.
-  It prints `hopper-reaped` last (`pane wait-output`, up to 10000 ms, three tries). What it kept is
-  never removed silently: `cleanup` answers it (`Executor.cleanup` → `Reaped`), and the engine
-  records `job.work_kept { paths }` on the job. `HOPPER_KEEP_PANES` skips the reap with the close.
+- **The job's scope** (issue #410, `src/executors/herdr/job-scope.ts`). The reap below first found a
+  job's processes only by `HOPPER_JOB_ID` in their environment, and whatever replaced or cleared its
+  environment and left its session escaped it: 46 such processes were found on one machine, each in a
+  session of its own under the user's systemd. So after the scratch command, where the machine runs a
+  systemd user manager (a trial `systemd-run --user --scope -- true` succeeds), the pane's shell replaces
+  itself: `exec systemd-run --user --scope --quiet --collect --unit=hopper-job-<job id> -p
+  KillMode=control-group -p TimeoutStopSec=10s -- "${SHELL:-/bin/sh}" -l`, keeping its directory and
+  environment. Every process the job starts is then in that scope's cgroup, whatever it does to its
+  environment or session. The new shell drops what is typed before its prompt, so the executor asks it
+  where it runs (`/proc/self/cgroup`) until it answers (`hopper-scope-entered`; the pane state records
+  `scope`). Without systemd (a container, macOS) it prints `hopper-scope-none` and the job goes on
+  without a scope; a shell that never answers within 60000 ms fails the job, pane closed.
+- **The reap** (issues #401, #410; the script in `src/client/server.ts`, run by
+  `src/executors/machine-shell.ts`). A job left processes and copies behind: dev servers and watchers
+  started with `&` or `setsid` outlive the pane (herdr's close hangs up only the pane's own session),
+  and every job's clone and `npm install` stayed on disk. On one machine that filled the home and left
+  dozens of processes in deleted work trees. So when a job's pane closes — every terminal outcome, a
+  cancel, a timeout, a reclaim at restart — the executor sends `esc`, `ctrl+c` twice, gives Claude up to
+  5000 ms to exit by itself, and then reaps the job **through the machine's own connection, never as keys
+  to the pane**: this machine runs the script itself, an ssh target over the hopper's ssh connection, a
+  client target in its client (`POST /reap {jobId, scratch}`, "Client targets"). So a job is reaped
+  though Claude is still in front of its pane, and though the pane is gone (a crashed hopper, a lost
+  pane). The script, on whichever machine the job ran:
+  1. stops the job's scope, `systemctl --user stop hopper-job-<job id>.scope`, which kills every process
+     in it and waits up to 10 s (`TimeoutStopSec`);
+  2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
+     `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
+     unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
+  3. removes the job's scratch dir — only a path that is `…/.hopper-scratch/<job id>` — unless a
+     repository in it (`.git`, outside `node_modules`) has uncommitted changes (a `node_modules` link to
+     shared dependencies aside), or commits no remote has (a worktree: its `HEAD`; a clone: `HEAD` and
+     every branch). Then nothing is removed and each such repository is printed; a pushed git worktree
+     of a repository outside is removed through `git worktree remove`, never with `--force` (its
+     `node_modules` link removed first), so its repository keeps no stale entry.
+  It prints `hopper-reaped` last. What it kept is never removed silently: `cleanup` answers it
+  (`Executor.cleanup` → `Reaped`), and the engine records `job.work_kept { paths }` on the job; the
+  sweep below tries it again. A machine the reap cannot reach leaves the job to the sweep.
+  `HOPPER_KEEP_PANES` skips the reap with the close. A container a job starts with rootless podman runs
+  in a scope of podman's own and outlives the reap, but its monitor (`conmon`) carries the job's id and
+  stays in the job's scope, so it is stopped: the container goes on unmonitored (no restart policy, no
+  `--rm`). A service meant to outlive the job is started outside it, e.g. `env -u HOPPER_JOB_ID
+  systemd-run --user …`, or through a socket's daemon (`docker compose` against a podman socket).
+- **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
+  crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
+  startup, after recovery and the reap of each job it ended, and then on each machine every
+  `reapEveryMinutes` (a `local`, `ssh` and `client` machine option, default 10; checked every minute, read
+  at each sweep), the engine asks the machine — through the first of its executors that reaches it,
+  `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
+  `HOPPER_JOB_ID`s of its processes, and the scratch dirs under the work trees of the newest 2000 jobs, with
+  their ages; a client target's `POST /survey {roots}`), and reaps:
+  - the scope and processes of every job the hopper knows that is not live (live: claimed, running,
+    waiting on an answer, or led by an operator);
+  - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
+    once while its work was kept (`job.work_kept`), with the reap's rule: work not pushed is never
+    removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
+    keeps the first time, as `job.work_kept`.
+  A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
+  offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -659,8 +696,26 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
   remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
-  kept and recorded as `job.work_kept`. Print-mode agent executors and the command executor make no
+  kept and recorded as `job.work_kept`. The footer's line also says to make no other clone or worktree
+  of the work tree for the job (issue #410). Print-mode agent executors and the command executor make no
   job worktree: jobs there that share a work tree share it.
+- **Shared dependencies** (issue #410, `src/executors/herdr/shared-deps.ts`). Each job ran its own `npm
+  ci`, about 400 MB, for as long as it ran. With the herdr-claude option `sharedDependencies` (default on),
+  after the job worktree is made its pane's shell links the worktree's `node_modules` to the dependencies
+  installed for its lockfile, `<work tree>/.hopper-scratch/deps/<git hash of package-lock.json>/node_modules`.
+  When no job has installed them yet, the first runs `npm ci --prefer-offline` in its worktree and moves
+  the result into place, under a lock per work tree (`flock`), so jobs at once with one lockfile install
+  once and the others wait and link. A new lockfile gets an entry of its own, so dependencies in use never
+  change under a job. An entry no job worktree links to, unused for the machine's `scratchMaxAgeHours`, is
+  removed by the next job that shares. Outcomes (`hopper-deps-…`, waited for up to 15 minutes): `linked`,
+  `installed`, `own` (npm workspaces link into the repository: an install of the job's own), `kept` (the
+  worktree already has `node_modules`: a run before), `none` (no `package-lock.json`, or no npm), `failed`
+  (the job goes on and installs as it needs). Linked or installed, the footer's job worktree line says
+  `node_modules` is a link to dependencies shared with the repository's other jobs, read-only, and to
+  replace it with an install of the job's own (`rm node_modules && npm ci`) before changing dependencies.
+  The reap removes the link, never what it points to. Not done: a worktree per issue reused across runs
+  (`worktrees/<repo>-<issue>`, a `hopper/<issue>` branch); the job worktree of issue #379 stays the job's
+  own, in its scratch dir.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
@@ -2824,10 +2879,18 @@ carries it on its snapshot, `MachineSnapshot.disk` — `{ freeBytes, totalBytes,
 its home is on, where the jobs directory and the scratch dirs live. This machine's is read with
 `statfs` at every list; an ssh target's in its probe (`df -Pk "$HOME"`, before the home it prints); a
 client target's by its client, in its `/release` answer (a client older than this says none). A container
-target has none. It is **low** below a tenth free or below 5 GiB free, whichever comes first. The
+target has none. It is **low** below 5 GiB free or below a tenth free, whichever comes first — the
+machine's own thresholds (issue #410): the `local`, `ssh` and `client` machine-source options
+`diskLowBelowGiB` (default 5) and `diskLowBelowPercent` (default 10). The source judges each reading
+by the thresholds as they are at that list, so a change in Plugins applies at the next Decision. The
 Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
-Attention panel lists each machine running low, once per machine. Nothing is refused on a low disk:
-the reap ("Work tree") is what keeps it flat; this is the warning for what it cannot remove.
+Attention panel lists each machine running low, once per machine. **A machine whose disk is low takes no
+new job** (issue #410, the decider's `fits`, `src/decider/assign.ts`): a job goes to another machine
+that runs its executor; when none can take it for that reason alone, it is held with the reason
+`disk low on <machine> (<n> GiB free), …: no new job is claimed there` (pinned: `pinned machine <machine>
+disk low (…)`), which the queue shows under the job. A job resuming on the machine (an answered
+question) returns to its pane as before, and running jobs go on. The reap ("Work tree") is what keeps
+the disk flat; this keeps new work off a machine it could not keep flat.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
@@ -3216,6 +3279,14 @@ its environment. The last message's marker decides: `HOPPER_DONE` finished `{ ma
 `HOPPER_FAILED <reason>` failed, `HOPPER_QUESTION` a question that parks the job with `{ chatId, cwd }`
 (the agent's session id, under the name `cursor-agent` already stored), no marker a status note nudged in
 the same session at most three times in a row (issue #163). Not idempotent, nothing to reattach.
+
+Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the job's own scratch dir
+`<cwd>/.hopper-scratch/<job id>`, named in the footer; each turn runs in the job's scope
+`hopper-job-<job id>` where the machine has a systemd user manager (`systemd-run --user --scope … --
+env … <agent> </dev/null`; the scope a turn before left is stopped first, since a print-mode turn never
+waits on background work); the job keeps `{ cwd, ssh? }` from its start; and when it ends its `cleanup`
+reaps it through the machine's connection — scope, processes, scratch dir — as the reap does. The sweep
+reaches this machine and ssh targets through it.
 
 Only the call and the reading differ (`src/executors/print-agents.ts`), taken from the real CLIs:
 
@@ -3780,7 +3851,11 @@ client target runs a client the hopper did not release.
   byte, writes it to `<install>.next`, swaps it in (the one before kept as `<install>.prev`), answers
   `{release}`, and 1 s after that answer has left (time for it to cross the tunnel) exits 75; its unit
   (`Restart=always`) starts the new files. A load of the release
-  already installed writes nothing.
+  already installed writes nothing. `POST /reap {jobId, scratch?}` and `POST /survey {roots}` (issue
+  #410) run the client's own copy of the reap and the survey ("Work tree" → "The reap", "The sweep") with
+  no shell of the request's: a job id (letters, digits, `-`), its own scratch dir
+  (`…/.hopper-scratch/<job id>`), absolute work trees — anything else is refused 400 before a script runs;
+  the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`, so the release keeps its files.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
   release — never while a job runs on that machine (a running job's herdr calls must not meet a
@@ -7163,3 +7238,45 @@ takes a reserved lane, pinned jobs use every lane, pinned lanes do not count aga
 unpinned jobs go elsewhere first, a reserve at the cap), `test/plugins/machine-targets.test.ts`,
 `test/plugins/host-sources.test.ts`, `test/adapters/ssh-machine.test.ts`,
 `test/adapters/machine-usage.test.ts`, `test/ui/machines.test.ts` (`reservedText`).
+
+## Leak prevention: scope, sweep, shared dependencies (issue #410, 2026-10-08)
+
+Follow-up to issue #401. Owner request: reap a job by its process scope, not only by its environment;
+reap after a crash; give job worktrees shared dependencies; reap print-agent jobs; hold new claims on a
+low disk; every threshold a setting that applies without a restart.
+
+**As built** (each part in "Work tree" and "A machine's disk"):
+- **The job's scope**: a herdr-claude pane shell, and each print-agent turn, runs in the transient systemd
+  user scope `hopper-job-<job id>` where the machine has a user manager; the reap stops it.
+- **The reap through the machine's connection**: this machine, ssh, or a client target's `POST /reap`;
+  never keys to a pane. A job whose pane is gone is still reaped.
+- **The sweep**: at startup after recovery, then on each machine every `reapEveryMinutes` (default 10), the
+  scopes and processes of known jobs that are not live are stopped, and an ended job's scratch dir is
+  removed once `scratchMaxAgeHours` old (default 24), or at once while its work was kept and is now pushed
+  (`job.work_removed`).
+- **Shared dependencies**: a job worktree's `node_modules` links to the dependencies installed once per
+  lockfile in `<work tree>/.hopper-scratch/deps/<hash>` (herdr-claude option `sharedDependencies`).
+- **Print agents**: their own scratch dir, a scope per turn, the reap at the end.
+- **A low disk holds new claims** on that machine, by its `diskLowBelowGiB` / `diskLowBelowPercent`.
+
+**Settings, live**: `reapEveryMinutes`, `scratchMaxAgeHours`, `diskLowBelowGiB`, `diskLowBelowPercent` are
+plain options of the `local`, `ssh` and `client` machine sources, read at every list or sweep;
+`sharedDependencies` an option of herdr-claude, read when a job starts. Machines and executors follow the
+plugins config live ("Every setting applies without a restart").
+
+**Not done, by choice**: a worktree per issue reused across runs (`worktrees/<repo>-<issue>`, branch
+`hopper/<issue>`), as the issue sketched: issue #379 (merged first) gives each job its own worktree in its
+scratch dir, which the reap and the sweep already own; reuse across runs would need a second lifetime for
+it. A Windows client has no `sh`: its reap and survey answer an error and the job is left to its pane's
+close, as before.
+
+**Verification:** `test/client/reap.test.ts` (the reap and the survey for real: a scope stopped with a
+process that cleared its environment and left its session, where systemd runs; a `node_modules` link no
+work of the job's), `test/client/machine-shell.test.ts` (this machine and a real client target's `/reap` and
+`/survey`, refusals, 401), `test/herdr/executor-scope.test.ts`, `test/herdr/executor-resume.test.ts`
+(the reap never through the pane; a pane gone), `test/herdr/shared-deps.test.ts` (for real with a stand-in
+npm: four jobs at once, one install), `test/herdr/executor-job-worktree.test.ts`,
+`test/adapters/print-agent-executors.test.ts` (a print-agent job leaves nothing behind),
+`test/engine/sweep.test.ts`, `test/integration/sweep-restart.test.ts` (a hopper stopped mid-job and
+started again: the job's leftover process stopped, a stranger's not), `test/decider/disk-low.test.ts`,
+`test/plugins/machine-targets.test.ts`.

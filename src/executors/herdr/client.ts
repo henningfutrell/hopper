@@ -1,6 +1,8 @@
 // The herdr-claude executor's own port onto herdr: only what the executor needs. The real
 // adapter shells out to `herdr --session <s> …` (cli-client.ts); the fake simulates a Claude
-// screen (fake-client.ts).
+// screen (fake-client.ts). It is also the machine that herdr runs on, reached the same way, for the
+// reap and the sweep (issue #410): `reap` and `survey` never go through a pane.
+import type { MachineShell } from '../../domain/ports.ts';
 
 /** herdr's agent lifecycle states. `idle` and `done` both mean ready for input. */
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
@@ -27,7 +29,7 @@ export class HerdrError extends Error {
   }
 }
 
-export interface HerdrClient {
+export interface HerdrClient extends MachineShell {
   /** The named herdr session, when the adapter has one. Recorded in executor state. */
   readonly session?: string;
   /** Workspace id of the workspace with this label; created without focus when absent. */

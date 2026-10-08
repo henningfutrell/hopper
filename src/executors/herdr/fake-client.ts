@@ -2,7 +2,9 @@
 // engine's integration tests). Each prompt plays the next scripted turn: while working it
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
+import type { Survey } from '../../domain/ports.ts';
 import { HerdrError } from './client.ts';
+import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 import { CHROME, WINDOWS_SHELLS, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
@@ -40,6 +42,12 @@ export interface FakeHerdrOptions {
   shellDropsRuns?: number;
   /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
   reapKeeps?: string[];
+  /** The machine cannot be reached for the reap or the survey (issue #410): both reject. */
+  machineUnreachable?: boolean;
+  /** What the survey finds on the machine (issue #410). Default nothing. */
+  survey?: Survey;
+  /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
+  scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
   ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
@@ -50,6 +58,8 @@ export interface FakeHerdrOptions {
   repositories?: string[];
   /** Git refuses to make a job worktree. */
   worktreeFails?: boolean;
+  /** What sharing dependencies in a job worktree says (issue #410). Default `none`: no lockfile. */
+  deps?: 'linked' | 'installed' | 'own' | 'kept' | 'none' | 'failed';
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
@@ -86,6 +96,8 @@ interface Pane {
   input?: string;
   /** Lines at the end of `lines` that are the dialog on screen (FakeTurn.dialog), removed when it closes. */
   dialogLines?: number;
+  /** The shell runs in the job's scope (issue #410). */
+  scoped?: boolean;
 }
 
 export interface FakeHerdrClient extends HerdrClient {
@@ -95,6 +107,8 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly texts: { paneId: string; text: string }[];
   readonly closed: string[];
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
+  /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
+  readonly reaps: { jobId: string; scratch?: string }[];
   addTurns(...turns: FakeTurn[]): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */
   dropPrompts(n: number): void;
@@ -169,7 +183,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [],
     addTurns: (...more) => { turns.push(...more); },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
@@ -291,35 +305,25 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
       if (o.windowsShell) { const [prompt, error] = WINDOWS_SHELLS[o.windowsShell]; p.lines.push(`${prompt}${command}`, error, '', prompt); return; }
-      // The reap at job end (reap.ts): what it kept, then its last line.
-      if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
-        p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
-        return;
-      }
-      // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
-      const worktree = /^cd '([^']*)' && if .*printf 'hopper-job-%s-%s\\n' worktree/.exec(command);
-      if (worktree) {
-        const outcome = !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
-        p.lines.push(`$ ${command}`, ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`, '$ ');
-        return;
-      }
-      // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
-      // cannot enter dir (and did not make it), else b.
-      const entered = /^(mkdir -p '[^']*' && )?cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);
-      if (entered) {
-        const [, made, dir, prefix, ok, bad] = entered;
-        const unusable = !made && (o.unusableDirs ?? []).includes(dir!);
-        p.lines.push(`$ ${command}`, ...(unusable ? [`cd: no such file or directory: ${dir}`, `${prefix}${bad}`] : [`${prefix}${ok}`]), '$ ');
-        return;
-      }
-      // What a trailing `printf 'a%s\n' b` prints: the shell ran the command.
-      const printed = /printf '([^']*)%s\\n' (\S+)$/.exec(command);
-      p.lines.push(`$ ${command}`, ...(printed ? [`${printed[1]}${printed[2]}`] : []), '$ ');
+      const said = shellSays(command, o, p.scoped === true);
+      if (said.scoped) p.scoped = true;
+      p.lines.push(`$ ${command}`, ...said.lines, '$ ');
     },
     async waitOutput(paneId, text, timeoutMs) {
       record('waitOutput', paneId, text, timeoutMs);
       livePane(paneId);
       return fake.screen(paneId).includes(text);
+    },
+    async reap(jobId, scratch) {
+      record('reap', jobId, scratch);
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}) });
+      return { kept: [...(o.reapKeeps ?? [])] };
+    },
+    async survey(roots) {
+      record('survey', roots);
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      return o.survey ?? { scopes: [], processes: [], scratch: [] };
     },
     async closePane(paneId) {
       record('closePane', paneId);

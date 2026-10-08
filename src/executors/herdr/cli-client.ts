@@ -9,6 +9,8 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { scrubbedEnv, userProcessEnv } from '../env.ts';
 import { clientHerdr, type ClientTransport } from '../client.ts';
+import { clientShell, localShell, sshShell } from '../machine-shell.ts';
+import type { MachineShell } from '../../domain/ports.ts';
 import { REMOTE_PATH, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
@@ -49,9 +51,9 @@ function failure(code: number, stderr: string, fallback: string): HerdrError {
 }
 
 export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
-  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client));
   if (!o.session) throw new Error('herdr session is required (never the default session)');
-  return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, o.ssh ? sshShell(o.ssh) : localShell(o.userEnv));
 }
 
 type Exec = (args: string[], timeoutMs: number) => Promise<string>;
@@ -95,7 +97,7 @@ function viaCli(o: CliOptions): Exec {
   });
 }
 
-function withCalls(session: string, call: Exec, callTimeout: number): HerdrCliClient {
+function withCalls(session: string, call: Exec, callTimeout: number, shell: MachineShell): HerdrCliClient {
   const exec = (args: string[], timeoutMs = callTimeout): Promise<string> => call(args, timeoutMs);
 
   const run = async (args: string[], timeoutMs?: number): Promise<Record<string, unknown>> => {
@@ -158,5 +160,7 @@ function withCalls(session: string, call: Exec, callTimeout: number): HerdrCliCl
       }
     },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
+    reap: (jobId, scratch) => shell.reap(jobId, scratch),
+    survey: (roots) => shell.survey(roots),
   };
 }

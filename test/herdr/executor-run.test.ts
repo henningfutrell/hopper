@@ -82,8 +82,8 @@ describe('herdr-claude executor: run', () => {
   it('runs the scratch command again until the shell has run it: a fresh shell can drop what is typed before its prompt', async () => {
     const { herdr, executor } = setup({ turns: [DONE], shellDropsRuns: 2 });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
-    expect(herdr.calls.filter((c) => c.method === 'runInPane')).toHaveLength(3);
-    expect(herdr.calls.filter((c) => c.method === 'waitOutput').map((c) => c.args.slice(1))).toEqual(Array(3).fill(['hopper-scratch-ready', 1000]));
+    expect(herdr.calls.filter((c) => c.method === 'runInPane' && String(c.args[1]).includes('hopper-scratch'))).toHaveLength(3);
+    expect(herdr.calls.filter((c) => c.method === 'waitOutput' && c.args[1] === 'hopper-scratch-ready').map((c) => c.args.slice(1))).toEqual(Array(3).fill(['hopper-scratch-ready', 1000]));
   });
 
   it('fails the job, pane closed, when the shell never runs the scratch command', async () => {

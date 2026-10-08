@@ -43,7 +43,7 @@ export function contextFor(job: Job, laneId = LANE, machine: MachineSnapshot = L
 
 export function setup(
   fakeOptions: FakeHerdrOptions = {},
-  overrides: { defaultCwd?: string; trustWorkdir?: boolean; yolo?: boolean; jobWorktrees?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions>; local?: Record<string, FakeHerdrOptions> } = {},
+  overrides: { defaultCwd?: string; trustWorkdir?: boolean; yolo?: boolean; jobWorktrees?: boolean; sharedDependencies?: boolean; idleNudgeMs?: number; claudeArgs?: string[]; remote?: Record<string, FakeHerdrOptions>; local?: Record<string, FakeHerdrOptions> } = {},
 ) {
   const herdr = createFakeHerdrClient({ session: 'jh-test', ...fakeOptions });
   const remotes = new Map(Object.entries(overrides.remote ?? {}).map(([target, fo]) => [target, createFakeHerdrClient({ session: 'jh-there', ...fo })]));
@@ -65,7 +65,7 @@ export function setup(
       return r;
     },
     defaultCwd: overrides.defaultCwd ?? CWD, claudeArgs: overrides.claudeArgs ?? ['--dangerously-skip-permissions'],
-    trustWorkdir: overrides.trustWorkdir ?? true, yolo: overrides.yolo ?? true, jobWorktrees: overrides.jobWorktrees ?? false, pollMs: 1000, idleNudgeMs: overrides.idleNudgeMs ?? 20000,
+    trustWorkdir: overrides.trustWorkdir ?? true, yolo: overrides.yolo ?? true, jobWorktrees: overrides.jobWorktrees ?? false, sharedDependencies: overrides.sharedDependencies ?? false, pollMs: 1000, idleNudgeMs: overrides.idleNudgeMs ?? 20000,
   });
   return { herdr, remotes, locals, reached, clock, executor };
 }

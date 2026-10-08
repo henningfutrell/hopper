@@ -44,6 +44,20 @@ describe('attached machine source', () => {
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
   });
 
+  it('judges its disk low by the machine\'s own thresholds, as they are at each list (issue #410)', async () => {
+    const GIB = 1024 ** 3;
+    let belowGiB = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', ...(belowGiB ? { diskLow: { belowGiB } } : {}) }),
+      probe: async () => ({ online: true, disk: diskOf(30 * GIB, 100 * GIB) }),
+    });
+    await src.list();
+    await flush();
+    expect((await src.list())[0]!.disk?.low).toBe(false);
+    belowGiB = 40;
+    expect((await src.list())[0]!.disk).toEqual({ freeBytes: 30 * GIB, totalBytes: 100 * GIB, low: true });
+  });
+
   it('its snapshot carries the machine\'s reserved lanes (issue #372)', async () => {
     const src = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 4, reservedLanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),

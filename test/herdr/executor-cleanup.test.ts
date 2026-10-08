@@ -31,7 +31,8 @@ describe('herdr-claude executor: cleanup', () => {
   it('resolves for a pane already gone: closed by hand, or by an earlier cleanup', async () => {
     const { herdr, executor, job } = await parked();
     await executor.cleanup!(job);
-    await expect(executor.cleanup!(job)).resolves.toBeUndefined();
+    // The reap runs on the machine again (issue #410) and finds nothing left: no pane to close twice.
+    await expect(executor.cleanup!(job)).resolves.toEqual({ kept: [] });
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 

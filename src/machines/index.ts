@@ -3,8 +3,8 @@
 // ssh targets ~/.ssh/config names.
 import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
-import type { DiskReading } from '../domain/machines.ts';
-import { diskAt } from './disk.ts';
+import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts';
+import { diskAt, judged } from './disk.ts';
 
 /** How often this machine's herdr session is checked, and started when it is not running. */
 const SESSION_EVERY_MS = 30000;
@@ -27,6 +27,10 @@ export function createLocalMachineSource(o: {
   now?: () => number;
   /** Its disk (issue #401); default the filesystem of this process's home, read at every list(). */
   disk?: () => DiskReading | undefined;
+  /** When its disk is low (issue #410), read at every list(); default 5 GiB and 10% free. */
+  diskLow?: () => DiskThresholds | undefined;
+  /** How the sweep treats it (issue #410), read at every list(); default every 10 minutes, scratch dirs after 24 hours. */
+  sweep?: () => SweepSettings | undefined;
 }): MachineSource {
   const disk = o.disk ?? (() => diskAt(homedir()));
   const now = o.now ?? Date.now;
@@ -51,7 +55,9 @@ export function createLocalMachineSource(o: {
   return {
     list: async () => {
       ensure();
-      const d = disk();
+      const read = disk();
+      const d = read && judged(read, o.diskLow?.());
+      const sweep = o.sweep?.();
       return [
         {
           id: o.id ?? 'local',
@@ -63,6 +69,7 @@ export function createLocalMachineSource(o: {
           ...(o.session ? { herdr: { session: o.session } } : {}),
           ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
           ...(d ? { disk: d } : {}),
+          ...(sweep ? { sweep } : {}),
         },
       ];
     },

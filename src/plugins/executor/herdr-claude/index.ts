@@ -22,6 +22,7 @@ export interface HerdrClaudeOptions {
   cwd: string;
   trustWorkdir: boolean;
   jobWorktrees: boolean;
+  sharedDependencies: boolean;
   pollMs: number;
   idleNudgeMs: number;
 }
@@ -54,6 +55,10 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       // Issue #379: jobs at one work tree share it; a git repository's top gets each job a worktree of its own.
       jobWorktrees: z.boolean().default(true).meta({
         description: 'job worktrees: when a job\'s work tree is the top of a git repository, the job runs in its own git worktree of it, made in its scratch dir from the freshly fetched default branch; the reap removes it when the job ends unless it holds uncommitted or unpushed work. Off: jobs at one work tree share it',
+      }),
+      // Issue #410: each job's npm ci was 400 MB for as long as it ran.
+      sharedDependencies: z.boolean().default(true).meta({
+        description: 'shared dependencies: a job worktree with a package-lock.json gets its node_modules as a link to the dependencies installed for that lockfile, shared with the repository\'s other jobs (installed once, by the first job with it). Off: each job installs its own',
       }),
       pollMs: z.number().int().positive().default(1000),
       idleNudgeMs: z.number().int().positive().default(20000),
@@ -102,7 +107,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
         clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
-        jobWorktrees: o.jobWorktrees, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
+        jobWorktrees: o.jobWorktrees, sharedDependencies: o.sharedDependencies, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });
     },
   };

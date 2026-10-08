@@ -42,8 +42,10 @@ describe('herdr-claude executor on an attached machine', () => {
     expect(out).toMatchObject({ kind: 'finished', result: { summary: 'Done on the laptop.' } });
     expect(herdr.calls).toEqual([]);
     expect(remotes.get('laptop')!.agentStarts).toHaveLength(1);
-    // The scratch dir is made on that machine, where the work tree is.
-    expect(remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
+    // The scratch dir is made on that machine, where the work tree is, and its shell asked into the job's scope there.
+    expect(remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]))).toEqual([
+      expect.stringContaining('hopper-scratch'), expect.stringContaining('exec systemd-run --user --scope'),
+    ]);
     // The machine's own herdr binary and session, by absolute path: never its PATH.
     expect(reached[0]).toEqual({ ssh: 'laptop', session: 'jh-there' });
     expect(saved[0]).toMatchObject({ ssh: 'laptop', session: 'jh-there', paneId: 'w1:p1', laneId: 'laptop/lane-1' });
@@ -241,7 +243,7 @@ describe('herdr-claude executor: never the home as the work tree', () => {
 
   it('the jobs directory ~/hopper-jobs, and a work tree under it, is made when missing; any other work tree is not', async () => {
     const { remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE, DONE, DONE], unusableDirs: ['/home/far/hopper-jobs', '/home/far/hopper-jobs/o/r', '/home/far/code'] } } });
-    const runs = () => remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]));
+    const runs = () => remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1])).filter((r) => r.includes('hopper-scratch'));
     expect(await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '~/hopper-jobs' }), 'laptop/lane-1', FAR).ctx)).toMatchObject({ kind: 'finished' });
     expect(runs().at(-1)).toMatch(/^mkdir -p '\/home\/far\/hopper-jobs' && cd '\/home\/far\/hopper-jobs' && /);
     expect(await executor.run(contextFor(jobWith({ prompt: 'go', cwd: '/home/far/hopper-jobs/o/r' }, { id: 'ffffffff-0000-0000-0000-000000000001' }), 'laptop/lane-1', FAR).ctx)).toMatchObject({ kind: 'finished' });

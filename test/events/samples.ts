@@ -37,6 +37,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.claimed_by_operator': { by: 'someone' },
   'job.rerun': { by: 'pre-sort' },
   'job.work_kept': { paths: 'p' },
+  'job.work_removed': { paths: [] },
   'job.cleanup_deferred': {},
   'job.cleaned_up': { deferredAt: 3 },
   'queue.gate_changed': { from: { mode: 'open', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: 0 } },

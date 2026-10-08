@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs leave nothing running and nothing on disk behind them, also when the hopper stopped mid-job or a machine could not be reached at the end: what is left is cleaned up when the hopper starts and then every few minutes, and work not yet pushed is kept until it is. Jobs on the same project share one copy of its packages instead of installing their own. You choose per machine how often this runs and how long finished jobs' files stay.
+- A machine that is running out of disk space no longer takes new jobs: they go to another machine, or wait in the queue with the reason shown, until space is freed. Jobs already running there carry on. You choose per machine how little free space counts as running out.
 - A computer running Windows now runs jobs in its own jobs folder instead of failing every one of them at once, and the hopper no longer sends jobs to a computer before it knows where that computer's home folder is. Setting a machine to 0 lanes now pauses it without removing it: it stays connected and simply takes no jobs.
 - A Windows computer added as a machine now shows its own Claude usage and account, and its jobs slow down and stop at its own limits like any other machine's. The setup steps for running it on Windows are in the guide.
 - A Claude job on a Windows computer whose jobs open in PowerShell now fails at once and says the computer needs a POSIX shell such as Git Bash, instead of waiting a minute with no reason; the README shows how to set Git Bash up.

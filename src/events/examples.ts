@@ -45,6 +45,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.rerun': { by: 'user' },
   'job.dismissed': { by: 'user' },
   'job.work_kept': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper'] },
+  'job.work_removed': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'] },
   'job.cleanup_deferred': { error: 'herdr: client is not dialled in' },
   'job.cleaned_up': { deferredAt: '2026-10-07T21:31:00.000Z' },
   'job.unassigned': { assignee: 'octocat' },

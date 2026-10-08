@@ -201,8 +201,10 @@ export interface MachineSnapshot {
   home?: string;
   /** A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
   client?: { release?: string; current?: boolean };
-  /** The disk its home is on, as last read (issue #401). Absent: not read (a container target, a client older than this). */
+  /** The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410). Absent: not read (a container target, a client older than this). */
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
+  /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. */
+  sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number };
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */

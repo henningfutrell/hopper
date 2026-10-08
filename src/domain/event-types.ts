@@ -8,7 +8,7 @@ export const EVENT_TYPES = [
   'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'update.available', 'update.started', 'update.applied', 'update.failed', 'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
-  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.cleanup_deferred', 'job.cleaned_up',
+  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.work_removed', 'job.cleanup_deferred', 'job.cleaned_up',
   'source.stalled', 'connected_account.expired',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -25,6 +25,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1, 'question.lapsed': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1, 'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
-  'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1, 'job.cleanup_deferred': 1, 'job.cleaned_up': 1,
+  'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1, 'job.work_removed': 1, 'job.cleanup_deferred': 1, 'job.cleaned_up': 1,
   'source.stalled': 1, 'connected_account.expired': 1,
 };

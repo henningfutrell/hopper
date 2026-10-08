@@ -45,6 +45,16 @@ export function pinOf(job: Job): string | undefined {
 }
 
 /**
+ * A machine whose disk is low takes no new job (issue #410): a job resuming there returns to the pane it
+ * holds. Low is judged by the machine's own thresholds (src/machines/disk.ts).
+ */
+export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low === true && job.pendingAnswer === undefined;
+
+const GIB = 1024 ** 3;
+const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
+const NO_NEW_JOB = 'no new job is claimed there';
+
+/**
  * Step 5: a hold that applies regardless of the router, or undefined. An unavailable executor
  * comes first: its reason says what to fix.
  */
@@ -56,14 +66,19 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   const running = machines.filter((m) => m.online && m.executors.includes(executor));
   if (running.length === 0) return `no online machine runs executor ${executor}`;
   if (pin === undefined) {
-    if (!running.every(homeless)) return undefined;
-    return `no machine that runs executor ${executor} has its home known yet: ${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'have' : 'has'} not answered a probe`;
+    const known = running.filter((m) => !homeless(m));
+    if (known.length === 0) {
+      return `no machine that runs executor ${executor} has its home known yet: ${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'have' : 'has'} not answered a probe`;
+    }
+    if (known.every((m) => diskHolds(m, job))) return `disk low on ${known.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+    return undefined;
   }
   const pinned = machines.find((m) => m.id === pin);
   if (!pinned) return `pinned machine ${pin} unknown`;
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
+  if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
 }
 
@@ -139,7 +154,8 @@ function roomForJob(s: MachineState, job: Job): number {
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && (pin === undefined || pin === s.machine.id);
+  return s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+    && (pin === undefined || pin === s.machine.id);
 }
 
 const fits = (s: MachineState, job: Job): boolean => eligible(s, job) && roomForJob(s, job) > 0;

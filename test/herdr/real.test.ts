@@ -97,7 +97,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
   it('8 jobs started at once in fresh tabs all reach Claude ready (no start race)', async () => {
     const herdr = createHerdrCliClient({ bin: BIN, session: SESSION });
     const deps = {
-      herdr, clock: { now: () => new Date() }, pollMs: 500, claudeArgs: claudeArgsFor(true, []), trustWorkdir: true, yolo: true, jobWorktrees: false,
+      herdr, clock: { now: () => new Date() }, pollMs: 500, claudeArgs: claudeArgsFor(true, []), trustWorkdir: true, yolo: true, jobWorktrees: false, sharedDependencies: false,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
     };
     const ids = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${i}0000000-0000-0000-0000-000000000000`);
