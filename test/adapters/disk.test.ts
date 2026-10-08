@@ -22,6 +22,13 @@ describe('a disk reading', () => {
     expect(diskOf(0, 2000 * GIB).low).toBe(true);
   });
 
+  it('takes its thresholds from the machine (issue #410): GiB free and share free, either one low', () => {
+    expect(diskOf(30 * GIB, 100 * GIB, { belowGiB: 40 }).low).toBe(true);
+    expect(diskOf(30 * GIB, 100 * GIB, { belowPercent: 35 }).low).toBe(true);
+    expect(diskOf(9 * GIB, 100 * GIB, { belowGiB: 1, belowPercent: 5 }).low).toBe(false);
+    expect(diskOf(4 * GIB, 100 * GIB, { belowPercent: 1 }).low).toBe(true);
+  });
+
   it('reads the filesystem a path is on, through the nearest directory that exists', () => {
     const here = diskAt(dir)!;
     expect(here.totalBytes).toBeGreaterThan(0);
