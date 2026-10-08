@@ -6554,8 +6554,15 @@ but `{ jobId, reason }` of the given jobs, or a throw, rejects nothing and is lo
 **The user order.** `POST /ui/api/queue/order { jobIds }` (operator): those waiting jobs, first to last,
 get `userRank` 0..n-1; an unaccepted one among them is accepted (`by: user`); a waiting job ranked
 before and not named loses its rank; `queue.ordered`. An unknown or not-waiting job → 409, one named
-twice → 400. The queue order (`queue-order.ts`) is the ranked accepted jobs by rank, then the sorter's
-order of the rest — the decider is unchanged (step 6 follows the queue order).
+twice → 400. The queue order (`queue-order.ts`) is the sorter's order with the user order applied inside
+each effective priority: the places the sorter gives one priority's jobs go to its ranked accepted jobs
+first, by rank, then to the rest in the sorter's order — the decider is unchanged (step 6 follows the queue
+order). Issue #461: the user order once came before the sorter's outright, so a ranked low-priority job
+started ahead of higher-priority ones; and since Accept posts the whole accepted queue as the user order,
+one Accept froze every job then waiting at its place, ahead of any job accepted or reprioritized later. A
+lane that frees now takes the highest-priority job that fits its machine, oldest first among equals (with
+the `priority` sorter); to run a job sooner, raise its priority. The Queue view moves a job among the jobs
+of its own priority only.
 
 **Reject.** `POST /ui/api/jobs/:id/reject` (operator) on a waiting job (accepted or not; anything else
 → 409): status `rejected`, a terminal status — ended, kept, never run — with `error` the reason
@@ -6581,7 +6588,7 @@ the engine.
 **UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
-waiting jobs in queue order; up, down, to the top, Reject). Columns stack below `lg`. The Overview's
+waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Overview's
 Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
