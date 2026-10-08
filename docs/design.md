@@ -62,6 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
+| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call | engine, executors, store |
 
 ## The decider
 
@@ -6916,3 +6917,37 @@ until reassigned, Run again; unassigned while waiting and while running), `test/
 `test/sources/github-check.test.ts`, `test/sources/github-context.test.ts`, `test/sources/github-app.test.ts`,
 `test/sources/config.test.ts`, `test/store/tenant-migration-16.test.ts`, `test/ui/assignment.test.ts`,
 `test/ui/ended-rerun.test.ts`.
+
+## Operator actions from the CLI (issue #374, 2026-10-07)
+
+A script or assistant acting for the user read everything through `GET /api/*`, but every operator action
+needed a UI session, so it either scripted a human sign-in or wrote rows behind the daemon's back. The
+issue offered two ways: a scoped API token that may mutate, or CLI commands. The CLI is taken. A
+mutating token would be a second door beside the UI session, against the rule that every mutation is
+`POST /ui/api/*` behind one (AGENTS.md); the API door stays reads only ("The API door"). The CLI already
+holds the database's credentials, the daemon's own trust, so acting from it widens nothing.
+
+- **Commands** (`src/cli-operator.ts`): `hopper job accept|reject|rerun <id>` (`reject --reason <text>`),
+  `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
+  `--per-hour` the throttle stays), `hopper question answer <id> <text>`, `hopper question close|dismiss <id>`.
+  `--user <id>` as on `config` (default the one user). Each prints the daemon's answer as JSON.
+- **Through the daemon, never around it.** Each command is the UI's own route on the running daemon, so its
+  checks, its events (`job.accepted` by `user`, `queue.gate_changed`, `question.answered` by `human`, …) and
+  its runtime (the source told; an answer typed into a parked pane) are the click's. Accept is the Queue
+  view's Accept: the accepted waiting jobs in queue order, then the job, posted as the user order.
+- **The session.** The CLI mints a UI session in the database (`ui_sessions`, only the token's hash stored)
+  for the one call, with the least role the route names (operator; admin for the queue gate), and drops it
+  after, whatever the answer. It lives five minutes at most. Its identity's realm is `cli`, which no sign-in
+  config names, so a reconcile drops a leftover.
+- **Where.** `--url`, else `HOPPER_URL`, else `http://127.0.0.1:<HOPPER_PORT, default 4790>`; the `Origin` sent
+  is the URL's own, so it passes the guard as the UI on that origin does. Inside the container the default
+  reaches the daemon.
+- **Answers.** The daemon's 4xx is a refusal: its message, exit 2. No daemon at the URL, or a 5xx: exit 1.
+
+**Residual risk, stated.** Whoever can run the CLI with the database's credentials can act as any user; that
+was already true of `config set` and of the database itself.
+
+**Not built.** A mutating API token (see above); cancel, approve, operator-led and dismiss of a locked entry
+from the CLI — no caller yet.
+
+Tests: `test/integration/operator-cli.test.ts`.

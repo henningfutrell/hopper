@@ -19,11 +19,11 @@ function db(): string {
   return installFromBefore(testDatabaseUrl());
 }
 
-function cli(url: string | undefined, argv: string[], o: { stdin?: string } = {}) {
+async function cli(url: string | undefined, argv: string[], o: { stdin?: string } = {}) {
   const out: string[] = [];
   const err: string[] = [];
   const io: CliIo = { env: url ? { HOPPER_DATABASE_URL: url } : {}, stdin: () => o.stdin ?? '', out: (t) => out.push(t), err: (t) => err.push(t) };
-  const code = runCli(argv, io);
+  const code = await runCli(argv, io);
   return { code, out: out.join(''), err: err.join('') };
 }
 
@@ -36,148 +36,148 @@ const PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 'test' }] };
 const json = (x: unknown): string => JSON.stringify(x);
 
 describe('hopper config', () => {
-  it('needs HOPPER_DATABASE_URL and says so', () => {
-    const r = cli(undefined, ['config', 'get', 'rules']);
+  it('needs HOPPER_DATABASE_URL and says so', async () => {
+    const r = await cli(undefined, ['config', 'get', 'rules']);
     expect(r.code).toBe(2);
     expect(r.err).toMatch(/HOPPER_DATABASE_URL is not set/);
   });
 
-  it('reads the database URL from a mounted secret file, HOPPER_DATABASE_URL_FILE (issue #56)', () => {
+  it('reads the database URL from a mounted secret file, HOPPER_DATABASE_URL_FILE (issue #56)', async () => {
     const url = db();
     const d = mkdtempSync(`${tmpdir()}/jh-cli-url-`);
     dirs.push(d);
     writeFileSync(`${d}/url`, `${url}\n`, { mode: 0o600 });
     const out: string[] = [];
-    const code = runCli(['config', 'version', 'rules'], { env: { HOPPER_DATABASE_URL_FILE: `${d}/url` }, stdin: () => '', out: (t) => out.push(t), err: () => {} });
+    const code = await runCli(['config', 'version', 'rules'], { env: { HOPPER_DATABASE_URL_FILE: `${d}/url` }, stdin: () => '', out: (t) => out.push(t), err: () => {} });
     expect(code).toBe(0);
     expect(out.join('')).toBe('missing\n');
   });
 
-  it('refuses an unknown record or command', () => {
-    expect(cli(db(), ['config', 'get', 'plugins.yaml']).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, sign-in/);
-    expect(cli(db(), ['deploy']).code).toBe(2);
+  it('refuses an unknown record or command', async () => {
+    expect((await cli(db(), ['config', 'get', 'plugins.yaml'])).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, sign-in/);
+    expect((await cli(db(), ['deploy'])).code).toBe(2);
   });
 
-  it('has no edit: config edit prints the usage, exit 2, and writes nothing', () => {
+  it('has no edit: config edit prints the usage, exit 2, and writes nothing', async () => {
     const url = db();
-    const r = cli(url, ['config', 'edit', 'plugins']);
+    const r = await cli(url, ['config', 'edit', 'plugins']);
     expect(r).toMatchObject({ code: 2, out: '' });
     expect(r.err).toContain('hopper config set <record>');
     expect(recordIn(url, 'plugins')).toBeUndefined();
   });
 
-  it('set writes a new record against "missing"; get prints it as JSON; version names it', () => {
+  it('set writes a new record against "missing"; get prints it as JSON; version names it', async () => {
     const url = db();
-    expect(cli(url, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/rules: none yet/) });
-    expect(cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('be brief\n') }).code).toBe(0);
-    expect(cli(url, ['config', 'get', 'rules'])).toMatchObject({ code: 0, out: `${json('be brief\n')}\n` });
-    expect(cli(url, ['config', 'version', 'rules']).out).toMatch(/^[0-9a-f]{64}\n$/);
+    expect(await cli(url, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/rules: none yet/) });
+    expect((await cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('be brief\n') })).code).toBe(0);
+    expect(await cli(url, ['config', 'get', 'rules'])).toMatchObject({ code: 0, out: `${json('be brief\n')}\n` });
+    expect((await cli(url, ['config', 'version', 'rules'])).out).toMatch(/^[0-9a-f]{64}\n$/);
   });
 
-  it('job-rules is a record: set as a JSON text, get prints it; anything but a text is refused (issue #172)', () => {
+  it('job-rules is a record: set as a JSON text, get prints it; anything but a text is refused (issue #172)', async () => {
     const url = db();
-    expect(cli(url, ['config', 'set', 'job-rules', '--if-version', 'missing'], { stdin: json('Be brief.\n') }).code).toBe(0);
-    expect(cli(url, ['config', 'get', 'job-rules'])).toMatchObject({ code: 0, out: `${json('Be brief.\n')}\n` });
-    const version = cli(url, ['config', 'version', 'job-rules']).out.trim();
-    expect(cli(url, ['config', 'set', 'job-rules', '--if-version', version], { stdin: json({ rules: [] }) }))
+    expect((await cli(url, ['config', 'set', 'job-rules', '--if-version', 'missing'], { stdin: json('Be brief.\n') })).code).toBe(0);
+    expect(await cli(url, ['config', 'get', 'job-rules'])).toMatchObject({ code: 0, out: `${json('Be brief.\n')}\n` });
+    const version = (await cli(url, ['config', 'version', 'job-rules'])).out.trim();
+    expect(await cli(url, ['config', 'set', 'job-rules', '--if-version', version], { stdin: json({ rules: [] }) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/job-rules refused, nothing written: the job rules are a text/) });
     expect(recordIn(url, 'job-rules')).toBe('Be brief.\n');
   });
 
-  it('get plugins prints the plugins config as JSON', () => {
+  it('get plugins prints the plugins config as JSON', async () => {
     const url = db();
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) }).code).toBe(0);
-    const r = cli(url, ['config', 'get', 'plugins']);
+    expect((await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) })).code).toBe(0);
+    const r = await cli(url, ['config', 'get', 'plugins']);
     expect(r).toMatchObject({ code: 0, out: `${JSON.stringify(PLUGINS, null, 2)}\n` });
     expect(JSON.parse(r.out)).toEqual(PLUGINS);
   });
 
-  it('set without --if-version writes nothing, and a stale version is refused', () => {
+  it('set without --if-version writes nothing, and a stale version is refused', async () => {
     const url = db();
-    expect(cli(url, ['config', 'set', 'rules'], { stdin: json('x') })).toMatchObject({ code: 2, err: expect.stringMatching(/--if-version/) });
+    expect(await cli(url, ['config', 'set', 'rules'], { stdin: json('x') })).toMatchObject({ code: 2, err: expect.stringMatching(/--if-version/) });
     expect(recordIn(url, 'rules')).toBeUndefined();
-    cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('one') });
-    const r = cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('two') });
+    await cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('one') });
+    const r = await cli(url, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('two') });
     expect(r).toMatchObject({ code: 2, err: expect.stringMatching(/rules changed since version missing/) });
     expect(recordIn(url, 'rules')).toBe('one');
   });
 
-  it('a plugins config that would not load, or is not JSON, is refused, nothing written', () => {
+  it('a plugins config that would not load, or is not JSON, is refused, nothing written', async () => {
     const url = db();
-    const r = cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json({ version: 2 }) });
+    const r = await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json({ version: 2 }) });
     expect(r).toMatchObject({ code: 2, err: expect.stringMatching(/plugins refused, nothing written: version/) });
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: '{ "executors": [' }).err).toMatch(/plugins refused, nothing written: not valid JSON/);
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: 'version: 1\n' }).err).toMatch(/not valid JSON/);
+    expect((await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: '{ "executors": [' })).err).toMatch(/plugins refused, nothing written: not valid JSON/);
+    expect((await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: 'version: 1\n' })).err).toMatch(/not valid JSON/);
     expect(recordIn(url, 'plugins')).toBeUndefined();
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) }).code).toBe(0);
+    expect((await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) })).code).toBe(0);
     expect(recordIn(url, 'plugins')).toEqual(PLUGINS);
   });
 
-  it('set replaces the record against the version read', () => {
+  it('set replaces the record against the version read', async () => {
     const url = db();
-    cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) });
-    const version = cli(url, ['config', 'version', 'plugins']).out.trim();
+    await cli(url, ['config', 'set', 'plugins', '--if-version', 'missing'], { stdin: json(PLUGINS) });
+    const version = (await cli(url, ['config', 'version', 'plugins'])).out.trim();
     const next = { version: 1, executors: [{ name: 't2', plugin: 'test' }] };
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', version], { stdin: json(next) }).code).toBe(0);
+    expect((await cli(url, ['config', 'set', 'plugins', '--if-version', version], { stdin: json(next) })).code).toBe(0);
     expect(recordIn(url, 'plugins')).toEqual(next);
-    expect(cli(url, ['config', 'set', 'plugins', '--if-version', version], { stdin: json(PLUGINS) }))
+    expect(await cli(url, ['config', 'set', 'plugins', '--if-version', version], { stdin: json(PLUGINS) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/plugins changed since version/) });
     expect(recordIn(url, 'plugins')).toEqual(next);
   });
 });
 
 describe('no bootstrap login (issue #238)', () => {
-  it('there is no hopper login-code: the same text as an unknown command, exit 2', () => {
-    const r = cli(db(), ['login-code']);
+  it('there is no hopper login-code: the same text as an unknown command, exit 2', async () => {
+    const r = await cli(db(), ['login-code']);
     expect(r.code).toBe(2);
     expect(r.err).toContain('hopper config set');
-    expect(cli(undefined, ['help']).out).not.toContain('login-code');
+    expect((await cli(undefined, ['help'])).out).not.toContain('login-code');
   });
 
-  it('a user\'s records without --user: the one user; none yet, or several, names what to do', () => {
+  it('a user\'s records without --user: the one user; none yet, or several, names what to do', async () => {
     const fresh = testDatabaseUrl();
-    expect(cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user yet: the first sign-in makes one/) });
-    expect(cli(fresh, ['user', 'add', 'ada']).code).toBe(0);
-    expect(cli(fresh, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('ada rules') }).code).toBe(0);
-    expect(cli(fresh, ['config', 'get', 'rules', '--user', 'ada']).out).toBe(`${json('ada rules')}\n`);
-    expect(cli(fresh, ['user', 'add', 'bea']).code).toBe(0);
-    expect(cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/several users: name one with --user/) });
+    expect(await cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user yet: the first sign-in makes one/) });
+    expect((await cli(fresh, ['user', 'add', 'ada'])).code).toBe(0);
+    expect((await cli(fresh, ['config', 'set', 'rules', '--if-version', 'missing'], { stdin: json('ada rules') })).code).toBe(0);
+    expect((await cli(fresh, ['config', 'get', 'rules', '--user', 'ada'])).out).toBe(`${json('ada rules')}\n`);
+    expect((await cli(fresh, ['user', 'add', 'bea'])).code).toBe(0);
+    expect(await cli(fresh, ['config', 'get', 'rules'])).toMatchObject({ code: 2, err: expect.stringMatching(/several users: name one with --user/) });
   });
 });
 
 // Issue #307: a script that lets the hopper into a machine (scripts/agent-boxes.sh) asks the hopper for
 // its key's public half, where the hopper runs, instead of a person copying it out of the Add form.
 describe('hopper ssh-key', () => {
-  it('prints the public half of the user\'s ssh key, never the private one', () => {
+  it('prints the public half of the user\'s ssh key, never the private one', async () => {
     const url = db();
     const s = openAdminStore(url);
     try { s.settings.setSshKey({ privateKey: 'PRIVATE KEY TEXT', publicKey: 'ssh-ed25519 AAAAC3Nza hopper' }); } finally { s.close(); }
-    const r = cli(url, ['ssh-key']);
+    const r = await cli(url, ['ssh-key']);
     expect(r).toMatchObject({ code: 0, out: 'ssh-ed25519 AAAAC3Nza hopper\n' });
     expect(r.out + r.err).not.toContain('PRIVATE');
-    expect(cli(url, ['ssh-key', '--user', 'admin']).out).toBe('ssh-ed25519 AAAAC3Nza hopper\n');
+    expect((await cli(url, ['ssh-key', '--user', 'admin'])).out).toBe('ssh-ed25519 AAAAC3Nza hopper\n');
   });
 
-  it('none yet: the daemon mints it at its first start, and says so', () => {
-    expect(cli(db(), ['ssh-key'])).toMatchObject({ code: 2, err: expect.stringMatching(/no ssh key yet: the daemon makes one when it starts/) });
+  it('none yet: the daemon mints it at its first start, and says so', async () => {
+    expect(await cli(db(), ['ssh-key'])).toMatchObject({ code: 2, err: expect.stringMatching(/no ssh key yet: the daemon makes one when it starts/) });
   });
 });
 
 describe('hopper config set sign-in (issue #237)', () => {
-  it('refuses a password realm in the record: there is no password user realm', () => {
+  it('refuses a password realm in the record: there is no password user realm', async () => {
     const url = db();
-    const version = cli(url, ['config', 'version', 'sign-in']).out.trim();
+    const version = (await cli(url, ['config', 'version', 'sign-in'])).out.trim();
     const record = { version: 1, realms: [{ name: 'staff', type: 'password' }] };
-    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(record) }))
+    expect(await cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(record) }))
       .toMatchObject({ code: 2, err: expect.stringMatching(/realms\.0\.type/) });
     const gh = { version: 1, local: { enabled: true }, realms: [{ name: 'gh', type: 'github' }] };
-    expect(cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(gh) }).code).toBe(0);
+    expect((await cli(url, ['config', 'set', 'sign-in', '--if-version', version], { stdin: JSON.stringify(gh) })).code).toBe(0);
   });
 });
 
 describe('hopper help (issue #68)', () => {
-  it.each([['help'], ['--help'], ['-h']])('%s prints every command with what it does, and where to read on; needs no database', (arg) => {
-    const r = cli(undefined, [arg]);
+  it.each([['help'], ['--help'], ['-h']])('%s prints every command with what it does, and where to read on; needs no database', async (arg) => {
+    const r = await cli(undefined, [arg]);
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
     for (const command of ['config get', 'config version', 'config set', 'users', 'user add', 'user transfer', 'help']) {
@@ -189,9 +189,9 @@ describe('hopper help (issue #68)', () => {
     expect(r.out).not.toContain('config edit');
   });
 
-  it('no command or an unknown one: the same text on stderr, exit 2', () => {
+  it('no command or an unknown one: the same text on stderr, exit 2', async () => {
     for (const argv of [[], ['frobnicate']]) {
-      const r = cli(undefined, argv);
+      const r = await cli(undefined, argv);
       expect(r.code).toBe(2);
       expect(r.out).toBe('');
       expect(r.err).toContain('hopper config set');
@@ -200,23 +200,23 @@ describe('hopper help (issue #68)', () => {
 });
 
 describe('several users (issue #158)', () => {
-  it('hopper users lists every user; hopper user add adds one under a free name', () => {
+  it('hopper users lists every user; hopper user add adds one under a free name', async () => {
     const url = db();
-    expect(cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^admin\tadmin\t\S+\n$/) });
-    expect(cli(url, ['user', 'add', 'Bea Smith'])).toMatchObject({ code: 0, out: 'bea_smith\n' });
-    expect(cli(url, ['user', 'add', 'bea smith'])).toMatchObject({ code: 2, err: expect.stringMatching(/name bea smith is taken/) });
-    expect(cli(url, ['user', 'add'])).toMatchObject({ code: 2, err: expect.stringMatching(/user add <name>/) });
-    expect(cli(url, ['users']).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['admin', 'admin'], ['bea_smith', 'Bea Smith']]);
+    expect(await cli(url, ['users'])).toMatchObject({ code: 0, out: expect.stringMatching(/^admin\tadmin\t\S+\n$/) });
+    expect(await cli(url, ['user', 'add', 'Bea Smith'])).toMatchObject({ code: 0, out: 'bea_smith\n' });
+    expect(await cli(url, ['user', 'add', 'bea smith'])).toMatchObject({ code: 2, err: expect.stringMatching(/name bea smith is taken/) });
+    expect(await cli(url, ['user', 'add'])).toMatchObject({ code: 2, err: expect.stringMatching(/user add <name>/) });
+    expect((await cli(url, ['users'])).out.split('\n').filter(Boolean).map((l) => l.split('\t').slice(0, 2))).toEqual([['admin', 'admin'], ['bea_smith', 'Bea Smith']]);
   });
 
-  it('config --user edits that user\'s records; sign-in is the instance\'s and refuses --user', () => {
+  it('config --user edits that user\'s records; sign-in is the instance\'s and refuses --user', async () => {
     const url = db();
-    cli(url, ['user', 'add', 'bea']);
-    expect(cli(url, ['config', 'set', 'rules', '--user', 'bea', '--if-version', 'missing'], { stdin: json('bea rules') }).code).toBe(0);
-    expect(cli(url, ['config', 'get', 'rules', '--user', 'bea']).out).toBe(`${json('bea rules')}\n`);
+    await cli(url, ['user', 'add', 'bea']);
+    expect((await cli(url, ['config', 'set', 'rules', '--user', 'bea', '--if-version', 'missing'], { stdin: json('bea rules') })).code).toBe(0);
+    expect((await cli(url, ['config', 'get', 'rules', '--user', 'bea'])).out).toBe(`${json('bea rules')}\n`);
     expect(recordIn(url, 'rules')).toBeUndefined();
-    expect(cli(url, ['config', 'get', 'sign-in', '--user', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/sign-in is the instance's/) });
-    expect(cli(url, ['config', 'get', 'rules', '--user', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
+    expect(await cli(url, ['config', 'get', 'sign-in', '--user', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/sign-in is the instance's/) });
+    expect(await cli(url, ['config', 'get', 'rules', '--user', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
   });
 });
 
@@ -224,76 +224,76 @@ describe('hopper user transfer (issue #212)', () => {
   const instanceOf = (url: string) => openInstanceStore({ url, clock: { now: () => new Date() } });
 
   /** admin with work (a job, its rules), and `bea`, signing in on the realm corp, with none. */
-  function adminAndBea(): string {
+  async function adminAndBea(): Promise<string> {
     const url = db();
-    cli(url, ['user', 'add', 'bea']);
+    await cli(url, ['user', 'add', 'bea']);
     const s = instanceOf(url);
     s.identities.link('corp', 'bea', 'bea');
     s.close();
     const admin = openAdminStore(url);
     admin.jobs.create({ executor: 'test', payload: {} }, 5);
     admin.close();
-    expect(cli(url, ['config', 'set', 'rules', '--user', 'admin', '--if-version', 'missing'], { stdin: json('admin rules') }).code).toBe(0);
+    expect((await cli(url, ['config', 'set', 'rules', '--user', 'admin', '--if-version', 'missing'], { stdin: json('admin rules') })).code).toBe(0);
     return url;
   }
 
-  it('bea takes over everything admin held; bea\'s own empty record is gone', () => {
-    const url = adminAndBea();
-    const r = cli(url, ['user', 'transfer', 'admin', 'bea']);
+  it('bea takes over everything admin held; bea\'s own empty record is gone', async () => {
+    const url = await adminAndBea();
+    const r = await cli(url, ['user', 'transfer', 'admin', 'bea']);
     expect(r).toMatchObject({ code: 0, err: expect.stringMatching(/bea now holds admin's work/) });
-    expect(cli(url, ['users']).out).toMatch(/^admin\tbea\t\S+\n$/);
+    expect((await cli(url, ['users'])).out).toMatch(/^admin\tbea\t\S+\n$/);
     const s = instanceOf(url);
     expect(s.identities.userOf('corp', 'bea')).toBe('admin');
     const store = s.userStore(s.users.get('admin')!);
     expect(store.jobs.list()).toHaveLength(1);
     store.close();
     s.close();
-    expect(cli(url, ['config', 'get', 'rules']).out).toBe(`${json('admin rules')}\n`);
+    expect((await cli(url, ['config', 'get', 'rules'])).out).toBe(`${json('admin rules')}\n`);
   });
 
-  it('moves the sessions and login codes of the user that takes over', () => {
-    const url = adminAndBea();
+  it('moves the sessions and login codes of the user that takes over', async () => {
+    const url = await adminAndBea();
     const minting = instanceOf(url);
     const code = mintLoginCode(minting, { now: () => new Date() }, 'bea');
     minting.close();
-    expect(cli(url, ['user', 'transfer', 'admin', 'bea']).code).toBe(0);
+    expect((await cli(url, ['user', 'transfer', 'admin', 'bea'])).code).toBe(0);
     const s = instanceOf(url);
     expect(s.loginCodes.take(createHash('sha256').update(code).digest('hex'), new Date().toISOString())).toBe('admin');
     s.close();
   });
 
-  it('refuses when the user taking over holds work of its own: nothing is lost, nothing changes', () => {
-    const url = adminAndBea();
+  it('refuses when the user taking over holds work of its own: nothing is lost, nothing changes', async () => {
+    const url = await adminAndBea();
     const s = instanceOf(url);
     const bea = s.userStore(s.users.get('bea')!);
     bea.jobs.create({ executor: 'test', payload: {} }, 5);
     bea.close();
     s.close();
-    expect(cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/bea holds work of its own \(1 job\)/) });
-    expect(cli(url, ['users']).out.split('\n').filter(Boolean)).toHaveLength(2);
+    expect(await cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/bea holds work of its own \(1 job\)/) });
+    expect((await cli(url, ['users'])).out.split('\n').filter(Boolean)).toHaveLength(2);
   });
 
-  it('refuses while a daemon has the database: stop it first', () => {
-    const url = adminAndBea();
+  it('refuses while a daemon has the database: stop it first', async () => {
+    const url = await adminAndBea();
     const daemon = instanceOf(url);
     expect(daemon.holdDaemonLock()).toBe(true);
-    expect(cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
+    expect(await cli(url, ['user', 'transfer', 'admin', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/a running daemon has this database; stop it first/) });
     daemon.close();
-    expect(cli(url, ['user', 'transfer', 'admin', 'bea']).code).toBe(0);
+    expect((await cli(url, ['user', 'transfer', 'admin', 'bea'])).code).toBe(0);
   });
 
-  it('refuses unknown users, one user onto itself, and a wrong shape', () => {
-    const url = adminAndBea();
-    expect(cli(url, ['user', 'transfer', 'admin', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
-    expect(cli(url, ['user', 'transfer', 'bea', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/two different users/) });
-    expect(cli(url, ['user', 'transfer', 'admin'])).toMatchObject({ code: 2, err: expect.stringMatching(/user transfer <from> <to>/) });
+  it('refuses unknown users, one user onto itself, and a wrong shape', async () => {
+    const url = await adminAndBea();
+    expect(await cli(url, ['user', 'transfer', 'admin', 'nobody'])).toMatchObject({ code: 2, err: expect.stringMatching(/no user nobody/) });
+    expect(await cli(url, ['user', 'transfer', 'bea', 'bea'])).toMatchObject({ code: 2, err: expect.stringMatching(/two different users/) });
+    expect(await cli(url, ['user', 'transfer', 'admin'])).toMatchObject({ code: 2, err: expect.stringMatching(/user transfer <from> <to>/) });
   });
 });
 
 describe('hopper join-code (issue #308)', () => {
-  it('mints a one-time join code for the one user: what a script puts after # in a join line', () => {
+  it('mints a one-time join code for the one user: what a script puts after # in a join line', async () => {
     const url = db();
-    const r = cli(url, ['join-code']);
+    const r = await cli(url, ['join-code']);
     expect(r.code).toBe(0);
     expect(r.err).toMatch(/a join code for admin, once, until /);
     const code = r.out.trim();
@@ -308,7 +308,7 @@ describe('hopper join-code (issue #308)', () => {
     } finally { s.close(); }
   });
 
-  it('is listed in help', () => {
-    expect(cli(undefined, ['help']).out).toContain('hopper join-code');
+  it('is listed in help', async () => {
+    expect((await cli(undefined, ['help'])).out).toContain('hopper join-code');
   });
 });

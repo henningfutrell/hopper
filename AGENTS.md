@@ -65,7 +65,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   same reason (issue #308): the hopper's **link key** for each user, the private half of the key a machine's client token is
   derived from, kept in that user's schema and never answered by any route but its public half. No default names a path on one
   machine; the work dir (`HOPPER_WORK_DIR`) is scratch only. The operator CLI (`src/cli.ts`,
-  `hopper`) writes the database directly: whoever runs it holds its credentials.
+  `hopper`) writes the database directly: whoever runs it holds its credentials. Its operator actions
+  (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one
+  `POST /ui/api/*` on the running daemon, and drops it after.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
 - **Persisted state is the user's.** A schema change ships a migration in
   `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
