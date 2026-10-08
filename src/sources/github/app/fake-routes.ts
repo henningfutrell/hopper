@@ -1,5 +1,5 @@
 // REST endpoints of the fake GitHub: app installations, token minting, installation repos,
-// issues (read), comments, labels. Response shapes follow the GitHub REST API (the fields the adapter
+// issues (read), comments, assignment events, labels. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
 import { randomBytes } from 'node:crypto';
@@ -26,7 +26,7 @@ const issueUrl = (r: FakeRepo, n: number) => `https://github.com/${r.owner}/${r.
 function restIssue(r: FakeRepo, i: FakeIssue) {
   return {
     number: i.number, title: i.title, body: i.body, state: i.state, html_url: issueUrl(r, i.number), updated_at: i.updatedAt,
-    user: { login: i.author }, labels: i.labels.map((name) => ({ name })),
+    user: { login: i.author }, assignees: i.assignees.map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
     closed_by: i.closedBy ? { login: i.closedBy } : null, closed_at: i.closedAt ?? null, state_reason: i.stateReason ?? null, ...(i.pullRequest ? { pull_request: {} } : {}),
   };
 }
@@ -96,13 +96,17 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     repo.labels.add(name);
     return { status: 201, body: { name, color: body.color, description: body.description } };
   }
-  const m = /^\/issues\/(\d+)(\/comments|\/labels(?:\/(.+))?)?$/.exec(rest);
+  const m = /^\/issues\/(\d+)(\/comments|\/events|\/labels(?:\/(.+))?)?$/.exec(rest);
   const issue = m ? repo.issues.get(Number(m[1])) : undefined;
   if (!m || !issue) return notFound;
   const sub = m[2] ?? '';
   if (req.method === 'GET' && sub === '') return { status: 200, body: restIssue(repo, issue) };
   if (req.method === 'GET' && sub === '/comments') {
     const p = paginate(ctx, req, issue.comments.map((c) => restComment(repo, issue.number, c)));
+    return { status: 200, body: p.items, headers: p.headers };
+  }
+  if (req.method === 'GET' && sub === '/events') {
+    const p = paginate(ctx, req, issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, assignee: { login } })));
     return { status: 200, body: p.items, headers: p.headers };
   }
   if (req.method === 'POST' && sub === '/labels') {

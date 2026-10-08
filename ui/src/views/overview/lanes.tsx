@@ -2,7 +2,7 @@
 import { FolderOpen, Hand, Layers, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
-import { JobTitle, Since } from '@/components/job';
+import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { laneRows, machineName, type LaneRow } from '@/model/board';
@@ -81,6 +81,7 @@ function LaneCard({ row, machine }: { row: LaneRow; machine: string }) {
             </div>
           )}
           {job.progressMessage && <div className="truncate text-xs text-muted-foreground" title={job.progressMessage}>{job.progressMessage}</div>}
+          <UnassignedFlag job={job} />
         </div>
       ) : <div className="text-xs text-muted-foreground/70">{lane ? 'idle' : 'capacity, no lane open'}</div>}
     </div>

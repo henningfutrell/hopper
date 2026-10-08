@@ -2,16 +2,15 @@
 // plugin host with each plugin's schema, and the source config they turn into.
 import { describe, expect, it } from 'vitest';
 import githubApp from '../../src/plugins/job-source/github-app/index.ts';
-import { parseOptions } from '../../src/plugins/options.ts';
+import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
 import { sourceConfig } from '../../src/sources/config.ts';
 
-/** authors has no default: every valid instance names one. */
-const AUTHORS = { authors: ['owner'] };
+/** No option is required: an empty instance is valid. */
+const AUTHORS = {};
 
 const SHARED_DEFAULTS = {
   pollSeconds: 60,
   repos: [],
-  ...AUTHORS,
   label: 'hopper',
   hopperName: null,
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
@@ -72,7 +71,7 @@ describe('the GitHub sources\' shared options', () => {
 });
 
 describe('github-app options', () => {
-  it('authors alone gets the defaults: enabled, the default key variable, no identity yet, no API override', () => {
+  it('no options get the defaults: enabled, the default key variable, no identity yet, no API override', () => {
     expect(ok(parseOptions(githubApp, AUTHORS))).toEqual({ enabled: true, privateKeyEnv: 'GITHUB_APP_PRIVATE_KEY', ...SHARED_DEFAULTS });
   });
 
@@ -90,14 +89,15 @@ describe('github-app options', () => {
   });
 });
 
-describe('authors: the allowlist is always explicit', () => {
-  it('github-app without authors is an error naming authors', () => {
-    const r = parseOptions(githubApp, {});
-    expect(r.ok).toBe(false);
-    expect(!r.ok && r.error).toMatch(/authors/);
+describe('authors: gone (issue #387) — intake is by label and assignee', () => {
+  it('an instance still carrying authors loads; the option is dropped', () => {
+    const o = ok(parseOptions(githubApp, { authors: ['someone'], label: 'work' }));
+    expect(o).not.toHaveProperty('authors');
+    expect(o.label).toBe('work');
   });
 
-  it('github-app with authors: [] is an error', () => {
-    expect(parseOptions(githubApp, { authors: [] }).ok).toBe(false);
+  it('authors is no option the Plugins form offers', () => {
+    const schema = optionsJsonSchema(githubApp) as { properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties)).not.toContain('authors');
   });
 });

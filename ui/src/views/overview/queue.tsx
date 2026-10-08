@@ -2,7 +2,8 @@
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
 import { Archive, Check, Hourglass, Lock, RotateCcw, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { JobTitle, Since } from '@/components/job';
+import { JobTitle, Since, UnassignedFlag } from '@/components/job';
+import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
@@ -81,6 +82,7 @@ export function WaitingPanel() {
             {authed && job.status === 'held' && !job.approved && job.accepted !== false && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
+            {authed && <RejectButton job={job} />}
             <OperatorLedButton job={job} />
             <CancelButton job={job} />
           </div>
@@ -108,6 +110,7 @@ export function WaitingPanel() {
               <a href="#questions"><StatusBadge status="waiting_answer" label="on a question →" title="Paused on a question: its lane is free until the question is answered." /></a>
               <span className="ml-auto">for <Since iso={job.updatedAt} /></span>
             </div>
+            <UnassignedFlag job={job} />
           </div>
         ))}
       </>}
@@ -123,6 +126,7 @@ export function WaitingPanel() {
               <span>worked by hand, done at its pull request</span>
               <span className="ml-auto">for <Since iso={job.startedAt ?? job.updatedAt} /></span>
             </div>
+            <UnassignedFlag job={job} />
           </div>
         ))}
       </>}

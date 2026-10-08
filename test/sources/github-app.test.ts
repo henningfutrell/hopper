@@ -37,10 +37,16 @@ describe('app mode discovery', () => {
     });
   });
 
-  it('refuses an authors list containing the bot (its writes must never count as the owner\'s)', async () => {
-    const { gh, source } = setupApp({ authors: ['owner', BOT] });
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    await expect(source.discover()).rejects.toThrow(/authors.*bot/);
+  it('takes issues assigned to the user\'s connected account; the bot\'s own comments never reach the job (issue #387)', async () => {
+    const { gh, source } = setupApp();
+    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+    gh.addComment(REPO, 1, BOT, 'a bot note');
+    gh.addComment(REPO, 1, 'owner', 'an assignee note');
+    const items = await source.discover();
+    expect(items.map((i) => i.number)).toEqual([1]);
+    expect(items[0]!.prompt).not.toContain('a bot note');
+    expect(items[0]!.prompt).toContain('an assignee note');
   });
 });
 
@@ -83,7 +89,7 @@ describe('describe (B4 fields)', () => {
     expect(source.describe()).toMatchObject({
       mode: 'app', slug: APP_INFO.slug, htmlUrl: APP_INFO.htmlUrl,
       installUrl: `${APP_INFO.htmlUrl}/installations/new`, configUrl: 'https://github.com/settings/installations',
-      installedRepos: [REPO], repos: [], authors: ['owner'], label: 'hopper', projectErrors: {},
+      installedRepos: [REPO], repos: [], assignee: 'owner', label: 'hopper', projectErrors: {},
     });
     expect(source.describe().setup).toBeUndefined();
   });

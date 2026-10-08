@@ -1,6 +1,8 @@
 # Issue assignment: the design, end to end (issue #388 — research)
 
-Research only: nothing here is built. Issue #387 moves intake from an author allowlist to the source
+Research only when written. Issue #387 has since built part of it — intake by label and assignee, reject as
+a hopper-side record, assignment drift for waiting and started jobs (`docs/design.md` "Intake by label and
+assignee"); the rest, and the owner decisions below, stay open. Issue #387 moves intake from an author allowlist to the source
 label plus an assignee. This note assesses the whole assignment mechanic and its knock-on effects,
 recommends a design, and lists what needs an owner decision. Paths are relative to the repo root;
 line numbers are as of `origin/main` at `bff0b47`.

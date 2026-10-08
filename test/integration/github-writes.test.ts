@@ -43,7 +43,7 @@ async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, 
   const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams, secrets: mode === 'app' ? appSecrets() : {} });
   if (gh !== undefined) a.scripted.ships(mergesPullRequest(gh));
   apps.push(a);
-  if (mode === 'account') connectGitHub(a, [REPO]);
+  connectGitHub(a, [REPO]);
   return a;
 }
 

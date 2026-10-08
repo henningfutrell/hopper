@@ -34,13 +34,13 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
 }
 
 /**
- * Whether Run again is offered for a job — one the daemon takes (issues #313, #354, #362): it failed or
- * finished, has a source, its end is reported to the source, and no newer job of its item exists. A
+ * Whether Run again is offered for a job — one the daemon takes (issues #313, #354, #362, #387): it failed,
+ * finished or was rejected, has a source, its end is reported to the source, and no newer job of its item exists. A
  * closed issue does not stop it: Run again reopens it. The daemon decides.
  */
 export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
   const key = job.source?.key;
-  if ((job.status !== 'failed' && job.status !== 'finished') || key === undefined || job.sourceState?.sync?.finalReported !== true) return false;
+  if (!['failed', 'finished', 'rejected'].includes(job.status) || key === undefined || job.sourceState?.sync?.finalReported !== true) return false;
   for (const j of jobs) if (j.id !== job.id && j.source?.key === key && j.createdAt > job.createdAt) return false;
   return true;
 }

@@ -13,17 +13,17 @@ export const REPO = 'owner/sandbox';
 
 /** The source logic's config: the shared keys of the GitHub sources (parsed as the app's options, which carry `repos`). */
 export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceConfig {
-  const r = parseOptions(githubApp, { repos: [REPO], authors: ['owner'], defaultCwd: '/work/default', ...over });
+  const r = parseOptions(githubApp, { repos: [REPO], defaultCwd: '/work/default', ...over });
   if (!r.ok) throw new Error(r.error);
   const { enabled: _e, appId: _i, slug: _s, privateKeyEnv: _k, apiUrl: _u, ...shared } = r.options as GitHubAppOptions;
   return sourceConfig(shared);
 }
 
-export function setup(over: Record<string, unknown> = {}, o: { knownKeys?: (keys: string[]) => Set<string>; rerunnable?: (keys: string[]) => Set<string>; whoami?: string } = {}) {
+export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami'>> = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', config, api: gh, clock, ...o });
+  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, ...o });
   return { gh, config, source };
 }
 
@@ -43,7 +43,7 @@ export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions 
   const config = githubConfig({ repos: [], ...over });
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
   const source = createGitHubSource({
-    name: 'github-app', kind: 'github-app', mode: 'app', config, api: gh, clock,
+    name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', config, api: gh, clock,
     appInfo: o.appInfo ?? (() => APP_INFO),
     ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
     ...(o.paused ? { paused: o.paused } : {}),

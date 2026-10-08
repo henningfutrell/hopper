@@ -52,11 +52,14 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
     });
   });
 
-  it('githubApp.authors containing the bot login is refused when the App is configured', async () => {
-    const { a } = await boot({ appKey: true, doc: jobSourcesDoc({ github: false, githubApp: { authors: ['owner', BOT] } }) });
-    const st = await status(a, 'github-app');
-    expect(st).toMatchObject({ state: 'error' });
-    expect(st.lastError).toMatch(/authors must not contain the app bot/);
+  it('the app source takes issues assigned to the user\'s connected account; with none connected it is paused and says so (issue #387)', async () => {
+    const gh = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
+    const { a } = await boot({ appKey: true, seams: { githubApp: gh }, doc: jobSourcesDoc({ github: false }) });
+    expect(await status(a, 'github-app')).toMatchObject({ state: 'disabled', detail: expect.objectContaining({ paused: expect.stringMatching(/connect/i) }) });
+    connectGitHub(a, [REPO]);
+    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
+    await a.sync();
+    expect(await jobFor(a, issue.url)).toMatchObject({ source: { assignee: 'owner', author: 'stranger' } });
   });
 
   it('enabled: false on both lists both disabled', async () => {

@@ -1,6 +1,7 @@
-// The GitHub JobSource: open issues labelled `hopper` by allowlisted authors become jobs;
+// The GitHub JobSource: open issues labelled `hopper` and assigned to the user's connected account become
+// jobs, whoever filed them (issue #387);
 // what happens to them goes back as labels only (no comment); closes and unlabels come
-// back as cancel signals. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
+// back as cancel signals; unassigning the account cancels a waiting job and flags a started one. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
 //
 // One source, two identities (`mode`): `account` writes as the connected account's user and tells
@@ -15,14 +16,14 @@ import { checkJobs } from './check.ts';
 import { closedAsComplete, completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
-import { discoverIssues } from './discover.ts';
+import { discoverIssues, type Rejection } from './discover.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { reportToGitHub, takeBack } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'authors' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
+  'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'repoPaths' | 'defaultCwd' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
 >;
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -38,10 +39,17 @@ export interface GitHubSourceOptions {
   clock: Clock;
   /** The connected account's login. */
   whoami?: string;
+  /**
+   * The login an issue must be assigned to (issue #387): the user's connected GitHub account, asked at
+   * each sync. Undefined: nothing to take (the source is paused for it).
+   */
+  assignee: () => string | undefined;
   /** Which of these source keys already have a local job. */
   knownKeys?: (keys: string[]) => Set<string>;
   /** Of the keys, those whose newest job may be re-run (`isRerunnable`); they are offered with comments for the new job. */
   rerunnable?: (keys: string[]) => Set<string>;
+  /** Of the keys, those whose newest job was rejected (issue #387). */
+  rejections?: (keys: string[]) => Map<string, Rejection>;
   /** A reason not to discover right now (see JobSource.paused). */
   paused?: () => string | undefined;
   /** App mode: slug/htmlUrl for the install link, or why the app is not usable. */
@@ -60,6 +68,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let projectErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
   let skippedClaimedWithoutJob: string[] = [];
+  let skippedRejected: string[] = [];
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
   let nothingToScan = false;
@@ -75,22 +84,21 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
 
   /** The installation is the allowlist; config `repos`, when set, narrows it further. */
-  const appScope = async (bot: string): Promise<string[]> => {
-    if (config.authors.includes(bot)) throw new Error(`authors must not contain the app bot ${bot}: the app's own writes must never count as the owner's`);
+  const appScope = async (): Promise<string[]> => {
     if (!api.listInstalledRepos) throw new Error('app mode needs the GitHub App adapter (no listInstalledRepos)');
     installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
     const wanted = new Set(config.repos.map((r) => r.toLowerCase()));
     return config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
   };
 
-  const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin): Promise<SourceItem> => {
+  const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
     const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
     const completion = completionOf(issue.labels, config.completion);
-    const context = contextBlock(issue, p, completion, contextComments(comments, config.authors, config.recentComments, bot), config.recentComments, mode);
+    const context = contextBlock(issue, p, completion, contextComments(comments, assignee, config.recentComments, bot), config.recentComments, mode);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(issue, context), env: issueEnv(issue),
-      author: issue.author, priority: p.priority, priorityReason: p.reason,
+      author: issue.author, ...(assignee !== undefined ? { assignee } : {}), priority: p.priority, priorityReason: p.reason,
       ...(config.repoPaths[issue.repo] !== undefined ? { cwd: config.repoPaths[issue.repo]! } : {}), defaultCwd: config.defaultCwd,
       labels: issue.labels, repo: issue.repo, number: issue.number,
       executor: config.executor,
@@ -142,8 +150,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...detail,
         account: account(paused, detail),
         ...(paused ? { paused } : {}),
-        repos: config.repos, authors: config.authors, label: config.label, hopperName: config.hopperName, completion: config.completion, projectErrors,
+        repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, completion: config.completion, projectErrors,
         ...(skippedClaimedWithoutJob.length ? { skippedClaimedWithoutJob } : {}),
+        ...(skippedRejected.length ? { skippedRejected } : {}),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
@@ -151,25 +160,30 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     async discover() {
       const bot = await botLogin();
-      const repos = bot === undefined ? config.repos : await appScope(bot);
+      const assignee = o.assignee();
+      const repos = bot === undefined ? config.repos : await appScope();
       nothingToScan = app && repos.length === 0;
-      if (nothingToScan) {
+      if (nothingToScan || assignee === undefined) {
         repoErrors = {};
         skippedClaimedWithoutJob = [];
+        skippedRejected = [];
         projectErrors = {};
         lastDiscoverAt = o.clock.now().toISOString();
         return [];
       }
-      const found = await discoverIssues(api, config, repos, o.knownKeys);
+      const found = await discoverIssues(api, config, {
+        repos, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
+      });
       repoErrors = found.repoErrors;
       skippedClaimedWithoutJob = found.skippedClaimedWithoutJob;
+      skippedRejected = found.skippedRejected;
       const projects = await readProjects(api, config, found.issues);
       projectErrors = projects.errors;
       const urls = found.issues.map((i) => i.url);
       const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
       const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
       const items: SourceItem[] = [];
-      for (const issue of found.issues) items.push(await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot));
+      for (const issue of found.issues) items.push(await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee));
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     },
@@ -187,7 +201,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const issue = await takeBack({ api, labelledRepos }, config.label, job);
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
-      return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot);
+      return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
     },
     notComplete(job) {
       return notComplete(api, job, config.completion);

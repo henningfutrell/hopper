@@ -15,6 +15,7 @@ import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
 import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
+import { noAuthors } from './migration-no-authors.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -195,6 +196,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
     UNIQUE (source, machine_id, usage_window, at)
   );
   CREATE INDEX usage_samples_at ON usage_samples (at)`,
+  // 16: intake is by label and assignee (issue #387): the GitHub sources' `authors` option goes.
+  noAuthors,
 ];
 
 /** A user schema's version once migrated. */

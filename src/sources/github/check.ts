@@ -10,6 +10,10 @@
 // an issue closed with no pull request as completed after the job was created — by a commit, or with
 // no code (issue #350) — once the job has started; a job still waiting to run is cancelled.
 // Nothing on the issue answers a question: questions are answered in the UI.
+// Assignment drift (issue #387), for a job taken for an assignee: unassigned while it waits → cancel
+// `unassigned`; once started (running, on a question, operator-led) → an `unassigned` signal, and the user
+// decides whether to stop it; a flagged job assigned again → `reassigned`. A job taken before assignment
+// intake names no assignee and is never cancelled or flagged for having none.
 
 import type { SourceSignal } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
@@ -18,6 +22,7 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { LABEL_BACKBURNER } from './labels.ts';
 import { isClosedAsComplete, isOwnPullRequest } from './completion.ts';
+import { isAssignedTo } from './discover.ts';
 
 type CheckConfig = Pick<GitHubSourceConfig, 'label'>;
 
@@ -47,7 +52,16 @@ async function checkJob(api: GitHubApi, config: CheckConfig, job: Job): Promise<
   if (issue.state === 'closed') return await closedByOwnWork(api, job, issue, !waiting) ? undefined : { kind: 'cancel', jobId: job.id, reason: 'issue closed' };
   if (!issue.labels.includes(config.label)) return { kind: 'cancel', jobId: job.id, reason: 'label removed' };
   if (waiting && issue.labels.includes(LABEL_BACKBURNER)) return { kind: 'cancel', jobId: job.id, reason: 'backburner' };
-  return undefined;
+  return assignmentDrift(job, issue, waiting);
+}
+
+function assignmentDrift(job: Job, issue: GitHubIssue, waiting: boolean): SourceSignal | undefined {
+  const assignee = job.source?.assignee;
+  if (assignee === undefined) return undefined;
+  const flagged = typeof job.sourceState?.sync?.unassignedAt === 'string';
+  if (isAssignedTo(issue, assignee)) return flagged ? { kind: 'reassigned', jobId: job.id } : undefined;
+  if (waiting) return { kind: 'cancel', jobId: job.id, reason: 'unassigned' };
+  return flagged ? undefined : { kind: 'unassigned', jobId: job.id };
 }
 
 /** Never throws for one job: transient errors are returned per job id and the rest still run. */

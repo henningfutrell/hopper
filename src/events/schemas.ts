@@ -83,6 +83,9 @@ export const EVENT_SCHEMAS = {
   'job.rerun': strict({ by: z.enum(['user']) }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
+  // Assignment drift (issue #387): the started job's item is no longer, or again, assigned to the account it was taken for.
+  'job.unassigned': strict({ assignee: z.string() }),
+  'job.reassigned': strict({ assignee: z.string() }),
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
   'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),

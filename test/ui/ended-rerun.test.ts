@@ -75,6 +75,12 @@ describe('Run again in the Ended panel (issues #362, #354)', () => {
     expect(runAgain('2')).toBeDefined();
   });
 
+  it('is offered on a rejected job: the user takes back a rejection (issue #387)', async () => {
+    ended = [failed('1', {}, 'rejected')];
+    await boot();
+    expect(runAgain('1')).toBeDefined();
+  });
+
   it('is not offered while the job\'s end is not reported to its source yet', async () => {
     ended = [failed('1', { finalReported: false })];
     await boot();

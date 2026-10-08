@@ -37,8 +37,9 @@ export function SourceSync({ s }: { s: SourceStatus }) {
       </div>
       {repos.length > 0 && <div className="flex flex-wrap gap-1">{repos.map((r) => <span key={r} className="rounded border px-1.5 font-mono text-[11px] text-muted-foreground">{r}</span>)}</div>}
       <div className="space-y-0.5 text-xs text-muted-foreground">
-        {['owners', 'repos', 'authors', 'label'].filter((k) => d[k] != null && list(d[k]) !== '').map((k) => <div key={k}>{k}: <span className="text-foreground/80">{list(d[k])}</span></div>)}
+        {['owners', 'repos', 'assignee', 'label'].filter((k) => d[k] != null && list(d[k]) !== '').map((k) => <div key={k}>{k}: <span className="text-foreground/80">{list(d[k])}</span></div>)}
         {['projectErrors', 'permanentErrors'].filter((k) => !empty(d[k])).map((k) => <div key={k} className="text-bad">{k}: {typeof d[k] === 'object' ? JSON.stringify(d[k]) : String(d[k])}</div>)}
+        {Array.isArray(d.skippedRejected) && d.skippedRejected.map((url: string) => <div key={url} data-skipped-rejected>rejected, not taken until assigned to you again: <GhLink url={url}>{url}</GhLink></div>)}
         {Array.isArray(d.notRerun) && d.notRerun.map((n: { key: string; job: string; status: string; reason: string }) => <div key={n.key} data-not-rerun className="text-warn">not run again: <GhLink url={n.key}>{n.key}</GhLink> (job {n.status}, {n.reason})</div>)}
         {d.enabledSetting != null && <div>enabled setting: <code>{String(d.enabledSetting)}</code></div>}
       </div>

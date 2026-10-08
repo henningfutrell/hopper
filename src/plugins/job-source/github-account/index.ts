@@ -19,7 +19,7 @@ export function githubAccountPlugin(seam?: GitHubApi): PluginDefinition<'job-sou
     create(ctx, o) {
       if (!o.enabled) return { disabled: { kind: 'github-account', detail: { mode: 'account' } } };
       const source = createAccountSource({
-        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, env: ctx.env,
+        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, rejections: ctx.rejections, env: ctx.env,
         provider: 'github', accounts: ctx.connectedAccounts, ...(seam ? { api: seam } : {}),
       }, o);
       return { source, pollMs: o.pollSeconds * 1000 };

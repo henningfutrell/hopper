@@ -154,4 +154,41 @@ describe('GitHub source check', () => {
     gh.closeIssue(REPO, 1);
     expect(await source.check([job])).toEqual([{ kind: 'cancel', jobId: job.id, reason: 'issue closed' }]);
   });
+
+  describe('assignment drift (issue #387)', () => {
+    const ofIssue = (n: number, over: Parameters<typeof jobForIssue>[1] = {}) => {
+      const j = jobForIssue(n, over);
+      return { ...j, source: { ...j.source!, assignee: 'owner' } };
+    };
+
+    it('unassigned while waiting: cancel, "unassigned"; while running, on a question or operator-led: an unassigned signal', async () => {
+      const { gh, source } = setup();
+      for (let i = 0; i < 4; i++) gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper', 'hopper:claimed'] });
+      const [queued, running, asking, led] = [
+        ofIssue(1, { status: 'queued' }), ofIssue(2), ofIssue(3, { status: 'waiting_answer', questionId: 'q' }), ofIssue(4, { status: 'operator_led' }),
+      ];
+      expect(await source.check([queued, running, asking, led])).toEqual([
+        { kind: 'cancel', jobId: queued.id, reason: 'unassigned' },
+        { kind: 'unassigned', jobId: running.id },
+        { kind: 'unassigned', jobId: asking.id },
+        { kind: 'unassigned', jobId: led.id },
+      ]);
+    });
+
+    it('a flagged job assigned again: a reassigned signal; one never flagged: none', async () => {
+      const { gh, source } = setup();
+      gh.createIssue({ repo: REPO, labels: ['hopper'] });
+      gh.createIssue({ repo: REPO, labels: ['hopper'] });
+      const flagged = { ...ofIssue(1), sourceState: { sync: { unassignedAt: '2026-10-02T10:00:00.000Z' } } };
+      expect(await source.check([flagged, ofIssue(2)])).toEqual([{ kind: 'reassigned', jobId: flagged.id }]);
+    });
+
+    it('a job taken before assignment intake (no assignee) is never cancelled or flagged for having none', async () => {
+      const { gh, source } = setup();
+      gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+      gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
+      expect(await source.check([jobForIssue(1, { status: 'queued' }), jobForIssue(2)])).toEqual([]);
+    });
+  });
 });
+

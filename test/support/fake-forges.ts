@@ -19,6 +19,8 @@ export interface FakeIssue {
   body: string;
   author: string;
   labels: string[];
+  /** Default: the author (issue #387: intake is by label and assignee). */
+  assignees?: string[];
   state?: 'open' | 'closed';
 }
 
@@ -125,7 +127,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
   return serve((base) => {
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
-      updated_at: '2026-10-06T00:00:00Z', user: { login: i.author }, labels: i.labels.map((name) => ({ name })),
+      updated_at: '2026-10-06T00:00:00Z', user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
       repository_url: `${base}/api/v3/repos/${i.repo}`,
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));

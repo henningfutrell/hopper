@@ -586,7 +586,7 @@ Version 1 (`docs/schemas/job.accepted.v1.json`). A job passed the queue gate and
 
 ## `job.rejected`
 
-Version 1 (`docs/schemas/job.rejected.v1.json`). A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject) or `pre-sort` (the queue sorter rejected it); `reason` is also the job's `error`. Its source is told (on GitHub: the `hopper:rejected` label).
+Version 1 (`docs/schemas/job.rejected.v1.json`). A waiting job was turned away at the queue gate: it ends `rejected`, is kept, and never runs. `by` `user` (UI Reject, with the reason the user gave, else `rejected by the user`) or `pre-sort` (the queue sorter rejected it); `reason` is also the job's `error`. Its source is told; on GitHub the issue is left as it is — no label, no comment, never closed — and is not taken again until it is assigned to the account again or run again (issue #387).
 
 | field | type | required |
 |---|---|---|
@@ -674,6 +674,34 @@ Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked en
 ```json
 {
   "by": "user"
+}
+```
+
+## `job.unassigned`
+
+Version 1 (`docs/schemas/job.unassigned.v1.json`). A started job's issue is no longer assigned to `assignee`, the account it was taken for (issue #387). The job runs on, flagged (`sourceState.sync.unassignedAt`); the user decides whether to stop it. A waiting job is cancelled `unassigned` instead. Recorded once per flag.
+
+| field | type | required |
+|---|---|---|
+| `assignee` | string | yes |
+
+```json
+{
+  "assignee": "octocat"
+}
+```
+
+## `job.reassigned`
+
+Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assigned to `assignee` again (issue #387): the flag is cleared.
+
+| field | type | required |
+|---|---|---|
+| `assignee` | string | yes |
+
+```json
+{
+  "assignee": "octocat"
 }
 ```
 

@@ -7,7 +7,7 @@ import type { TestApp } from './app.ts';
 
 /** A plugins config `jobSources` entry: the connected account's source, named `github`, syncing only on syncNow. */
 export function githubSource(options: Record<string, unknown> = {}) {
-  return { name: 'github', plugin: 'github-account', options: { pollSeconds: 3600, authors: ['owner'], ...options } };
+  return { name: 'github', plugin: 'github-account', options: { pollSeconds: 3600, ...options } };
 }
 
 /** Connect `login`'s GitHub account for the user, its jobs using `repositories`. `expiresAt`: its token's end. */

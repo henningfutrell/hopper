@@ -22,7 +22,7 @@ afterEach(async () => {
 function github(extra: Record<string, unknown> = {}) {
   return [{
     name: 'github', plugin: 'github-account', options: {
-      enabled: true, pollSeconds: 3600, authors: ['owner'], executor: 'scripted',
+      enabled: true, pollSeconds: 3600, executor: 'scripted',
       defaultCwd: '/tmp', ...extra,
     },
   }];
@@ -50,10 +50,10 @@ const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
 const bodies = (gh: FakeGitHub, n: number) => gh.commentsOn(REPO, n).map((c) => c.body);
 
 describe('GitHub issue → job → issue', () => {
-  it('ignores issues by authors outside the allowlist', async () => {
+  it('ignores labelled issues not assigned to the connected account, whoever filed them (issue #387)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
-    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: body({ op: 'echo' }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, author: 'owner', assignees: ['stranger'], body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     expect(await jobFor(a, issue.url)).toBeUndefined();
     expect(gh.commentsOn(REPO, issue.number)).toEqual([]);
