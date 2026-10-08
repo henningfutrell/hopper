@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A Windows computer added as a machine now shows its own Claude usage and account, and its jobs slow down and stop at its own limits like any other machine's. The setup steps for running it on Windows are in the guide.
 - A Claude job on a Windows computer whose jobs open in PowerShell now fails at once and says the computer needs a POSIX shell such as Git Bash, instead of waiting a minute with no reason; the README shows how to set Git Bash up.
 - When a job ends while the hopper cannot reach its machine, its Claude window is no longer left running for good: the hopper keeps trying and closes it once the machine is back. Until then a new job for the same issue waits instead of running beside the old one, and the ended job shows that its window may still be open, with a button to mark it closed if you closed it yourself.
 - Each account's weekly usage is now used up before it resets instead of a reserve being thrown away: in the last hours before a week resets, the hopper keeps starting jobs until that week is really spent. Jobs go first to the account whose week resets soonest with the most left, and a job at the highest priority can run one lane over the limit when every lane is busy. Each of the three can be turned off.

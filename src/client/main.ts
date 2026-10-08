@@ -6,7 +6,8 @@
 //   HOPPER_CLIENT_SESSION  the herdr session the hopper's jobs run in (default hopper-client; never `default`)
 //   HOPPER_JOIN            a join line: a machine that has not joined yet joins with it first (a sandbox box)
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
-// herdr is the one on its PATH: the client is one long-lived process, never a fresh login shell per call.
+// herdr and claude (a usage read, issue #366) are the ones on its PATH: the client is one long-lived process,
+// never a fresh login shell per call.
 // The client's install dir is this file's directory: the hopper loads its release there (release.ts,
 // issue #70), and the client exits 75 so whatever runs it (the unit, a box's entrypoint) starts the new files.
 import { readFileSync } from 'node:fs';

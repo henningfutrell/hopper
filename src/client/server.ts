@@ -1,17 +1,21 @@
 // The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials in to
 // the hopper's own URL (dial.ts, issue #308) and serves HTTP/2 on that link's socket: the hopper sends
-// its calls down it. Three routes:
+// its calls down it. Four routes:
 // `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, home}`, the id of the release this process runs
 // (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
-// and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files).
+// and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
+// `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
+// read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
+// removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { execFile } from 'node:child_process';
-import { statfsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdtempSync, rmSync, statfsSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { checkRelease, installRelease, readRelease } from './release.ts';
@@ -30,6 +34,8 @@ export interface ClientOptions {
   /** This machine's herdr binary (absolute) and the session the hopper's jobs run in (never `default`). */
   herdrBin: string;
   session: string;
+  /** This machine's claude binary, for a usage read (`POST /claude`); default `claude` on its PATH. */
+  claudeBin?: string;
   /** Dials the hopper once: resolves the link's socket (dial.ts), or rejects. */
   dial: () => Promise<Duplex>;
   log?: (line: string) => void;
@@ -54,6 +60,37 @@ function herdr(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ c
   });
 }
 
+/**
+ * The claude calls a usage read makes (claude-plan): its usage and its account. Zero turns, zero tokens;
+ * any other argv is refused, so a signed call can never start a prompt here.
+ */
+const CLAUDE_CALLS = [
+  ['-p', '/usage', '--output-format', 'json', '--no-session-persistence'],
+  ['auth', 'status', '--json'],
+];
+
+const allowedClaude = (v: unknown): v is string[] =>
+  Array.isArray(v) && CLAUDE_CALLS.some((c) => c.length === v.length && c.every((a, i) => a === v[i]));
+
+/** One claude call of a usage read, in a fresh private dir; the dir and the project dir claude keeps for it removed after. */
+function claude(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+  const dir = mkdtempSync(join(tmpdir(), 'hopper-claude-'));
+  const done = (r: { code: number; stdout: string; stderr: string }) => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', dir.replace(/[^A-Za-z0-9]/g, '-')), { recursive: true, force: true });
+    return r;
+  };
+  return new Promise((resolve) => {
+    const child = execFile(o.claudeBin ?? 'claude', args, { cwd: dir, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+      if (!err) return resolve(done({ code: 0, stdout, stderr }));
+      const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
+      if (e.killed) return resolve(done({ code: 124, stdout, stderr: `claude timed out after ${timeoutMs} ms` }));
+      resolve(done({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message }));
+    });
+    child.stdin?.end();
+  });
+}
+
 const validArgs = (v: unknown): v is string[] =>
   Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string') && !v.includes('--session');
 
@@ -72,7 +109,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude']);
 
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
@@ -101,8 +138,12 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/load') return load(o, releases, stream, body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
-  if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
+  if (path === '/claude') {
+    if (!allowedClaude(parsed.args)) return answer(400, { error: 'args must be one of the claude calls of a usage read' });
+    return answer(200, await claude(o, parsed.args, timeoutMs));
+  }
+  if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   answer(200, await herdr(o, parsed.args, timeoutMs));
 }
 
