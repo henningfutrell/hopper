@@ -200,12 +200,12 @@ describe('a user connects their own GitHub', () => {
     expect(await account(app, 'github')).toMatchObject({ jobRepositories: ['octo-user/tools', 'octo-user/other'] });
   });
 
-  it('runs a job of the connected account with its token as GH_TOKEN, and never stores it on the job', async () => {
+  it('runs a job of the connected account with its token as GH_TOKEN where its machine keeps no credential files, and never stores it on the job', async () => {
     const f = await forges({ github: [{ repo: 'octo-user/tools', number: 9, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }] });
     const seen: Record<string, string>[] = [];
     const recorder: Executor = {
       name: 'recorder', idempotent: false, validate: () => null,
-      async run(ctx) { seen.push({ ...ctx.credentials }); return { kind: 'failed', error: 'recorded' }; },
+      async run(ctx) { seen.push({ ...(await ctx.credentials?.(`/w/.hopper-scratch/${ctx.job.id}`)) }); return { kind: 'failed', error: 'recorded' }; },
       resume: async () => ({ kind: 'failed', error: 'recorded' }),
     };
     const app = await start(f, { executor: 'recorder', seams: { executors: [recorder] } });

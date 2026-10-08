@@ -78,6 +78,14 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
+  it('gives the hopper a token key made on first start, kept with the database password (issue #441)', () => {
+    expect(hopper.environment?.HOPPER_TOKEN_KEY).toBeUndefined();
+    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBe('/run/hopper-secrets/token_key');
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/token_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/chown 1000:1000 \$\$?s\/database_url \$\$?s\/token_key/);
+  });
+
   it('has no one-shot service: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
     expect(Object.keys(r.services).sort()).toEqual(['hopper', 'postgres']);
   });

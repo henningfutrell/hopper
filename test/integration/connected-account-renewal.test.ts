@@ -19,8 +19,17 @@
 //     When GitHub refuses both the token and its refresh token
 //     Then the account reads as expired with why, its source says sign in again, and connected_account.expired is recorded
 //   Scenario: connecting again after an expired sign-in reads as connected
+//   Scenario: a running job keeps GitHub access across a renewal (issue #441)
+//     Given a job of the connected account running on this machine
+//     When the token is renewed, and GitHub refuses the one the job started with
+//     Then the job's credential file on its machine holds the renewed token, and its variables point there
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Executor } from '../../src/domain/ports.ts';
 import type { ConnectedAccountStatus, DomainEvent, Job, SourceStatus } from '../../src/domain/types.ts';
+import { localShell } from '../../src/executors/machine-shell.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -49,11 +58,12 @@ function database() {
   return db.dbPath;
 }
 
-async function start(github: FakeForge, dbPath: string) {
+async function start(github: FakeForge, dbPath: string, o: { executor?: string; executors?: Executor[] } = {}) {
   const app = await startTestApp({
     dbPath,
-    plugins: { jobSources: [{ name: 'github-account', plugin: 'github-account', options: { executor: 'scripted' } }] },
+    plugins: { jobSources: [{ name: 'github-account', plugin: 'github-account', options: { executor: o.executor ?? 'scripted' } }] },
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
+    ...(o.executors ? { seams: { executors: o.executors } } : {}),
   });
   apps.push(app);
   return app;
@@ -141,5 +151,42 @@ describe('a connected GitHub account renews its token (#358)', () => {
     await connect(app, github, token);
     expect(await account(app)).toMatchObject({ state: 'connected', account: 'octo-user' });
     await waitFor(async () => (await sourceOf(app))?.detail.paused === undefined, { what: 'the source to resume' });
+  });
+});
+
+describe('a running job keeps GitHub access across a renewal (#441)', () => {
+  it('rewrites the job\'s credential file on its machine with the renewed token', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'jh-441-'));
+    cleanups.push(() => rmSync(work, { recursive: true, force: true }));
+    mkdirSync(work, { recursive: true });
+    let env: Record<string, string> | undefined;
+    // A job that runs until it is stopped, on this machine, through its real shell.
+    const holder: Executor = {
+      name: 'holder', idempotent: false, validate: () => null,
+      machineShell: () => localShell(),
+      async run(ctx) {
+        env = { ...(await ctx.credentials!(join(work, '.hopper-scratch', ctx.job.id))) };
+        await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve, { once: true }));
+        return { kind: 'failed', error: 'stopped' };
+      },
+    };
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const app = await start(github, database(), { executor: 'holder', executors: [holder] });
+    await connect(app, github, await app.login());
+    await waitFor(async () => env !== undefined, { what: 'the job to start', timeoutMs: 15_000 });
+
+    const job = (await jobs(app))[0]!;
+    const dir = join(work, '.hopper-scratch', job.id, 'credentials');
+    expect(env).toEqual({ GH_CONFIG_DIR: join(dir, 'gh') });
+    const hosts = () => readFileSync(join(dir, 'gh', 'hosts.yml'), 'utf8');
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+    expect(github.tokens.has(started)).toBe(true);
+
+    const renewed = await app.user().connectedAccounts.renew('github', started);
+    expect(github.tokens.has(started)).toBe(false); // GitHub refuses the token the job started with
+    await waitFor(async () => hosts().includes(renewed), { what: 'the renewed token on the job\'s machine' });
+    expect(hosts()).not.toContain(started);
+    expect(github.tokens.has(renewed)).toBe(true);
+    expect(JSON.stringify(await jobs(app))).not.toMatch(/gh[or]_/); // never on the job
   });
 });
