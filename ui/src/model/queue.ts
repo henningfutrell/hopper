@@ -33,12 +33,21 @@ export const awaitingSort = (jobs: Iterable<Job>): number => [...jobs].filter((j
 /** The user order once a pre-sorted job is accepted: it joins at the end. */
 export const accepting = (order: readonly string[], id: string): string[] => [...order.filter((x) => x !== id), id];
 
-/** The user order with one job moved up (-1), down (1) or to the top; at an edge nothing moves. */
-export function moved(order: readonly string[], id: string, by: -1 | 1 | 'top'): string[] {
+/**
+ * The user order with one job moved up (-1), down (1) or to the top, among the jobs of its own priority
+ * only (issue #461: the user order never puts a job ahead of one of higher priority); at an edge of its
+ * priority nothing moves.
+ */
+export function moved(jobs: readonly Job[], id: string, by: -1 | 1 | 'top'): string[] {
+  const order = jobs.map((j) => j.id);
   const from = order.indexOf(id);
-  const to = by === 'top' ? 0 : from + by;
-  if (from < 0 || to < 0 || to >= order.length || to === from) return [...order];
-  const next = order.filter((x) => x !== id);
+  if (from < 0) return order;
+  const level = jobs.filter((j) => j.priority === jobs[from]!.priority).map((j) => j.id);
+  const at = level.indexOf(id);
+  const to = by === 'top' ? 0 : at + by;
+  if (to < 0 || to >= level.length || to === at) return order;
+  const next = level.filter((x) => x !== id);
   next.splice(to, 0, id);
-  return next;
+  const places = new Set(level);
+  return order.map((x) => (places.has(x) ? next.shift()! : x));
 }
