@@ -40,5 +40,6 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.work_removed': { paths: [] },
   'job.cleanup_deferred': {},
   'job.cleaned_up': { deferredAt: 3 },
+  'usage.limits_changed': { from: { soft: 0.7, hard: 0.95 }, to: { soft: 0.6 } },
   'queue.gate_changed': { from: { mode: 'open', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: 0 } },
 };

@@ -7,7 +7,7 @@ import type {
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
-import type { ConnectedAccountProvider } from './types.ts';
+import type { ConnectedAccountProvider, UsageLimitPair } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -177,6 +177,9 @@ export interface UserSettingsRepository {
   /** How many days usage samples are kept (issue #385); absent: never chosen. */
   getHistoryRetentionDays(): number | undefined;
   setHistoryRetentionDays(days: number): void;
+  /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
+  getUsageLimits(): UsageLimitPair | undefined;
+  setUsageLimits(limits: UsageLimitPair): void;
   /** The user's claim holder id (issue #440): made, random, the first time it is asked, then kept. */
   claimHolder(): string;
   /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */

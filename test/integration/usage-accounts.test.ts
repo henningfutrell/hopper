@@ -72,7 +72,7 @@ describe('claude-plan through the composition root', () => {
       { name: 'claude', refreshedAt: expect.any(String), account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
       { name: 'fake' },
     ]);
-    expect(report.limits).toEqual({ soft: 0.7, hard: 0.95 });
+    expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false });
     // The machine's lanes stay open for its other executor; the scripted executor's jobs are capped at 2.
     expect(report.machines).toEqual([{
       machineId: 'local', label: expect.any(String), online: true, maxLanes: 4, usedFrac: 0, cap: 4, band: 'free',

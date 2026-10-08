@@ -74,5 +74,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     recordId: 'f1', decision: 'person', class: 'transient',
   },
   'handoff.closed': { handoffId: 'h1', end: 'run_again', nextJobId: 'j2' },
+  'usage.limits_changed': { from: { soft: 0.7, hard: 0.95 }, to: { soft: 0.6, hard: 0.9 } },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

@@ -22,6 +22,7 @@ const ALL: Record<EventType, true> = {
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
   'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true,
   'job.assessed': true, 'failure.grouped': true, 'failure.resolved': true, 'handoff.opened': true, 'handoff.closed': true,
+  'usage.limits_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 
