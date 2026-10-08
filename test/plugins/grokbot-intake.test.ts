@@ -32,8 +32,8 @@ describe('Grok Bot routine: intake stopped', () => {
   it('posts source.stalled and connected_account.expired', async () => {
     const r = await receiver();
     const listeners: ((e: DomainEvent) => void)[] = [];
-    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, baseMs: 10 });
-    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined });
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
     const send = (e: DomainEvent) => { for (const l of listeners) l(e); };
     send(event('source.stalled', { source: 'github-account', kind: 'github-account', error: 'GitHub refused the token', since: '2026-10-07T20:14:00.000Z' }));
     send(event('connected_account.expired', { provider: 'github', account: 'octo-user', reason: 'GitHub refused the refresh token' }));

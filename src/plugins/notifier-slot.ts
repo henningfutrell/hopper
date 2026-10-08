@@ -5,9 +5,9 @@
 // says needs-setup still runs (grokbot-routine reads its env file at each event). Each is named
 // after its instance.
 import type { Notifier, NotifierEvents } from '../domain/ports.ts';
-import type { InstanceSpec } from '../domain/types.ts';
+import type { InstanceSpec, NotifierAction, NotifierActionOutcome, NotifierStatus } from '../domain/types.ts';
 import type { SlotDeps } from './router-slot.ts';
-import { buildOne, type Built } from './source-slots.ts';
+import { buildOne, instanceStatus, type Built } from './source-slots.ts';
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -39,4 +39,28 @@ export async function stopNotifiers(built: Built<Notifier>[], logger: SlotDeps['
       logger.warn(`hopper: notifier ${b.spec.name} failed to stop: ${message(e)}`);
     }
   }));
+}
+
+/** The actions a running notifier offers (issue #378): the optional members it has. */
+function actionsOf(n: Notifier | undefined): NotifierAction[] {
+  if (!n) return [];
+  return [...(n.test ? ['test' as const] : []), ...(n.sendOpen ? ['send-open' as const] : [])];
+}
+
+/** One notifier in GET /api/plugins: its status and its actions. */
+export function notifierStatus(b: Built<Notifier>): NotifierStatus {
+  return { ...instanceStatus(b), actions: actionsOf(b.instance) };
+}
+
+/** Run a notifier's action by instance name (POST /ui/api/notifiers). Never throws. */
+export async function runNotifierAction(running: Notifier[], name: string, action: NotifierAction): Promise<NotifierActionOutcome> {
+  const n = running.find((x) => x.name === name);
+  if (!n) return { ok: false, code: 'not_found', error: `no running notifier ${name}` };
+  const run = action === 'test' ? n.test?.bind(n) : n.sendOpen?.bind(n);
+  if (!run) return { ok: false, code: 'invalid', error: `notifier ${name} has no ${action} action` };
+  try {
+    return { ok: true, result: await run() };
+  } catch (e) {
+    return { ok: true, result: { ok: false, detail: message(e) } };
+  }
 }

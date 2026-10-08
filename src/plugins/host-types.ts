@@ -3,7 +3,7 @@
 import type { ConfigRecords } from '../domain/ports.ts';
 import type { Clock, EscalationLevel, MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
 import type {
-  AttachedMachine, HostKeyOfferOutcome, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
+  AttachedMachine, HostKeyOfferOutcome, NotifierAction, NotifierActionOutcome, InstanceSpec, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule,
 } from '../domain/types.ts';
 import type { MachineJoin } from './attached-edit.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
@@ -78,6 +78,8 @@ export interface PluginHost {
   startNotifiers(events: NotifierEvents): void;
   /** Stop every started notifier, awaiting in-flight work; none is started after. Once; never throws. */
   stopNotifiers(): Promise<void>;
+  /** POST /ui/api/notifiers (issue #378): a running notifier's action, by instance name. Never throws. */
+  notifierAction(name: string, action: NotifierAction): Promise<NotifierActionOutcome>;
   /** The attached machines the machine-source instances name now, those whose options are valid (design.md "Attached machines", issue #74). */
   targets(): AttachedMachine[];
   /** GET /api/machines/config. Valid after start(). */

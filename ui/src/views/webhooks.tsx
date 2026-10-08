@@ -1,8 +1,9 @@
 // Webhook subscriptions and their deliveries, live. The subscriptions are kept in the database
 // (issue #78); a UI session edits them through POST /ui/api/webhooks (issue #18): add, edit (url,
 // events, active), remove. The hopper keeps no secret (issue #56): a subscription names the WEBHOOK_SECRET_* variable
-// the runtime gives its secret in, and the card says whether the runtime gives it.
-import { KeyRound, Pencil, Plus, Trash2, Webhook } from 'lucide-react';
+// the runtime gives its secret in, and the card says whether the runtime gives it. Send test event
+// (issue #378) posts one signed `webhook.test` and shows the receiver's answer.
+import { KeyRound, Pencil, Plus, Send, Trash2, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Confirm } from '@/components/confirm';
+import { SendAction } from '@/components/send-action';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
@@ -139,6 +141,7 @@ function SubscriptionCard({ sub, authed, send, busy }: {
           {authed && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="outline" disabled={!can} onClick={() => setEditing(true)}><Pencil />Edit</Button>
+              <SendAction label="Send test event" icon={Send} path="/ui/api/webhooks/test" body={{ name: sub.name }} disabled={!can} />
               <Confirm title={`Remove ${sub.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: sub.name }, `${sub.name}: removed`)}
                 description="The subscription is deleted and its pending deliveries fail.">
                 <Button size="sm" variant="destructive" disabled={!can}><Trash2 />Remove</Button>

@@ -41,7 +41,7 @@ async function start(env: Record<string, string> = {}, plugins?: Record<string, 
   const db = tempDbPath();
   cleanup = db.cleanup;
   const secrets: Secrets = {};
-  t = await startTestApp({ dbPath: db.dbPath, env, secrets, seams: { grokbotBaseMs: 20 }, ...(plugins === undefined ? {} : { plugins }) });
+  t = await startTestApp({ dbPath: db.dbPath, env, secrets, seams: { grokbot: { baseMs: 20 } }, ...(plugins === undefined ? {} : { plugins }) });
   return { a: t, secrets };
 }
 const setHook = (secrets: Secrets, url: string, key = 'sekrit', names = { url: 'GROKBOT_WEBHOOK_URL', key: 'GROKBOT_WEBHOOK_KEY' }) => {
@@ -178,7 +178,7 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     expect(readConfig(a.dbPath, 'plugins')).not.toHaveProperty('notifiers');
     expect((await a.api('GET', '/api/plugins')).body.notifiers.instances).toEqual([{
       instance: { name: 'grok-bot', plugin: 'grokbot-routine' },
-      detection: expect.objectContaining({ status: 'needs-setup' }), active: 'grokbot-routine',
+      detection: expect.objectContaining({ status: 'needs-setup' }), active: 'grokbot-routine', actions: ['test', 'send-open'],
     }]);
     setHook(secrets, r.url);
     await humanQuestion(a);
@@ -203,7 +203,7 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     setHook(secrets, r.url, 'other-key', { url: 'OTHER_URL', key: 'OTHER_KEY' });
     setHook(secrets, r.url, 'wrong-key');
     t = await startTestApp({
-      dbPath: db.dbPath, secrets, seams: { grokbotBaseMs: 20 },
+      dbPath: db.dbPath, secrets, seams: { grokbot: { baseMs: 20 } },
       plugins: { notifiers: [{ name: 'grok-bot', plugin: 'grokbot-routine', options: { urlEnv: 'OTHER_URL', keyEnv: 'OTHER_KEY' } }] },
     });
     await humanQuestion(t);
@@ -227,7 +227,7 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     cleanup = db.cleanup;
     const secrets: Secrets = {};
     setHook(secrets, r.url);
-    t = await startTestApp({ dbPath: db.dbPath, secrets, seams: { grokbotBaseMs: 20 }, plugins: { notifiers: [
+    t = await startTestApp({ dbPath: db.dbPath, secrets, seams: { grokbot: { baseMs: 20 } }, plugins: { notifiers: [
       { name: 'nope', plugin: 'no-such-notifier' },
       { name: 'bad', plugin: 'grokbot-routine', options: { urlEnv: 42 } },
       { name: 'grok-bot', plugin: 'grokbot-routine' },
@@ -250,3 +250,4 @@ describe('Grok Bot as the grokbot-routine notifier plugin (phase 5, slice 5)', (
     expect(r.hits).toHaveLength(0);
   });
 });
+
