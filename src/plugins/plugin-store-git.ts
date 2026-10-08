@@ -25,8 +25,15 @@ export interface StoreMirror {
 
 export function createStoreMirror(dir: string): StoreMirror {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: sshCommand(process.env, homedir(), existsSync) };
-  const git = async (...args: string[]): Promise<string> =>
-    (await exec('git', ['--git-dir', dir, ...args], { env, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })).stdout;
+  // A failure says what git said, not the whole command line (the plugin store card shows it).
+  const git = async (...args: string[]): Promise<string> => {
+    try {
+      return (await exec('git', ['--git-dir', dir, ...args], { env, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })).stdout;
+    } catch (e) {
+      const said = String((e as { stderr?: unknown }).stderr ?? '').trim().replace(/\s*\n\s*/g, ' ');
+      throw new Error(said || (e instanceof Error ? e.message : String(e)), { cause: e });
+    }
+  };
   const maybe = (p: Promise<string>): Promise<string | undefined> => p.then((s) => s, () => undefined);
 
   return {
@@ -35,7 +42,8 @@ export function createStoreMirror(dir: string): StoreMirror {
         mkdirSync(dir, { recursive: true });
         await git('init', '--bare', '--quiet');
       }
-      await git('fetch', '--quiet', '--force', '--no-tags', repo, `+HEAD:${HEAD_REF}`);
+      // `--`: a repository is never read as an option (an instance admin names it in the UI, issue #445).
+      await git('fetch', '--quiet', '--force', '--no-tags', '--', repo, `+HEAD:${HEAD_REF}`);
       return (await git('rev-parse', `${HEAD_REF}^{commit}`)).trim();
     },
     show(commit, path) {

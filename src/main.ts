@@ -14,7 +14,7 @@ import { createServer } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
-import { createPluginStore, installedDirOf } from './plugins/plugin-store.ts';
+import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -55,6 +55,8 @@ export interface AppSeams extends UserSeams {
   pluginsConfigIntervalMs?: number;
   /** One user's seams over the shared ones (each user its own job source, in tests). */
   perUser?(userId: string): UserSeams;
+  /** The default plugin store (issue #445); default DEFAULT_PLUGIN_STORE; null: none. */
+  pluginStoreDefault?: string | null;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
@@ -77,7 +79,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -135,9 +137,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // The plugin store (issue #75): the instance's. Its installs are kept in the database (issue #93) and
   // unpacked into the work dir, scratch, so they are restored before any user's host loads plugins;
   // every user's host rescans after an install or removal.
+  // Where the plugin store is, is an instance setting (issue #445): HOPPER_PLUGIN_STORE only seeds it.
+  const defaultRepo = seams.pluginStoreDefault === undefined ? DEFAULT_PLUGIN_STORE : seams.pluginStoreDefault ?? undefined;
   const pluginStore = createPluginStore({
-    ...(config.pluginStore ? { repo: config.pluginStore } : {}), ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}),
-    workDir, installs: instance.settings, builtinIds: new Set(BUILTIN_PLUGINS.map((p) => p.id)), plugins: runtimes.plugins,
+    ...(config.pluginStore ? { seed: config.pluginStore } : {}), ...(defaultRepo ? { defaultRepo } : {}),
+    ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}),
+    workDir, settings: instance.settings, builtinIds: new Set(BUILTIN_PLUGINS.map((p) => p.id)), plugins: runtimes.plugins,
     events: runtimes.events, clock, logger,
   });
   await pluginStore.restore();

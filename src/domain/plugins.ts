@@ -215,24 +215,38 @@ export interface PluginStoreEntry {
 }
 
 /**
- * GET /api/plugin-store. `unavailable`: no plugin store (`reason`). `error`: the last
- * read failed (`error`); `commit`, `checkedAt` and the plugins are the last good read's.
+ * Where the plugin store is (issue #445), an instance setting: the default plugin store, none, or a git
+ * repository (URL or path) an instance admin named. Never set: the default plugin store.
+ */
+export type PluginStoreSource = { kind: 'default' } | { kind: 'none' } | { kind: 'repo'; repo: string };
+
+/**
+ * GET /api/plugin-store. `unavailable`: no plugin store (`reason`); the store installs are still listed,
+ * so they can be removed. `error`: the last read failed (`error`); `commit`, `checkedAt` and the plugins
+ * are the last good read's — of the plugin store `from` when that read was of another one.
  */
 export interface PluginStoreReport {
   state: 'unavailable' | 'ready' | 'error';
   reason?: string;
   error?: string;
-  /** HOPPER_PLUGIN_STORE. */
+  /** The plugin store setting's kind. */
+  source: PluginStoreSource['kind'];
+  /** The plugin store in use: the setting's repository or the default plugin store; absent: none. */
   repo?: string;
+  /** The default plugin store; absent: this build has none. */
+  defaultRepo?: string;
+  /** The plugin store the catalogue shown was read from, when it is not `repo`: nothing installs from it. */
+  from?: string;
   /** The store's head the catalogue was read at. */
   commit?: string;
   checkedAt?: string;
   plugins: PluginStoreEntry[];
 }
 
-/** POST /ui/api/plugin-store. `install` also updates a store install to the store's head. */
+/** POST /ui/api/plugin-store. `install` also updates a store install to the store's head; `source` sets the plugin store and reads it. */
 export type PluginStoreEdit =
   | { action: 'refresh' }
+  | { action: 'source'; source: PluginStoreSource }
   | { action: 'install'; id: string }
   | { action: 'remove'; id: string };
 

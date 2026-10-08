@@ -1,8 +1,9 @@
 # Publishes the GitHub Pages site (issue #382): `npm run build:site` builds site/ into site/dist with the
 # UI's own stylesheet and story (site/vite.config.ts), with scripts/get.sh beside it as install.sh, so
 # `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs, and compose.yaml, the
-# container install, which pulls the published image (issues #119, #125). Published from `stable` (issue
-# #423): the site, its install script and its compose.yaml are the stable version's.
+# container install, which pulls the published image (issues #119, #125), and plugin-store.git, the default
+# plugin store (issue #445). Published from `stable` (issue #423): the site, its install script, its
+# compose.yaml and the default plugin store are the stable version's.
 name: pages
 
 on:
@@ -10,6 +11,9 @@ on:
     branches: [stable]
     paths:
       - site/**
+      - plugin-store.yaml
+      - examples/plugins/**
+      - scripts/build-plugin-store.sh
       - ui/src/index.css
       - ui/src/app/story.ts
       - docs/screenshots/**
@@ -42,6 +46,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build:site
+      # The default plugin store (issue #445), a git repository served as plain files beside the site,
+      # built on top of the history already published there so older store installs still restore.
+      - run: bash scripts/build-plugin-store.sh . site/dist/plugin-store.git https://henningfutrell.github.io/hopper/plugin-store.git
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

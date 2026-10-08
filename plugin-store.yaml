@@ -1,5 +1,6 @@
-# The store catalogue of this repository as a plugin store (docs/design.md "Plugin store"):
-# set HOPPER_PLUGIN_STORE to this repository and the UI offers these example plugins.
+# The store catalogue of this repository as a plugin store (docs/design.md "Plugin store"). The Pages site
+# publishes it with examples/plugins/ as the default plugin store (scripts/build-plugin-store.sh); setting
+# this repository as the plugin store in the UI offers the same example plugins.
 version: 1
 plugins:
   - id: canned-answer
