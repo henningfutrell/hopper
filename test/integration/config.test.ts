@@ -42,9 +42,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       tickMs: 2000,
       softLimit: 0.7,
       hardLimit: 0.95,
-      burnWindowHours: 18,
-      resetAwarePlacement: true,
-      criticalPriority: 100,
+      pacing: { burnWindowMs: 18 * 3_600_000, resetAwarePlacement: true, criticalPriority: 100 },
       routerCheapBoost: 10,
       webhookBaseMs: 1000,
       laneIdleGraceMs: 5000,
@@ -86,7 +84,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     });
     expect(c).toEqual({
       host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
-      softLimit: 0.5, hardLimit: 0.9, burnWindowHours: 0, resetAwarePlacement: false, criticalPriority: 0, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
+      softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
@@ -168,6 +166,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(() => loadConfig({ ...DB, HOPPER_SOFT_LIMIT: '0.9', HOPPER_HARD_LIMIT: '0.8' })).toThrow('SOFT_LIMIT');
     expect(() => loadConfig({ ...DB, HOPPER_CRITICAL_PRIORITY: '101' })).toThrow('HOPPER_CRITICAL_PRIORITY');
     expect(() => loadConfig({ ...DB, HOPPER_BURN_WINDOW_HOURS: '-1' })).toThrow('HOPPER_BURN_WINDOW_HOURS');
-    expect(loadConfig({ ...DB, HOPPER_BURN_WINDOW_HOURS: '1.5' }).burnWindowHours).toBe(1.5);
+    expect(loadConfig({ ...DB, HOPPER_BURN_WINDOW_HOURS: '1.5' }).pacing.burnWindowMs).toBe(5_400_000);
   });
 });

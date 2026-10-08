@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Each account's weekly usage is now used up before it resets instead of a reserve being thrown away: in the last hours before a week resets, the hopper keeps starting jobs until that week is really spent. Jobs go first to the account whose week resets soonest with the most left, and a job at the highest priority can run one lane over the limit when every lane is busy. Each of the three can be turned off.
 - A script or assistant working for you can now accept, reject or rerun jobs, order the queue, switch the queue gate, and answer, close or dismiss questions from the hopper command line, without signing in as you in a browser. It goes through the same checks and leaves the same history as doing it in the UI.
 - Claude jobs that run at the same time in one git repository no longer step on each other: each job gets its own copy of the repository, started from the latest default branch, and the lane shows where each job works. The copy is cleared away when the job ends, unless it holds work that was not pushed. You can turn this off per Claude executor.
 - The Grok Bot routine's setup on the Plugins page now names the exact settings your account needs.

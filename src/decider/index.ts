@@ -3,7 +3,7 @@ import { assign, effectivePriority, nativeHold, order } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
-import { laneEffect } from './usage.ts';
+import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -19,8 +19,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
 
   const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));
   const states: MachineState[] = machines.map((machine) => {
-    const { usedFrac, cap, band, ignored, executors } = laneEffect(machine, inputs.usage, policy);
+    const { usedFrac, cap, band, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at);
     for (const r of ignored) reasons.push(`ignored usage reading ${r.source}: limit ${r.limit} is not positive`);
+    for (const r of burning) {
+      reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): not throttling`);
+    }
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
     reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})`);
@@ -28,11 +31,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
-      machine, cap, band, usedFrac, assigned: 0,
+      machine, cap, band, usedFrac, assigned: 0, overCap: 0,
       occupied: held.length,
       freeIdle: mine.filter((l) => l.state === 'idle').sort((a, b) => a.id.localeCompare(b.id)),
       executors: new Map(executors.map((e) => [e.executor, {
         cap: e.cap, band: e.band, usedFrac: e.usedFrac, assigned: 0,
+        pressure: policy.pacing?.resetAwarePlacement ? placementPressure(machine.id, inputs.usage, inputs.at, policy, e.executor) : 0,
         occupied: held.filter((l) => l.jobId !== undefined && executorOf.get(l.jobId) === e.executor).map((l) => l.id),
       }])),
     };
@@ -68,7 +72,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy);
 
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {

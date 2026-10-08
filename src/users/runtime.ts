@@ -320,7 +320,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     usage: () => [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
-      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
+      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing,
     },
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions,

@@ -9,7 +9,9 @@ const H = 3_600_000;
 const inHours = (h: number): string => new Date(Date.parse(NOW) + h * H).toISOString();
 const week = (used: number, resetInHours: number, machineId?: string) =>
   reading(used, 100, { window: 'week', resetsAt: inHours(resetInHours), ...(machineId ? { machineId } : {}) });
-const burning = { ...policy, burnWindowMs: 18 * H };
+const pacing = { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 };
+const paced = (over: Partial<typeof pacing>) => ({ ...policy, pacing: { ...pacing, ...over } });
+const burning = paced({ burnWindowMs: 18 * H });
 
 describe('burn window (issue #373)', () => {
   it('a week window inside its burn window and not spent stops throttling: the job starts', () => {
@@ -25,7 +27,7 @@ describe('burn window (issue #373)', () => {
   });
 
   it('a burn window of 0 is off', () => {
-    const d = decide(inputs({ usage: [week(96, 10)], waiting: [job('a')], policy: { ...policy, burnWindowMs: 0 } }), 'd1');
+    const d = decide(inputs({ usage: [week(96, 10)], waiting: [job('a')], policy: paced({}) }), 'd1');
     expect(d.start).toEqual([]);
   });
 
@@ -63,14 +65,14 @@ describe('reset-aware placement (issue #373)', () => {
   it('prefers the machine whose account has the most week headroom per hour left before its reset', () => {
     const usage = [week(20, 96, 'a-far'), week(20, 11, 'b-near')];
     const lanes = [busy(1, 'x', { machineId: 'b-near' }), busy(2, 'y', { machineId: 'b-near' })];
-    const d = decide(inputs({ machines, usage, lanes, waiting: [job('j')], policy: { ...policy, resetAwarePlacement: true } }), 'd1');
+    const d = decide(inputs({ machines, usage, lanes, waiting: [job('j')], policy: paced({ resetAwarePlacement: true }) }), 'd1');
     expect(d.start[0]).toMatchObject({ jobId: 'j', machineId: 'b-near' });
     expect(d.start[0]!.reason).toContain('placement pressure');
   });
 
   it('a burning window counts its headroom to 100%', () => {
-    const usage = [week(96, 10, 'a-far'), week(50, 96, 'b-near')];
-    const p = { ...policy, resetAwarePlacement: true, burnWindowMs: 18 * H };
+    const usage = [week(96, 10, 'a-far'), week(60, 96, 'b-near')];
+    const p = paced({ resetAwarePlacement: true, burnWindowMs: 18 * H });
     const d = decide(inputs({ machines, usage, waiting: [job('j')], policy: p }), 'd1');
     expect(d.start[0]).toMatchObject({ jobId: 'j', machineId: 'a-far' });
   });
@@ -85,7 +87,7 @@ describe('reset-aware placement (issue #373)', () => {
 
 describe('critical priority (issue #373)', () => {
   const full = [busy(1, 'x'), busy(2, 'y'), busy(3, 'z'), busy(4, 'w')];
-  const critical = { ...policy, criticalPriority: 100 };
+  const critical = paced({ criticalPriority: 100 });
 
   it('a critical job that fits nowhere takes one lane over the cap; the lane plan keeps it', () => {
     const d = decide(inputs({ lanes: full, waiting: [job('c', { priority: 100 })], policy: critical }), 'd1');
