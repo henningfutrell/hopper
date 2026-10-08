@@ -295,7 +295,7 @@ describe('the instance\'s parts are shared', () => {
 describe('a user added with the operator CLI', () => {
   it('a running daemon starts its runtime when it next reads the users', async () => {
     const a = await start();
-    const r = runCli(['user', 'add', 'Cy'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: () => {}, err: () => {} });
+    const r = await runCli(['user', 'add', 'Cy'], { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: () => {}, err: () => {} });
     expect(r).toBe(0);
     await waitFor(() => a.app.users().some((u) => u.id === 'cy') && (() => { try { return a.user('cy'); } catch { return undefined; } })());
     expect((await a.api('GET', '/api/jobs', undefined, session(await a.login('cy')))).status).toBe(200);

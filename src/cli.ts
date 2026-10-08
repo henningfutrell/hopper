@@ -13,6 +13,8 @@
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
+//   hopper job|queue|question … [--user <id>] [--url <hopper URL>]
+//                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -30,6 +32,7 @@ import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
+import { OPERATOR_COMMANDS, OPERATOR_USAGE, OperatorRefusal, runOperatorAction } from './cli-operator.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -53,11 +56,15 @@ usage:
                                                      the machine joins with <hopper URL>#<code>, as Add machine's line does
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
+${OPERATOR_USAGE}
   hopper help                                        this text
+
+The job, queue and question commands act on the running daemon, through its own checks and events, as the UI
+does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
 
 records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config and ssh-key names the user (default: the one user, while there is one).
+--user <id> on config, ssh-key and the job, queue and question commands names the user (default: the one user, while there is one).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
@@ -204,14 +211,16 @@ function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', ...OPERATOR_COMMANDS];
+
 /** Run one command; the exit code. */
-export function runCli(argv: string[], io: CliIo): number {
+export async function runCli(argv: string[], io: CliIo): Promise<number> {
   const [command, ...rest] = argv;
   if (command === 'help' || command === '--help' || command === '-h') {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command !== 'config' && command !== 'users' && command !== 'user' && command !== 'join-code' && command !== 'ssh-key') {
+  if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;
   }
@@ -233,18 +242,22 @@ export function runCli(argv: string[], io: CliIo): number {
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
     else if (command === 'ssh-key') sshKey(store, rest, io);
-    else config(store, rest, io);
+    else if (command === 'config') config(store, rest, io);
+    else {
+      const instance = store;
+      await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
+    }
     return 0;
   } catch (e) {
     io.err(`hopper: ${e instanceof Error ? e.message : String(e)}\n`);
-    return e instanceof CliError ? 2 : 1;
+    return e instanceof CliError || e instanceof OperatorRefusal ? 2 : 1;
   } finally {
     store?.close();
   }
 }
 
 if (import.meta.main) {
-  process.exitCode = runCli(process.argv.slice(2), {
+  process.exitCode = await runCli(process.argv.slice(2), {
     env: process.env,
     stdin: () => readFileSync(0, 'utf8'),
     out: (t) => process.stdout.write(t),

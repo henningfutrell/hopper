@@ -418,7 +418,7 @@ authentication".
 |---|---|
 | UI, `/` | the board, questions, machines, usage, plugins, routing, webhooks, events, decisions |
 | API reference, `/docs/` | every route, with parameters and bodies; try them from the page. The book icon in the UI's top bar opens it |
-| `hopper help` | the operator CLI: config records as JSON, login codes, users, password hashes |
+| `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun`, `hopper queue order\|gate`, `hopper question answer\|close\|dismiss` |
 | `node src/main.ts --help` | the daemon's settings, with defaults |
 
 The API: `GET /api/*` reads, free on loopback and with a UI session (`x-hopper-session`) from

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A script or assistant working for you can now accept, reject or rerun jobs, order the queue, switch the queue gate, and answer, close or dismiss questions from the hopper command line, without signing in as you in a browser. It goes through the same checks and leaves the same history as doing it in the UI.
 - Claude jobs that run at the same time in one git repository no longer step on each other: each job gets its own copy of the repository, started from the latest default branch, and the lane shows where each job works. The copy is cleared away when the job ends, unless it holds work that was not pushed. You can turn this off per Claude executor.
 - The Grok Bot routine's setup on the Plugins page now names the exact settings your account needs.
 - Jobs that have not started yet now follow your settings as they are now: change a source's model or a repository's folder, or add a routing rule, and waiting jobs pick it up within one sync — no need to reject them and take them again. Anything you changed on a job yourself stays as you set it. Jobs that have already started keep the settings they started with.
