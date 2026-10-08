@@ -1,4 +1,4 @@
-// Run again, the sync loop's half (issues #313, #354): an ended job's source gives its item back
+// Run again, the sync loop's half (issues #313, #354; a rejected job too, issue #387): an ended job's source gives its item back
 // (`JobSource.rerun` — on GitHub a closed issue is reopened and the end labels go) and the new job is
 // queued in the same step (`SourceHost.rerun`), so the user sees it at once. The sync loop (sync.ts)
 // hands it the job's report chain.
@@ -27,7 +27,7 @@ export function createRerun(c: RerunContext) {
   function check(jobId: string): RerunResult | JobSource {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-    if (job.status !== 'failed' && job.status !== 'finished') return conflict(jobId, `it is ${job.status}, not failed or finished`);
+    if (job.status !== 'failed' && job.status !== 'finished' && job.status !== 'rejected') return conflict(jobId, `it is ${job.status}, not failed, finished or rejected`);
     const source = c.sourceOf(job);
     if (!source) return conflict(jobId, 'its source is not running');
     if (!source.rerun) return conflict(jobId, `its source ${source.name} cannot run an item again`);

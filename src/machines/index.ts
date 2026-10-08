@@ -3,7 +3,7 @@
 // ssh targets ~/.ssh/config names.
 import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
-import type { DiskReading } from '../domain/types.ts';
+import type { DiskReading } from '../domain/machines.ts';
 import { diskAt } from './disk.ts';
 
 /** How often this machine's herdr session is checked, and started when it is not running. */

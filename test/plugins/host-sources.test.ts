@@ -77,7 +77,7 @@ function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[
 const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
 
 describe('detection of the job-source plugins', () => {
-  const appFile = { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test', authors: ['owner'] } }] };
+  const appFile = { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test' } }] };
   const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
 
   it('github-app: needs-setup with the create-github-app command while the key variable is unset; available once it is set', async () => {
@@ -93,10 +93,10 @@ describe('detection of the job-source plugins', () => {
     expect(detection(b)).toMatchObject({ status: 'available' });
   });
 
-  it.each(['github-app'])('%s in the catalogue: needs-setup until the plugins config names its authors (no default allowlist)', async (id) => {
+  it.each(['github-app'])('%s in the catalogue: needs-setup until its app is set up; no authors to name (issue #387)', async (id) => {
     const { host } = start({ kit: fakeKit() });
     await host.start();
-    expect(catalogue(host, id)!.detection).toMatchObject({ status: 'needs-setup', reason: expect.stringMatching(/authors/) });
+    expect(catalogue(host, id)!.detection).toMatchObject({ status: 'needs-setup', reason: 'no GitHub App configured' });
   });
 });
 
@@ -105,8 +105,8 @@ describe('job-source instances', () => {
     const { host } = start({ file: {
       version: 1,
       jobSources: [
-        { name: 'github', plugin: 'github-account', options: { enabled: true, authors: ['owner'] } },
-        { name: 'github-app', plugin: 'github-app', options: { authors: ['owner'] } },
+        { name: 'github', plugin: 'github-account', options: { enabled: true } },
+        { name: 'github-app', plugin: 'github-app', options: { label: 'hopper' } },
       ],
     } });
     await host.start();
@@ -118,7 +118,7 @@ describe('job-source instances', () => {
     const gh = built[0]!.instance!;
     expect('source' in gh && gh.pollMs).toBe(60_000);
     expect(host.report().jobSources.instances).toEqual([
-      { instance: { name: 'github', plugin: 'github-account', options: { enabled: true, authors: ['owner'] } }, detection: { status: 'available', detail: expect.any(String) }, active: 'github-account' },
+      { instance: { name: 'github', plugin: 'github-account', options: { enabled: true } }, detection: { status: 'available', detail: expect.any(String) }, active: 'github-account' },
       { instance: expect.objectContaining({ name: 'github-app' }), detection: expect.objectContaining({ status: 'needs-setup' }), active: 'github-app' },
     ]);
   });
@@ -157,17 +157,17 @@ describe('job-source instances', () => {
 
   it('live (issue #356): an added source is built at once, an unchanged one kept, a changed one rebuilt, a removed one goes; the host says so', async () => {
     const seen: string[][] = [];
-    const { host, config } = start({ file: { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { authors: ['owner'] } }] }, kit: fakeKit(), jobSourcesChanged: (b) => seen.push(b.map((x) => x.spec.name)) });
+    const { host, config } = start({ file: { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { label: 'hopper' } }] }, kit: fakeKit(), jobSourcesChanged: (b) => seen.push(b.map((x) => x.spec.name)) });
     await host.start();
     const [one] = host.jobSources();
-    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { authors: ['owner'] } }, { name: 'two', plugin: 'github-account', options: { authors: ['owner'] } }] });
+    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { label: 'hopper' } }, { name: 'two', plugin: 'github-account', options: { label: 'hopper' } }] });
     await host.reload();
     expect(host.jobSources().map((b) => b.spec.name)).toEqual(['one', 'two']);
     expect(host.jobSources()[0]).toBe(one);
     expect(host.report().jobSources).toEqual({ instances: [expect.objectContaining({ active: 'github-account' }), expect.objectContaining({ active: 'github-account' })] });
-    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { authors: ['someone'] } }] });
+    config.set(PLUGINS, { version: 1, jobSources: [{ name: 'one', plugin: 'github-account', options: { label: 'work' } }] });
     await host.reload();
-    expect(host.jobSources().map((b) => b.spec.options)).toEqual([{ authors: ['someone'] }]);
+    expect(host.jobSources().map((b) => b.spec.options)).toEqual([{ label: 'work' }]);
     expect(host.jobSources()[0]).not.toBe(one);
     expect(seen).toEqual([['one', 'two'], ['one']]);
   });

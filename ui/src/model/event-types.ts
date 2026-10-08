@@ -14,6 +14,7 @@ const ALL: Record<EventType, true> = {
   'job.claimed_by_operator': true,
   'job.rerun': true,
   'job.dismissed': true,
+  'job.unassigned': true, 'job.reassigned': true,
   'job.work_kept': true,
   'source.stalled': true, 'connected_account.expired': true,
 };

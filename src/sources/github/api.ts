@@ -11,6 +11,8 @@ export interface GitHubIssue {
   title: string;
   body: string;
   author: string;
+  /** The logins the issue is assigned to (issue #387: intake is by label and assignee). */
+  assignees: string[];
   labels: string[];
   state: 'open' | 'closed';
   updatedAt: string;
@@ -63,6 +65,8 @@ export interface GitHubApi {
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;
   addLabels(repo: string, number: number, labels: string[]): Promise<void>;
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
+  /** When the issue was last assigned to `login` (its newest `assigned` event), or undefined when never (issue #387). */
+  assignedAt(repo: string, number: number, login: string): Promise<string | undefined>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */
   reopenIssue(repo: string, number: number): Promise<void>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */

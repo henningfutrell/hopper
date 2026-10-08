@@ -7,7 +7,7 @@
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
-import type { DiskReading } from '../domain/types.ts';
+import type { DiskReading } from '../domain/machines.ts';
 import { diskOf } from '../machines/disk.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 

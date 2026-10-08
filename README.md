@@ -151,10 +151,9 @@ GitHub becomes admin** — sign in yourself before anyone else reaches the UI. E
 GitHub realm's role rules grant (Settings → Sign-in: usernames, or numeric ids;
 [docs/sign-in.md](docs/sign-in.md#github)).
 
-Signing in connects your GitHub: your issues labelled `hopper` become your jobs — the ones you opened
-(set `authors` on the `github-account` source in **Plugins** to change that), in the repositories you
-choose under **Sources → GitHub account** — and your jobs act as you on GitHub, with the app marked on
-what they do. Until you choose at least one repository, no job comes in.
+Signing in connects your GitHub: issues labelled `hopper` and assigned to you become your jobs —
+whoever opened them, in the repositories you choose under **Sources → GitHub account** — and your jobs
+act as you on GitHub, with the app marked on what they do. Until you choose at least one repository, no job comes in.
 
 The hopper's app reaches only the repositories it is **installed** on. It is public: install it on your
 account or any organization you administer at https://github.com/apps/hopper-qm/installations/new, and
@@ -200,8 +199,8 @@ hopper only. One App, one key, one hopper.
 2. Install it: open the printed install link and pick the repositories it may read. Those are the
    only repositories it takes jobs from.
 3. In the UI, Settings → Plugins → Job sources, open the `github-app` instance and set `appId` and
-   `slug` (marked "runs a command"; an admin edits them), with `authors` as in
-   [Give it jobs](#give-it-jobs).
+   `slug` (marked "runs a command"; an admin edits them). It takes the issues assigned to your connected
+   GitHub account, as in [Give it jobs](#give-it-jobs).
 4. `systemctl --user restart hopper` (or the container), so the daemon reads the key. The
    `github-app` source then takes the jobs of the repositories the App is installed on.
 
@@ -216,20 +215,23 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 ## Give it jobs
 
 1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
-   repositories in **Sources → GitHub account**: your own issues in them are taken. To take other
-   people's, or to use [your own App](#a-github-app-of-your-own), open the instance in Settings →
-   Plugins → Job sources — `github-account` or `github-app` (your App) — and set its options:
+   repositories in **Sources → GitHub account**: the issues in them that are labelled `hopper` and
+   assigned to you are taken, whoever opened them. To tune a source, or to use
+   [your own App](#a-github-app-of-your-own), open the instance in Settings → Plugins → Job sources —
+   `github-account` or `github-app` (your App) — and set its options:
 
    | option | |
    |---|---|
-   | `authors` | whose issues are accepted (`your-github-login`); required for `github-app`, the connected account alone when empty on `github-account` |
    | `repos` | on `github-app`, an optional allowlist inside the App's installations (`your-org/your-repo`); `github-account` takes the job repositories chosen in Sources |
    | `repoPaths` | where each repo's jobs run (`your-org/your-repo` → `/srv/checkouts/your-repo`) |
 
    A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
    home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
    (`systemctl --user restart hopper`, or the container).
-2. Label an issue `hopper`. The issue body is the job's prompt.
+2. Label an issue `hopper` and assign it to yourself. The issue body is the job's prompt. Unassign it
+   and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
+   **Reject** a waiting job (Queue, or the Overview's Waiting list), with a reason if you like: the issue is
+   left alone and not taken again until it is assigned to you again, or you run it again.
 3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
    `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
    `hopper:low` set the priority; `hopper:backburner` parks an issue.

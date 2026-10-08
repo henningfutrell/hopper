@@ -9,8 +9,8 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, User } from '../domain/types.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, isRerunnable } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, isRerunnable, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User } from '../domain/types.ts';
+import { rejectionOf } from '../domain/rejection.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -253,6 +253,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
+      rejections: (keys) => new Map(keys.flatMap((k) => { const r = rejectionOf(store.jobs.getBySourceKey(k)); return r ? [[k, r] as const] : []; })),
       connectedAccounts,
     },
     machineContext: { executors: () => executorNames(), target },

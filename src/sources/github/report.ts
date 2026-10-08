@@ -3,8 +3,10 @@
 // comment): claimed → `hopper:claimed`; finished → `hopper:done` — only a job whose work reached
 // its completion is finished (completion.ts, issues #171, #187), and the merge of its pull request
 // closes the issue, never the hopper (with completion `pull-request` the issue stays open until a
-// person merges); failed → `hopper:failed`; rejected at the queue gate → `hopper:rejected` (issue
-// #159), the issue left open; cancelled → the claim label goes. Returns the source state unchanged.
+// person merges); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
+// else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
+// away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
+// written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
 // Run again (`takeBack`, issues #313, #354) is the one other issue write: a closed issue is reopened, the
 // end labels go and the source label comes back, so the new job runs and finishes against it. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
@@ -62,10 +64,8 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       await settle(ctx, repo, number, [LABEL_FAILED]);
       return state;
     case 'cancelled':
-      await settle(ctx, repo, number, []);
-      return state;
     case 'rejected':
-      await settle(ctx, repo, number, [LABEL_REJECTED]);
+      await settle(ctx, repo, number, []);
       return state;
   }
 }

@@ -4,7 +4,7 @@
 // probe; a client target's by its client, in its `/release` answer.
 import { statfsSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { DiskReading } from '../domain/types.ts';
+import type { DiskReading } from '../domain/machines.ts';
 
 const GIB = 1024 ** 3;
 /** Low below this share free, or below LOW_BYTES free, whichever comes first. */

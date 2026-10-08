@@ -1,7 +1,8 @@
 // In-memory GitHub implementing GitHubApi, plus helpers for tests to play the owner (or a
 // stranger) on the other side: create issues, reply, open a pull request that closes one on merge,
 // close (by hand or by merging a pull request),
-// unlabel, delete, set project items.
+// unlabel, assign and unassign, delete, set project items. An issue is assigned to the fake's own login unless
+// `assignees` says otherwise (issue #387: intake is by label and assignee).
 // Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
 
@@ -11,7 +12,10 @@ import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubP
 type Method = keyof GitHubApi;
 
 export interface FakeGitHub extends GitHubApi {
-  createIssue(o: { repo: string; title?: string; body?: string; author?: string; labels?: string[] }): GitHubIssue;
+  createIssue(o: { repo: string; title?: string; body?: string; author?: string; assignees?: string[]; labels?: string[] }): GitHubIssue;
+  /** Assign `login`, recorded as an `assigned` event at `at` (default the fake's clock). */
+  assign(repo: string, number: number, login: string, at?: string): void;
+  unassign(repo: string, number: number, login: string): void;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
   /**
    * Closed by hand or by a commit, no pull request: as `reason` (default completed), at `at` (default the
@@ -48,6 +52,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   let installed = [...(o.app?.installedRepos ?? [])];
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
+  const assigned = new Map<string, { login: string; at: string }[]>();
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
   const opened = new Map<string, OpenPullRequest[]>();
@@ -66,7 +71,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     if (!i) throw notFound(`${repo}#${n}`);
     return i;
   };
-  const copy = (i: GitHubIssue): GitHubIssue => ({ ...i, labels: [...i.labels] });
+  const copy = (i: GitHubIssue): GitHubIssue => ({ ...i, assignees: [...i.assignees], labels: [...i.labels] });
   const enter = (method: Method, args: unknown[]) => {
     calls.push({ method, args });
     const err = failures.get(method)?.shift();
@@ -105,6 +110,11 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       i.labels = i.labels.filter((l) => !names.includes(l));
     },
+    async assignedAt(repo, n, login) {
+      enter('assignedAt', [repo, n, login]);
+      find(repo, n);
+      return (assigned.get(key(repo, n)) ?? []).filter((e) => e.login.toLowerCase() === login.toLowerCase()).map((e) => e.at).sort().at(-1);
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);
@@ -134,14 +144,15 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ...api,
     setInstalledRepos(repos) { installed = [...repos]; },
     calls,
-    createIssue({ repo, title, body, author, labels: ls }) {
+    createIssue({ repo, title, body, author, assignees, labels: ls }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;
       for (const l of ls ?? []) repoLabels(repo).add(l);
       const issue: GitHubIssue = {
         repo, number, url: `https://github.com/${repo}/issues/${number}`, title: title ?? `Issue ${number}`,
-        body: body ?? `Do thing ${number}.`, author: author ?? human, labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
+        body: body ?? `Do thing ${number}.`, author: author ?? human, assignees: [...(assignees ?? [human])], labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
       };
       issues.set(key(repo, number), issue);
+      assigned.set(key(repo, number), issue.assignees.map((login) => ({ login, at: issue.updatedAt })));
       return copy(issue);
     },
     addComment(repo, n, author, body) {
@@ -169,6 +180,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       closers.set(key(repo, n), pr);
       return { ...pr };
     },
+    assign(repo, n, login, at) {
+      const i = find(repo, n);
+      if (!i.assignees.includes(login)) i.assignees.push(login);
+      assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: at ?? new Date().toISOString() }]);
+    },
+    unassign(repo, n, login) { const i = find(repo, n); i.assignees = i.assignees.filter((l) => l !== login); },
     deleteIssue(repo, n) { find(repo, n); issues.delete(key(repo, n)); },
     addLabel(repo, n, label) { repoLabels(repo).add(label); const i = find(repo, n); if (!i.labels.includes(label)) i.labels.push(label); },
     removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); },

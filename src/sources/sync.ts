@@ -7,9 +7,10 @@
 // plugins config live (issue #356, `setSources`): a new one is synced at once; a changed one (same name)
 // is used from its next sync, for its jobs too; a removed one pulls nothing more, is paused as REMOVED,
 // and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
+// A started job whose item is no longer assigned to its account is flagged, never ended (issue #387).
 
 import { SourceError } from '../domain/ports.ts';
-import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
+import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
@@ -46,6 +47,8 @@ interface SyncFlags {
   claimReported?: boolean;
   finalReported?: boolean;
   cancelReason?: string;
+  /** Set while a started job's item is not assigned to the account it was taken for (issue #387). */
+  unassignedAt?: string;
   permanentErrors?: Array<{ kind: string; message: string }>;
 }
 
@@ -169,15 +172,34 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const jobsOf = (slot: Slot) => store.jobs.list().filter((j) => j.source?.source === slot.source.name);
 
+  /**
+   * A cancel ends the job. Assignment drift (issue #387) only marks it: `unassigned` sets `unassignedAt`
+   * and records `job.unassigned` once; `reassigned` clears the mark and records `job.reassigned`. The user
+   * decides whether to stop a flagged job.
+   */
+  function applySignal(job: Job, s: SourceSignal) {
+    const flags = flagsOf(job);
+    const assignee = job.source?.assignee ?? '';
+    if (s.kind === 'cancel') {
+      write(job.id, { ...flags, cancelReason: s.reason });
+      host.cancel(job.id, s.reason);
+    } else if (s.kind === 'unassigned' && flags.unassignedAt === undefined) {
+      write(job.id, { ...flags, unassignedAt: clock.now().toISOString() });
+      store.events.append({ type: 'job.unassigned', jobId: job.id, data: { assignee } });
+    } else if (s.kind === 'reassigned' && flags.unassignedAt !== undefined) {
+      const { unassignedAt: _gone, ...rest } = flags;
+      write(job.id, rest);
+      store.events.append({ type: 'job.reassigned', jobId: job.id, data: { assignee } });
+    }
+  }
+
   async function applySignals(slot: Slot, active: Job[]) {
     const ids = new Set(active.map((j) => j.id));
     for (const s of await slot.source.check(active)) {
       if (!ids.has(s.jobId)) continue;
       await enqueue(s.jobId, async () => {
         const job = store.jobs.get(s.jobId);
-        if (!job || isTerminal(job)) return;
-        write(job.id, { ...flagsOf(job), cancelReason: s.reason });
-        host.cancel(job.id, s.reason);
+        if (job && !isTerminal(job)) applySignal(job, s);
       });
     }
   }

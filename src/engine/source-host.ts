@@ -16,6 +16,7 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     source: source.name, kind: source.kind, key: item.key, url: item.url, title: item.title, author: item.author,
     ...(item.repo !== undefined ? { repo: item.repo } : {}),
     ...(item.number !== undefined ? { number: item.number } : {}),
+    ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
   };
 }
 

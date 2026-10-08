@@ -339,6 +339,8 @@ export interface SourceItem {
   /** Environment for the job's process, e.g. HOPPER_ISSUE_URL, HOPPER_REPO, HOPPER_ISSUE_NUMBER. */
   env: Record<string, string>;
   author: string;
+  /** The login the item was taken for (issue #387: an issue assigned to the user's connected account). */
+  assignee?: string;
   priority: number;
   /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
   priorityReason: string;
@@ -361,8 +363,16 @@ export interface SourceItem {
   invalid?: string;
 }
 
-/** What a source observed about a job it owns. Questions are answered in the UI, never through a source. */
-export type SourceSignal = { kind: 'cancel'; jobId: JobId; reason: string };
+/**
+ * What a source observed about a job it owns. Questions are answered in the UI, never through a source.
+ * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for —
+ * the job is flagged, and the user decides whether to stop it; `reassigned`: a flagged job's item is
+ * assigned to it again.
+ */
+export type SourceSignal =
+  | { kind: 'cancel'; jobId: JobId; reason: string }
+  | { kind: 'unassigned'; jobId: JobId }
+  | { kind: 'reassigned'; jobId: JobId };
 
 /**
  * What happened to a job, reported back to its source: the claim and the end. Progress and questions
@@ -387,9 +397,9 @@ export interface JobSource {
    * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
    */
   paused?(): string | undefined;
-  /** Eligible open items (allowlisted author, labelled, not already done/failed). */
+  /** Eligible open items (labelled, assigned to the user's account, not already done/failed/rejected). */
   discover(): Promise<SourceItem[]>;
-  /** Signals for this source's non-terminal jobs: cancellations. */
+  /** Signals for this source's non-terminal jobs: cancellations and assignment drift. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
    * Tell the source what happened. Returns the WHOLE new `job.sourceState.source` object

@@ -28,18 +28,18 @@ describe('GitHub source: which hopper takes an issue', () => {
 });
 
 describe('GitHub source: rejected', () => {
-  it('report rejected: claimed → hopper:rejected; the issue stays open', async () => {
+  it('report rejected: the claim label goes, no hopper:rejected (issue #387); the issue stays open', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     const job = jobForIssue(1);
     await source.report({ kind: 'claimed', job });
     await source.report({ kind: 'rejected', job: { ...job, status: 'rejected' } });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:rejected']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
   });
 
-  it('a rejected issue is not taken while the label is set; removing it takes it in again', async () => {
+  it('an issue labelled hopper:rejected before issue #387 is not taken while the label is set; removing it takes it in again', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:rejected'] });
     expect(await source.discover()).toEqual([]);
