@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebhookDispatcher, verify } from '../../src/webhooks/index.ts';
-import type { WebhookDelivery } from '../../src/domain/types.ts';
+import type { WebhookDelivery, WebhookSubscription } from '../../src/domain/types.ts';
 import { createFakeStore, type FakeStore } from './fakeStore.ts';
 import { startReceiver, type Receiver, type Responder } from './receiver.ts';
 
@@ -26,13 +26,19 @@ afterEach(async () => {
   receiver = undefined;
 });
 
-/** The runtime's secrets (issue #56): what the dispatcher reads a subscription's secret from, at each delivery. */
+/** The secrets the subscriptions sign with, by the name each names: read at each delivery, through `secretOf` (issue #451). */
 let secrets: Record<string, string>;
+/** A subscription's secret, or why there is none: what the user runtime gives the dispatcher (src/webhooks/secrets.ts). */
+const secretOf = (sub: WebhookSubscription): string => {
+  const value = secrets[sub.secretEnv ?? ''];
+  if (!value) throw new Error(`${sub.secretEnv} is not set`);
+  return value;
+};
 
 function setup(responder: Responder, o: { timeoutMs?: number; maxAttempts?: number } = {}) {
   fake = createFakeStore();
   secrets = { HOOK_SECRET: 'shh' };
-  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, secret: (name) => secrets[name], baseMs: 20, sweepMs: 10, ...o });
+  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, secretOf, baseMs: 20, sweepMs: 10, ...o });
   const updates: WebhookDelivery[] = [];
   dispatcher.onDeliveryUpdated((d) => updates.push(d));
   stopFn = () => dispatcher.stop();
@@ -143,7 +149,7 @@ describe('webhook dispatcher', () => {
     expect(verify('rotated', b!.headers['x-hopper-timestamp'] as string, b!.body, b!.headers['x-hopper-signature'] as string)).toBe(true);
   });
 
-  it('a secret the runtime does not provide: nothing is sent; the delivery retries, naming the variable', async () => {
+  it('no secret for the subscription: nothing is sent; the delivery retries with why', async () => {
     const s = setup(ok);
     receiver = await s.receiverP;
     fake.subscribe({ url: receiver.url, events: ['*'], secretEnv: 'UNSET_SECRET' });

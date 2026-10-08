@@ -1,25 +1,27 @@
 // Webhook subscriptions are rows in the store (issue #78), which the UI session may edit
-// (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with the
-// variable its secret is in and whether the runtime gives it; never a secret), the deliveries.
+// (POST /ui/api/webhooks, src/http/ui/): these routes only read — the subscriptions (each with when its
+// stored secret last changed, or the runtime variable one from before names, and why it has no secret to
+// sign with, if so; never a secret, issue #451), the deliveries.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { UserStore } from '../domain/ports.ts';
+import type { WebhookSubscription } from '../domain/types.ts';
 import { parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
-/** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
-export type SecretProblem = (secretEnv: string) => string | undefined;
+/** Why the subscription has no secret to sign with (src/webhooks/secrets.ts), or undefined. Never the secret. */
+export type SecretProblem = (sub: WebhookSubscription) => string | undefined;
 
 export const deliveriesQuery = z.object({
   subscriptionId: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
 });
 
-/** GET /api/webhooks: every subscription, with why the runtime gives no secret for it (if so). */
+/** GET /api/webhooks: every subscription, with why it has no secret to sign with (if so). */
 export function webhooksView(store: Pick<UserStore, 'webhooks'>, secretProblem: SecretProblem) {
   return {
     subscriptions: store.webhooks.list().map((sub) => {
-      const problem = secretProblem(sub.secretEnv);
+      const problem = secretProblem(sub);
       return problem === undefined ? sub : { ...sub, secretProblem: problem };
     }),
   };

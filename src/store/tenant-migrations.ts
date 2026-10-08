@@ -204,6 +204,10 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   nameTheOnlyMachine,
   // 18: a work tree is set per machine (issue #361): the paths that named no machine move onto machines and routing rules.
   machineWorkTrees,
+  // 19: a webhook subscription's signing secret, sealed (src/secrets/sealer.ts), and when it last changed (issue #451).
+  // A subscription from before keeps `secret_env` until one is stored. Columns only: the build before runs on it.
+  `ALTER TABLE webhooks ADD COLUMN secret_sealed TEXT;
+   ALTER TABLE webhooks ADD COLUMN secret_changed_at TEXT`,
 ];
 
 /** A user schema's version once migrated. */

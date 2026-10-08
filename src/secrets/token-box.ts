@@ -18,7 +18,8 @@ export interface TokenBox {
   open(sealed: string): string;
 }
 
-const decodeKey = (key: string): Buffer | undefined => {
+/** The 32 bytes of a key given as 64 hex digits or base64, or undefined. The sealer reads the same key (issue #451). */
+export const decodeKey = (key: string): Buffer | undefined => {
   const bytes = /^[0-9a-fA-F]{64}$/.test(key) ? Buffer.from(key, 'hex')
     : /^[A-Za-z0-9+/_-]+={0,2}$/.test(key) ? Buffer.from(key, key.includes('-') || key.includes('_') ? 'base64url' : 'base64') : undefined;
   return bytes?.length === 32 ? bytes : undefined;

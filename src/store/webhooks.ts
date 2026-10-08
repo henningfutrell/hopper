@@ -2,10 +2,14 @@ import type { WebhookRepository } from '../domain/ports.ts';
 import type { WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
+// The sealed secret (issue #451) is never read into a subscription: only sealedSecret() answers it.
 const toSub = (r: Record<string, unknown>): WebhookSubscription => ({
-  id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events), secretEnv: r.secret_env as string,
+  id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events),
+  ...(r.secret_env ? { secretEnv: r.secret_env as string } : {}),
+  ...(r.secret_changed_at ? { secretChangedAt: r.secret_changed_at as string } : {}),
   active: r.active === 1, createdAt: r.created_at as string,
 });
+const COLUMNS = 'id, name, url, events, secret_env, secret_changed_at, active, created_at';
 
 export function createWebhookRepository(c: StoreContext): WebhookRepository {
   const getDelivery = (id: string): WebhookDelivery | undefined => {
@@ -25,24 +29,34 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
     add(input) {
       const id = c.idGen();
       const added = c.db.run(
-        `INSERT INTO webhooks (id, name, url, events, secret_env, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO webhooks (id, name, url, events, active, created_at) VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (name) DO NOTHING`,
-        id, input.name, input.url, JSON.stringify(input.events), input.secretEnv, input.active ? 1 : 0, c.clock.now().toISOString()).changes > 0;
-      return added ? toSub(c.db.get('SELECT * FROM webhooks WHERE id = ?', id)!) : undefined;
+        id, input.name, input.url, JSON.stringify(input.events), input.active ? 1 : 0, c.clock.now().toISOString()).changes > 0;
+      return added ? toSub(c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id)!) : undefined;
     },
     update(id, patch) {
-      const cur = c.db.get('SELECT * FROM webhooks WHERE id = ?', id);
+      const cur = c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id);
       if (!cur) return undefined;
       const next = { ...toSub(cur), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) };
       c.db.run('UPDATE webhooks SET url = ?, events = ?, active = ? WHERE id = ?', next.url, JSON.stringify(next.events), next.active ? 1 : 0, id);
-      return toSub(c.db.get('SELECT * FROM webhooks WHERE id = ?', id)!);
+      return toSub(c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id)!);
+    },
+    setSecret(id, sealed, changedAt) {
+      // Stored in the hopper from now on: the runtime variable of a subscription from before is no longer read.
+      const set = c.db.run("UPDATE webhooks SET secret_sealed = ?, secret_changed_at = ?, secret_env = '' WHERE id = ?",
+        sealed, changedAt ?? c.clock.now().toISOString(), id).changes > 0;
+      return set ? toSub(c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id)!) : undefined;
+    },
+    sealedSecret(id) {
+      const r = c.db.get('SELECT secret_sealed FROM webhooks WHERE id = ?', id);
+      return (r?.secret_sealed as string | null | undefined) ?? undefined;
     },
     get(id) {
-      const r = c.db.get('SELECT * FROM webhooks WHERE id = ?', id);
+      const r = c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id);
       return r ? toSub(r) : undefined;
     },
     list() {
-      return c.db.all('SELECT * FROM webhooks ORDER BY seq').map(toSub);
+      return c.db.all(`SELECT ${COLUMNS} FROM webhooks ORDER BY seq`).map(toSub);
     },
     delete(id) {
       return c.tx(() => {

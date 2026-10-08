@@ -2,6 +2,7 @@
 // the real HTTP server and the real store: each user's jobs, questions, events, plugins and webhooks
 // are their own; an admin adds a user and hands over its login link; a loopback read without a session
 // reads a user's work only while the hopper has one user; an admin reads the totals, never a user's work.
+import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import type { DomainEvent, Job, Question } from '../../src/domain/types.ts';
@@ -53,12 +54,12 @@ async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
 
 describe('two users of one hopper', () => {
   it('each sees only their own jobs, questions, events and webhooks', async () => {
-    const a = await start();
+    const a = await start({ secrets: { HOPPER_TOKEN_KEY: randomBytes(32).toString('hex') } });
     const { admin, bea } = await twoUsers(a);
     const adminJob = await a.pull(hard, { title: 'admin work' });
     const adminQuestion = await a.waitForQuestion(adminJob.id, (q) => q.tier === 'human');
     const beaJob = await a.pull(sleep, { title: 'bea work' }, 'bea');
-    expect((await a.ui('/ui/api/webhooks', { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secretEnv: 'WEBHOOK_SECRET_A' }, { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/webhooks', { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secret: 'admin-secret-0123456789abcdef0123456789' }, { token: admin })).status).toBe(200);
 
     const read = async <T>(path: string, token: string): Promise<T> => (await a.api<T>('GET', path, undefined, session(token))).body;
     expect((await read<{ jobs: Job[] }>('/api/jobs', admin)).jobs.map((j) => j.id)).toEqual([adminJob.id]);
@@ -204,20 +205,21 @@ describe('a user\'s runtime', () => {
     expect((await a.waitForStatusOf(job.id, 'finished', 'bea')).status).toBe('finished');
   });
 
-  it('a user added later reads secrets only under its prefix', async () => {
-    const secrets: Record<string, string | undefined> = { WEBHOOK_SECRET_A: 'admin-secret' };
-    const a = await start({ secrets });
+  it('each user keeps their own webhook secrets, sealed in their own schema (issue #451)', async () => {
+    const a = await start({ secrets: { HOPPER_TOKEN_KEY: randomBytes(32).toString('hex') } });
     const admin = await a.login();
     const bea = await a.addUser('Bea');
     const beaToken = await a.loginWith(mintLoginCode(a.app.instance, { now: () => new Date() }, bea.id));
-    const hook = { action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secretEnv: 'WEBHOOK_SECRET_A' };
-    expect((await a.ui('/ui/api/webhooks', hook, { token: admin })).status).toBe(200);
-    expect((await a.ui('/ui/api/webhooks', hook, { token: beaToken })).status).toBe(200);
+    const hook = (secret: string) => ({ action: 'add', name: 'hook', url: 'http://127.0.0.1:9/hook', events: ['*'], secret });
+    expect((await a.ui('/ui/api/webhooks', hook('admin-secret-0123456789abcdef0123456789'), { token: admin })).status).toBe(200);
+    expect((await a.ui('/ui/api/webhooks', hook('bea-secret-0123456789abcdef0123456789ab'), { token: beaToken })).status).toBe(200);
     const subs = async (token: string) => (await a.api('GET', '/api/webhooks', undefined, session(token))).body.subscriptions;
-    expect((await subs(admin))[0].secretProblem).toBeUndefined();
-    expect((await subs(beaToken))[0].secretProblem).toEqual(expect.stringContaining('HOPPER_USER_BEA_WEBHOOK_SECRET_A'));
-    secrets.HOPPER_USER_BEA_WEBHOOK_SECRET_A = 'bea-secret';
-    expect((await subs(beaToken))[0].secretProblem).toBeUndefined();
+    for (const token of [admin, beaToken]) {
+      const [sub] = await subs(token);
+      expect(sub.secretProblem).toBeUndefined();
+      expect(sub.secretChangedAt).toEqual(expect.any(String));
+    }
+    expect(JSON.stringify(await subs(beaToken))).not.toContain('admin-secret');
   });
 
   it('the processes of a user added later find the CLIs\' config in its own work dir; admin\'s environment is unchanged', async () => {

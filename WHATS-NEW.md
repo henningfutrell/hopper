@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A webhook's signing secret is now set in Settings → Webhooks: type in the receiver's, or let the hopper make one and copy it once. The hopper keeps it locked in its database and never shows it again; Replace secret and Rotate secret change it, and the next delivery uses the new one. Webhooks added before keep working as they are until you replace their secret.
 - Each machine now has its own work folder, set when you edit it in the Machines view. The hopper makes the folder and fetches or clones each job's repository into it, so a new machine or a fresh agent box needs no setup by hand. A job is never sent to a machine whose folder cannot be used: it waits for one that can, and the Machines view says why.
 - Questions now go to your Claude escalation levels on a machine you added with Add machine, so a hopper whose only machine joined that way gets its questions answered instead of always asking you. Settings shows a level that cannot run now, and why.
 - Use answer on a question now sends that answer to the job straight away: one click, no separate Send. The card says it was sent, or why not with a Retry button.
