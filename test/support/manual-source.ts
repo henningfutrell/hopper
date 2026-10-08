@@ -19,7 +19,7 @@ export function manualItem(o: Partial<SourceItem> = {}): SourceItem {
   const key = o.key ?? `manual:${++counter}:${Date.now()}`;
   return {
     key, url: `https://example.invalid/${encodeURIComponent(key)}`, title: `item ${key}`, body: 'body', prompt: 'prompt',
-    env: {}, author: 'owner', priority: 50, priorityReason: 'default', cwd: '/tmp', labels: [],
+    env: {}, author: 'owner', priority: 50, priorityReason: 'default', labels: [],
     executor: 'scripted', ...o,
   };
 }

@@ -17,7 +17,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, diskText, kindOf, mayAddThisMachine, reservedText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -80,7 +80,11 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
         {reservedText(m) && <Fact label="reserved lanes">{reservedText(m)}</Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
+        {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
       </dl>
+      {m.workTreeProblem && (
+        <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
+      )}
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       {editing && kind.kind === 'attached' && ctx.config && (
         <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />

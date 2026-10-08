@@ -72,16 +72,18 @@ describe('routingRulesProblem (the plugins.yaml `routing:` schema)', () => {
     expect(routingRulesProblem([{ name: 'all', set: { executor: 'test' } }])).toBeUndefined();
     expect(routingRulesProblem([])).toBeUndefined();
   });
-  // Issue #324: a rule routes a repository to a machine and a path there.
-  it('accepts a work tree alone or with a machine: an absolute path or one under ~', () => {
-    expect(routingRulesProblem([{ name: 'app', match: { repo: 'owner/app' }, set: { workTree: '~/code/app' } }])).toBeUndefined();
+  // Issue #324: a rule routes a repository to a machine and a path there. Issue #361: a path is one
+  // machine's, so a work tree comes with the machine it is on.
+  it('accepts a work tree with its machine: an absolute path or one under ~', () => {
+    expect(routingRulesProblem([{ name: 'app', match: { repo: 'owner/app' }, set: { machine: 'laptop', workTree: '~/code/app' } }])).toBeUndefined();
     expect(routingRulesProblem([{ name: 'app', match: { repo: 'owner/app' }, set: { machine: 'laptop', workTree: '/srv/app' } }])).toBeUndefined();
   });
   it.each([
     ['a lane (never a routing target)', [{ name: 'x', match: {}, set: { lane: 'local/lane-1' } }], /lane/],
     ['a lane match', [{ name: 'x', match: { lane: 'a' }, set: { priority: 1 } }], /lane/],
     ['nothing to set', [{ name: 'x', match: { label: 'a' }, set: {} }], /set at least one of machine, executor, priority, workTree/],
-    ['a relative work tree', [{ name: 'x', match: {}, set: { workTree: 'code/app' } }], /workTree must be an absolute path or start with ~/],
+    ['a relative work tree', [{ name: 'x', match: {}, set: { machine: 'laptop', workTree: 'code/app' } }], /workTree must be an absolute path or start with ~/],
+    ['a work tree with no machine (issue #361)', [{ name: 'x', match: {}, set: { workTree: '~/code/app' } }], /a work tree is one machine's: set the machine too/],
     ['a priority out of range', [{ name: 'x', match: {}, set: { priority: 101 } }], /priority/],
     ['no name', [{ name: '', match: {}, set: { priority: 1 } }], /name/],
     ['a name twice', [...ok, ...ok], /urgent named twice/],

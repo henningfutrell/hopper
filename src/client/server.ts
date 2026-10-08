@@ -10,9 +10,10 @@
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
-// removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`;
-// `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs the same way an escalation level's
-// claude in print mode (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
+// removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
+// {workTree}` makes the machine's work tree under this user's home, `{workTreeProblem}` when it cannot (issue #361).
+// `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
+// mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -24,6 +25,7 @@ import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
+import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -95,7 +97,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -124,8 +126,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   nonce = v.nonce;
   if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey') return script(path, body, answer);
-  if (path === '/credential') return credential(body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree') return fixed(path, body, answer);
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
@@ -138,21 +139,17 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   answer(200, await herdr(o, parsed.args, timeoutMs));
 }
 
-/** A signed reap or survey: its argv from the body, run with no shell of the request's. */
-async function script(path: '/reap' | '/survey', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+/**
+ * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
+ * body; a running job's credential (issue #441), its content on stdin; or the machine's work tree made (issue #361).
+ */
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
-  const argv = scriptArgvOf(path, parsed);
-  if (typeof argv === 'string') return answer(400, { error: argv });
-  answer(200, await runArgv(argv, SCRIPT_TIMEOUT_MS));
-}
-
-/** A signed credential of a running job (issue #441): kept by the fixed script, its content on stdin. */
-async function credential(body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
-  let call: ReturnType<typeof credentialOf>;
-  try { call = credentialOf(JSON.parse(body)); } catch { return answer(400, { error: 'body must be JSON' }); }
+  if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
+  const call = path === '/credential' ? credentialOf(parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  answer(200, await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
+  answer(200, Array.isArray(call) ? await runArgv(call, SCRIPT_TIMEOUT_MS) : await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
 }
 
 function runArgv(argv: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {

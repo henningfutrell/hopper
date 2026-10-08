@@ -88,6 +88,15 @@ export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/c
   return clientCall<ClientAnswer>(t, path, body, 60000);
 }
 
+/**
+ * Makes the client target's work tree there (issue #361): what is wrong with it, or nothing. Only a
+ * client running the hopper's release has the call (`/work-tree`); rejects as any call does.
+ */
+export async function clientWorkTree(t: ClientTransport, workTree: string): Promise<{ workTreeProblem?: string }> {
+  const { workTreeProblem } = await clientCall<{ workTreeProblem?: unknown }>(t, '/work-tree', { workTree }, 15000);
+  return typeof workTreeProblem === 'string' ? { workTreeProblem } : {};
+}
+
 /** Loads a client release onto the client target; it restarts to run it. */
 export async function loadClientRelease(t: ClientTransport, release: ClientRelease): Promise<void> {
   await clientCall(t, '/load', { release }, 30000);

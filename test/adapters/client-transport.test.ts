@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mintToken } from '../../src/client/signature.ts';
-import { ClientError, clientClaude } from '../../src/executors/client.ts';
+import { ClientError, clientClaude, clientWorkTree } from '../../src/executors/client.ts';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
@@ -122,3 +122,16 @@ describe('herdr over a client target', () => {
     await expect(hopper('short').exec(['status', 'server'])).rejects.toMatchObject({ code: 'client', message: expect.stringMatching(/at least 43/) });
   });
 });
+
+// Issue #361: the hopper makes a client target's work tree through its client, when it probes it.
+describe('a client target\'s work tree', () => {
+  it('made where it names; one that cannot be made says why; the client\'s home itself is refused', async () => {
+    await serve();
+    const t = client!.transport(TOKEN);
+    expect(await clientWorkTree(t, join(dir, 'trees', 'a'))).toEqual({});
+    expect(existsSync(join(dir, 'trees', 'a'))).toBe(true);
+    expect((await clientWorkTree(t, '/proc/hopper-no-such/tree')).workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
+    expect(await clientWorkTree(t, '~')).toEqual({ workTreeProblem: 'its work tree ~ is its home or above it: a job runs only in a directory below the home' });
+  });
+});
+

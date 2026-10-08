@@ -98,7 +98,7 @@ let issues written by you become jobs.</div>
 <ol class="steps">
 <li><p><strong>Pick a repository.</strong> Use a repository on GitHub you can write to. Jobs run on the
 machines attached to the hopper (the container is not one): add one with <strong>Add machine</strong> in the
-UI's <strong>Machines</strong> view, and keep a clone of the repository there.</p></li>
+UI's <strong>Machines</strong> view. The hopper clones the repository there for each job.</p></li>
 <li><p><strong>Choose it for jobs.</strong> In the UI, open <strong>Sources</strong>, and under
 <strong>GitHub account</strong> tick the repository and press <strong>Save</strong>. The hopper takes jobs only
 from the repositories chosen there, and only from issues you opened. Nothing to restart. If the repository is
@@ -107,9 +107,9 @@ organization (<a href="https://github.com/apps/hopper-qm/installations/new">gith
 where you pick the repositories it may reach. It asks to read and write issues, pull requests and
 contents, and to read metadata; nothing else.</p>
 <figure class="shot"><img src="../docs/screenshots/sources.webp" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button." width="1440" height="820" loading="lazy" decoding="async"><figcaption>Sources → GitHub account: tick the repositories, then Save.</figcaption></figure>
-<p class="note">Where a job runs: the machine's work tree, unless you set <code>repoPaths</code> on the
-<code>github-account</code> source (Settings → Plugins → Job sources), for example
-<code>{ your-login/your-repo: ~/your-repo }</code>.</p></li>
+<p class="note">Where a job runs: its machine's work tree, <code>~/hopper-jobs</code> unless you set another
+with <strong>Edit</strong> in the <strong>Machines</strong> view. The hopper makes it, and fetches or clones the
+repository in it before each job.</p></li>
 <li><p><strong>Create the <code>hopper</code> label</strong> in the repository, once: on GitHub (Issues →
 Labels → New label), or with the GitHub CLI on your own computer:</p>
 <div class="cmd"><pre>gh label create hopper -R your-login/your-repo</pre><button type="button" data-copy="gh label create hopper -R your-login/your-repo">Copy</button></div></li>
@@ -131,11 +131,10 @@ The issue's labels show where it is:</p>
 </ol>
 <details>
 <summary>Installed on the machine itself? Its first step</summary>
-<p>Jobs run on this machine. Keep a clone of the repository here (for example
-<code>git clone https://github.com/your-login/your-repo ~/your-repo</code>), then choose the repository in
-<strong>Sources</strong> as above, and set <code>repoPaths</code> to
-<code>{ your-login/your-repo: ~/your-repo }</code> on the <code>github-account</code> source (Settings →
-Plugins → Job sources) so its jobs run in that clone.</p>
+<p>Jobs run on this machine, in its work tree. Choose the repository in <strong>Sources</strong> as above. To
+work in a clone you already have (for example <code>~/your-repo</code>), set this machine's work tree to the
+folder that holds it with <strong>Edit</strong> in the <strong>Machines</strong> view: the hopper fetches that
+clone instead of making another.</p>
 </details>
 <p>That is the whole loop. From here, label any issue <code>hopper</code> to hand it over. <code>hopper:high</code>
 and <code>hopper:low</code> change its priority; <code>hopper:backburner</code> keeps it waiting.</p>
@@ -316,7 +315,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
 <tr><td>A job fails with <code>… is PowerShell, and the hopper needs a POSIX shell</code></td><td>The machine is a Windows computer whose jobs open in PowerShell. Give its hopper session Git Bash as the shell: <a href="https://github.com/henningfutrell/hopper#a-computer-or-a-sandbox-box-one-line">A Windows computer</a>.</td></tr>
-<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of
 <code>hopper</code> commands.</p>
@@ -343,7 +342,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start hopper-herdr hopper</code>.</td></tr>
 <tr><td>The UI does not open, or asks you to sign in</td><td>Open <code>http://localhost:4790/</code> and sign in with GitHub. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
 <tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: it is assigned to you; its repository is chosen under <strong>Sources</strong> → <strong>GitHub account</strong>; the label is exactly <code>hopper</code>. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused, and why: <em>not connected</em> or <em>sign-in expired</em> means sign in with GitHub again.</td></tr>
-<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Still stuck? <a href="https://github.com/henningfutrell/hopper/issues">Open an issue</a> with the message you see.</p>
 

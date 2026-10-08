@@ -17,6 +17,7 @@ import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
+import { machineWorkTrees } from './migration-machine-work-trees.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -201,6 +202,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noAuthors,
   // 17: a claude-cli level or claude-plan source that names no machine names the one that can run claude, where one alone can (issue #442).
   nameTheOnlyMachine,
+  // 18: a work tree is set per machine (issue #361): the paths that named no machine move onto machines and routing rules.
+  machineWorkTrees,
 ];
 
 /** A user schema's version once migrated. */

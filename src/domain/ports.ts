@@ -423,11 +423,8 @@ export interface SourceItem {
   priority: number;
   /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
   priorityReason: string;
-  /** The job's own work tree: its repository's path (`repoPaths`). Absent: the machine's, then `defaultCwd` (issue #324). */
-  cwd?: string;
-  /** The source's default work tree: the job's when neither it nor its machine names one (issue #324). Absent: the executor's. */
-  defaultCwd?: string;
   labels: string[];
+  /** Its GitHub repository (`owner/name`) when it has one: a job's is fetched or cloned in its work tree (issue #361). */
   repo?: string;
   number?: number;
   /** Executor for the job (from source config), and an optional model. */

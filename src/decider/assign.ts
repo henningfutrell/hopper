@@ -50,6 +50,12 @@ export function pinOf(job: Job): string | undefined {
  */
 export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low === true && job.pendingAnswer === undefined;
 
+/**
+ * A machine whose work tree cannot be made usable takes no new job (issue #361): the job waits for one
+ * that can, never fails there. A job resuming there returns to the pane it holds.
+ */
+export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTreeProblem !== undefined && job.pendingAnswer === undefined;
+
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
@@ -70,7 +76,11 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
     if (known.length === 0) {
       return `no machine that runs executor ${executor} has its home known yet: ${running.map((m) => m.id).join(', ')} ${running.length > 1 ? 'have' : 'has'} not answered a probe`;
     }
-    if (known.every((m) => diskHolds(m, job))) return `disk low on ${known.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+    if (known.every((m) => workTreeHolds(m, job))) {
+      return `no machine running executor ${executor} has a usable work tree: ${known.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
+    }
+    const usable = known.filter((m) => !workTreeHolds(m, job));
+    if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
     return undefined;
   }
   const pinned = machines.find((m) => m.id === pin);
@@ -78,6 +88,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
+  if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
 }
@@ -155,6 +166,7 @@ function roomForJob(s: MachineState, job: Job): number {
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+    && !workTreeHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }
 

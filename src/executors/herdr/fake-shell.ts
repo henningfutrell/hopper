@@ -21,10 +21,15 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
   if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
-  // A job worktree command: `cd 'work tree' && if …`, its outcome two printf words.
-  const worktree = /^cd '([^']*)' && if .*printf 'hopper-job-%s-%s\\n' worktree/.exec(command);
+  // A job worktree command (job-worktree.ts): `cd 'work tree' && { o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,
+  // its outcome two printf words: made in a repository's top, else checkout when the job names a repository
+  // (issue #361); none with job worktrees off.
+  const worktree = /^cd '([^']*)' && \{ o=\$\(sh -c '.*' hopper-worktree '[^']*' '[^']*' '([^']*)' '[^']*' '([01])'/s.exec(command);
   if (worktree) {
-    const outcome = !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
+    const [, tree, repo, on] = worktree;
+    const top = (o.repositories ?? []).includes(tree!);
+    const found = top ? 'made' : repo ? 'checkout' : 'none';
+    const outcome = on !== '1' || found === 'none' ? 'none' : o.worktreeFails ? 'unmade' : found;
     return { lines: [...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`] };
   }
   // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell

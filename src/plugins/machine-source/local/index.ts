@@ -2,7 +2,7 @@
 // lanes are stored under it). `lanes` is the lane count — a lane has no options of its own.
 // `executors`, when given, narrows what runs here (issue #58: a `command` job goes to its target only).
 // `session`, when given, is the herdr session its jobs run in, which the hopper starts when it is not
-// running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' default work tree (issue #324).
+// running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' work tree (issues #324, #361).
 // `reservedLanes`: lanes kept for jobs pinned to it (issue #372).
 // `diskLowBelowGiB` / `diskLowBelowPercent`: when its disk is low and it takes no new job (issue #410).
 // `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410).
@@ -40,12 +40,11 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
     async detect() { return { status: 'available' }; },
     create: (ctx, o) => createLocalMachineSource({
       id: ctx.instanceName, maxLanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
-      diskLow: () => diskLowOf(o), sweep: () => sweepOf(o),
+      diskLow: () => diskLowOf(o), sweep: () => sweepOf(o), logger: ctx.logger,
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,
       ...(o.session ? {
         session: o.session,
         ensureSession: () => start(o.session!, ctx.userEnv),
-        logger: ctx.logger,
       } : {}),
     }),
   };
