@@ -23,7 +23,8 @@ import { mintJoinCode } from '../../machines/join-code.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
-import { answerBody, intakeActionBody, rejectBody, sourceParams } from './job-bodies.ts';
+import { answerBody, rejectBody } from './job-bodies.ts';
+import { registerSourceIntakeRoutes } from './source-intake.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
 
@@ -201,11 +202,6 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
-  app.post('/ui/api/sources/:name/intake', operator, async (req) => {
-    const r = await o.tenant(req).registry.intakeAction(parseWith(sourceParams, req.params).name, parseWith(intakeActionBody, req.body));
-    if (r.ok) return r.result;
-    throw new HttpError(r.reason === 'not_found' ? 404 : 409, r.message);
-  });
   app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
@@ -293,6 +289,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
+  registerSourceIntakeRoutes(app, { operator, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
