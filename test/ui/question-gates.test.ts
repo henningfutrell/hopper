@@ -37,6 +37,12 @@ describe('gateChain', () => {
     expect(gateChain(report, 6)[0]).toMatchObject({ label: 'active', tone: 'ok', reason: note });
   });
 
+  it('a level whose machine cannot run claude now (offline) cannot run: it escalates, with the reason and how to fix it (#482)', () => {
+    const note = 'machine studio is offline: questions skip this level until it is back.';
+    const report = { escalationLevels: [{ ...base.escalationLevels[0]!, machine: { needsMachine: false, cannotRun: true, note } }] } as unknown as PluginsReport;
+    expect(gateChain(report, 6)[0]).toMatchObject({ name: 'level-1', label: 'cannot run — escalates', tone: 'bad', reason: note });
+  });
+
   it('no levels: questions go straight to the owner', () => {
     const none = { escalationLevels: [] } as unknown as PluginsReport;
     expect(gateChain(none, 6).map((s) => s.stage)).toEqual(['level', 'risk-rules', 'human']);
@@ -45,7 +51,7 @@ describe('gateChain', () => {
 });
 
 describe('escalationMachineChoices (#442)', () => {
-  it('the configured machines claude-cli runs on: this one and the ssh ones', () => {
+  it('the configured machines claude-cli runs on: this one, the ssh ones and the client targets (#482)', () => {
     const report = { instances: [
       { role: 'machine-source', instance: { name: 'here', plugin: 'local' } },
       { role: 'machine-source', instance: { name: 'desk', plugin: 'ssh' } },
@@ -53,7 +59,7 @@ describe('escalationMachineChoices (#442)', () => {
       { role: 'machine-source', instance: { name: 'box', plugin: 'docker' } },
       { role: 'escalation-level', instance: { name: 'level-1', plugin: 'claude-cli' } },
     ] } as unknown as PluginsReport;
-    expect(escalationMachineChoices(report)).toEqual(['here', 'desk']);
+    expect(escalationMachineChoices(report)).toEqual(['here', 'desk', 'phone']);
   });
 });
 

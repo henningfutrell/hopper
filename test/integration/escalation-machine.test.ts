@@ -71,6 +71,15 @@ describe('a level that names no machine (#442)', () => {
   });
 });
 
+describe('a level that names a container target (#482)', () => {
+  it('Settings shows it as needing a machine, with the reason and how to fix it, before any question reaches it', async () => {
+    const a = await start({ machines: [...lanes(2), { name: 'box', plugin: 'docker', options: { docker: 'box', lanes: 1 } }], escalationLevels: [{ ...UNNAMED[0]!, options: { ...UNNAMED[0]!.options, machine: 'box' } }] });
+    expect((await report(a)).escalationLevels[0]!.machine).toEqual({
+      needsMachine: true, note: expect.stringMatching(/^machine box is a container target: claude-cli cannot run there\. Pick another machine for this level in Settings → Question gates/),
+    });
+  });
+});
+
 describe('the default escalation machine (#442)', () => {
   const TWO = [...lanes(2), { name: 'desk', plugin: 'ssh', options: { ssh: 'desk', lanes: 1, executors: ['test'] } }];
 

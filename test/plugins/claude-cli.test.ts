@@ -165,20 +165,20 @@ describe('detection: never a model call', () => {
 
 describe('a level that names no machine (#442)', () => {
   const OTHER: MachineSnapshot = { ...LOCAL, id: 'other', label: 'other' };
-  const PHONE: MachineSnapshot = { id: 'phone', label: 'phone', maxLanes: 1, online: true, executors: [], client: {} };
+  const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
   const unnamed = (machines: MachineSnapshot[], fallback?: string) => claudeCli.create(ctx(machines, fallback), opts(claudeCli, { bin: BIN, timeoutMs: 5000 }));
   const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine' };
 
   it('the only machine that can run claude answers; the reply names it and why', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(ANSWER);
-    expect(await (await unnamed([PHONE, LOCAL])).answer(req(), signal())).toEqual({ ...ANSWER, model: 'claude-opus-resolved', machine: { id: 'local', why: 'the only machine that can run claude' } });
+    expect(await (await unnamed([BOX, LOCAL])).answer(req(), signal())).toEqual({ ...ANSWER, model: 'claude-opus-resolved', machine: { id: 'local', why: 'the only machine that can run claude' } });
     expect(rec().cwd).toBe(dir);
   });
 
-  it('the job\'s machine, where claude can run there; skipped when it is a client target', async () => {
+  it('the job\'s machine, where claude can run there; skipped when it is a container target', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(ANSWER);
     expect(await (await unnamed([LOCAL, OTHER])).answer(req({ jobMachine: 'other' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the job\'s machine' } });
-    expect(await (await unnamed([PHONE, OTHER])).answer(req({ jobMachine: 'phone' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the only machine that can run claude' } });
+    expect(await (await unnamed([BOX, OTHER])).answer(req({ jobMachine: 'box' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the only machine that can run claude' } });
   });
 
   it('the default escalation machine when several can and the job\'s cannot', async () => {
@@ -187,7 +187,7 @@ describe('a level that names no machine (#442)', () => {
   });
 
   it('no machine can: the level does not run, and escalates with the plain reason, never an options-validation text', async () => {
-    const reply = await (await unnamed([PHONE])).answer(req(), signal());
+    const reply = await (await unnamed([BOX])).answer(req(), signal());
     expect(reply).toEqual({ escalate: true, reason: NO_MACHINE_FOR_LEVEL });
     expect(existsSync(out)).toBe(false);
   });
@@ -249,7 +249,6 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   it.each([
     ['not configured', [] as MachineSnapshot[], /machine laptop is not configured/],
     ['offline', [{ ...LAPTOP, online: false }], /machine laptop is offline/],
-    ['a client target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: {} }], /client target/],
     ['a container target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], docker: 'box' }], /container target/],
   ])('a machine %s returns { error }: the question escalates', async (_n, machines, why) => {
     expect(await (await onMachine(machines)).answer(req(), signal())).toEqual({ error: expect.stringMatching(why) });
