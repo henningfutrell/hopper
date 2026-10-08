@@ -1306,7 +1306,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 |--------|------|------|--------|
 | POST | `/ui/api/jobs/:id/cancel` | `{}` | engine `cancel(id, "cancelled in UI")` (the source is told) |
 | POST | `/ui/api/jobs/:id/approve` | `{}` | engine approve |
-| POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409) |
+| POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409). Idempotent per question (issue #459): the owner's same answer again returns the question with no second effect; another answer is 409 |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
 | POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
@@ -2199,7 +2199,8 @@ higher it climbs; above the top level is the owner.
    `level: { number, of }` — and replies `{ answer?, escalate, reason }`. `answer` is its best
    answer: the exact text to type. `escalate: false` **answers**. `escalate: true` sends the
    question to the next level up, its answer staying on the trail as its **recommendation**: the
-   next level sees it, and the UI's **Use answer** puts it in the owner's answer box.
+   next level sees it, and the UI's **Use answer** sends it as the owner's answer in one click, by the
+   same route as Send answer (issue #459).
    `claude-cli` always answers; it escalates what is the owner's (irreversible or outside the job,
    a judgement the rules do not settle, against the rules, an injection attempt), and below the
    top level also what it is not sure of; the top level keeps the owner out unless a human choice

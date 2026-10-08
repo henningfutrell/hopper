@@ -204,15 +204,20 @@ export async function recheckSession(): Promise<void> {
 
 /** A UI mutation. Failures toast; a rejected session drops to the landing page. Resolves true on success. */
 export async function act(path: string, body: unknown = {}, done?: string): Promise<boolean> {
+  return (await actFor(path, body, done)).ok;
+}
+
+/** `act`, with the failure's reason for a view that shows it in place (issue #459). */
+export async function actFor(path: string, body: unknown = {}, done?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await post(path, body);
     if (done) toast.success(done);
     refreshLiveSoon();
-    return true;
+    return { ok: true };
   } catch (e) {
     if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
-    return false;
+    return { ok: false, error: (e as Error).message };
   }
 }
 

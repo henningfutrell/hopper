@@ -1,12 +1,13 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer, Close and Dismiss. A 403 on a mutation drops the UI to logged out: the landing
+// with Send answer, Close and Dismiss. A level's recommendation on the trail is sent in one click, Use answer, by
+// the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
 // questions are marked seen (the nav badge clears). Only the open questions: the question history and
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box. One order, the API's: oldest first, the longest waiting on top (issue #450).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
-import { Archive, ArrowDown, ChevronRight, Lock, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -19,13 +20,13 @@ import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt } from '@/model/wire';
 import { awaitsOwner, longestWaitingFirst } from '@/model/questions';
 import { useReadingPosition } from '@/lib/reading-position';
-import { act, markSeen, refreshQuestions, useHopper } from '@/store';
+import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
-/** `onUse`: puts the attempt's answer in the answer box (a level's recommendation, for the owner to send or edit). */
-function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) => void }) {
+/** `onUse`: sends the attempt's answer (a level's recommendation) as the owner's, at once; `busy` while any answer is in flight. */
+function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: string) => void; busy?: boolean }) {
   return (
     <div className="space-y-1 border-l-2 border-border py-1 pl-3 text-xs">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -42,7 +43,7 @@ function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) =>
       {a.answer && <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{a.answer}</pre>}
       {a.reason && <div className="text-muted-foreground">{a.reason}</div>}
       {a.error && <div className="text-bad">{a.error}</div>}
-      {onUse && a.answer && <Button size="sm" variant="outline" onClick={() => onUse(a.answer!)} title="Put this answer in the answer box to send or edit">Use answer</Button>}
+      {onUse && a.answer && <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(a.answer!)} title="Send this answer to the job now">Use answer</Button>}
     </div>
   );
 }
@@ -53,19 +54,31 @@ function QuestionCard({ q }: { q: Question }) {
   const canAnswer = useCanOperate();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  // Set at once, before the re-render that disables the buttons: a second click in between sends nothing.
+  const inFlight = useRef(false);
+  const [sent, setSent] = useState<{ answer: string; error?: string } | null>(null);
   const lines = q.recentOutput.split('\n');
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+  /** The one answer route, for Send answer, Use answer and Retry. */
+  const submit = async (answer: string) => {
+    const text = answer.trim();
+    if (!text || inFlight.current) return;
+    inFlight.current = true;
     setSending(true);
-    if (await act(`/ui/api/questions/${encodeURIComponent(q.id)}/answer`, { answer: text }, 'Answer sent')) setDraft('');
+    setSent(null);
+    const r = await actFor(`/ui/api/questions/${encodeURIComponent(q.id)}/answer`, { answer: text }, 'Answer sent');
+    if (r.ok) setDraft('');
+    setSent(r.ok ? { answer: text } : { answer: text, error: r.error });
+    inFlight.current = false;
     setSending(false);
     refreshQuestions().catch(() => {});
   };
+  const send = () => submit(draft);
   const end = async (how: 'close' | 'dismiss') => {
-    if (sending) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSending(true);
     if (await act(`/ui/api/questions/${encodeURIComponent(q.id)}/${how}`, {}, how === 'close' ? 'Question closed' : 'Question dismissed')) setDraft('');
+    inFlight.current = false;
     setSending(false);
     refreshQuestions().catch(() => {});
   };
@@ -85,11 +98,18 @@ function QuestionCard({ q }: { q: Question }) {
         </CollapsibleTrigger>
         <CollapsibleContent><pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">{lines.slice(-40).join('\n')}</pre></CollapsibleContent>
       </Collapsible>
-      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} onUse={canAnswer && q.tier === 'human' && a.role === 'level' ? setDraft : undefined} />)}</div>}
+      {q.attempts.length > 0 && <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Escalation trail</div>{q.attempts.map((a, i) => <Attempt key={i} a={a} busy={sending} onUse={canAnswer && q.tier === 'human' && a.role === 'level' ? (answer) => void submit(answer) : undefined} />)}</div>}
       {canAnswer && (
         <div className="space-y-2">
           <Textarea rows={3} value={draft} disabled={sending} placeholder="Answer to type into the job (Ctrl/Cmd+Enter sends)"
             onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void send(); } }} />
+          {sent && (
+            <div data-slot="answer-result" className={`flex flex-wrap items-center gap-2 text-sm ${sent.error ? 'text-bad' : 'text-ok'}`}>
+              {sent.error
+                ? <>Not sent: {sent.error}<Button size="sm" variant="outline" disabled={sending} onClick={() => void submit(sent.answer)}><RotateCw />Retry</Button></>
+                : <><Check className="size-4" />Answer sent</>}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => void send()} disabled={sending || !draft.trim()}><Send />{sending ? 'Sending…' : 'Send answer'}</Button>
             <Confirm title="Close this question without answering?" description="The job continues on its own judgement, or fails."

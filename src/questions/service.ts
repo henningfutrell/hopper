@@ -274,6 +274,9 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     return store.tx(() => {
       const q = store.questions.get(id);
       if (!q) return { ok: false as const, reason: 'not_found' as const };
+      // Idempotent per question (issue #459): the owner's same answer again — a retry, a second click — is the
+      // question as it is, with no second attempt, event or resume.
+      if (status === 'answered' && q.status === 'answered' && q.answeredBy === HUMAN && q.answer === answer) return { ok: true as const, question: q };
       if (q.status !== 'open') return { ok: false as const, reason: 'not_open' as const };
       const updated = settle(q, answer, status);
       o.onAnswered(updated);
