@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
@@ -73,7 +73,9 @@ same Decision. Algorithm, in order:
    `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
-   model only, issue #18) are skipped. No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
+   (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
+   No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
@@ -103,7 +105,9 @@ same Decision. Algorithm, in order:
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
    `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
-   remaining room for that job (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
+   **placement pressure** when reset-aware placement is on ("Usage pacing"), then the most remaining
+   room for that job, then the lowest machine id. No candidate, and the job's priority at or above the
+   **critical priority**: it may take one lane past its caps ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
    #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
    machine with the highest cap for its executor — the executor's when it leaves less room than
@@ -112,7 +116,8 @@ same Decision. Algorithm, in order:
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
    `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
-   min(cap, occupied + assigned)`. `open` = number of this machine's starts with
+   min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
+   this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
    Idle lanes not assigned: kept while `occupied + assigned + kept < cap` and the lane has
    been idle less than `policy.laneIdleGraceMs` (from `idleSince` and `inputs.at`);
@@ -128,6 +133,37 @@ not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
 `decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
 `waits` additive, issue #381).
+
+### Usage pacing (issue #373)
+
+Several accounts that each reset at their own time, each to be used close to 100% a week without
+running dry early. Three parts, each its own setting, all in `DeciderPolicy.pacing`; the decider
+stays pure — every time it compares is `inputs.at`.
+
+- **Burn window** (`HOPPER_BURN_WINDOW_HOURS`, default 18; 0: off). The hard limit keeps a reserve
+  (5% at 0.95) that is right for most of the week, but the reset throws it away. Within the burn
+  window of a week window's `resetsAt`, that window does not throttle unless it is spent
+  (`used >= limit`): steps 1-2 skip it (`burnPhase`, `src/decider/usage.ts`), and the Decision's
+  reasons name it (`m: usage window week of s is in its burn window …: not throttling`). Session
+  windows still apply. The usage report (`GET /api/usage`) reads the same clock, so a burning window
+  shows as not throttling.
+- **Reset-aware placement** (`HOPPER_RESET_AWARE_PLACEMENT`, default `true`). Step 7 picks the
+  machine with the most placement pressure: headroom of the binding (most used) week window — to the
+  hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
+  hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
+  that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
+  pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
+  it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
+- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
+  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
+  machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
+  limit, and not past its cap already — at most one lane over it per machine. The start reason says
+  `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
+  lane cap or the reserved lanes`); step 8 counts a lane over the cap in `target`. From the next
+  Decision on the machine is past its cap: no other job starts there, and step 8 drains a busy lane
+  (the newest), which closes when its job ends.
+
+Decisions stored before issue #373 carry no `pacing`: all three are off for them.
 
 ## The engine
 
@@ -2551,6 +2587,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_TICK_MS` | `2000` |
 | `HOPPER_ROUTER_MODE` | *Removed by issue #211: there is no router mode.* |
 | `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_BURN_WINDOW_HOURS` | `18` (0: off) — "Usage pacing" (issue #373) |
+| `HOPPER_RESET_AWARE_PLACEMENT` | `true` — "Usage pacing" |
+| `HOPPER_CRITICAL_PRIORITY` | `100` (0: off) — "Usage pacing" |
 | `HOPPER_ROUTER_CHEAP_BOOST` | `10` |
 | `HOPPER_WEBHOOK_BASE_MS` | `1000` |
 | `HOPPER_LANE_IDLE_GRACE_MS` | `5000` |

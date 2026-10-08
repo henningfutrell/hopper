@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
 import { laneEffect } from '../../src/decider/usage.ts';
-import { busy, inputs, job, machine, policy, reading } from './support.ts';
+import { busy, inputs, job, machine, NOW, policy, reading } from './support.ts';
 
 const plan = (d: ReturnType<typeof decide>, id = 'local') => d.lanes.find((l) => l.machineId === id)!;
 const mixed = machine({ executors: ['claude', 'codex'] });
@@ -69,14 +69,14 @@ describe('usage per executor', () => {
       reading(10, 100, { source: 'claude-local', machineId: 'local', executors: ['claude'] }), // the machine's own
       reading(96, 100, { source: 'codex', executors: ['codex'] }),
     ];
-    const effect = laneEffect(mixed, usage, policy);
+    const effect = laneEffect(mixed, usage, policy, NOW);
     expect(effect.executors.map((e) => [e.executor, e.usedFrac])).toEqual([['claude', 0.1], ['codex', 0.96]]);
   });
 
   it('the lane effect: the machine\'s cap is its least constrained executor\'s; each executor\'s own effect beside it', () => {
-    const effect = laneEffect(mixed, [claudeAt(82.5), reading(10, 100, { executors: ['codex'] })], policy);
+    const effect = laneEffect(mixed, [claudeAt(82.5), reading(10, 100, { executors: ['codex'] })], policy, NOW);
     expect(effect).toEqual({
-      usedFrac: 0.1, cap: 4, band: 'free', ignored: [],
+      usedFrac: 0.1, cap: 4, band: 'free', ignored: [], burning: [],
       executors: [
         { executor: 'claude', usedFrac: 0.825, cap: 2, band: 'soft' },
         { executor: 'codex', usedFrac: 0.1, cap: 4, band: 'free' },

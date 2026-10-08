@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
+import type { UsagePacing } from './domain/types.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
 
@@ -20,6 +21,8 @@ export interface Config {
   tickMs: number;
   softLimit: number;
   hardLimit: number;
+  /** Usage pacing (issue #373): HOPPER_BURN_WINDOW_HOURS, HOPPER_RESET_AWARE_PLACEMENT, HOPPER_CRITICAL_PRIORITY. */
+  pacing: UsagePacing;
   routerCheapBoost: number;
   webhookBaseMs: number;
   laneIdleGraceMs: number;
@@ -88,6 +91,9 @@ const schema = z.object({
   HOPPER_TICK_MS: int(1).default(2000),
   HOPPER_SOFT_LIMIT: fraction().default(0.7),
   HOPPER_HARD_LIMIT: fraction().default(0.95),
+  HOPPER_BURN_WINDOW_HOURS: z.coerce.number().finite().min(0).default(18),
+  HOPPER_RESET_AWARE_PLACEMENT: flag(true),
+  HOPPER_CRITICAL_PRIORITY: int(0, 100).default(100),
   HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
   HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
@@ -131,6 +137,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_TICK_MS: 'how often the engine decides',
   HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
   HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
+  HOPPER_BURN_WINDOW_HOURS: 'hours before a week usage window resets in which it stops throttling unless it is spent, so what is left is used; 0: off',
+  HOPPER_RESET_AWARE_PLACEMENT: 'true: a job goes to the machine whose account has the most week headroom per hour left before its reset; false: the most free lanes',
+  HOPPER_CRITICAL_PRIORITY: 'a job at or above this priority that fits on no machine may run one lane over the cap; 0: off',
   HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
@@ -230,6 +239,11 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     tickMs: e.HOPPER_TICK_MS,
     softLimit: e.HOPPER_SOFT_LIMIT,
     hardLimit: e.HOPPER_HARD_LIMIT,
+    pacing: {
+      burnWindowMs: e.HOPPER_BURN_WINDOW_HOURS * 3_600_000,
+      resetAwarePlacement: e.HOPPER_RESET_AWARE_PLACEMENT,
+      criticalPriority: e.HOPPER_CRITICAL_PRIORITY,
+    },
     routerCheapBoost: e.HOPPER_ROUTER_CHEAP_BOOST,
     webhookBaseMs: e.HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,

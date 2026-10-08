@@ -4,6 +4,7 @@ import type { CleanupDue } from './cleanup.ts';
 import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
+import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 
 export type JobId = string;
@@ -224,18 +225,7 @@ export interface DecisionInputs {
   policy: DeciderPolicy;
 }
 
-export interface DeciderPolicy {
-  /** Fraction of a budget used at which a machine stops opening new lanes (0..1). */
-  softLimit: number;
-  /** Fraction used at which every idle lane closes and no job starts (0..1). */
-  hardLimit: number;
-  /** Priority added for cheap advice (chat_only, run_deterministic). */
-  routerCheapBoost: number;
-  /** An idle lane with no work for it closes only after being idle this long (ms). */
-  laneIdleGraceMs: number;
-  /** Priority added to a job resuming with an answer — it is part done. */
-  resumeBoost: number;
-}
+export type { DeciderPolicy } from './decider-policy.ts';
 
 export interface LanePlan {
   machineId: MachineId;
@@ -438,7 +428,7 @@ export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
 export type { CleanupDue } from './cleanup.ts';
 export * from './plugins.ts';
