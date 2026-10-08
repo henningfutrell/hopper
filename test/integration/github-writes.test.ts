@@ -82,9 +82,11 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
 
     expect(gh.commentsOn(REPO, issue.number).filter((c) => c.body !== 'go ahead from the issue')).toEqual([]);
     expect(writesTo(gh)).toEqual([]);
-    const added = labelCalls(gh).filter((c) => c.method === 'addLabels').map((c) => (c.args[2] as string[]).join(','));
-    expect(added).toEqual(['hopper:claimed', 'hopper:done']);
-    expect(labelCalls(gh).filter((c) => c.method === 'removeLabels').map((c) => (c.args[2] as string[]).join(','))).toEqual(['hopper:claimed']);
+    // The claim names its holder (issue #440): hopper:held-by:<id> comes and goes with hopper:claimed.
+    const holder = /^hopper:held-by:[0-9a-f]{12}$/;
+    const calls = (method: string) => labelCalls(gh).filter((c) => c.method === method).map((c) => (c.args[2] as string[]).map((l) => (holder.test(l) ? 'holder' : l)).join(','));
+    expect(calls('addLabels')).toEqual(['hopper:claimed,holder', 'hopper:done']);
+    expect(calls('removeLabels')).toEqual(['hopper:claimed,holder']);
   });
 
   it('a failed job: labels hopper:failed, zero comments', async () => {
@@ -175,7 +177,8 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     expect(issue.state).toBe('closed'); // by the job's merged pull request, not the hopper (issue #187)
     expect(writes.some((w) => /comments/.test(w))).toBe(false);
     expect(writes.filter((w) => w.endsWith('/issues/1/labels'))).toEqual([`POST /repos/${REPO}/issues/1/labels`, `POST /repos/${REPO}/issues/1/labels`]);
-    expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`]);
+    // hopper:claimed and its holder label (issue #440), one DELETE each.
+    expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`, `DELETE /repos/${REPO}/issues/1/labels/:name`]);
     expect(fake.state.tokens.some((t) => t.body.permissions !== undefined || t.body.repositories !== undefined)).toBe(false);
   });
 });

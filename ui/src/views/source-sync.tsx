@@ -4,6 +4,7 @@ import { Countdown, GhLink } from '@/components/job';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
 import type { SourceStatus } from '@/model/wire';
+import { SourceIntake } from './source-intake';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
@@ -13,8 +14,8 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return <div><div className="text-[11px] text-muted-foreground">{label}</div><div className="num text-lg font-semibold">{value}</div></div>;
 }
 
-/** A source's sync: what it saw and made, when, and what is wrong with it. */
-export function SourceSync({ s }: { s: SourceStatus }) {
+/** A source's sync: what it saw and made, when, and what is wrong with it; and what its intake did with each item (issue #440). */
+export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepository?: ((repo: string) => Promise<boolean>) | undefined }) {
   const now = useNow();
   const d = s.detail ?? {};
   const repos = Array.isArray(d.installedRepos) ? (d.installedRepos as string[]) : [];
@@ -39,10 +40,10 @@ export function SourceSync({ s }: { s: SourceStatus }) {
       <div className="space-y-0.5 text-xs text-muted-foreground">
         {['owners', 'repos', 'assignee', 'label'].filter((k) => d[k] != null && list(d[k]) !== '').map((k) => <div key={k}>{k}: <span className="text-foreground/80">{list(d[k])}</span></div>)}
         {['projectErrors', 'permanentErrors'].filter((k) => !empty(d[k])).map((k) => <div key={k} className="text-bad">{k}: {typeof d[k] === 'object' ? JSON.stringify(d[k]) : String(d[k])}</div>)}
-        {Array.isArray(d.skippedRejected) && d.skippedRejected.map((url: string) => <div key={url} data-skipped-rejected>rejected, not taken until assigned to you again: <GhLink url={url}>{url}</GhLink></div>)}
         {Array.isArray(d.notRerun) && d.notRerun.map((n: { key: string; job: string; status: string; reason: string }) => <div key={n.key} data-not-rerun className="text-warn">not run again: <GhLink url={n.key}>{n.key}</GhLink> (job {n.status}, {n.reason})</div>)}
         {d.enabledSetting != null && <div>enabled setting: <code>{String(d.enabledSetting)}</code></div>}
       </div>
+      <SourceIntake s={s} addRepository={addRepository} />
     </div>
   );
 }

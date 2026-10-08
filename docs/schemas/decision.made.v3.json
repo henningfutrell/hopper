@@ -92,6 +92,9 @@
           },
           "reason": {
             "type": "string"
+          },
+          "idle": {
+            "type": "string"
           }
         },
         "required": [

@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { ConnectedAccountProvider, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
 import { UPDATE_CHANNELS } from '../domain/types.ts';
@@ -64,6 +66,20 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setHistoryRetentionDays(days) {
       write('historyRetentionDays', String(days));
+    },
+    claimHolder() {
+      const kept = read('claimHolder');
+      if (kept !== undefined) return kept;
+      const made = randomBytes(6).toString('hex');
+      c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', 'claimHolder', made);
+      return read('claimHolder')!;
+    },
+    getIntakeMigration(source) {
+      const text = read(`intakeMigration:${source}`);
+      return text === undefined ? undefined : JSON.parse(text) as IntakeMigration;
+    },
+    setIntakeMigration(source, migration) {
+      write(`intakeMigration:${source}`, JSON.stringify({ at: migration.at, changes: migration.changes.map((x) => ({ key: x.key, change: x.change })) }));
     },
   };
 }

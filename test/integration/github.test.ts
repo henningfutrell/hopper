@@ -277,7 +277,7 @@ describe('GitHub issue → job → issue', () => {
     expect(gh.commentsOn(REPO, issue.number)).toEqual([]);
     const gh2 = (await second.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github');
     expect(gh2).toMatchObject({ state: 'ok', kind: 'github-account' });
-    expect(gh2.detail.skippedClaimedWithoutJob).toBeUndefined();
+    expect((gh2.detail.intake ?? []).filter((x: { reason?: string }) => x.reason?.includes('claimed'))).toEqual([]);
   });
 
   // Issue #52: the boot after an install could not authenticate to GitHub, and its first check

@@ -2,7 +2,9 @@
 
 Research only when written. Issue #387 has since built part of it — intake by label and assignee, reject as
 a hopper-side record, assignment drift for waiting and started jobs (`docs/design.md` "Intake by label and
-assignee"); the rest, and the owner decisions below, stay open. Issue #387 moves intake from an author allowlist to the source
+assignee"). Issue #440 built §8's intake reasons, part of §9's migration, and D7 (a bulk "assign to me" in
+Sources; `docs/design.md` "Intake outcomes, claim holders and the intake migration"). The rest, and the other
+owner decisions below, stay open. Issue #387 moves intake from an author allowlist to the source
 label plus an assignee. This note assesses the whole assignment mechanic and its knock-on effects,
 recommends a design, and lists what needs an owner decision. Paths are relative to the repo root;
 line numbers are as of `origin/main` at `bff0b47`.

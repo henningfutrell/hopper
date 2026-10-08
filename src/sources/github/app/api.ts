@@ -128,6 +128,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, async (l) =>
       rest.removeLabels(req, await tokenFor(l, repo), repo, number, labels)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, async (l) => rest.assignedAt(req, await tokenFor(l, repo), repo, number, login)),
+    addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, async (l) => rest.addAssignees(req, await tokenFor(l, repo), repo, number, logins)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, async (l) => rest.reopenIssue(req, await tokenFor(l, repo), repo, number)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, async (l) =>
       closingPullRequest(req, await tokenFor(l, repo), repo, number)),

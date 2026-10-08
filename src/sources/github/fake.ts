@@ -115,6 +115,14 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       find(repo, n);
       return (assigned.get(key(repo, n)) ?? []).filter((e) => e.login.toLowerCase() === login.toLowerCase()).map((e) => e.at).sort().at(-1);
     },
+    async addAssignees(repo, n, logins) {
+      enter('addAssignees', [repo, n, logins]);
+      const i = find(repo, n);
+      for (const login of logins) {
+        if (!i.assignees.includes(login)) i.assignees.push(login);
+        assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: stamp() }]);
+      }
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);
@@ -133,6 +141,14 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       return (opened.get(key(repo, n)) ?? []).map((pr) => ({ ...pr }));
     },
   };
+
+  // A connected account's listing across repos; the app's installation token has none.
+  if (!o.app) {
+    api.listAssignedIssues = async (label) => {
+      enter('listAssignedIssues', [label]);
+      return open(label).filter((i) => i.assignees.some((a) => a.toLowerCase() === human.toLowerCase())).map(copy);
+    };
+  }
 
   if (o.app) {
     const app = o.app;

@@ -240,6 +240,11 @@ export interface LanePlan {
   close: LaneId[]; // idle lanes to close now
   drain: LaneId[]; // busy lanes to close when their job ends
   reason: string;
+  /**
+   * Why the machine leaves lanes unused after this Decision (issue #440): the queue gate, usage pacing,
+   * reserved lanes, a low disk, a machine that cannot take work, or no job waiting. Absent: every lane is in use.
+   */
+  idle?: string;
 }
 
 export interface StartPlan {

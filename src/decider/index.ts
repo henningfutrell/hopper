@@ -2,7 +2,7 @@ import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types
 import { assign, cleanupHold, effectivePriority, nativeHold, order, pinOf } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
-import { planGoneLanes, planLanes } from './lanes.ts';
+import { idleReason, planGoneLanes, planLanes } from './lanes.ts';
 import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
@@ -80,7 +80,9 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {
     const unassigned = (idleByMachine.get(s.machine.id) ?? []).filter((l) => !taken.has(l.id));
-    return planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs);
+    const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs);
+    const idle = idleReason(s, hold, placed.wait);
+    return idle === undefined ? plan : { ...plan, idle };
   });
   const listed = new Set(machines.map((m) => m.id));
   const gone = [...new Set(lanes.map((l) => l.machineId).filter((id) => !listed.has(id)))].sort();

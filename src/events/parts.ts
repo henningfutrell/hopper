@@ -49,7 +49,10 @@ export const startPlan = strict({
 });
 export const holdPlan = strict({ jobId: z.string(), reason: z.string() });
 export const waitPlan = strict({ jobId: z.string(), reason: z.string() });
-export const lanePlan = strict({
+/** A lane plan as decision.made v1 and v2 carried it. */
+export const legacyLanePlan = strict({
   machineId: z.string(), current: z.number(), target: z.number(), open: z.number(),
   close: z.array(z.string()), drain: z.array(z.string()), reason: z.string(),
 });
+/** `idle` (issue #440): why the machine leaves lanes unused. */
+export const lanePlan = legacyLanePlan.extend({ idle: z.string().optional() });
