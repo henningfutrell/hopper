@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A computer running Windows now runs jobs in its own jobs folder instead of failing every one of them at once, and the hopper no longer sends jobs to a computer before it knows where that computer's home folder is. Setting a machine to 0 lanes now pauses it without removing it: it stays connected and simply takes no jobs.
 - A Windows computer added as a machine now shows its own Claude usage and account, and its jobs slow down and stop at its own limits like any other machine's. The setup steps for running it on Windows are in the guide.
 - A Claude job on a Windows computer whose jobs open in PowerShell now fails at once and says the computer needs a POSIX shell such as Git Bash, instead of waiting a minute with no reason; the README shows how to set Git Bash up.
 - When a job ends while the hopper cannot reach its machine, its Claude window is no longer left running for good: the hopper keeps trying and closes it once the machine is back. Until then a new job for the same issue waits instead of running beside the old one, and the ended job shows that its window may still be open, with a button to mark it closed if you closed it yourself.

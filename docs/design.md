@@ -590,8 +590,17 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   for an attached one the home its probe found (`MachineSnapshot.home`: an ssh target's
   `printf '%s\n' "$HOME"` over ssh, a client target's `homedir()` in its `/release` answer). A hopper
   in a container has a home of its own that does not exist on the host; resolving `~` there sent
-  every job to it. An attached machine whose home is not known yet (no probe answered, or a client
-  release older than this) fails a job under `~` at once; an absolute work tree needs no home.
+  every job to it. A client on Windows answers a drive-letter home (`C:\Users\<user>`): the hopper
+  keeps it with `/` for `\` (`C:/Users/<user>`), so `~/hopper-jobs` resolves to `C:/Users/<user>/hopper-jobs`,
+  a path Windows takes; any other home that is not absolute is no home (issue #365). An ssh or client
+  target whose home is not known yet (no probe answered, or a client release older than this) takes no
+  job: the decider leaves it out of placement, and holds a job when every machine that runs its executor
+  is such a machine (`no machine that runs executor <x> has its home known yet: …`) or the job is pinned
+  to one (issue #365: a burst of jobs once failed on one at once). The executor still fails a job under
+  `~` at once if one gets there; an absolute work tree needs no home.
+- **0 lanes parks a machine** (issue #365). An attached machine's `lanes` may be 0: it stays a machine —
+  a client target still dials in and shows online — and the decider gives it no job. Adding a machine
+  and the machine defaults still take at least 1.
 - **Never the home** (issue #314). A job never runs with its machine's home as its work tree. The
   executor (herdr-claude and cursor-agent, in `workTreeOn`) resolves the work tree on the lane's
   machine, normalised (`~/..`, a trailing slash), and fails the job at once, before any tab or agent
