@@ -75,6 +75,23 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(await keep(transport, () => true)).toMatchObject({ online: true, home: homedir() });
   });
 
+  // Issue #365: a client on Windows answers its os.homedir(), a drive-letter path with backslashes.
+  it.each([
+    ['C:\\Users\\far', 'C:/Users/far'],
+    ['C:/Users/far', 'C:/Users/far'],
+    ['relative\\home', undefined],
+  ])('a client whose home is %s: the probe carries %s', async (answered, expected) => {
+    const { transport } = await olderClient();
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
+    const home = process.env.HOME;
+    process.env.HOME = answered;
+    try {
+      const probe = await keep(transport, () => true);
+      expect(probe.online).toBe(true);
+      expect(probe.home).toBe(expected);
+    } finally { process.env.HOME = home; }
+  });
+
   it('the probe carries the disk the client\'s home is on, so the UI warns before it fills (issue #401)', async () => {
     const { transport } = await olderClient();
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
