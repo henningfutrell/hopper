@@ -101,8 +101,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const scratch = jobScratchOf(cwd, ctx.job.id);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
-    // The job's credentials (GH_TOKEN, issue #214), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
-    const vars = Object.entries({ ...p.env, ...ctx.credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    // The job's credentials (issue #214, kept current on its machine for the turn: #441), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
+    const credentials = await ctx.credentials?.(scratch);
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && cd ${shellQuote(cwd)} && { ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;

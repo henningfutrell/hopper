@@ -39,10 +39,9 @@ import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createSourceSync, withFixedStatuses, type GitHubApi, type SourceSync } from '../sources/index.ts';
-import { createConnectedAccounts, type ConnectedAccountsService } from '../connected-accounts/service.ts';
+import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
-import { renewal } from '../connected-accounts/renewal.ts';
-import { CLIENT_SECRET_VARIABLE } from '../connected-accounts/web-flow.ts';
+
 import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
@@ -227,15 +226,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or
   // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
-  const appClientSecret = (): string | undefined => { try { return runtimeSecrets(o.env)(CLIENT_SECRET_VARIABLE); } catch { return undefined; } };
   const connectedAccounts = createConnectedAccounts({
-    store, apps: config.hopperApps, clock, logger,
+    // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
+    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env, logger),
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
     installations: (token) => installations(config.hopperApps.github, token),
-    // GitHub App user tokens expire after 8 h (issue #358): renewed with the refresh token, with the app's
-    // client secret when the runtime gives one (read at each renewal, so a rotated one counts).
-    refresh: (provider, refresh) => renewal(config.hopperApps[provider], appClientSecret)(refresh),
     onExpired: (provider, account, reason) => { store.events.append({ type: 'connected_account.expired', data: { provider, account, reason } }); },
+    onRenewed: () => { void engine.renewCredentials(); }, // running jobs get the new token on their machines (issue #441); after `engine` exists
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {
@@ -328,7 +325,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
     notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
-    credentials: async (job) => (await sourceOf(job)?.credentials?.(job)) ?? {},
+    credentials: async (job) => sourceOf(job)?.credentials?.(job),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
@@ -367,6 +364,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       sync.start();
       usageHistory.start();
+      connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
     },
     stop() {
       stopped ??= (async () => {
