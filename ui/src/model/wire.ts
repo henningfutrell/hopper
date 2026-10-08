@@ -5,7 +5,7 @@ import type {
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
-  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
+  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
 } from '../../../src/domain/types.ts';
@@ -15,7 +15,7 @@ export type {
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
-  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
+  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
 };

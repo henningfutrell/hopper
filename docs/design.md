@@ -80,7 +80,7 @@ same Decision. Algorithm, in order:
    (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
    No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
-2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
+2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
@@ -2783,7 +2783,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_DB` | `~/.local/share/hopper/hopper.db` |
 | `HOPPER_TICK_MS` | `2000` |
 | `HOPPER_ROUTER_MODE` | *Removed by issue #211: there is no router mode.* |
-| `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` — the defaults: the usage limits set on the Usage view win ("Usage limits", issue #522) |
 | `HOPPER_BURN_WINDOW_HOURS` | `18` (0: off) — "Usage pacing" (issue #373) |
 | `HOPPER_RESET_AWARE_PLACEMENT` | `true` — "Usage pacing" |
 | `HOPPER_CRITICAL_PRIORITY` | `100` (0: off) — "Usage pacing" |
@@ -8252,3 +8252,38 @@ loopback: two browsers signed in with GitHub, GitHub revokes the grant, both ses
 is refused, two `ui_session.ended` events; signing in with GitHub again gives a session and a connected account;
 a token refused while its refresh token works is renewed and ends no session), `test/ui/sources-view.test.ts`
 (signed in with GitHub, an ended connection goes to sign-in at once, with no reconnect offered and the page kept).
+
+## Usage limits (issue #522, 2026-10-08)
+
+The soft and hard limits are a setting of the user, edited on the Usage view, not only the environment.
+
+- **Which wins.** `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT` are the defaults. Once the user saves limits on the
+  Usage view, the stored ones (`usageLimits` in the user's `settings`) win, for that user, until changed again
+  there; the environment is not read for them after that. **Defaults** on the editor saves the environment's values
+  back as the user's. Same bounds as the environment: fractions from 0 to 1, soft below hard.
+- **Live.** The engine keeps the environment's policy (`EngineOptions.policy`) and reads the stored limits over
+  it at every Decision and every usage report (`policyOf`, `src/engine/context.ts`); a Decision's `inputs.policy`
+  carries the limits it used. Saving appends `usage.limits_changed { from, to }`, one of the `TRIGGERS`, so the
+  next Decision comes at once, not at the next tick. Nothing restarts.
+- **Route.** `POST /ui/api/usage/limits { soft, hard }`, admin. `GET /api/usage` answers `limits` as
+  `{ soft, hard, defaults: { soft, hard }, set }`. A soft limit at or above the hard one is refused with 400; the
+  editor refuses it first (`limitsProblem`, `ui/src/model/usage-limits.ts`) and posts nothing.
+- **Informational readings never throttle**, whatever the limits: unchanged, the limits apply to the throttle
+  fraction of decider step 1 only.
+- **The editor.** A panel across the top of the Usage view: usage now (the highest throttling fraction over online
+  machines) with its band, each online machine's lane cap at the draft (the decider's rule, repeated in the UI's
+  model because the UI imports nothing of `src/`), and the graph (`ui/src/charts/usage-limits.tsx`): the last
+  day's throttle line — the highest non-informational line of the usage history at each step — over the free,
+  soft and hard bands, the line coloured by the band each stretch of it is in, its last point usage now. Each
+  limit is a dashed rule with a handle: drag it, press on the graph to move the nearer limit there, or use the
+  handle's arrow keys (Shift: 5%). A limit moves in whole percents and stops 1% short of the other. Two number
+  fields edit the same draft. Nothing is stored until Save. A viewer sees the graph without handles.
+- **Gauges follow the limits.** Every usage gauge's marks and colours are the limits the decider uses now, not
+  fixed 70% / 95%; before the usage report has loaded, a gauge has no marks and one neutral colour.
+
+**Verification:** `test/integration/usage-limits.test.ts` (the real daemon: defaults from the environment; an
+admin sets limits, the next Decision uses them and holds a job at the new hard limit, raising them starts it;
+one `usage.limits_changed`; soft ≥ hard, out of 0..1 and a missing limit refused; a viewer refused; the stored
+limits outlive a restart), `test/ui/usage-limits.test.ts` (the model), `test/ui/usage-limits-view.test.ts` (the
+Usage view: band and lane cap follow a draft before saving, Save posts it, soft ≥ hard refused in place with
+nothing posted, a viewer reads only).

@@ -3,7 +3,8 @@ import { isLocked } from '../domain/locked.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
 import { TERMINAL_STATUSES, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
-import type { EngineContext } from './context.ts';
+import { policyOf, type EngineContext } from './context.ts';
+import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
 
@@ -85,13 +86,14 @@ export function createQueries(c: EngineContext): Queries {
     getUsageSources,
     async getUsageReport() {
       const [machines, readings] = await Promise.all([c.machines.list(), getUsage()]);
+      const policy = policyOf(c);
       return {
         readings,
         sources: getUsageSources(),
-        limits: { soft: c.policy.softLimit, hard: c.policy.hardLimit },
+        limits: usageLimitsOf(c),
         machines: machines.map((m) => {
           // At the clock, as the decider reads it: a week window in its burn window shows as not throttling (issue #373).
-          const { usedFrac, cap, band, executors } = laneEffect(m, readings, c.policy, c.clock.now().toISOString());
+          const { usedFrac, cap, band, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString());
           return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, executors };
         }),
       };

@@ -82,6 +82,7 @@
         "failure.resolved",
         "handoff.opened",
         "handoff.closed",
+        "usage.limits_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

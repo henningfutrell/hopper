@@ -1,7 +1,7 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
 import type { CleanupDue, Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, policyOf, type EngineContext } from './context.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
@@ -28,7 +28,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       queueOrder: queueOrder(c, waiting),
       cleanupDue: cleanupDue(),
       problems: c.problems(),
-      policy: c.policy,
+      policy: policyOf(c),
     };
   };
 }

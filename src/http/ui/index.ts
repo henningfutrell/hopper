@@ -130,6 +130,10 @@ export const queueOrderBody = z.strictObject({
   jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
 });
 // The usage graph (issue #385): the history retention, whole days.
+/** The usage limits (issue #522): the same bounds as HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT. */
+const limitFraction = z.number().min(0, 'a limit is a fraction from 0 to 1').max(1, 'a limit is a fraction from 0 to 1');
+export const usageLimitsBody = z.strictObject({ soft: limitFraction, hard: limitFraction })
+  .refine((b) => b.soft < b.hard, { message: 'the soft limit must be below the hard limit', path: ['soft'] });
 export const historyRetentionBody = z.strictObject({ days: z.number().int().min(1, 'keep at least 1 day').max(MAX_HISTORY_RETENTION_DAYS) });
 export { usageGraphViewBody };
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
@@ -207,6 +211,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const pruned = store.usageHistory.prune(new Date(o.clock.now().getTime() - days * 86_400_000));
     return { retentionDays: days, pruned };
   });
+  // The usage limits (issue #522): read at every Decision, so they apply without a restart; the change wakes the engine.
+  app.post('/ui/api/usage/limits', admin, async (req) => ({ limits: o.tenant(req).engine.setUsageLimits(parseWith(usageLimitsBody, req.body)) }));
   app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));
 
   app.post('/ui/api/questions/:id/answer', operator, async (req) => {

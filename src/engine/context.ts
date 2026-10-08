@@ -21,6 +21,7 @@ export interface EngineOptions {
   queueSorter: QueueSorter;
   /** The routing rules applied at intake, and the machine ids they may pin to. */
   routing: RoutingView;
+  /** The policy from the environment. Its usage limits are the defaults: the user's stored ones win (issue #522), read by `policyOf`. */
   policy: DeciderPolicy;
   tickMs: number;
   /** How often the engine looks for a machine whose sweep is due (issue #410). Default a minute. */
@@ -53,3 +54,9 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();
+
+/** The policy the decider uses now: the usage limits the user set in the UI (issue #522), else the environment's. */
+export function policyOf(c: Pick<EngineContext, 'policy' | 'store'>): DeciderPolicy {
+  const set = c.store.settings.getUsageLimits();
+  return set ? { ...c.policy, softLimit: set.soft, hardLimit: set.hard } : c.policy;
+}
