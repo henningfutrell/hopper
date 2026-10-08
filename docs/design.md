@@ -809,6 +809,20 @@ Lifecycle: executor returns `question` → engine, in one tx: question created (
 job `waiting_answer` + `questionId`, `resumeOn` = its machine, lane idle (or closed if
 draining), events `question.asked`.
 
+**The raising machine (issue #485).** The question records where it was asked as `raisedBy`
+(`{ machineId, name?, laneId? }`, `src/domain/raised-by.ts`): the asking lane's machine, else the job's
+`resumeOn`, else its pin, with the machine's label from the lane's snapshot as the job ran. A snapshot:
+nothing updates it, so it stays right after the job resumes elsewhere or the machine is renamed or
+removed. Every `question.*` event carries it — the `machineId` subject (`laneId` where known) and
+`raisedBy` in its data, an additive field that keeps each type's version — from `ask()` and the question
+service's one `emit()`, so the event log holds it for every step of the question. Webhooks send the stored event, so
+receivers get it as is; the Grok Bot routine body takes `machineId`, `machineName` and `laneId` from it, not
+from where the job is at send time. The UI names it on the question card, the question history, event
+lines and Attention, and says *machine unknown* when a question has none. Tenant migration 18 fills it on
+older questions from the `question.asked` lane, then `resumeOn`, then the pin, the name from the machines
+config while the machine is there; past events are not rewritten. Login prompts from machines (the
+device-code component's optional `machine`) carry the same shape.
+
 **Visible and answerable at once.** From that commit on, the question is in `GET /api/questions`
 (every open question, whatever its stage) and the job in `/api/queue` `waitingAnswer`; the UI
 refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
@@ -2148,7 +2162,8 @@ question reaches the owner (questions never go onto the issue), and when intake 
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
   issueUrl }` (title/url from the job's source ref, else null); a question adds `question, questionId,
   answerUrl?` and what the job already knows, so a receiver can route and rank it without calling back
-  (issue #378): `machineId`, `laneId`, `priority`, `labels` (the item's labels at intake; null for jobs
+  (issue #378): `machineId`, `machineName`, `laneId` (the question's raising machine, issue #485; null when it has
+  none), `priority`, `labels` (the item's labels at intake; null for jobs
   taken before), `repo`, `issueNumber`, `detectedBy`, `askedAt`, `escalatedAt`, `openSeconds`,
   `offered`. 200 = a run started.
 - Test event (issue #378): **Send test event** in the UI (`POST /ui/api/notifiers`, `action: test`)

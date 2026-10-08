@@ -17,6 +17,7 @@ import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
+import { raisedByBackfill } from './migration-raised-by.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -201,6 +202,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noAuthors,
   // 17: a claude-cli level or claude-plan source that names no machine names the one that can run claude, where one alone can (issue #442).
   nameTheOnlyMachine,
+  // 18: a question gets its raising machine where it can be known: its asked lane, its job's resumeOn, its job's pin (issue #485).
+  raisedByBackfill,
 ];
 
 /** A user schema's version once migrated. */

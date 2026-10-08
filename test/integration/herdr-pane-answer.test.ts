@@ -53,7 +53,7 @@ describe('a question answered by typing into the pane', () => {
     expect(after).toMatchObject({ id: q.id, status: 'answered', answeredBy: 'human', answer: 'Blue.' });
     expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('Paint the shed'), 'Blue.']);
     const events = await ofJob(a, job.id);
-    expect(events.find((e) => e.type === 'question.answered')!.data).toEqual({ questionId: q.id, by: 'human', answer: 'Blue.', via: 'pane' });
+    expect(events.find((e) => e.type === 'question.answered')!.data).toEqual({ questionId: q.id, by: 'human', answer: 'Blue.', via: 'pane', raisedBy: q.raisedBy });
     const reattached = events.find((e) => e.type === 'job.reattached')!;
     expect(reattached.data).toEqual({ reason: 'answered in the pane' });
     expect(reattached.laneId).toEqual(expect.any(String));
@@ -135,7 +135,7 @@ describe('a dialog Claude Code denies by itself', () => {
     expect(after!.answer).toBeUndefined();
     const events = await ofJob(a, job.id);
     expect(events.find((e) => e.type === 'question.answered')).toBeUndefined();
-    expect(events.find((e) => e.type === 'question.lapsed')!.data).toEqual({ questionId: q.id, lapsesAt: q.lapsesAt });
+    expect(events.find((e) => e.type === 'question.lapsed')!.data).toEqual({ questionId: q.id, lapsesAt: q.lapsesAt, raisedBy: q.raisedBy });
     expect(events.find((e) => e.type === 'job.reattached')!.data).toEqual({ reason: 'the dialog lapsed' });
     expect(herdr.prompts).toHaveLength(1);
   });

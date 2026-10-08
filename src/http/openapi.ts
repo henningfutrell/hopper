@@ -71,7 +71,7 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/job-rules', tag: 'Jobs', summary: 'The job rules', description: 'What every job\'s prompt carries before its work tree and the protocol: the saved text, or the default while none is saved (`missing`), with the default and the fixed lines.', returns: '`JobRulesView`' },
   { method: 'post', path: '/ui/api/job-rules', tag: 'Jobs', summary: 'Replace the job rules', description: '`version` is the one read from GET /api/job-rules. The next job to start gets them.', role: 'admin', body: jobRulesBody, returns: 'the new job rules view', errors: [409] },
   { method: 'get', path: '/api/questions', tag: 'Questions', summary: 'List questions', query: questionsQuery, returns: '`{ questions: Question[] }`' },
-  { method: 'get', path: '/api/questions/:id', tag: 'Questions', summary: 'One question, with its escalation trail', returns: '`Question`', errors: [404] },
+  { method: 'get', path: '/api/questions/:id', tag: 'Questions', summary: 'One question, with its escalation trail and the machine that raised it', returns: '`Question`', errors: [404] },
   { method: 'get', path: '/api/question-gates', tag: 'Questions', summary: 'The rules and the risk rules', returns: '`QuestionGatesView`' },
   { method: 'post', path: '/ui/api/questions/:id/answer', tag: 'Questions', summary: 'Answer an open question', role: 'operator', body: answerBody, returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/close', tag: 'Questions', summary: 'Close an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },

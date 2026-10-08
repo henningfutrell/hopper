@@ -46,7 +46,7 @@ describe('a question records and shows the machine that raised it (issue #485)',
     const [q] = await a.questionsOf(job.id);
     const raisedBy = { machineId: 'local', name, laneId: 'local/lane-1' };
     expect(q!.raisedBy).toEqual(raisedBy);
-    const events = (await a.events()).filter((e) => e.questionId === q!.id);
+    const events = (await a.events()).filter((e) => e.questionId === q!.id && e.type.startsWith('question.'));
     const asked = events.find((e) => e.type === 'question.asked')!;
     expect(asked).toMatchObject({ machineId: 'local', laneId: 'local/lane-1' });
     expect(asked.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy });
@@ -58,14 +58,15 @@ describe('a question records and shows the machine that raised it (issue #485)',
   });
 
   it('the snapshot stays put after the machine is removed', async () => {
-    const a = await start();
+    // No configured level names the machine, so it may be removed (the fake levels answer at their seam).
+    const a = await start({ plugins: { machines: lanes(1), escalationLevels: [] } });
     const job = await a.pull(ask('Which colour?'));
     await a.waitForStatus(job.id, 'finished');
     const [before] = await a.questionsOf(job.id);
     const token = await a.login();
     const version = (await a.api<{ config: { version: string } }>('GET', '/api/plugins')).body.config.version;
     const removed = await a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'local', version }, { token });
-    expect(removed.status).toBe(200);
+    expect(removed.status, JSON.stringify(removed.body)).toBe(200);
     const [after] = await a.questionsOf(job.id);
     expect(after!.raisedBy).toEqual(before!.raisedBy);
     expect(after!.raisedBy?.machineId).toBe('local');

@@ -22,6 +22,11 @@ issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of 
 
 Schema: `docs/schemas/envelope.v1.json`. Payloads are strict: unknown keys are rejected.
 
+Every `question.*` event names the **raising machine** — the machine the question was asked on — as the
+`machineId` subject (and `laneId`, where the lane is known) and as `raisedBy` (`machineId`, `name`, `laneId`)
+in its data: a snapshot taken when the question was asked, so it stays right after the job moves or the
+machine is renamed or removed. Absent on a question asked before it was recorded, with nothing to fill it from.
+
 ## `job.queued`
 
 Version 1 (`docs/schemas/job.queued.v1.json`). A job was created from a source item; it waits at the queue gate until accepted (`job.accepted`).
@@ -361,12 +366,18 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 | `questionId` | string | yes |
 | `text` | string | yes |
 | `detectedBy` | string | yes |
+| `raisedBy` | object | no |
 
 ```json
 {
   "questionId": "q1",
   "text": "which?",
-  "detectedBy": "marker"
+  "detectedBy": "marker",
+  "raisedBy": {
+    "machineId": "desk",
+    "name": "Desk tower",
+    "laneId": "desk/lane-1"
+  }
 }
 ```
 
@@ -386,6 +397,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 | `notifyCount` | integer | no |
 | `renotify` | boolean | no |
 | `lapsesAt` | string | no |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -415,6 +427,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `answerUrl` | string | yes |
 | `notifyCount` | integer | yes |
 | `lapsesAt` | string | no |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -424,7 +437,12 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
   "jobId": "j1",
   "goal": "g",
   "answerUrl": "http://127.0.0.1/q",
-  "notifyCount": 1
+  "notifyCount": 1,
+  "raisedBy": {
+    "machineId": "desk",
+    "name": "Desk tower",
+    "laneId": "desk/lane-1"
+  }
 }
 ```
 
@@ -438,6 +456,7 @@ Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an
 | `by` | string | yes |
 | `answer` | string | yes |
 | `via` | string | no |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -455,6 +474,7 @@ Version 1 (`docs/schemas/question.closed.v1.json`). The owner closed an open que
 |---|---|---|
 | `questionId` | string | yes |
 | `answer` | string | yes |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -470,6 +490,7 @@ Version 1 (`docs/schemas/question.dismissed.v1.json`). The owner dismissed an op
 | field | type | required |
 |---|---|---|
 | `questionId` | string | yes |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -485,6 +506,7 @@ Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out a
 |---|---|---|
 | `questionId` | string | yes |
 | `after_ms` | number | yes |
+| `raisedBy` | object | no |
 
 ```json
 {
@@ -501,6 +523,7 @@ Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in 
 |---|---|---|
 | `questionId` | string | yes |
 | `lapsesAt` | string | yes |
+| `raisedBy` | object | no |
 
 ```json
 {

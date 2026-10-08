@@ -2,7 +2,7 @@
 // with Send answer, Close and Dismiss. A level's recommendation on the trail is sent in one click, Use answer, by
 // the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
-// questions are marked seen (the nav badge clears). Only the open questions: the question history and
+// questions are marked seen (the nav badge clears). The header names the machine that raised the question (issue #485). Only the open questions: the question history and
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box. One order, the API's: oldest first, the longest waiting on top (issue #450).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
+import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt } from '@/model/wire';
@@ -85,7 +86,7 @@ function QuestionCard({ q }: { q: Question }) {
   const movedOn = job && (job.status !== 'waiting_answer' || job.questionId !== q.id);
   return (
     <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.tier === 'human' ? 'border-question/40' : ''}
-      action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)}{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
+      action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)} <RaisedOn raisedBy={q.raisedBy} className="align-bottom" />{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
         {q.tier === 'human' && q.expiresAt && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}</span>}
       bodyClassName="space-y-3">
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />

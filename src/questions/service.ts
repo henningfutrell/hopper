@@ -49,7 +49,12 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   const iso = () => clock.now().toISOString();
 
   function emit(q: Question, type: 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired' | 'question.lapsed', data: Record<string, unknown>) {
-    store.events.append({ type, jobId: q.jobId, questionId: q.id, data: { questionId: q.id, ...data } });
+    // The raising machine (issue #485) rides on every question event: subject and data, from the question's snapshot.
+    const r = q.raisedBy;
+    store.events.append({
+      type, jobId: q.jobId, questionId: q.id, ...(r ? { machineId: r.machineId, ...(r.laneId ? { laneId: r.laneId } : {}) } : {}),
+      data: { questionId: q.id, ...data, ...(r ? { raisedBy: r } : {}) },
+    });
   }
 
   function clearTimers(id: string) {

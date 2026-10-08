@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Every question now says which machine asked it, in Questions, the question history, events and notifications, even after the job moves on or the machine is renamed.
 - Use answer on a question now sends that answer to the job straight away: one click, no separate Send. The card says it was sent, or why not with a Retry button.
 - Your GitHub connection now keeps working for months instead of needing to be made again every day: the hopper renews it by itself in the background, also right after it was stopped for a while, and jobs that are already running keep their access to GitHub when it does. A short GitHub outage no longer ends the connection; if it really ends, the header and the Sources page say so and ask you to connect again. The connection's keys are now stored locked in the database.
 - Sources now lists every issue labelled for the hopper and says, for each one, whether it was taken or why not: not assigned to you, parked, failed, done but still open, or held by another hopper. You can assign issues to yourself or release a claim left behind with one click, repositories outside your chosen ones that have work for you are pointed out with a button to add them, and an idle lane on the Overview says why it is idle.

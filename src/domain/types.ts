@@ -381,12 +381,26 @@ export interface QuestionAttempt {
   outcome: 'accepted' | 'escalated';
 }
 
+/**
+ * The raising machine (issue #485): the machine a question was asked on, its name (label) then, and the
+ * lane — a snapshot taken when it is asked, kept as it was after the job moves or the machine is renamed
+ * or removed. Distinct from `QuestionAttempt.machine`, where an escalation level ran.
+ */
+export interface RaisedBy {
+  machineId: MachineId;
+  /** The machine's label when the question was asked; absent when it was not known. */
+  name?: string;
+  laneId?: LaneId;
+}
+
 export interface Question {
   id: string;
   jobId: JobId;
   text: string;
   recentOutput: string;
   detectedBy: string;
+  /** Where it was asked. Absent: asked before this was recorded, with nothing to fill it from (issue #485). */
+  raisedBy?: RaisedBy;
   status: QuestionStatus;
   /**
    * The stage holding the question (or the last one that held it): an escalation level's instance

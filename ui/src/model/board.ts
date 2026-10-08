@@ -1,6 +1,7 @@
 // Every job view's data, from the one job store: which group each status is in, the groups as
 // lists, the overview's numbers counted off those lists, the lane board, the waiting order, and how a lane,
 // a machine or an event's subject is named.
+import { raisedByOf, raisedName } from './questions.ts';
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Running, Ended). */
@@ -72,6 +73,8 @@ export function startTarget(s: { machineId: string; laneId?: string | null }, ma
 
 /** An event's subject as people read it: its job's name, else its lane or machine named by `laneName`/`machineName` (issue #166). */
 export function subjectOf(e: DomainEvent, nameOf: (jobId: string) => string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  // A question event names the machine that raised it (issue #485), as it was then.
+  if (e.type.startsWith('question.')) return `${e.jobId ? `${nameOf(e.jobId)} · ` : ''}on ${raisedName(raisedByOf(e))}`;
   if (e.jobId) return nameOf(e.jobId);
   if (e.laneId) return laneName(e.laneId, machines);
   if (e.machineId) return machineName(e.machineId, machines);

@@ -1,10 +1,12 @@
 // A device code to enter at the provider (issues #214, #258): laid out around the code — the code large
 // and centred, a copy button beside it, the provider one press away (the press copies the code too), how
 // long the code lasts, and the way back. The landing page's GitHub sign-in and Sources' Connect GitHub
-// both show it.
+// both show it, as the hopper's own sign-ins, with no machine; a login prompt a machine raises names that
+// machine (issue #485).
 import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { RaisedOn } from '@/components/raised-by';
 import { cn } from '@/lib/utils';
 
 const copyText = (text: string): Promise<boolean> =>
@@ -24,8 +26,10 @@ function useLeft(at: string | undefined): string | null {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, onCancel, cancelDisabled, className, ...rest }: {
+export function DeviceCode({ provider, userCode, verificationUri, expiresAt, waiting, note, machine, onCancel, cancelDisabled, className, ...rest }: {
   provider: string; userCode: string; verificationUri: string; expiresAt?: string;
+  /** The machine that raised the prompt (issue #485); absent for the hopper's own sign-ins. */
+  machine?: { id: string; name?: string };
   /** What the page is waiting for, under the code: a few words. */
   waiting: ReactNode;
   /** A last line in small print. */
@@ -38,6 +42,7 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
   return (
     <div {...rest} className={cn('flex flex-col items-center gap-4 text-center', className)}>
       <div className="text-sm font-medium text-foreground">Enter this code on {provider}</div>
+      {machine && <RaisedOn raisedBy={{ machineId: machine.id, ...(machine.name ? { name: machine.name } : {}) }} className="-mt-2 text-xs text-muted-foreground" />}
       <div className="flex items-center gap-1.5 rounded-xl border bg-background/60 py-2 pr-2 pl-4 shadow-inner">
         <code data-device-code className="font-mono text-2xl font-semibold tracking-[0.2em] text-foreground select-all sm:text-3xl">{userCode}</code>
         <Button variant="ghost" size="icon-sm" aria-label="Copy code" title="Copy code" onClick={copy}>{copied ? <Check className="text-ok" /> : <Copy />}</Button>

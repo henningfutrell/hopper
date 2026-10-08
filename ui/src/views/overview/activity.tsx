@@ -10,6 +10,7 @@ import { dismissNotice, showDismissed, useDismissed } from '@/hooks/use-dismisse
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { diskText } from '@/model/machines';
+import { raisedName } from '@/model/questions';
 import { ago } from '@/model/format';
 import { useHopper } from '@/store';
 import { useJobBoard, useJobName } from '@/store/selectors';
@@ -39,7 +40,7 @@ export function AttentionPanel() {
   const nameOf = useJobName();
   const now = useNow();
   const all: Alert[] = [
-    ...questions.map((q): Alert => ({ key: noticeKey.question(q.id), tone: 'question', label: q.tier === 'human' ? 'for you' : q.tier, text: `${nameOf(q.jobId)} — ${q.text}`, href: '#questions', at: q.createdAt, ...(q.tier === 'human' && q.expiresAt ? { expires: q.expiresAt } : {}) })),
+    ...questions.map((q): Alert => ({ key: noticeKey.question(q.id), tone: 'question', label: q.tier === 'human' ? 'for you' : q.tier, text: `${nameOf(q.jobId)} on ${raisedName(q.raisedBy)} — ${q.text}`, href: '#questions', at: q.createdAt, ...(q.tier === 'human' && q.expiresAt ? { expires: q.expiresAt } : {}) })),
     ...(health?.fallback ? [{ key: noticeKey.router(health), tone: 'warn' as const, label: 'router', text: `${health.router} is not answering: pass-through advice` }] : []),
     ...sources.filter((s) => s.state === 'error').map((s): Alert => ({ key: noticeKey.source(s), tone: 'bad', label: 'source', text: `${s.name}: ${s.lastError ?? 'error'}`, href: '#sources', ...(s.lastSyncAt ? { at: s.lastSyncAt } : {}) })),
     ...machines.filter((m) => m.disk?.low).map((m): Alert => ({ key: noticeKey.disk(m.id), tone: 'warn', label: 'disk', text: `${m.label || m.id}: ${diskText(m.disk)}`, href: '#machines' })),
