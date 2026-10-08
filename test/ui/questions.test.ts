@@ -242,7 +242,7 @@ describe("the levels' recommendations on an escalated question", () => {
     const use = useButtons()[0]!;
     await act(async () => { use.click(); use.click(); });
     expect(useButtons().every((b) => b.disabled)).toBe(true);
-    expect(button('Send answer')!.disabled).toBe(true);
+    expect(button('Sending…')!.disabled).toBe(true);
     await click(useButtons()[1]);
     await vi.waitFor(() => expect(result()?.textContent).toMatch(/sent/i));
     expect(answers(daemon)).toHaveLength(1);
