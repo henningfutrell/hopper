@@ -86,12 +86,12 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.filter((c) => c.method === 'waitOutput' && c.args[1] === 'hopper-scratch-ready').map((c) => c.args.slice(1))).toEqual(Array(3).fill(['hopper-scratch-ready', 1000]));
   });
 
-  it('fails the job, pane closed, when the shell never runs the scratch command', async () => {
+  it('fails the job, panes closed, when the shell never runs the scratch command in 3 starts (issue #462)', async () => {
     const { herdr, executor } = setup({ turns: [DONE], shellDropsRuns: 1000 });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx))
-      .toEqual({ kind: 'failed', error: `pane w1:p1 never ran the scratch dir command within 60000 ms` });
+      .toEqual({ kind: 'failed', error: `claude did not start in 3 attempts: pane w1:p3 never ran the scratch dir command within 60000 ms` });
     expect(herdr.agentStarts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
   });
 
   it('quotes a work tree path for the shell', async () => {

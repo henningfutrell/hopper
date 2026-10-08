@@ -505,8 +505,20 @@ is claimed onto maps to the parked pane.
 prompt, answering `agent_pane_busy` ("agent target pane … is not an available shell") when
 it is sent a few ms after `tab create` — seen live with 4 jobs claimed at once. The CLI
 client maps that code to `paneBusy`; the executor retries `agent start` every 100 ms on
-exactly that code until the 60000 ms start deadline, then fails the job
-(`pane … never reached its shell prompt`). Any other error fails at once. **One pane per
+exactly that code until the 60000 ms start deadline (`pane … never reached its shell prompt`). Any
+other error fails at once, but herdr's own `timeout` ("timed out waiting for agent startup": Claude
+never came up while herdr waited, issue #462).
+
+**A start that times out is tried again** (issue #462, seen live with 16 lanes filling at once). The
+pane's shell never ran the scratch command or never answered where it runs, it never reached its
+prompt, herdr's agent start timed out, or Claude was not ready by the start deadline: nothing of the
+job has run yet. The executor closes and reaps the pane, waits, and starts again in a new pane on the
+same lane — credentials placed again, since the reap took the scratch dir — up to 3 starts in all. The
+pauses are 10 s then 30 s, each longer by up to half at random, so lanes that filled at once do not
+start again at once. Each retry is a progress message, `claude did not start (attempt n of 3), trying
+again in a new pane in <s> s: <why>`, and the last failure is `claude did not start in 3 attempts:
+<why>`; `<why>` ends with the pane's last 30 lines when the pane was read. A startup dialog the hopper
+may not answer, an unusable work tree or a Windows shell is never tried again. **One pane per
 lane:** the executor refuses to map a pane already held by another lane (job `failed`,
 pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
