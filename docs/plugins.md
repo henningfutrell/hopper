@@ -96,7 +96,8 @@ Find the machine with the context's `machine(id)`; one with no `ssh`, `docker` o
 machine (issue #174). A config stored before a machine was picked may lack it: the context's
 `machines()` lists every machine, so the part can pick one as it runs, and say which (issue #442). An
 escalation level also gets `escalationMachine()`, the default escalation machine, and the request's
-`jobMachine`; a level that picked its machine returns it on its reply as `machine: { id, why }`.
+`jobMachine`; a level that picked its machine returns it on its reply as `machine: { id, why }`. A usage
+source and an escalation level also get `client(machine)`, how to reach a client target's client (issues #366, #482).
 
 ## Detection
 
