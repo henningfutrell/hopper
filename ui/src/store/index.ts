@@ -9,8 +9,9 @@ import { beginSignIn, signInThroughGateway, signInWithoutCredential, wantsGatewa
 import { reauthFor, rememberReturn, takeReturn } from '@/lib/reauth';
 import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
+import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { SessionUser, SessionView } from '@/model/wire';
+import type { LoginSettings, LoginsRead, LoginView, SessionUser, SessionView } from '@/model/wire';
 import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Question, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
@@ -43,6 +44,12 @@ export interface HopperState {
   questions: Question[];
   /** The question history: every question no longer open, newest first (GET /api/questions?status=all). */
   handled: Question[];
+  /** The logins, newest first (GET /api/logins, issue #477): open and ended; never in `questions`. */
+  logins: LoginView[];
+  /** The logins settings, as GET /api/logins answered them; null until read. */
+  loginSettings: LoginSettings | null;
+  /** Server time less the browser's when the logins were read: countdowns run on server time. */
+  serverOffsetMs: number;
   /** Newest first, every type: the live log. */
   events: DomainEvent[];
   /** Oldest first, HISTORY_TYPES only: the charts. */
@@ -68,7 +75,7 @@ export interface HopperState {
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, machines: [],
-  decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
+  decisions: [], questions: [], handled: [], logins: [], loginSettings: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
 }));
 const set = useHopper.setState;
@@ -106,6 +113,25 @@ export async function refreshQuestions() {
     get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
   ]);
   set({ questions: open.questions, handled: handledOf(all.questions) });
+}
+export const LOGINS_LIMIT = 200;
+const loginsOf = (r: LoginsRead): Pick<HopperState, 'logins' | 'loginSettings' | 'serverOffsetMs'> =>
+  ({ logins: r.logins, loginSettings: r.settings, serverOffsetMs: clockOffset(r.now, Date.now()) });
+/** GET /api/logins: the logins, their settings and the server's time (issue #477). An answer without them is refused, never read as none. */
+export async function refreshLogins() {
+  const r = await get<LoginsRead>(`/api/logins?limit=${LOGINS_LIMIT}`);
+  if (!Array.isArray(r.logins) || !r.settings || Number.isNaN(Date.parse(r.now))) throw new Error('GET /api/logins: the answer holds no logins');
+  set(loginsOf(r));
+}
+/** POST /ui/api/logins/settings (admin): either setting, or both. Failures toast; a rejected session drops to the landing page. */
+export async function saveLoginSettings(body: Partial<LoginSettings>): Promise<void> {
+  try {
+    set({ loginSettings: await post<LoginSettings>('/ui/api/logins/settings', body) });
+    toast.success('Logins settings saved');
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
+    toast.error((e as Error).message);
+  }
 }
 /** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen). The nav badge does not read it. Quiet: no toast. */
 export async function markSeen(ids: string[]) {
@@ -151,6 +177,7 @@ function debounced(fn: () => Promise<void>, ms = 150) {
 }
 export const refreshLiveSoon = debounced(refreshLive);
 const refreshQuestionsSoon = debounced(refreshQuestions);
+const refreshLoginsSoon = debounced(refreshLogins);
 
 export async function checkSession() {
   try {
@@ -250,6 +277,7 @@ export function onDomainEvent(e: DomainEvent) {
   });
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
+  if (e.type.startsWith('auth.')) refreshLoginsSoon();
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
@@ -288,6 +316,8 @@ export async function load(): Promise<boolean> {
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
   refreshUpdate().catch(() => {});
+  // Apart, so the server's time is read close to its answer; until it is read the Logins view says so.
+  refreshLogins().catch(() => {});
   return true;
 }
 export const setLoadError = (loadError: string) => set({ loadError });

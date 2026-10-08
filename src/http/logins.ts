@@ -1,10 +1,11 @@
 // Login routes (issue #476, design.md "Logins"): the logins a job or run waits on, with the server's time for
-// their countdowns. A login's URL and code go only to a UI session of the user (`x-hopper-session`): never to the
-// API door's token, never to a loopback read without a session. The actions are the UI session's (src/http/ui/logins.ts).
+// their countdowns. A login's URL and code go only to a UI session of the user (`x-hopper-session`) whose role may
+// act on it, operator or admin (issue #477): never to a viewer's, never to the API door's token, never to a
+// loopback read without a session. The actions are the UI session's (src/http/ui/logins.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../domain/ports.ts';
-import { LOGIN_STATUSES } from '../domain/types.ts';
+import { LOGIN_STATUSES, roleAllows } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { sessionToken } from './host-guard.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
@@ -18,10 +19,10 @@ export const loginsQuery = z.object({
 const idParams = z.object({ id: z.string() });
 
 export function loginRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; sessions: UiSessions; clock: Clock }): void {
-  /** The request carries a UI session of the user it reads as. */
+  /** The request carries a UI session of the user it reads as, whose role may act on a login. */
   const ownSession = (req: FastifyRequest): boolean => {
     const s = o.sessions.find(sessionToken(req));
-    return s !== undefined && s.userId === userIdOf(req);
+    return s !== undefined && s.userId === userIdOf(req) && roleAllows(s.role, 'operator');
   };
 
   app.get('/api/logins', async (req) => {

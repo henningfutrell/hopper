@@ -141,6 +141,9 @@ export interface UserSettingsRepository {
   /** What a job does when its login expires (issue #476); absent: never chosen. */
   getLoginExpiry(): LoginExpiryAction | undefined;
   setLoginExpiry(action: LoginExpiryAction): void;
+  /** How long before a login's code runs out the Logins view warns, in seconds (issue #477); absent: never chosen. */
+  getLoginWarnSec(): number | undefined;
+  setLoginWarnSec(seconds: number): void;
 }
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */

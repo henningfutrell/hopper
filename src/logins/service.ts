@@ -53,7 +53,10 @@ export function createLogins(o: LoginsOptions): Logins {
   /** What the user asked of a login, until its run reads it. */
   const asked = new Map<string, LoginCheck>();
   const now = (): string => clock.now().toISOString();
-  const settings = (): LoginSettings => ({ onExpiry: store.settings.getLoginExpiry() ?? DEFAULT_LOGIN_SETTINGS.onExpiry });
+  const settings = (): LoginSettings => ({
+    onExpiry: store.settings.getLoginExpiry() ?? DEFAULT_LOGIN_SETTINGS.onExpiry,
+    warnSec: store.settings.getLoginWarnSec() ?? DEFAULT_LOGIN_SETTINGS.warnSec,
+  });
 
   const emit = (type: EventType, l: Login, data: Record<string, unknown>): void => {
     store.events.append({

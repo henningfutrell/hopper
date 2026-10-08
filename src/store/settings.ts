@@ -88,6 +88,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setLoginExpiry(action) {
       write('loginExpiry', action);
     },
+    getLoginWarnSec() {
+      const n = Number(read('loginWarnSec'));
+      return Number.isInteger(n) && n > 0 ? n : undefined;
+    },
+    setLoginWarnSec(seconds) {
+      write('loginWarnSec', String(seconds));
+    },
   };
 }
 

@@ -6,6 +6,7 @@ import type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
+  Login, LoginSettings, LoginStatus, LoginView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -14,6 +15,7 @@ export type {
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
+  Login, LoginSettings, LoginStatus, LoginView,
 };
 
 export interface Queue {
@@ -28,6 +30,13 @@ export interface Queue {
   gate: QueueGate;
   /** The pre-sort of the waiting jobs not yet accepted. */
   presort: PreSort;
+}
+
+/** GET /api/logins (issue #476): the server's time for the countdowns, the logins settings, the logins newest first. */
+export interface LoginsRead {
+  now: string;
+  settings: LoginSettings;
+  logins: LoginView[];
 }
 
 export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };

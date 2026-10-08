@@ -86,7 +86,8 @@ async function boot(hash: string, d: Daemon) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   vi.resetModules();
-  const mod = (await import('../../ui/src/app/app.tsx')) as { App: () => ReturnType<typeof createElement> }; // browser code, type-checked by ui/tsconfig.json
+  const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+  const mod = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(mod.App)); });
   await settle();
 }

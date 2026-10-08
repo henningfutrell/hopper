@@ -17,9 +17,16 @@ export type LoginStatus = typeof LOGIN_STATUSES[number];
 export const LOGIN_EXPIRY_ACTIONS = ['fail', 'hold'] as const;
 export type LoginExpiryAction = typeof LOGIN_EXPIRY_ACTIONS[number];
 
-/** The logins' settings: the user's, read at each use, so a change applies without a restart (issue #356). */
-export interface LoginSettings { onExpiry: LoginExpiryAction }
-export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'fail' };
+/** The bounds of `warnSec`, in seconds. */
+export const LOGIN_WARN_SEC = { min: 10, max: 3600 } as const;
+
+/**
+ * The logins' settings: the user's, read at each use, so a change applies without a restart (issue #356).
+ * `warnSec`: how long before a code runs out the Logins view warns (issue #477): at least this, or a fifth of
+ * the code's life when that is longer.
+ */
+export interface LoginSettings { onExpiry: LoginExpiryAction; warnSec: number }
+export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'fail', warnSec: 60 };
 
 /** A login as its run reports it. The URL and the code are credentials in flight: the hopper keeps them in memory only. */
 export interface LoginReport {
