@@ -19,7 +19,7 @@ import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt } from '@/model/wire';
-import { awaitsOwner, longestWaitingFirst } from '@/model/questions';
+import { longestWaitingFirst, unseenByOwner } from '@/model/questions';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
@@ -140,7 +140,7 @@ export function Questions() {
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.
   const canAnswer = useCanOperate();
-  const unseen = questions.filter(awaitsOwner).map((q) => q.id).join(',');
+  const unseen = questions.filter(unseenByOwner).map((q) => q.id).join(',');
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
     <div ref={list} className="space-y-3 [overflow-anchor:none]">

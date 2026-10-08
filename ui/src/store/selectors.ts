@@ -36,8 +36,8 @@ export function useQuestionWaits(since: number): QuestionWait[] {
   return useMemo(() => questionWaits(history, since, jobs), [history, since, jobs]);
 }
 
-/** How many open questions wait on the owner and are not yet seen: the nav badge. */
-export const useUnseenForOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+/** How many open questions wait on the owner, seen or not: the nav badge (issue #499). */
+export const useAwaitingOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
 
 /** How many waiting jobs wait on the pre-sort: the Queue nav badge. */
 export const useAwaitingSort = (): number => useHopper((s) => awaitingSort(Object.values(s.jobs)));

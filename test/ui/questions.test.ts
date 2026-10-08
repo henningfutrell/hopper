@@ -3,8 +3,8 @@
 // against a fake of the daemon's HTTP surface: the browser's only seam. Logged out, there is no card,
 // only the landing page (issue #213); logged in, it offers Send answer and Close (Close asks first, in
 // a dialog); a 403 on a mutation logs the UI out, to the landing page. Dismiss
-// drops a question (asks first); opening the view marks the owner's questions seen, which clears
-// the nav badge. The Questions view holds the open questions only (issue #151): the handled ones are
+// drops a question (asks first); opening the view marks the owner's questions seen. The nav badge
+// counts the open questions at the human stage, seen or not, and clears only when none is open (issue #499). The Questions view holds the open questions only (issue #151): the handled ones are
 // the question history in Settings, a compact list, each opening to its question and answer.
 // A session whose role cannot answer (viewer, issue #39) says so; a 403 naming the role needed keeps
 // the session.
@@ -26,11 +26,15 @@ const handled = {
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
 type Role = 'viewer' | 'operator' | 'admin';
-interface Boot { attempts?: unknown[]; lapsesAt?: string; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; mutationError?: string; mutationDelayMs?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
+interface Boot { attempts?: unknown[]; lapsesAt?: string; seenAt?: string; tier?: string; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; mutationError?: string; mutationDelayMs?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
 
 function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
-  const open = { ...question, attempts: o.attempts ?? [], ...(o.lapsesAt ? { lapsesAt: o.lapsesAt } : {}) } as Record<string, unknown>;
+  const open = {
+    ...question, attempts: o.attempts ?? [], ...(o.lapsesAt ? { lapsesAt: o.lapsesAt } : {}), ...(o.seenAt ? { seenAt: o.seenAt } : {}), ...(o.tier ? { tier: o.tier } : {}),
+  } as Record<string, unknown>;
+  // What GET /api/questions?status=open answers; a test changes it as the daemon's questions change.
+  const daemonState = { open: [open] };
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
@@ -54,7 +58,7 @@ function fakeDaemon(o: Boot) {
         ? { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: o.role ?? 'admin', realm: 'local', name: 'login code' }, signIn }
         : { authenticated: false, signIn });
     }
-    if (path === '/api/questions') return json(200, { questions: new URLSearchParams(query).get('status') === 'all' ? [open, handled] : [open] });
+    if (path === '/api/questions') return json(200, { questions: new URLSearchParams(query).get('status') === 'all' ? [...daemonState.open, handled] : daemonState.open });
     if (path === `/ui/api/questions/${question.id}/seen`) { open.seenAt ??= '2026-10-03T20:01:00.000Z'; return json(200, open); }
     if (path.startsWith('/ui/api/')) {
       if (o.mutationDelayMs) await new Promise((r) => setTimeout(r, o.mutationDelayMs));
@@ -66,15 +70,23 @@ function fakeDaemon(o: Boot) {
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
-  return { fetch, calls };
+  return { fetch, calls, open, setOpen: (qs: Record<string, unknown>[]) => { daemonState.open = qs; } };
 }
 
+const streams: FakeEventSource[] = [];
 class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  addEventListener(): void {}
+  listeners = new Map<string, (m: { data: string }) => void>();
+  constructor() { streams.push(this); }
+  addEventListener(type: string, fn: (m: { data: string }) => void): void { this.listeners.set(type, fn); }
   close(): void {}
 }
+let seq = 0;
+/** The daemon's stream sends a question event, as it does on a raise, an answer, a close, a dismiss or an expiry. */
+const emit = (type: string) => act(async () => {
+  streams.at(-1)!.listeners.get(type)!({ data: JSON.stringify({ seq: ++seq, schemaVersion: 1, id: String(seq), type, at: new Date().toISOString(), jobId: question.jobId, data: { questionId: question.id } }) });
+});
 
 let root: Root | undefined;
 
@@ -268,13 +280,39 @@ describe("the levels' recommendations on an escalated question", () => {
 });
 
 describe('the Questions badge', () => {
-  it('counts the owner\'s unseen questions; opening Questions marks them seen and the badge clears', async () => {
+  // Issue #499: the badge counts what waits on the owner, not what they have not looked at yet.
+  it('counts the open questions at the human stage; opening Questions marks them seen and the badge stays', async () => {
     const daemon = await boot({ authed: true, hash: '#overview' });
     await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
     expect(daemon.calls.some((c) => c.path.endsWith('/seen'))).toBe(false);
     await act(async () => { window.location.hash = '#questions'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
     await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === `/ui/api/questions/${question.id}/seen` && c.method === 'POST')).toBe(true));
+    await vi.waitFor(() => expect(daemon.open.seenAt).toBeDefined());
+    await act(async () => { window.location.hash = '#overview'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
+    expect(badge()?.textContent).toBe('1');
+  });
+
+  it('a question already seen still counts on a fresh load', async () => {
+    await boot({ authed: true, hash: '#overview', seenAt: '2026-10-03T20:01:00.000Z' });
+    await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
+  });
+
+  it('a question still with an escalation level does not count: it does not wait on the owner yet', async () => {
+    await boot({ authed: true, hash: '#overview', tier: 'opus' });
+    await vi.waitFor(() => expect(document.querySelector('a[href="#questions"]')).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(badge()).toBeNull();
+  });
+
+  it('clears only when none is open, and comes back when one is raised: live, from the stream, no reload', async () => {
+    const daemon = await boot({ authed: true, hash: '#overview', seenAt: '2026-10-03T20:01:00.000Z' });
+    await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
+    daemon.setOpen([]);
+    await emit('question.answered');
     await vi.waitFor(() => expect(badge()).toBeNull());
+    daemon.setOpen([{ ...daemon.open, seenAt: undefined }, { ...daemon.open, id: 'd0e1f2a3', seenAt: undefined }]);
+    await emit('question.escalated_to_human');
+    await vi.waitFor(() => expect(badge()?.textContent).toBe('2'));
   });
 });
 

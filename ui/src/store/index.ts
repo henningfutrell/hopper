@@ -107,7 +107,7 @@ export async function refreshQuestions() {
   ]);
   set({ questions: open.questions, handled: handledOf(all.questions) });
 }
-/** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen), which clears the nav badge. Quiet: no toast. */
+/** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen). The nav badge does not read it. Quiet: no toast. */
 export async function markSeen(ids: string[]) {
   for (const id of ids) {
     try {
