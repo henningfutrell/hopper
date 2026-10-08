@@ -23,8 +23,13 @@ export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK].join('\n');
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
 
-/** The fixed line naming the job's work tree. */
-export const workTreeRule = (cwd: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
+/**
+ * The fixed line naming the job's work tree. With `scratch`, the job's own scratch dir, which the reap
+ * removes when the job ends (issue #401); without, the work tree's shared one.
+ */
+export const workTreeRule = (cwd: string, scratch?: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. ${scratch
+  ? `Temporary files, and clones or git worktrees made only for this job, go in ${scratch}: git ignores it, and TMPDIR and your scratchpad point there. When the job ends, the hopper stops every process the job started and removes that directory, unless a repository in it holds uncommitted or unpushed work.`
+  : `Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there.`} Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
@@ -34,7 +39,7 @@ export const PROTOCOL_LINES: readonly string[] = [
 ];
 
 /** The lines after the job rules, as the UI shows them: the work tree (named `<work tree>`), then the protocol. */
-export const FIXED_JOB_LINES: readonly string[] = [workTreeRule('<work tree>'), ...PROTOCOL_LINES];
+export const FIXED_JOB_LINES: readonly string[] = [workTreeRule('<work tree>', `<work tree>/${SCRATCH_DIR}/<job id>`), ...PROTOCOL_LINES];
 
 /** The most an edit may write: the job rules go into every job's prompt. */
 export const JOB_RULES_MAX_BYTES = 16 * 1024;

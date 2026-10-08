@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
 import type { FakeTurn } from '../../src/executors/herdr/index.ts';
-import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
+import { JOB_ID, LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
 const STUDIO = { id: 'studio', label: 'studio', maxLanes: 1, online: true, executors: ['herdr-claude'], client: {} };
 
@@ -123,7 +123,7 @@ describe('herdr-claude executor: ~ in a work tree resolves on the lane\'s machin
     const { remotes, executor } = setup({}, { defaultCwd: '~/hopper-jobs', remote: { laptop: { turns: [DONE] } } });
     const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', ...(cwd ? { cwd } : {}) }), 'laptop/lane-1', FAR);
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
-    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: expected, env: { TMPDIR: `${expected}/.hopper-scratch` } });
+    expect(remotes.get('laptop')!.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ cwd: expected, env: { TMPDIR: `${expected}/.hopper-scratch/${JOB_ID}` } });
     expect(workTrees).toEqual([expected]);
   });
 
@@ -161,7 +161,7 @@ describe('herdr-claude executor: a work tree the machine cannot use fails the jo
     expect(out).toMatchObject({ kind: 'failed' });
     expect((out as { error: string }).error).toMatch(/^the work tree \/home\/node is not usable on laptop: /);
     const there = remotes.get('laptop')!;
-    expect(there.calls.filter((c) => c.method === 'runInPane')).toHaveLength(1);
+    expect(there.calls.filter((c) => c.method === 'runInPane' && !String(c.args[1]).startsWith('env -u HOPPER_JOB_ID'))).toHaveLength(1);
     expect(there.agentStarts).toEqual([]);
     expect(there.calls.some((c) => c.method === 'closePane')).toBe(true);
   });

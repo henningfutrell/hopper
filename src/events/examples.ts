@@ -42,6 +42,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.claimed_by_operator': {},
   'job.rerun': { by: 'user' },
   'job.dismissed': { by: 'user' },
+  'job.work_kept': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper'] },
   'job.unassigned': { assignee: 'octocat' },
   'job.reassigned': { assignee: 'octocat' },
   'source.stalled': { source: 'github-account', kind: 'github-account', error: 'GitHub is down', since: '2026-10-07T20:14:00.000Z' },

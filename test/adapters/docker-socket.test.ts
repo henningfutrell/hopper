@@ -5,7 +5,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DOCKER_HOST, dockerArgv, dockerEnv, dockerHost } from '../../src/executors/docker.ts';
 
@@ -22,7 +21,9 @@ async function socket(path: string, mode: number): Promise<string> {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'jh-dsock-'));
+  // Short, like test/support/docker-proxy.ts: a unix socket path is capped at 108 bytes, and the
+  // run's TMPDIR (test/support/run.ts) can be longer than that leaves room for.
+  dir = mkdtempSync('/tmp/jh-dsock-');
   chmodSync(dir, 0o700);
 });
 afterEach(async () => {

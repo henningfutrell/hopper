@@ -10,6 +10,7 @@
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { execFile } from 'node:child_process';
+import { statfsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
@@ -96,7 +97,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, home: homedir() });
+  if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
   if (path === '/load') return load(o, releases, stream, body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
@@ -183,4 +184,14 @@ export function startClient(o: ClientOptions): Client {
       await exited;
     },
   };
+}
+
+/** The disk this user's home is on (issue #401), for the hopper's warning before it fills; none when it cannot be read. */
+function diskOfHome(): { disk?: { freeBytes: number; totalBytes: number } } {
+  try {
+    const s = statfsSync(homedir());
+    return { disk: { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize } };
+  } catch {
+    return {};
+  }
 }

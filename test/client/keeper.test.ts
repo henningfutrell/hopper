@@ -75,6 +75,13 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(await keep(transport, () => true)).toMatchObject({ online: true, home: homedir() });
   });
 
+  it('the probe carries the disk the client\'s home is on, so the UI warns before it fills (issue #401)', async () => {
+    const { transport } = await olderClient();
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
+    const { disk } = await keep(transport, () => true);
+    expect(disk?.totalBytes).toBeGreaterThan(0);
+  });
+
   it('a client not dialled in is offline, and nothing is tried', async () => {
     dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });

@@ -12,11 +12,11 @@ import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { ReadingGauge } from '@/components/reading';
 import { Empty, Panel } from '@/components/panel';
-import { StatusBadge } from '@/components/status';
+import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, kindOf, mayAddThisMachine, type MachineKind } from '@/model/machines';
+import { clientReleaseText, diskText, kindOf, mayAddThisMachine, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -63,7 +63,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<StatusBadge status={m.online ? 'online' : 'offline'} />}>
+      action={<div className="flex items-center gap-1.5">{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
         <div><div className="text-[11px] text-muted-foreground">open</div><div className="num text-lg font-semibold">{m.lanes.length}</div></div>
@@ -77,6 +77,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {m.client && <Fact label="connection">client, dialled in</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
+        {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
       </dl>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       {editing && kind.kind === 'attached' && ctx.config && (

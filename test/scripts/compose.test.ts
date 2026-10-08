@@ -149,7 +149,14 @@ describe('the install page', () => {
     expect(page).toContain('data-copy="podman compose up -d"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
-    expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d"');
+    expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
+  });
+
+  it('upgrades without leaving the replaced image behind: the prune takes only dangling hopper images (issue #401)', () => {
+    for (const text of [page, readFileSync(join(ROOT, 'compose.yaml'), 'utf8'), readFileSync(join(ROOT, 'docs', 'deploy.md'), 'utf8'), readFileSync(join(ROOT, 'README.md'), 'utf8')]) {
+      expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
+    }
+    expect(readFileSync(join(ROOT, 'Dockerfile'), 'utf8')).toMatch(/^LABEL org\.opencontainers\.image\.title=hopper$/m);
   });
 
   it('recommends the container: its first command is the Podman one, before the install on the machine itself', () => {

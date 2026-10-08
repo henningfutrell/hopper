@@ -88,15 +88,21 @@ export interface StartDeps {
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
-/** The job's scratch dir: Claude's scratchpad and every temp file, inside its work tree (design.md "Work tree"). */
+/** The work tree's scratch dirs, git-ignored as one (design.md "Work tree"). */
 export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}/${SCRATCH_DIR}`;
+
+/**
+ * The job's own scratch dir: Claude's scratchpad, every temp file, and the clones it makes only for this
+ * job. Its own, so the reap can remove it when the job ends (issue #401, reap.ts).
+ */
+export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
 
 /**
  * Create the tab and record it at once, before anything can fail in it. The tab's environment
  * points Claude's scratchpad and every temp file at the scratch dir.
  */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
-  const scratch = scratchDirOf(cwd);
+  const scratch = jobScratchOf(cwd, ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
@@ -157,8 +163,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * prompt, so the command runs again until its output shows. Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
-  const scratch = scratchDirOf(s.cwd);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)}`
+  const scratch = jobScratchOf(s.cwd, ctx.job.id);
+  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
     + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
