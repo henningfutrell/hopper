@@ -3,7 +3,7 @@
 // anything else → a person. An automatic action switched off in the settings still decides, but does not act.
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FAILURE_SETTINGS, type FailureSettings } from '../../src/domain/types.ts';
-import { assess, backoffMs, type AssessInput } from '../../src/failures/assess.ts';
+import { assess, backoffMs, STALE_AFTER_MS, type AssessInput } from '../../src/failures/assess.ts';
 import { matchCause } from '../../src/failures/causes.ts';
 import { signatureOf } from '../../src/failures/signature.ts';
 
@@ -109,5 +109,56 @@ describe('assess', () => {
     const a = assess(input('no space left on device', { job: { executor: 'test', pinned: false } }));
     expect(a.decision).toBe('hold');
     expect(a.problem).toMatchObject({ kind: 'open', title: 'Disk full', scope: {} });
+  });
+});
+
+describe('assess: a failure whose item already ran again (issue #517)', () => {
+  it('is superseded: no retry, no problem, and not for a person', () => {
+    const a = assess(input('HOPPER_FAILED the tests do not pass', { newer: 'j2' }));
+    expect(a).toMatchObject({ superseded: 'j2', cls: 'job' });
+    expect(a.problem).toBeUndefined();
+    expect(a.retryInMs).toBeUndefined();
+    expect(a.summary).toMatch(/^Already run again \(job j2\)\. Ran 1 time on desk\. Failed: HOPPER_FAILED the tests do not pass\.$/);
+    expect(a.reasons.join(' ')).toMatch(/a newer job of its item exists: j2/);
+  });
+
+  it('a shared or transient cause neither opens a problem nor retries', () => {
+    const shared = assess(input('no space left on device', { newer: 'j2' }));
+    expect(shared.superseded).toBe('j2');
+    expect(shared.problem).toBeUndefined();
+    const transient = assess(input('read ECONNRESET', { newer: 'j2' }));
+    expect(transient.superseded).toBe('j2');
+    expect(transient.retryInMs).toBeUndefined();
+    expect(assess(input('no space left on device', { newer: 'j2', open: { id: 'p1', title: 'Disk full on desk', decision: 'hold' } })).problem).toBeUndefined();
+  });
+});
+
+describe('assess: a failure older than a day when assessed (issue #517)', () => {
+  const old = { failedAgoMs: STALE_AFTER_MS + 1 };
+
+  it('the decision stands, but takes no automatic action: it waits on a person', () => {
+    const a = assess(input('read ECONNRESET', old));
+    expect(a).toMatchObject({ decision: 'retry', auto: false, cls: 'transient' });
+    expect(a.retryInMs).toBeUndefined();
+    expect(a.summary).toMatch(/^Retry recommended\./);
+    expect(a.reasons.join(' ')).toMatch(/failed 1 d before it was assessed/);
+  });
+
+  it('a shared cause opens or joins no problem: it is too old to hold or redirect other jobs', () => {
+    const a = assess(input('write: ENOSPC: no space left on device', { ...old, open: { id: 'p1', title: 'Disk full on desk', decision: 'hold' } }));
+    expect(a).toMatchObject({ decision: 'redirect', auto: false, cls: 'shared' });
+    expect(a.problem).toBeUndefined();
+    expect(a.summary).toMatch(/^Redirect recommended: Disk full\./);
+  });
+
+  it('recurrence does not group it either', () => {
+    const recent = [{ jobId: 'a', executor: 'herdr-claude' }, { jobId: 'b', executor: 'herdr-claude' }];
+    const a = assess(input('HOPPER_FAILED the build tool crashed', { ...old, recent }, { groupThreshold: 3 }));
+    expect(a.decision).toBe('person');
+    expect(a.problem).toBeUndefined();
+  });
+
+  it('a day or less is not old', () => {
+    expect(assess(input('read ECONNRESET', { failedAgoMs: STALE_AFTER_MS }))).toMatchObject({ decision: 'retry', auto: true });
   });
 });
