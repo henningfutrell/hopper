@@ -5540,7 +5540,12 @@ an available update as soon as a check finds it, and at once when switched on wi
 version (a bordered button with an info icon, the installed commit from `sm` up) shows on every screen
 and opens the Version and updates panel at any time (issue #165): version, installed, installed on,
 newest, last check, Check now, Update now, auto-update, channel (`dev` / `beta` / `stable`, each with what it pulls), the
-update's What's new, In this version. The same details are Settings → Version (`#settings/version`).
+update's notes, the installed version's notes. The same details are Settings → Version (`#settings/version`).
+The two release-notes lists (issue #493) scroll with the page or sheet, never in a box of their own. With an
+update pending, "Coming in the update · <ref> <commit>" comes first, in a tinted card, and "Already installed ·
+<branch> <commit>" follows, muted; with none, the installed list alone reads "In this version · <branch>
+<commit>". Each list shows its first five notes and a "Show all N" that opens the rest in place; the notice's
+What's new uses the same list.
 
 **Any deployment.** The updater needs: install.json, git and network access to the repository,
 npm (the build), write access to the install's parent directory (the swap), and a supervisor or the
