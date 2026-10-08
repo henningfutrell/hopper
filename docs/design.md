@@ -575,6 +575,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
   with what the shell said (`the work tree <cwd> is not usable on <machine>: …`), the pane closed,
   instead of retrying for 60000 ms.
+- **The pane's shell must be POSIX** (issue #367). Every command the hopper types into a pane (the
+  scratch command, the job worktree command, the reap) is POSIX shell. herdr opens a pane in the
+  machine's default shell, and has no option to pick one per tab (herdr 0.8.2); on Windows that is
+  PowerShell, which refuses `&&` (5.1) and has no `printf`, so the scratch marker never showed and
+  every job there waited 60000 ms. The executor reads the pane after each wait, and when it shows a
+  PowerShell or cmd prompt (`windowsShellOf`, `screen.ts`) fails the job at once: `the shell of pane
+  <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
+  hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
+  default for the hopper's session (README "A Windows computer").
 - **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (herdr-claude and
   cursor-agent `cwd`, the GitHub sources' `defaultCwd` and `repoPaths`), and the executor resolves it
   when the job starts, against the home of the lane's machine: this process's for this machine, and

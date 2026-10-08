@@ -282,6 +282,20 @@ line carries a one-time join code: it works once, for 10 minutes.
   jobs run as you there. Sign `claude` in there once, and keep it running after you log out:
   `loginctl enable-linger`. For the computer a hopper container runs on, open the UI at
   `http://localhost:4790` there first: the line names the URL the page is open at.
+- **A Windows computer**, outside WSL: the hopper types POSIX shell commands into each job's pane,
+  and herdr opens panes in PowerShell there, so a job fails at once with `… is PowerShell, and the
+  hopper needs a POSIX shell …`. Give the client's herdr session Git Bash as its shell: start that
+  session with `HERDR_CONFIG_PATH` naming a herdr config of its own, and with `CHERE_INVOKING=1` so
+  bash stays in the pane's directory. The config:
+
+  ```toml
+  [terminal]
+  default_shell = 'C:/Program Files/Git/usr/bin/bash.exe'
+  shell_mode = 'login'
+  ```
+
+  Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
+  bash, and herdr then sees the pane as busy.
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,

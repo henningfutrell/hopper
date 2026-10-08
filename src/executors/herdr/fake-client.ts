@@ -5,6 +5,7 @@
 import { HerdrError } from './client.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
+import { CHROME, WINDOWS_SHELLS, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
 
 export interface FakeTurn {
   /** Lines appended while working, one per poll. */
@@ -43,6 +44,8 @@ export interface FakeHerdrOptions {
   ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
   unusableDirs?: string[];
+  /** The pane's shell is a Windows shell, not a POSIX one (issue #367): it answers every command with its own error and prompt. */
+  windowsShell?: 'powershell' | 'cmd';
   /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
   repositories?: string[];
   /** Git refuses to make a job worktree. */
@@ -104,42 +107,6 @@ export interface FakeHerdrClient extends HerdrClient {
   /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
   setUnreachable(on: boolean): void;
   screen(paneId: string): string;
-}
-
-const CHROME = ['─'.repeat(40), '❯ ', '─'.repeat(40), '  ⏵⏵ bypass permissions on (shift+tab to cycle)'];
-
-function wrap(text: string, width: number): string[] {
-  const out: string[] = [];
-  text.split('\n').forEach((para, i) => {
-    let line = i === 0 ? '❯' : ' ';
-    for (const word of para.split(' ')) {
-      if (line.length + 1 + word.length > width && line.trim() !== '' && line !== '❯') {
-        out.push(line);
-        line = ' ';
-      }
-      line += ` ${word}`;
-    }
-    out.push(line);
-  });
-  return out;
-}
-
-function trustDialog(path: string): string[] {
-  return [
-    '─'.repeat(40), ' Accessing workspace:', '', ` ${path}`, '',
-    ' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source',
-    " project, or work from your team). If not, take a moment to review what's in this folder first.", '',
-    ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel',
-  ];
-}
-
-function bypassDialog(): string[] {
-  return [
-    '─'.repeat(40), ' WARNING: Claude Code running in Bypass Permissions mode', '',
-    ' In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.', '',
-    ' By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.', '',
-    ' ❯ No, exit', '   Yes, I accept', '', ' Enter to confirm · Esc to cancel',
-  ];
 }
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
@@ -323,6 +290,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      if (o.windowsShell) { const [prompt, error] = WINDOWS_SHELLS[o.windowsShell]; p.lines.push(`${prompt}${command}`, error, '', prompt); return; }
       // The reap at job end (reap.ts): what it kept, then its last line.
       if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
         p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
