@@ -164,6 +164,21 @@ describe('Sources view: GitHub', () => {
     expect(document.querySelector('header [data-connection-ended]')).toBeNull();
   });
 
+  // Issue #518: a connection GitHub gave no refresh token ended after 8 hours with no word before it.
+  it('a connection that cannot renew says so, and when it ends, while it still works; connecting again is offered (#518)', async () => {
+    await boot({
+      '/api/sources': { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [], installations: [], expiresAt: '2026-10-07T08:00:00.000Z', unrenewable: 'GitHub gave this connection no refresh token' }] },
+    });
+    const panel = () => document.querySelector('[data-connected-account="github"]');
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-unrenewable]')).not.toBeNull());
+    const text = panel()!.querySelector('[data-unrenewable]')!.textContent!;
+    expect(text).toContain('GitHub gave this connection no refresh token');
+    expect(text).toContain('It ends');
+    expect([...panel()!.querySelectorAll('button')].map((b) => b.textContent)).toContain('Connect GitHub again');
+    expect(panel()!.querySelector('[data-renewal]')).toBeNull();
+  });
+
   it('connects GitHub from the GitHub account panel: how the hopper connects, then the code to enter (#214)', async () => {
     await boot();
     const panel = () => document.querySelector('[data-connected-account="github"]');

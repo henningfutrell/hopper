@@ -21,16 +21,16 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
   if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
-  // A job worktree command (job-worktree.ts): `cd 'work tree' && { o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,
-  // its outcome two printf words: made in a repository's top, else checkout when the job names a repository
-  // (issue #361); none with job worktrees off.
-  const worktree = /^cd '([^']*)' && \{ o=\$\(sh -c '.*' hopper-worktree '[^']*' '[^']*' '([^']*)' '[^']*' '([01])'/s.exec(command);
+  // A job worktree command (job-worktree.ts): `cd 'work tree' && { printf … worktree running; o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,
+  // that it runs (issue #518), then its outcome, two printf words each: made in a repository's top, else checkout
+  // when the job names a repository (issue #361); none with job worktrees off.
+  const worktree = /^cd '([^']*)' && \{ printf 'hopper-%s-%s\\n' worktree running; o=\$\(sh -c '.*' hopper-worktree '[^']*' '[^']*' '([^']*)' '[^']*' '([01])'/s.exec(command);
   if (worktree) {
     const [, tree, repo, on] = worktree;
     const top = (o.repositories ?? []).includes(tree!);
     const found = top ? 'made' : repo ? 'checkout' : 'none';
     const outcome = on !== '1' || found === 'none' ? 'none' : o.worktreeFails ? 'unmade' : found;
-    return { lines: [...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`] };
+    return { lines: ['hopper-worktree-running', ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`] };
   }
   // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
   // cannot enter dir (and did not make it), else b.

@@ -156,4 +156,40 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     await plain.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(runs(plain.herdr).some((r) => r.includes('.hopper-scratch/deps'))).toBe(false);
   });
+
+  // Issue #518: on two machines herdr's wait for the outcome answered within seconds, the worktree still being
+  // made; the job failed as though ten minutes had passed. Its answer only says when to look at the screen.
+  it('herdr\'s wait answers before the outcome is on screen: the hopper waits on until it is', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], worktreeLag: 5, waitAnswersEarly: 'matched' }, { jobWorktrees: true });
+    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(saved.at(-1)).toMatchObject({ jobWorktree: JOB_TREE });
+    expect(runs(herdr).filter((r) => r.includes(' hopper-worktree '))).toHaveLength(1);
+  });
+
+  it('the outcome never shows: failed after the ten minutes, by the hopper\'s own clock', async () => {
+    const { executor, clock } = setup({ turns: [DONE], repositories: [CWD], worktreeLag: 1e9, waitAnswersEarly: 'matched' }, { jobWorktrees: true });
+    const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
+    expect(out.kind === 'failed' && out.error).toContain('never made the job worktree within 600000 ms');
+    expect(clock.elapsed()).toBeGreaterThanOrEqual(600000);
+  });
+
+  // Issue #518: a zsh whose start-up files were busy lost what was typed; the job waited ten minutes for nothing.
+  it('the shell loses the command: it is typed again, the line cleared first', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], dropsWorktreeRuns: 1 }, { jobWorktrees: true });
+    const { ctx, saved, progress } = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(runs(herdr).filter((r) => r.includes(' hopper-worktree '))).toHaveLength(2);
+    expect(herdr.keys.map((k) => k.keys)).toContainEqual(['ctrl+c']);
+    expect(saved.at(-1)).toMatchObject({ jobWorktree: JOB_TREE });
+    expect(progress.map((p) => p.message)).toContainEqual(expect.stringMatching(/^the shell did not run the job worktree command; typing it again/));
+  });
+
+  it('a shell that never runs it: the start is tried again in a new pane', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], dropsWorktreeRuns: 3 }, { jobWorktrees: true });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.closed[0]).toBe('w1:p1');
+    expect(progress.map((p) => p.message)).toContainEqual(expect.stringMatching(/claude did not start \(attempt 1 of 3\).*never ran the job worktree command/));
+  });
 });
