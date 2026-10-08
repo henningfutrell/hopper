@@ -96,7 +96,7 @@ describe('the version, without an update notice', () => {
 
   it('the header version is a visible, labelled control', async () => {
     await render('../../ui/src/app/header.tsx', 'Header');
-    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Version and updates"]');
+    const button = document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]');
     expect(button?.textContent).toContain('0.1.0');
     expect(button?.querySelector('svg')).not.toBeNull();
     expect(button?.className).toMatch(/(^|\s)border(\s|$)/);
@@ -254,7 +254,7 @@ describe('the release notes in Version and updates (issue #493)', () => {
 
   it('the header sheet shows the same lists', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', { update: pending() });
-    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Version and updates"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]')!.click());
     const sheet = document.querySelector('[data-slot="version-details"]');
     expect(sheet?.querySelector('[data-slot="update-notes"] h3')?.textContent).toBe('Coming in the update · stable beef123');
     expect(sheet?.querySelector('[data-slot="installed-notes"] h3')?.textContent).toBe('Already installed · stable c0ffee1');
@@ -265,5 +265,53 @@ describe('the release notes in Version and updates (issue #493)', () => {
     const open = [...document.querySelectorAll('button')].find((b) => b.textContent === "What's new");
     await act(async () => open!.click());
     expect(document.querySelector('[data-update-notice]')?.textContent).toContain('Update change 2.');
+  });
+});
+
+describe('the header badge names the update channel (issue #497)', () => {
+  const badge = () => document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]')!;
+  const tag = () => badge().querySelector('[data-slot="badge-channel"]');
+  const on = (channel: string, branch: string, o: Record<string, unknown> = {}) => ({ ...UPDATE, channel, installed: { ...UPDATE.installed, branch }, ...o });
+
+  for (const channel of ['dev', 'beta']) {
+    it(`${channel}: the channel beside the version and commit, visible on a phone, and named for screen readers`, async () => {
+      await render('../../ui/src/app/header.tsx', 'Header', { update: on(channel, channel) });
+      expect(tag()?.textContent).toBe(channel);
+      expect(tag()?.className).not.toMatch(/hidden/);
+      expect(badge().textContent).toContain('0.1.0');
+      expect(badge().textContent).toContain('c0ffee1');
+      expect(badge().getAttribute('aria-label')).toBe(`Version and updates: ${channel} channel`);
+      expect(badge().title).toContain(`${channel} channel`);
+    });
+  }
+
+  it('stable: no tag, the badge as before', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header');
+    expect(tag()).toBeNull();
+    expect(badge().getAttribute('aria-label')).toBe('Version and updates: stable channel');
+  });
+
+  it('the running build is another channel\'s than the selected one: both, marked, in the notice\'s words', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header', { update: on('dev', 'stable', { installed: { ...UPDATE.installed, kind: 'image', branch: 'stable' } }) });
+    expect(tag()?.textContent).toBe('stable → dev');
+    expect(tag()?.getAttribute('data-mismatch')).toBe('true');
+    expect(badge().getAttribute('aria-label')).toBe('Version and updates: runs the stable image; the selected channel is dev');
+  });
+
+  it('keeps the update dot while an update is available or applying', async () => {
+    const target = { commit: 'beef'.padEnd(40, '0'), ref: 'dev' };
+    await render('../../ui/src/app/header.tsx', 'Header', { update: on('dev', 'dev', { state: 'available', target }) });
+    expect(tag()?.textContent).toBe('dev');
+    expect(badge().querySelector('[data-slot="update-dot"]')).not.toBeNull();
+  });
+
+  it('follows a channel change in Settings without a reload', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header');
+    expect(tag()).toBeNull();
+    const { useHopper } = (await import(store)) as Store;
+    await act(async () => useHopper.setState({ update: on('beta', 'stable') }));
+    expect(tag()?.textContent).toBe('stable → beta');
+    await act(async () => useHopper.setState({ update: on('beta', 'beta') }));
+    expect(tag()?.textContent).toBe('beta');
   });
 });
