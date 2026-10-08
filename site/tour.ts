@@ -1,6 +1,6 @@
 // The front page's feature tour (issue #382): one card per part of the hopper, each with its screenshot
 // once docs/screenshots has one (issue #353 captures them from a busy demo instance). A card's screenshot
-// is docs/screenshots/<shot>.webp or .png; a card without one shows its words alone. Rendered at build
+// is docs/screenshots/<shot>.webp or .png (`npm run screenshots` makes them); a card without one shows its words alone. Rendered at build
 // time by site/vite.config.ts, which publishes the screenshots it uses beside the page.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,32 +15,32 @@ export const TOUR: Feature[] = [
   {
     shot: 'queue', icon: SquareKanban, title: 'The queue and its lanes',
     text: 'Every job waiting, held or running, in the order the hopper takes them. Each lane shows what a machine is doing now.',
-    alt: 'The hopper queue: several lanes running jobs at once, with held and queued jobs waiting below them.',
+    alt: 'The hopper overview: nine lanes on four machines running jobs at once, the lane timeline, and the waiting queue with held jobs.',
   },
   {
-    shot: 'job', icon: ListChecks, title: 'Follow a job as it works',
-    text: 'A job\'s timeline shows what it did and what it asked, up to the pull request it opens.',
-    alt: 'A running job\'s detail page, with its timeline of progress, questions and its pull request.',
+    shot: 'job', icon: ListChecks, title: 'Follow every job as it works',
+    text: 'The lane timeline shows what each lane ran, how each run ended, and where a job waited on a question.',
+    alt: 'The lane timeline: finished and failed runs on each lane over the last hour, jobs running now, and a hovered job waiting on its answer.',
   },
   {
     shot: 'question', icon: MessageCircleQuestion, title: 'Questions come to you',
     text: 'A job\'s question climbs the escalation levels. Only the ones nothing else can answer wait for you, on any screen, your phone too.',
-    alt: 'A question from a job, escalated to its owner, with the answer box open.',
+    alt: 'A question from a job, escalated past both escalation levels to its owner, with an answer typed in the answer box.',
   },
   {
     shot: 'machines', icon: Cpu, title: 'Your machines, inside their budgets',
     text: 'Add the computers jobs run on. Live usage shows how much of each budget is left, and the hopper keeps every machine inside it.',
-    alt: 'The Machines view: several online machines with their lanes and live usage.',
+    alt: 'The Machines view: four online machines, each with its lanes and live usage of the session and the week.',
   },
   {
     shot: 'sources', icon: GitPullRequest, title: 'You choose what becomes a job',
     text: 'Sign in with GitHub, tick the repositories, and label an issue hopper. Nothing else can give the hopper work.',
-    alt: 'The Sources view: a connected GitHub account with its selected repositories.',
+    alt: 'The Sources view: a connected GitHub account with four of its repositories chosen for jobs.',
   },
   {
     shot: 'settings', icon: Settings2, title: 'Every part is a plugin',
     text: 'Routing rules, job rules and plugins, all edited in the UI. Install more from the plugin store.',
-    alt: 'The Settings view: routing rules, job rules and the installed plugins.',
+    alt: 'Settings → Routing: the router, the queue sorter and three routing rules.',
   },
 ];
 

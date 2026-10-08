@@ -20,6 +20,18 @@ Install page, step by step: https://henningfutrell.github.io/hopper/install.html
   none: each person's first sign-in makes their user, and the first person to sign in with GitHub is the
   admin (`docs/sign-in.md` "Who signs in as which user").
 
+![The hopper overview, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue with held jobs, and recent ended jobs.](docs/screenshots/queue.webp)
+
+<p>
+<img src="docs/screenshots/lanes.webp" width="520" alt="Animated: lanes finish their jobs and pick up the next ones from the waiting queue, which gets shorter.">
+<img src="docs/screenshots/phone.webp" width="200" alt="The overview on a phone: the numbers of running, waiting and ended jobs, and the lane timeline.">
+<img src="docs/screenshots/phone-question.webp" width="200" alt="The Questions view on a phone: a job's question with each escalation level's suggested answer and the answer box.">
+</p>
+
+Lanes pick up and finish jobs on their own; a question nothing else can answer waits for you, on any
+screen, your phone too. Every screenshot here comes from a demo hopper with made-up data
+([regenerate them](#develop)).
+
 ## Getting started
 
 Five steps, in this order. Each links to its section below.
@@ -123,6 +135,8 @@ people and other devices: sign-in realms — GitHub, LDAP, OIDC, SAML or an auth
 keeps no password accounts of its own), set up in Settings → Sign-in or from the environment at
 launch (`docs/deploy.md` "Sign-in set up at launch") — and the LAN or a public URL — `docs/sign-in.md`.
 
+<img src="docs/screenshots/sign-in.webp" width="720" alt="The hopper's sign-in page: a Sign in with GitHub button beside what the hopper does in three steps.">
+
 ## Connect GitHub
 
 GitHub is how people sign in to the hopper and how it works for them: each user's issues come from
@@ -225,6 +239,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    | `repos` | on `github-app`, an optional allowlist inside the App's installations (`your-org/your-repo`); `github-account` takes the job repositories chosen in Sources |
    | `repoPaths` | where each repo's jobs run (`your-org/your-repo` → `/srv/checkouts/your-repo`) |
 
+   <img src="docs/screenshots/sources.webp" width="720" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button.">
+
    A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
    home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
    (`systemctl --user restart hopper`, or the container).
@@ -247,6 +263,13 @@ offers) are yours to change in Settings → Question gates, and so is where each
 machine, on an attached machine you designate (`machine`), or through the Claude API with a key the
 runtime gives (`anthropic-api`, `ANTHROPIC_API_KEY`) — the way a hopper in a container answers.
 
+<img src="docs/screenshots/question.webp" width="720" alt="A job's question in the Questions view: it escalated past both escalation levels, each with its suggested answer, and an answer is typed in the box.">
+
+With the queue gate on **review** (Queue view), every new job waits in the pre-sort until you accept it
+into your order or reject it:
+
+<img src="docs/screenshots/queue-order.webp" width="720" alt="The Queue view: the queue gate set to review, three held jobs in the pre-sort with Accept and Reject, and the accepted jobs in the user's order.">
+
 ## Add machines
 
 A **machine** runs jobs. Each has **lanes**: how many jobs it runs at once. A job goes to a machine
@@ -265,6 +288,8 @@ Every command below runs on the hopper's host, as the user the daemon runs as, f
 (`~/.local/lib/hopper`). Each script prints what to add next. The UI's Machines view shows each
 machine online or offline; the daemon's log says why one is offline
 (`journalctl --user -u hopper`).
+
+<img src="docs/screenshots/machines.webp" width="720" alt="The Machines view: four online machines, each with its lanes and live usage of the session and the week.">
 
 **Machine defaults.** A machine added in the Machines view starts with the machine defaults: its
 lanes and the executors it runs (one lane and `herdr-claude` until you change them). Change them
@@ -427,6 +452,8 @@ rule that matches wins. Edit them in the UI's Settings → Routing. Three exampl
 | by label | label `on-laptop` | machine `laptop` |
 | app in its tree | repo `your-org/app` | machine `my-desktop`, work tree `~/code/app` |
 
+<img src="docs/screenshots/settings.webp" width="720" alt="Settings → Routing: the router, the queue sorter and three routing rules.">
+
 ### Where jobs work
 
 A job works in its **work tree**, on the machine that runs it; `~` is that machine's home, never the
@@ -450,6 +477,11 @@ authentication".
 | `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun`, `hopper queue order\|gate`, `hopper question answer\|close\|dismiss` |
 | `node src/main.ts --help` | the daemon's settings, with defaults |
 
+Settings holds the rest: the job rules every job's prompt carries, the plugins, the routing, the
+question gates, webhooks, users and sign-in.
+
+<img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Settings → Plugins: the shipped plugins, each switched on or off, with what it does.">
+
 The API: `GET /api/*` reads, free on loopback and with a UI session (`x-hopper-session`) from
 anywhere else; the only changes are `POST /ui/api/*`, behind a UI session whose role allows them.
 The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
@@ -469,3 +501,17 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 
 `npm run check` runs every gate: typecheck, lint, tests (a throwaway Postgres container; needs
 Docker), and the UI build. The repo's rules are `AGENTS.md`.
+
+The screenshots in `docs/screenshots/` (this README, the install page, the Pages site's tour) are made by one
+command, from a demo hopper: the real daemon over the test doubles, with made-up GitHub issues, four machines
+that only pretend to be online, and the test executor standing in for agents. It never reaches the network,
+a real machine or a real agent. Re-run it when the UI changes:
+
+```sh
+npm run build:ui
+npx playwright install chromium   # once
+npm run screenshots               # about 3 minutes; SHOTS=queue,job for some
+```
+
+It needs Postgres as `npm test` does (Docker, or `HOPPER_TEST_POSTGRES_URL`). `scripts/screenshots/` holds
+the demo's data (`demo.ts`) and the shots (`capture.ts`).
