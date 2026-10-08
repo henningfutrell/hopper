@@ -19,7 +19,8 @@ case "$to" in
   *) fail "usage: promote.sh beta|stable [commit] (dev → beta → stable, one step at a time)" ;;
 esac
 
-git fetch --quiet origin "+refs/heads/$from:refs/remotes/origin/$from" "+refs/heads/$to:refs/remotes/origin/$to"
+# Every channel branch, so a commit of any of them is known and the refusal names the right reason.
+git fetch --quiet origin $(printf '+refs/heads/%s:refs/remotes/origin/%s ' dev dev beta beta stable stable)
 commit="$(git rev-parse --verify --quiet "${2:-origin/$from}^{commit}")" || fail "no such commit: ${2:-origin/$from}"
 
 git merge-base --is-ancestor "$commit" "origin/$from" || fail "$commit is not on $from: $to takes only what $from already has"
