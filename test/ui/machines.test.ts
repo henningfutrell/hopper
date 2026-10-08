@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, diskText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -296,5 +296,19 @@ describe('the Add machine line (issue #308)', () => {
     const inContainer = { ...CONFIG, thisMachineRefused: 'in a container' };
     expect(boxPlace(inContainer, '4790')).toEqual({ boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' });
     expect(boxPlace(CONFIG, '4791')).toEqual({ boxUrl: 'http://127.0.0.1:4791', boxNetwork: 'host', boxImage: 'ghcr.io/henningfutrell/hopper' });
+  });
+});
+
+// Issue #401: jobs filled one machine's home; the Machines view shows each machine's disk and warns
+// before it runs low.
+describe('diskText', () => {
+  const GB = 1e9;
+  it('says how much of the disk is free, in GB', () => {
+    expect(diskText({ freeBytes: 120.4 * GB, totalBytes: 500 * GB, low: false })).toBe('120 GB free of 500 GB (24%)');
+    expect(diskText({ freeBytes: 2.25 * GB, totalBytes: 40 * GB, low: true })).toBe('2.3 GB free of 40 GB (6%): low, jobs may fail as it fills');
+  });
+
+  it('says nothing for a machine whose disk was not read', () => {
+    expect(diskText(undefined)).toBeNull();
   });
 });

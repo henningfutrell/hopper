@@ -243,6 +243,7 @@ for agent in "${AGENTS[@]}"; do
   name="$PREFIX-$agent"
   port="$(port_of "$agent")"
   step "build $name (the $agent CLI)"
+  before="$(docker image inspect --format '{{.Id}}' "$name" 2>/dev/null || true)"
   docker build -q -t "$name" --build-arg AGENT="$agent" "$CONTEXT" >/dev/null || die "building $name failed"
 
   state="$(docker container inspect --format '{{.State.Running}}' -- "$name" 2>/dev/null || true)"
@@ -262,6 +263,10 @@ for agent in "${AGENTS[@]}"; do
     docker run -d --name "$name" --hostname "$name" --restart unless-stopped --init ${NET:+--network "$NET"} \
       --label hopper.agent-box="$agent" -p "127.0.0.1:$port:22" -v "$name-home:/home/agent" "$name" >/dev/null \
       || die "$name did not start (is 127.0.0.1:$port taken? HOPPER_BOX_PORT_BASE moves the ports)"
+  fi
+  # The image this build replaced, untagged now and run by nothing: removed, so rebuilds do not pile up (issue #401).
+  if [ -n "$before" ] && [ "$before" != "$(docker image inspect --format '{{.Id}}' "$name")" ]; then
+    docker image rm -- "$before" >/dev/null 2>&1 || true
   fi
   # On the hopper's network, whatever happened to the box since (a network left, a box started by hand).
   if [ -n "$NET" ] && ! networks "$name" | grep -qxF "$NET"; then

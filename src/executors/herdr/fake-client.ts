@@ -35,6 +35,10 @@ export interface FakeHerdrOptions {
   startupBlockedBy?: string[];
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
+  /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
+  reapKeeps?: string[];
+  /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
+  ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
   unusableDirs?: string[];
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
@@ -283,13 +287,18 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
           p.lines.push('  ⎿  Interrupted');
           p.turn = undefined;
           settle(p, 'idle');
-        } else if (key === 'ctrl+c' && p.agent && ++p.ctrlC >= 2) exit(p);
+        } else if (key === 'ctrl+c' && p.agent && !o.ignoresCtrlC && ++p.ctrlC >= 2) exit(p);
       }
     },
     async runInPane(paneId, command) {
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      // The reap at job end (reap.ts): what it kept, then its last line.
+      if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
+        p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
+        return;
+      }
       // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell
       // cannot enter dir (and did not make it), else b.
       const entered = /^(mkdir -p '[^']*' && )?cd '([^']*)' && .*printf '([^']*)%s\\n' (\S+) \|\| printf '[^']*%s\\n' (\S+)$/.exec(command);

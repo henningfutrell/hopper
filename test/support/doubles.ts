@@ -12,8 +12,8 @@ export interface StickyExecutor extends Executor {
   readonly cleaned: string[];
 }
 
-/** Not idempotent (like herdr-claude): runs until aborted, records how it was stopped. */
-export function createStickyExecutor(): StickyExecutor {
+/** Not idempotent (like herdr-claude): runs until aborted, records how it was stopped. `kept`: what its reap keeps (issue #401). */
+export function createStickyExecutor(o: { kept?: string[] } = {}): StickyExecutor {
   const runs: string[] = [];
   const abortReasons: unknown[] = [];
   const cleaned: string[] = [];
@@ -34,6 +34,7 @@ export function createStickyExecutor(): StickyExecutor {
     },
     async cleanup(job: Job) {
       cleaned.push(job.id);
+      return o.kept ? { kept: o.kept } : undefined;
     },
   };
 }

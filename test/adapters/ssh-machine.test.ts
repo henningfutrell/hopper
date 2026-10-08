@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTarget } from '../../src/machines/index.ts';
+import { DF_COMMAND, diskOf } from '../../src/machines/disk.ts';
 import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -99,6 +100,20 @@ describe('attached machine source', () => {
     expect((await src.list())[0]).toMatchObject({ online: false, home: '/home/far' });
   });
 
+  it('carries the disk its last probe read (issue #401); a probe that read none drops it', async () => {
+    let answer: { online: boolean; disk?: ReturnType<typeof diskOf> } = { online: true, disk: diskOf(1, 2) };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
+    });
+    await src.list(); await flush();
+    expect((await src.list())[0]!.disk).toEqual(diskOf(1, 2));
+    answer = { online: false };
+    t += 30000; await src.list(); await flush();
+    expect((await src.list())[0]).not.toHaveProperty('disk');
+  });
+
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper' }), probe: async () => ({ online: true }),
@@ -154,9 +169,15 @@ describe('probeSsh', () => {
 
   it('answers with the machine\'s home when it answers over ssh, with the hopper\'s key; nothing of herdr asked (issue #323)', async () => {
     // The fake ssh runs the command in a local shell: the home is this test's own HOME.
-    expect(await probe('laptop')).toBe(process.env.HOME);
+    expect(await probe('laptop')).toMatchObject({ home: process.env.HOME });
     const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
-    expect(argv.at(-1)).toBe(`printf '%s\\n' "$HOME"`);
+    expect(argv.at(-1)).toBe(`${DF_COMMAND}; printf '%s\\n' "$HOME"`);
+  });
+
+  it('answers the disk its home is on too, so the UI warns before it fills (issue #401)', async () => {
+    const { disk } = await probe('laptop');
+    expect(disk?.totalBytes).toBeGreaterThan(0);
+    expect(disk?.freeBytes).toBeLessThanOrEqual(disk!.totalBytes);
   });
 
   it('rejects when the machine answers with no absolute home', async () => {

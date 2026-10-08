@@ -16,6 +16,8 @@ RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
 FROM node:26-bookworm-slim
+# What an upgrade prunes when this image is replaced (docs/deploy.md "Upgrade"); the published image carries it too.
+LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
 # shim; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's installer. No gh: GitHub
 # is read through the signed-in user's connected account (issue #359), and jobs run on attached machines.
