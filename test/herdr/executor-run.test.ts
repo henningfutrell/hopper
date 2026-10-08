@@ -64,14 +64,6 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
   });
 
-  // Issue #376: Claude Code denies a dangerous-rm dialog by itself after two minutes; the escalation to
-  // a human takes longer, so the countdown is off in every job's tab, and a payload cannot turn it on.
-  it("turns off Claude Code's countdown that denies a dangerous rm by itself", async () => {
-    const { herdr, executor } = setup({ turns: [DONE] });
-    await executor.run(contextFor(jobWith({ prompt: 'go', env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '0' } })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } });
-  });
-
   it('keeps the job in its work tree: Claude\'s scratchpad and temp files point at a scratch dir inside it, which a payload cannot move', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { TMPDIR: '/tmp', CLAUDE_CODE_TMPDIR: '/tmp' } })).ctx);

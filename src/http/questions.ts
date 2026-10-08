@@ -7,7 +7,7 @@ import type { QuestionStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
-const STATUSES = ['open', 'answered', 'closed', 'dismissed', 'expired', 'cancelled'] as const satisfies QuestionStatus[];
+const STATUSES = ['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled'] as const satisfies QuestionStatus[];
 
 export const questionsQuery = z.object({
   status: z.enum([...STATUSES, 'all']).default('open'),

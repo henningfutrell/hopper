@@ -3,9 +3,13 @@
 // each waiting job's executor (`answeredInPane`) whether its work runs again; when it does, one
 // tx: the question is answered by the human with the typed text (the answer chain aborts), the
 // job is `running` on a lane of its machine, `job.reattached { reason: "answered in the pane" }`.
+// A dialog nobody answered before its countdown ran out (issue #376) is no answer: the agent denied it by
+// itself. The question is `lapsed` (`question.lapsed`), nobody answered it, and the job is reattached the
+// same way, `reason: "the dialog lapsed"`.
 // Then the runner reattaches it: the executor watches the new turn until the next outcome.
 // The job already runs physically, so it never waits for a lane: with none idle it opens one
 // more, over the lane cap until it ends (the decider drains the extra lane).
+import type { PaneAnswer } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
@@ -13,6 +17,8 @@ import type { Claim } from './decision-step.ts';
 /** Stored as the answer when the typed text cannot be read back from the pane. */
 export const ANSWERED_IN_PANE = '(answered in the pane)';
 export const REATTACH_REASON = 'answered in the pane';
+/** Nobody answered (issue #376): the agent denied its dialog by itself when the countdown ran out. */
+export const LAPSED_REASON = 'the dialog lapsed';
 
 export interface PaneAnswers {
   /** Probe every waiting job once; overlapping calls are skipped. */
@@ -33,15 +39,17 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
     return lane.id;
   }
 
-  function adopt(jobId: string, questionId: string, answer: string, executorState: Record<string, unknown>): Claim | undefined {
+  function adopt(jobId: string, questionId: string, seen: PaneAnswer): Claim | undefined {
     return store.tx(() => {
       const job = store.jobs.get(jobId);
       if (job?.status !== 'waiting_answer' || job.questionId !== questionId) return undefined;
-      if (!c.questions.answeredInPane(questionId, answer)) return undefined;
+      const settled = seen.lapsed ? c.questions.lapsedInPane(questionId) : c.questions.answeredInPane(questionId, seen.answer ?? ANSWERED_IN_PANE);
+      if (!settled) return undefined;
+      const { executorState } = seen;
       const laneId = laneFor(job);
       store.lanes.update(laneId, { state: 'busy', jobId, idleSince: undefined });
       store.jobs.update(jobId, { status: 'running', laneId, executorState, pendingAnswer: undefined, holdReason: undefined, waitReason: undefined, startedAt: job.startedAt ?? nowIso(c) });
-      store.events.append({ type: 'job.reattached', jobId, laneId, questionId, data: { reason: REATTACH_REASON } });
+      store.events.append({ type: 'job.reattached', jobId, laneId, questionId, data: { reason: seen.lapsed ? LAPSED_REASON : REATTACH_REASON } });
       return { jobId, laneId };
     });
   }
@@ -56,7 +64,7 @@ export function createPaneAnswers(c: EngineContext, reattach: (claim: Claim) => 
           if (!probe || !job.questionId) continue;
           const seen = await probe(job).catch(() => null);
           if (!seen || c.stopping()) continue;
-          const claim = adopt(job.id, job.questionId, seen.answer ?? ANSWERED_IN_PANE, seen.executorState);
+          const claim = adopt(job.id, job.questionId, seen);
           if (claim) reattach(claim);
         }
       } finally {

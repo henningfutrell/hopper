@@ -110,7 +110,8 @@ describe('a question answered by typing into the pane', () => {
 // nobody answered: the question lapsed, it was never answered by the human.
 describe('a dialog Claude Code denies by itself', () => {
   const dialog = (countdown: string) => ({
-    output: ['● Bash(rm -rf scratch)', ' Bash command', '   rm -rf scratch', ` ⚠ Claude Code will automatically deny this request in ${countdown}, to avoid blocking progress on an unattended session`, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'],
+    output: ['● Bash(rm -rf scratch)'],
+    dialog: [' Bash command', '   rm -rf scratch', ` ⚠ Claude Code will automatically deny this request in ${countdown}, to avoid blocking progress on an unattended session`, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'],
     end: 'blocked' as const,
   });
 

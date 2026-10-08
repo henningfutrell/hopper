@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
+import { CTRL_END, autoDenyMs, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -48,8 +48,8 @@ export interface TurnWatch {
   expectedMs: number;
   /** When the job's turn began, for `timeoutMs` and progress: a nudge goes on the same turn. Default now. */
   startedAt?: number;
-  /** Called with state_change_seq when the turn parks on a question, before the outcome returns. */
-  parked?: (seq: number) => void;
+  /** Called with state_change_seq when the turn parks on a question, before the outcome returns; with when its dialog lapses, if it does. */
+  parked?: (seq: number, lapsesAt?: string) => void;
 }
 
 export function abortReason(signal: AbortSignal): 'cancel' | 'shutdown' {
@@ -71,7 +71,10 @@ async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionO
   const visible = await w.herdr.read(w.paneId, { source: 'visible', lines: 60 });
   // The question is the dialog itself (issue #377); what led up to it is the recent output.
   const text = dialogText(visible) || tail(visible, 30);
-  return { kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked' } };
+  // Claude Code may deny the dialog by itself when a countdown runs out (issue #376).
+  const ms = autoDenyMs(text);
+  const lapsesAt = ms === undefined ? {} : { lapsesAt: new Date(w.clock.now().getTime() + ms).toISOString() };
+  return { kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked', ...lapsesAt } };
 }
 
 export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend> {
@@ -107,7 +110,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       if (ready || agent.status === 'blocked') waitingSince ??= now;
       else waitingSince = null;
       const stalled = !moved && waitingSince !== null && now - waitingSince >= w.idleNudgeMs;
-      const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq); return o; };
+      const park = (o: ExecutionOutcome): ExecutionOutcome => { w.parked?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
       if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return park(await blockedQuestion(w, recent));
       const ended = ready && (moved || stalled);
       if (!ended) idleSince = null;

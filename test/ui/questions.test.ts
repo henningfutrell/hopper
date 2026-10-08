@@ -26,11 +26,11 @@ const handled = {
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
 type Role = 'viewer' | 'operator' | 'admin';
-interface Boot { attempts?: unknown[]; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
+interface Boot { attempts?: unknown[]; lapsesAt?: string; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
 
 function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
-  const open = { ...question, attempts: o.attempts ?? [] } as Record<string, unknown>;
+  const open = { ...question, attempts: o.attempts ?? [], ...(o.lapsesAt ? { lapsesAt: o.lapsesAt } : {}) } as Record<string, unknown>;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
@@ -171,6 +171,19 @@ describe('question card', () => {
   it('logged out with OIDC, GitHub or SAML realms: the landing page offers a sign-in button per realm', async () => {
     await boot({ authed: false, realms: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }] });
     await vi.waitFor(() => expect(button('Sign in with Corp SSO', document.body)).toBeDefined());
+  });
+
+  // Issue #376: a dialog the agent denies by itself when its countdown runs out says so, with the time left.
+  it('a dialog with a countdown: the card says Claude Code denies it by itself, and when', async () => {
+    await boot({ authed: true, lapsesAt: new Date(Date.now() + 90_000).toISOString() });
+    const lapses = await vi.waitFor(() => { const l = card()!.querySelector('[data-slot="lapses"]'); expect(l).not.toBeNull(); return l!; });
+    expect(lapses.textContent).toMatch(/^Claude Code denies this by itself in 1m.* unless it is answered first\.$/);
+  });
+
+  it('no countdown: no such line', async () => {
+    await boot({ authed: true });
+    await vi.waitFor(() => expect(card()!.querySelector('textarea')).not.toBeNull());
+    expect(card()!.querySelector('[data-slot="lapses"]')).toBeNull();
   });
 
   it('logged in: Dismiss sits beside Close, asks first, then posts /ui/api/questions/:id/dismiss', async () => {

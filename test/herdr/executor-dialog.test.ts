@@ -27,6 +27,14 @@ describe('herdr-claude executor: a dialog as a question', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
     const out = await executor.run(ctx);
     expect(out.kind === 'question' && out.question.lapsesAt).toBe(undefined);
-    expect(saved.at(-1)).not.toHaveProperty('lapsesAt');
+    expect((saved.at(-1) as { lapsesAt?: string }).lapsesAt).toBeUndefined();
+  });
+
+  // Issue #376: Claude Code denies a dangerous-rm dialog by itself after two minutes; the escalation to
+  // a human takes longer, so the countdown is off in every job's tab, and a payload cannot turn it on.
+  it("turns off Claude Code's countdown that denies a dangerous rm by itself", async () => {
+    const { herdr, executor } = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await executor.run(contextFor(jobWith({ prompt: 'go', env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '0' } })).ctx);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } });
   });
 });

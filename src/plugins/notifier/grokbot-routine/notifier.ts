@@ -34,7 +34,8 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     const source = e.jobId ? feed?.job(e.jobId)?.source : undefined;
     const base = { source: 'hopper', kind: e.type, at: e.at, jobId: e.jobId ?? null, issueTitle: source?.title ?? null, issueUrl: source?.url ?? null };
     if (e.type === 'question.escalated') {
-      return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}) };
+      // `lapsesAt` (issue #376): the agent denies this dialog by itself then, unless it is answered first.
+      return { ...base, question: e.data.text, questionId: e.data.questionId, ...(e.data.answerUrl ? { answerUrl: e.data.answerUrl } : {}), ...(e.data.lapsesAt ? { lapsesAt: e.data.lapsesAt } : {}) };
     }
     // `source` is the sender (the hopper): the job source's name goes as `sourceName`.
     if (e.type === 'source.stalled') return { ...base, sourceName: e.data.source, error: e.data.error, since: e.data.since };

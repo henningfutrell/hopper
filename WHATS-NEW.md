@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- When the agent denies a permission prompt by itself because nobody answered in time, the question now says so, instead of showing it as answered by you. The question also shows when that will happen, and a prompt to delete files now waits for your answer instead of being refused after two minutes.
 - When a job stops at one of Claude's prompts to ask permission, the question you get is that prompt alone — what it is about, its warning, how long before it is refused, and its choices — not a screenful of earlier output. A finished job's summary is the agent's last message, not the last command it ran.
 - Jobs clean up after themselves: when a job ends, the programs it left running are stopped and its temporary files and copies are removed. Work not yet pushed is kept, and the job says so. Machines shows how much disk each machine has free, and the Overview warns when one runs low.
 - The hopper now takes an issue when it is labelled for the hopper and assigned to you, whoever opened it. Unassign it and a waiting job leaves the queue; a running one is flagged for you to stop or let finish. You can reject a waiting job with a reason: the issue is left alone and is not taken again until it is assigned to you again or you run it again.
