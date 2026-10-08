@@ -23,6 +23,8 @@ interface AttachedBase {
   diskLow?: DiskThresholds;
   /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. */
   sweep?: SweepSettings;
+  /** Lanes kept for jobs pinned to it (issue #372). */
+  reservedLanes?: number;
 }
 
 export interface SshMachine extends AttachedBase {

@@ -10,12 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mintToken } from '../../src/client/signature.ts';
+import { ClientError, clientClaude } from '../../src/executors/client.ts';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
+const CLAUDE = fileURLToPath(new URL('../plugins/fake-claude-plan.mjs', import.meta.url));
 const TOKEN = mintToken();
 
 let dir: string;
@@ -93,6 +95,26 @@ describe('herdr over a client target', () => {
     first!.destroy();
     const out = await waitFor(async () => (client!.link() && client!.link() !== first ? hopper().exec(['status', 'server']).catch(() => undefined) : undefined), { timeoutMs: 5000, what: 'the new link' });
     expect(out).toMatch(/status: running/);
+  });
+
+  it('the client runs only the two read-only claude calls of a usage read (issue #366): anything else is refused, claude never runs', async () => {
+    const plan = mkdtempSync(join(tmpdir(), 'jh-ct-plan-'));
+    process.env.FAKE_PLAN_DIR = plan;
+    try {
+      client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, claudeBin: CLAUDE, session: 'hopper' });
+      const t = client.transport(TOKEN);
+      await expect(clientClaude(t, ['-p', 'write a poem'], 15000)).rejects.toThrow(/400/);
+      await expect(clientClaude(t, ['-p', '/usage', '--output-format', 'json'], 15000)).rejects.toThrow(/400/);
+      expect(existsSync(join(plan, 'calls.jsonl'))).toBe(false);
+      const auth = await clientClaude(t, ['auth', 'status', '--json'], 15000);
+      expect(auth).toMatchObject({ code: 0 });
+      expect(JSON.parse(auth.stdout)).toMatchObject({ loggedIn: true });
+      const wrong = await clientClaude(client.transport(mintToken()), ['auth', 'status', '--json'], 15000).catch((e: unknown) => e);
+      expect(wrong).toBeInstanceOf(ClientError);
+      expect(readFileSync(join(plan, 'calls.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
+    } finally {
+      rmSync(plan, { recursive: true, force: true });
+    }
   });
 
   it('a client token too short to be safe: refused before anything is sent', async () => {

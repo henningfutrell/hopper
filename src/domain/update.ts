@@ -10,13 +10,22 @@ export type BranchChannel = (typeof BRANCH_CHANNELS)[number];
 
 export const isBranchChannel = (name: string): name is BranchChannel => (BRANCH_CHANNELS as readonly string[]).includes(name);
 
-/** `install.json` beside `src/`: what this install was built from. Written by scripts/install.sh and by an update. */
+/**
+ * How a build of the hopper is replaced (issue #409): `install` — a directory built by scripts/install.sh or an
+ * update, which self-update swaps in place; `image` — baked into a container image at build time, replaced by
+ * pulling or rebuilding the image, never by self-update.
+ */
+export type InstallKind = 'install' | 'image';
+
+/** `install.json` beside `src/`: what this build was made from. Written by scripts/install.sh, by an update, and by the image build. */
 export interface InstallInfo {
+  kind: InstallKind;
   /** The git repository updates come from (the clone's `origin`). */
   repo: string;
   /** The branch it was installed from: an update on a branch channel writes that channel's branch. */
   branch: string;
   commit: string;
+  /** When it was built: the install, the update, or the image. */
   installedAt: string;
 }
 
@@ -57,7 +66,9 @@ export interface VersionEntry {
 /** The version history (issue #246): the versions the installed commit is made of, newest first. */
 export interface VersionHistory {
   versions: VersionEntry[];
-  /** Why there is none: no install.json, or the update repository cannot be read. */
+  /** What the running build knows of where it came from, whole or not (issue #409): install.json's fields that are there. */
+  build: Partial<InstallInfo>;
+  /** Why there is none: no install.json, a field it lacks, or the update repository cannot be read. */
   reason?: string;
 }
 

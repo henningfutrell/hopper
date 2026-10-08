@@ -1,6 +1,6 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
-import type { Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
+import type { CleanupDue, Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
@@ -11,7 +11,7 @@ export interface Claim { jobId: string; laneId: LaneId }
 const WAITING = ['queued', 'held'] as const;
 const RUNNING = ['claimed', 'running'] as const;
 
-async function gather(c: EngineContext, trigger: string): Promise<() => DecisionInputs> {
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[]): Promise<() => DecisionInputs> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
@@ -26,6 +26,7 @@ async function gather(c: EngineContext, trigger: string): Promise<() => Decision
       running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
       unavailableExecutors: c.executors.unavailable(),
       queueOrder: queueOrder(c, waiting),
+      cleanupDue: cleanupDue(),
       policy: c.policy,
     };
   };
@@ -104,8 +105,8 @@ function freeStrandedLanes(c: EngineContext): void {
 }
 
 /** Returns the claims whose executors the caller must start, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string): Promise<Claim[]> {
-  const inputs = await gather(c, trigger);
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[]): Promise<Claim[]> {
+  const inputs = await gather(c, trigger, cleanupDue);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
   autoAccept(c);

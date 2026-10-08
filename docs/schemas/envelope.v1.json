@@ -62,6 +62,8 @@
         "job.reassigned",
         "job.work_kept",
         "job.work_removed",
+        "job.cleanup_deferred",
+        "job.cleaned_up",
         "source.stalled",
         "connected_account.expired",
         "jev.mode_changed",

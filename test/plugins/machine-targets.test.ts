@@ -109,6 +109,15 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTree: 'trees' } }))).toMatch(/workTree must be an absolute path or start with ~/);
   });
 
+  // Issue #372: lanes kept for jobs pinned to the machine.
+  it('an attached instance carries its reserved lanes; a negative count is refused', () => {
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 4, reservedLanes: 1 } })).toMatchObject({ lanes: 4, reservedLanes: 1 });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, reservedLanes: 2 } })).toMatchObject({ reservedLanes: 2 });
+    expect(targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', reservedLanes: 1 } })).toMatchObject({ reservedLanes: 1 });
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('reservedLanes');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reservedLanes: -1 } }))).toMatch(/reservedLanes/);
+  });
+
   it('any other plugin is not an attached machine', () => {
     expect(targetOf({ name: 'local', plugin: 'local', options: { lanes: 2 } })).toBeUndefined();
   });

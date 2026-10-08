@@ -3,7 +3,8 @@
 // link (src/machines/links.ts), and the client serves HTTP/2 on it. A herdr call is `POST /herdr` on that
 // HTTP/2 session, signed with the client token (src/client/signature.ts); an answer the client did not
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
-// release.ts, issue #70); `POST /reap` and `POST /survey` its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
+// release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /reap` and `POST /survey`
+// its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
@@ -47,6 +48,11 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
 /** One herdr call on the client target; resolves the client's signed answer. */
 export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, '/herdr', { args, timeoutMs }, timeoutMs);
+}
+
+/** One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls. */
+export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
 }
 
 /** The id of the client release the client target runs, and its home when it says (a client before issue #323 does not). */

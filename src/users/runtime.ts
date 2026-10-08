@@ -320,11 +320,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     usage: () => [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
     policy: {
       softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
-      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost,
+      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing,
     },
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions,
-    keepPanes: config.keepPanes,
+    keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
     notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.

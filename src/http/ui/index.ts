@@ -190,6 +190,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
   app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
+  app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   // The usage graph's range and step are the user's own choice, a viewer's too; the history retention deletes samples: admin.

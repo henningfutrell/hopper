@@ -282,6 +282,33 @@ line carries a one-time join code: it works once, for 10 minutes.
   jobs run as you there. Sign `claude` in there once, and keep it running after you log out:
   `loginctl enable-linger`. For the computer a hopper container runs on, open the UI at
   `http://localhost:4790` there first: the line names the URL the page is open at.
+- **A Windows computer**, outside WSL: the hopper types POSIX shell commands into each job's pane,
+  and herdr opens panes in PowerShell there, so a job fails at once with `… is PowerShell, and the
+  hopper needs a POSIX shell …`. Give the client's herdr session Git Bash as its shell: start that
+  session with `HERDR_CONFIG_PATH` naming a herdr config of its own, and with `CHERE_INVOKING=1` so
+  bash stays in the pane's directory. The config:
+
+  ```toml
+  [terminal]
+  default_shell = 'C:/Program Files/Git/usr/bin/bash.exe'
+  shell_mode = 'login'
+  ```
+
+  Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
+  bash, and herdr then sees the pane as busy.
+
+  With no systemd there, start that herdr session (`herdr --session hopper-client server`) and the
+  client yourself, from your home directory, never from the client's own directory: Windows cannot
+  replace a directory a process is in, and that breaks a release load. Start the client again when it
+  exits 75, as it does after each new client release:
+
+  ```powershell
+  Set-Location $HOME
+  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
+  ```
+
+  For the machine's Claude usage, `claude` must be on the client's PATH as `claude.exe` (the native
+  installer's): the client runs it with no shell.
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
@@ -408,7 +435,9 @@ source's `repoPaths`, the machine's own `workTree` (Settings → Plugins → Mac
 machine), the source's `defaultCwd`, the executor's `cwd`. The default is `~/hopper-jobs`, made when
 missing. A work tree that is the machine's home, above it, or missing there fails the job at once.
 
-A job pinned to a machine that is offline waits for it. How each kind works and why:
+A job pinned to a machine that is offline waits for it. To keep room for pinned jobs, give a machine
+`reservedLanes` (Settings → Plugins → Machine sources): jobs that could run on any machine leave that
+many of its lanes free for the jobs pinned to it, and go to other machines first. How each kind works and why:
 `docs/design.md` "Attached machines", "Container targets", "Client targets", "Target
 authentication".
 

@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, diskText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -310,5 +310,19 @@ describe('diskText', () => {
 
   it('says nothing for a machine whose disk was not read', () => {
     expect(diskText(undefined)).toBeNull();
+  });
+});
+
+// Issue #372: a machine keeps some of its lanes for jobs pinned to it; its card says how many.
+describe('reservedText', () => {
+  it('says how many lanes are kept for jobs pinned to the machine, and that the rest run anything', () => {
+    expect(reservedText({ maxLanes: 4, reservedLanes: 1 })).toBe('1 of 4, for jobs pinned here; jobs that could run anywhere use the other 3');
+    expect(reservedText({ maxLanes: 2, reservedLanes: 2 })).toBe('all 2: only jobs pinned here run here');
+    expect(reservedText({ maxLanes: 2, reservedLanes: 5 })).toBe('all 2: only jobs pinned here run here');
+  });
+
+  it('says nothing for a machine that keeps none', () => {
+    expect(reservedText({ maxLanes: 4 })).toBeNull();
+    expect(reservedText({ maxLanes: 4, reservedLanes: 0 })).toBeNull();
   });
 });

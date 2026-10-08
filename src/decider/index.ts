@@ -1,9 +1,9 @@
 import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types.ts';
-import { assign, effectivePriority, nativeHold, order } from './assign.ts';
+import { assign, cleanupHold, effectivePriority, nativeHold, order, pinOf } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
-import { laneEffect } from './usage.ts';
+import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -18,21 +18,28 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const waiting = inputs.waiting.filter((j) => j.status !== 'waiting_answer');
 
   const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));
+  const pinById = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, pinOf(j)]));
   const states: MachineState[] = machines.map((machine) => {
-    const { usedFrac, cap, band, ignored, executors } = laneEffect(machine, inputs.usage, policy);
+    const { usedFrac, cap, band, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at);
     for (const r of ignored) reasons.push(`ignored usage reading ${r.source}: limit ${r.limit} is not positive`);
+    for (const r of burning) {
+      reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): not throttling`);
+    }
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
-    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})`);
+    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
     for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
-      machine, cap, band, usedFrac, assigned: 0,
+      machine, cap, band, usedFrac, assigned: 0, overCap: 0,
       occupied: held.length,
+      // A lane whose job is unknown counts as unpinned: the reserve stays free (issue #372).
+      unpinned: held.filter((l) => l.jobId === undefined || pinById.get(l.jobId) !== machine.id).length,
       freeIdle: mine.filter((l) => l.state === 'idle').sort((a, b) => a.id.localeCompare(b.id)),
       executors: new Map(executors.map((e) => [e.executor, {
         cap: e.cap, band: e.band, usedFrac: e.usedFrac, assigned: 0,
+        pressure: policy.pacing?.resetAwarePlacement ? placementPressure(machine.id, inputs.usage, inputs.at, policy, e.executor) : 0,
         occupied: held.filter((l) => l.jobId !== undefined && executorOf.get(l.jobId) === e.executor).map((l) => l.id),
       }])),
     };
@@ -48,7 +55,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
-    const native = nativeHold(job, machines, inputs.unavailableExecutors);
+    const native = nativeHold(job, machines, inputs.unavailableExecutors) ?? cleanupHold(job, inputs.cleanupDue ?? []);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
@@ -68,7 +75,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy);
 
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {

@@ -1,4 +1,4 @@
-import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -10,6 +10,8 @@ export interface ExecutorState {
   /** Ids of the lanes busy or draining with its jobs. */
   occupied: string[];
   assigned: number;
+  /** Placement pressure of its account here (issue #373); 0 when reset-aware placement is off. */
+  pressure: number;
 }
 
 export interface MachineState {
@@ -22,6 +24,10 @@ export interface MachineState {
   /** Idle lanes, not yet given to a job, in id order. */
   freeIdle: Lane[];
   assigned: number;
+  /** Lanes over the cap this Decision gave critical jobs: at most 1 (issue #373). */
+  overCap: number;
+  /** Lanes busy or draining, and starts, of jobs not pinned to it (issue #372). */
+  unpinned: number;
   /** Per executor the machine runs (issue #140). */
   executors: Map<string, ExecutorState>;
 }
@@ -74,6 +80,19 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
 }
 
 /**
+ * Issue #371: an ended job of the same item whose cleanup has not gone through may still run in its pane;
+ * starting this one beside it runs the item twice. Held until that cleanup goes through.
+ */
+export function cleanupHold(job: Job, due: readonly CleanupDue[]): string | undefined {
+  const key = job.source?.key;
+  const earlier = key === undefined ? undefined : due.find((d) => d.sourceKey === key && d.jobId !== job.id);
+  if (!earlier) return undefined;
+  return earlier.error === undefined
+    ? `job ${earlier.jobId} of this item is being cleaned up`
+    : `job ${earlier.jobId} of this item may still run: its cleanup waits for its machine (${earlier.error})`;
+}
+
+/**
  * A waiting job's effective priority: a resuming job's priority plus the resume boost; any other
  * job's priority plus the router's boost. The engine reads it for the queue sorter's input, so the
  * sorter and the decider agree on one notion.
@@ -115,10 +134,43 @@ function roomFor(s: MachineState, executor: string): number {
   return e ? Math.min(room(s), e.cap - e.occupied.length - e.assigned) : 0;
 }
 
-function fits(s: MachineState, job: Job): boolean {
+/** The most lanes jobs not pinned to it may hold: its lane cap less its reserved lanes (issue #372). */
+const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
+
+/** Room for `job` there: a job not pinned to it also stays out of its reserved lanes. */
+function roomForJob(s: MachineState, job: Job): number {
+  const r = roomFor(s, job.spec.executor);
+  return pinOf(job) === s.machine.id ? r : Math.min(r, unpinnedCap(s) - s.unpinned);
+}
+
+function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return s.machine.online && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
-    && (pin === undefined || pin === s.machine.id) && roomFor(s, job.spec.executor) > 0;
+    && (pin === undefined || pin === s.machine.id);
+}
+
+const fits = (s: MachineState, job: Job): boolean => eligible(s, job) && roomForJob(s, job) > 0;
+
+/**
+ * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
+ * machine not at its hard limit, for the machine or the job's executor, and not over its cap already —
+ * so at most one lane over it.
+ */
+function squeezes(s: MachineState, job: Job): boolean {
+  const e = s.executors.get(job.spec.executor);
+  return eligible(s, job) && e !== undefined && s.band !== 'hard' && e.band !== 'hard'
+    && s.occupied + s.assigned <= s.cap;
+}
+
+/** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
+function better(a: MachineState, b: MachineState, job: Job): MachineState {
+  const pa = a.executors.get(job.spec.executor)!.pressure;
+  const pb = b.executors.get(job.spec.executor)!.pressure;
+  if (pa !== pb) return pb > pa ? b : a;
+  const ra = roomForJob(a, job);
+  const rb = roomForJob(b, job);
+  if (ra !== rb) return rb > ra ? b : a;
+  return b.machine.id < a.machine.id ? b : a;
 }
 
 const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
@@ -131,12 +183,14 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  */
 function waitReason(job: Job, states: MachineState[]): string {
   const ex = job.spec.executor;
-  const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(ex) && !diskHolds(s.machine, job)
-    && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
-  const s = eligible.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
+  const s = states.filter((m) => eligible(m, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
+  if (roomFor(s, ex) > 0) {
+    // Only its reserved lanes are free (issue #372).
+    return `waiting for a lane: machine ${id} keeps ${s.cap - unpinnedCap(s)} of its ${s.cap} lanes for jobs pinned to it, the other ${s.unpinned} are in use`;
+  }
   const executorInUse = e.occupied.length + e.assigned;
   const executorBinds = e.cap - executorInUse < room(s) || (e.cap - executorInUse === room(s) && e.cap < s.cap);
   if (executorBinds) {
@@ -146,23 +200,38 @@ function waitReason(job: Job, states: MachineState[]): string {
 }
 
 /** Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. */
-export function assign(ordered: Candidate[], states: MachineState[]): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
+  const critical = policy.pacing?.criticalPriority ?? 0;
   for (const { job, effectivePriority, note } of ordered) {
-    const options = states.filter((s) => fits(s, job));
+    const ex = job.spec.executor;
+    const fitting = states.filter((s) => fits(s, job));
+    // A critical job that fits nowhere takes one lane over the cap (issue #373); the extra lane drains when it ends.
+    const squeezed = fitting.length === 0 && critical > 0 && job.priority >= critical;
+    const options = squeezed ? states.filter((s) => squeezes(s, job)) : fitting;
     if (options.length === 0) {
       wait.push({ jobId: job.id, reason: waitReason(job, states) });
       continue;
     }
-    const ex = job.spec.executor;
-    const pick = options.reduce((a, b) => (roomFor(b, ex) > roomFor(a, ex) || (roomFor(b, ex) === roomFor(a, ex) && b.machine.id < a.machine.id) ? b : a));
+    const pick = options.reduce((a, b) => better(a, b, job));
+    const pressure = pick.executors.get(ex)!.pressure;
     const lane = pick.freeIdle.shift();
     pick.assigned += 1;
+    if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
+    const overCap = squeezed && pick.occupied + pick.assigned > pick.cap;
+    if (overCap) pick.overCap += 1;
     pick.executors.get(ex)!.assigned += 1;
+    const why = [
+      ...(overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
+        : squeezed ? [`critical priority: past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
+          : [`${room(pick)} room left (cap ${pick.cap})`]),
+      ...(pressure > 0 ? [`placement pressure ${pressure.toFixed(3)}/h`] : []),
+      ...(note ? [note] : []),
+    ];
     start.push({
       jobId: job.id, laneId: lane?.id ?? null, machineId: pick.machine.id, effectivePriority,
-      reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${room(pick)} room left (cap ${pick.cap})${note ? `, ${note}` : ''}`,
+      reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${why.join(', ')}`,
     });
   }
   return { start, wait };

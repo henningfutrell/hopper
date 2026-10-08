@@ -116,10 +116,11 @@ export interface MachineLookup {
 }
 
 /**
- * What a usage source learns: a machine, so a source can read the account of that machine (issue #139).
- * An escalation level learns the same, so it can run on its designated machine (issue #150).
+ * What a usage source learns: a machine, so a source can read the account of that machine (issue #139),
+ * and how to reach it when it is a client target (issue #366). An escalation level learns the machine
+ * too, so it can run on its designated machine (issue #150).
  */
-export type UsageSourceContext = MachineLookup;
+export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>;
 
 /**
  * What a machine source learns: the executors registered when it is asked, and how the hopper reaches

@@ -16,8 +16,7 @@ const ALL: Record<EventType, true> = {
   'job.rerun': true,
   'job.dismissed': true,
   'job.unassigned': true, 'job.reassigned': true,
-  'job.work_kept': true,
-  'job.work_removed': true,
+  'job.work_kept': true, 'job.work_removed': true, 'job.cleanup_deferred': true, 'job.cleaned_up': true,
   'source.stalled': true, 'connected_account.expired': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

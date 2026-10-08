@@ -36,14 +36,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
@@ -73,7 +73,9 @@ same Decision. Algorithm, in order:
    `m` (`readingsOf`): those whose `machineId` is `m` when any of them throttles — that machine's
    own account (issue #139) — else those whose `machineId` is `m` or absent. Readings with `limit <= 0` are ignored and noted in
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
-   model only, issue #18) are skipped. No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
+   (its window reset since it was read), and a week window in its **burn window** ("Usage pacing").
+   No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`):
    - offline → `0`
@@ -96,19 +98,26 @@ same Decision. Algorithm, in order:
    is the only behaviour.
 5. **Native holds.** A job not yet accepted at the queue gate (`accepted: false`) → hold
    `awaiting acceptance`, before anything else is judged ("Queue gate"). No online machine runs the job's executor → hold. Pinned machine
-   unknown or offline → hold.
+   unknown or offline → hold. An ended job of the same item (`source.key`) whose cleanup is running or
+   deferred (`DecisionInputs.cleanupDue`, "Deferred cleanup") → hold `job <id> of this item may still run: its
+   cleanup waits for its machine (<error>)`, or `… is being cleaned up` while the first try runs.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
-   its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most remaining room
-   (tie: machine id). Use an existing idle, non-draining lane if one is unassigned, else
+   its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
+   `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
+   **placement pressure** when reset-aware placement is on ("Usage pacing"), then the most remaining
+   room for that job, then the lowest machine id. No candidate, and the job's priority at or above the
+   **critical priority**: it may take one lane past its caps ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
    #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
    machine with the highest cap for its executor — the executor's when it leaves less room than
    the machine's (or ties and is lower), else the machine's — with its number and lanes in use
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
-   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)`).
+   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
+   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
-   min(cap, occupied + assigned)`. `open` = number of this machine's starts with
+   min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
+   this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
    `laneId: null` — **invariant**, the engine opens lanes only for those starts.
    Idle lanes not assigned: kept while `occupied + assigned + kept < cap` and the lane has
    been idle less than `policy.laneIdleGraceMs` (from `idleSince` and `inputs.at`);
@@ -124,6 +133,37 @@ not already `queued` with that `waitReason`. Otherwise
 an idle tick every 2 s would bury the decision log. Every recorded Decision emits
 `decision.made` with `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` (v3;
 `waits` additive, issue #381).
+
+### Usage pacing (issue #373)
+
+Several accounts that each reset at their own time, each to be used close to 100% a week without
+running dry early. Three parts, each its own setting, all in `DeciderPolicy.pacing`; the decider
+stays pure — every time it compares is `inputs.at`.
+
+- **Burn window** (`HOPPER_BURN_WINDOW_HOURS`, default 18; 0: off). The hard limit keeps a reserve
+  (5% at 0.95) that is right for most of the week, but the reset throws it away. Within the burn
+  window of a week window's `resetsAt`, that window does not throttle unless it is spent
+  (`used >= limit`): steps 1-2 skip it (`burnPhase`, `src/decider/usage.ts`), and the Decision's
+  reasons name it (`m: usage window week of s is in its burn window …: not throttling`). Session
+  windows still apply. The usage report (`GET /api/usage`) reads the same clock, so a burning window
+  shows as not throttling.
+- **Reset-aware placement** (`HOPPER_RESET_AWARE_PLACEMENT`, default `true`). Step 7 picks the
+  machine with the most placement pressure: headroom of the binding (most used) week window — to the
+  hard limit, to 100% while it burns — per hour left before its reset. An account that resets in 11
+  hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
+  that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
+  pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
+  it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
+- **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
+  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
+  machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
+  limit, and not past its cap already — at most one lane over it per machine. The start reason says
+  `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
+  lane cap or the reserved lanes`); step 8 counts a lane over the cap in `target`. From the next
+  Decision on the machine is past its cap: no other job starts there, and step 8 drains a busy lane
+  (the newest), which closes when its job ends.
+
+Decisions stored before issue #373 carry no `pacing`: all three are off for them.
 
 ## The engine
 
@@ -379,6 +419,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
+| `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
+| `job.cleaned_up` | `{ deferredAt, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`) |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -532,6 +574,15 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
   with what the shell said (`the work tree <cwd> is not usable on <machine>: …`), the pane closed,
   instead of retrying for 60000 ms.
+- **The pane's shell must be POSIX** (issue #367). Every command the hopper types into a pane (the
+  scratch command, the job worktree command, the reap) is POSIX shell. herdr opens a pane in the
+  machine's default shell, and has no option to pick one per tab (herdr 0.8.2); on Windows that is
+  PowerShell, which refuses `&&` (5.1) and has no `printf`, so the scratch marker never showed and
+  every job there waited 60000 ms. The executor reads the pane after each wait, and when it shows a
+  PowerShell or cmd prompt (`windowsShellOf`, `screen.ts`) fails the job at once: `the shell of pane
+  <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
+  hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
+  default for the hopper's session (README "A Windows computer").
 - **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (herdr-claude and
   cursor-agent `cwd`, the GitHub sources' `defaultCwd` and `repoPaths`), and the executor resolves it
   when the job starts, against the home of the lane's machine: this process's for this machine, and
@@ -722,7 +773,10 @@ If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then th
 **Cancel** (`ctx.signal`, reason `'cancel'`): `send-keys esc`, then `ctrl+c` twice, then
 `pane close`; outcome `failed` `aborted`. **Shutdown** (reason `'shutdown'`): return
 `failed` `shutdown` at once, pane untouched (the engine discards outcomes during shutdown).
-**cleanup(job)**: same exit-and-close from `job.executorState`; swallow errors; idempotent.
+**cleanup(job)**: same exit-and-close from `job.executorState`; idempotent. Rejects only when the
+pane may still be open: its herdr not reached (a client target not dialled in, ssh failing), or
+`pane close` refused for any reason but `pane_not_found` (a pane already gone resolves). The engine
+then defers it ("Deferred cleanup").
 The executor is `idempotent: false`. `timeoutMs` and the `expectedMs` progress clock apply
 per `run`/`resume` call; time spent waiting for an answer does not count.
 
@@ -882,6 +936,16 @@ so a running job's pane and Claude outlive a restart.
   `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
   re-run: a second run repeats real side effects. A non-idempotent executor without
   `reattach` always takes this path.
+- Same job, its machine **not answering yet** (issue #368: `canReattach` rejects — a client target
+  not dialled in, an ssh target not replying; recovery runs before either can) → in the tx the job
+  stays `running` with its `laneId` and its lane is kept, as a reattached one, but no event yet.
+  After it the runner asks `canReattach` again every second, the job held by the runner as any
+  run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
+  and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
+  **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
+  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up;
+  a pane its cleanup cannot reach then may still run, so that cleanup is deferred and tried again
+  (issue #371, "Deferred cleanup").
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
@@ -1077,6 +1141,20 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
 - **Panes close on every terminal outcome** (finished, failed, cancelled, restart failure)
   via `executor.cleanup`, unless `HOPPER_KEEP_PANES=true`. Timeouts and failed startups
   close their pane too.
+- **Deferred cleanup** (issue #371). A cleanup that cannot reach the job's machine is not dropped.
+  Seen live (before the reconnect grace): restart recovery failed a job on a client target that had
+  not dialled back in yet; the one cleanup it queued never reached the pane, Claude kept working, and a rerun of the issue started
+  beside it seven minutes later. The two collided until the old pane was closed by hand.
+  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, the job gets `cleanupDeferred { at, error }`
+  and `job.cleanup_deferred { error }` (once per deferral). Every tick tries each deferred cleanup again
+  that is not running; the first that goes through clears the field and records `job.cleaned_up
+  { deferredAt }` (an engine trigger). The deferrals are read back from the store at start, so a
+  restart keeps them. Meanwhile the decider holds a waiting job of the same item (step 5): the
+  engine passes `DecisionInputs.cleanupDue`, the ended jobs whose cleanup is deferred or running now.
+  The UI flags such a job (Ended, the locked entries, Attention). **Mark closed**
+  (`POST /ui/api/jobs/:id/cleaned-up`, operator) ends a deferral by hand — the pane closed by hand, or
+  its machine gone for good — with `job.cleaned_up { by: "user" }`; without it a machine that never
+  comes back would hold its items for good.
 - **herdr unit:** a second `herdr --session X server` exits 1, so
   `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers
@@ -2573,6 +2651,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_TICK_MS` | `2000` |
 | `HOPPER_ROUTER_MODE` | *Removed by issue #211: there is no router mode.* |
 | `HOPPER_SOFT_LIMIT` / `HARD_LIMIT` | `0.7` / `0.95` |
+| `HOPPER_BURN_WINDOW_HOURS` | `18` (0: off) — "Usage pacing" (issue #373) |
+| `HOPPER_RESET_AWARE_PLACEMENT` | `true` — "Usage pacing" |
+| `HOPPER_CRITICAL_PRIORITY` | `100` (0: off) — "Usage pacing" |
 | `HOPPER_ROUTER_CHEAP_BOOST` | `10` |
 | `HOPPER_WEBHOOK_BASE_MS` | `1000` |
 | `HOPPER_LANE_IDLE_GRACE_MS` | `5000` |
@@ -2582,6 +2663,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
@@ -2993,6 +3075,11 @@ session per socket (`src/executors/client.ts`); `createHerdrCliClient({ client }
 the CLI's exit codes map (2 → usage, JSON on stderr → herdr's error). herdr-claude runs there like on an
 ssh target and records `client: { machine, tokenEnv }` in its pane state, so resume, reattach and
 cleanup reach the same client. The command executor refuses a client target (it serves herdr only).
+`POST /claude {args, timeoutMs}` → `{code, stdout, stderr}` (issue #366): the client runs its own
+`claude` (on its PATH; `ClientOptions.claudeBin`) for `claude-plan`'s usage read — exactly
+`-p /usage --output-format json --no-session-persistence` or `auth status --json`, any other argv 400 —
+with no shell, stdin closed, in a fresh `mkdtemp` dir removed after with the project dir claude keeps for
+it. Zero turns, zero tokens: a signed call can read the machine's usage and account, never start a prompt.
 
 **Online** while `status server` through the tunnel says `status: running`, answered and signed by
 the client; offline when there is no tunnel, the token is missing, or the answer does not prove
@@ -4155,9 +4242,12 @@ holds no credential. Prior art: `a status-bar script`.
   `sshBin` and `dockerBin` (command-bearing, default `ssh`, `docker`). Detection: none — never a
   call to claude; claude is on that machine, and the source's state says whether it runs.
 - **On an attached machine** (issue #139): on one, both calls run there through its
-  connection — `commandOn`, as the command executor: ssh with the hopper's ssh key, or `docker exec`;
-  a client target serves herdr only, so it cannot — in a fresh `mktemp -d` dir there, removed after
-  with the project dir claude keeps for it. Its `PATH` is the machine's own. The machine is found
+  connection — `commandOn`, as the command executor: ssh with the hopper's ssh key, or `docker exec` —
+  in a fresh `mktemp -d` dir there, removed after with the project dir claude keeps for it. **A client
+  target** (issue #366) runs no command for the hopper, so both calls go to its client as `POST /claude`
+  ("Client targets"), found through the usage-source context's `client(id)`: the client runs its own
+  `claude` (`bin` is the hopper's, not the machine's). Not dialled in, refused, or no answer →
+  `machine <id>: …`, no readings, read again 30 s later. Its `PATH` is the machine's own. The machine is found
   through the usage-source context's `machine(id)` (as the machine sources list it now); not
   configured or offline → no readings and the reason, and it is read again 30 s later (on a poll), not
   an interval later: at start an attached machine is offline until its first probe. Every reading carries `machineId`, and the
@@ -5179,10 +5269,24 @@ job, a lane or a question: from the UI, or on its own with auto-update. Code: `s
 build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
 
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
-`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+`{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
+writes it (`kind: install`) from the clone's `origin`
 and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
+
+**So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
+the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
+default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
+`scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+`localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
+install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
+install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
+rebuilding it, so the UI offers no Update now and the headline says to pull or rebuild. A build whose install.json
+lacks a field → `unavailable`, the reason naming the missing field.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
@@ -5223,7 +5327,9 @@ the installed commit is made of, newest first: each commit on the tracked branch
 that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
 those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
-checked first. Computed once per installed commit. No install.json → none, with the reason.
+checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
+always carries `build`: what install.json does say (issue #409), shown above the list with the version, every
+missing field as `unknown`, and the reason as a short note — never an error in place of the page.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 
@@ -5370,7 +5476,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
 `HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
-still does not apply to a container.
+still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
 start a container whose dependency has exited, so the `secrets` service (run once, then exited) stopped
@@ -5662,7 +5768,7 @@ has it (`git log -- src/migrate/local.ts`).
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
-  configured for none). Self-update does not apply (no install.json; an image is updated by
+  configured for none). Self-update does not apply (an image is updated by
   rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
   deploy is `compose.yaml` at the root ("Docker Compose"; since issue #125 the published image,
 "The published image, with Podman").
@@ -7087,6 +7193,42 @@ was already true of `config set` and of the database itself.
 from the CLI — no caller yet.
 
 Tests: `test/integration/operator-cli.test.ts`.
+
+## Reserved lanes (issue #372, 2026-10-07)
+
+Reported: every lane of a machine was taken by jobs that could run on any machine, while a job a
+routing rule had pinned to it (work only that machine can do) waited for one to free. With long jobs it
+would wait hours while other machines had free lanes. Nothing in placement kept room for the jobs that
+can only run there.
+
+Three ways were offered: a per-machine count of reserved lanes, a placement rule that sends unpinned
+jobs elsewhere while pinned demand exists, or requeueing an unpinned job off the machine. Built the
+first: it is the smallest, it is per machine, and it needs no job moved once placed. The second would
+make one job's placement read every other job's pin; the third would stop work already begun.
+
+**As built:**
+- **`reservedLanes`**, an optional option of every machine-source plugin (`local`, `ssh`, `docker`,
+  `client`; a whole number ≥ 0, not command-bearing), reaches the decider on
+  `MachineSnapshot.reservedLanes`. Edited in the Plugins view's options form like any machine option;
+  the machine's card in the Machines view says how many it keeps.
+- **The decider (step 7).** A job is pinned to a machine when `pinOf(job)` names it (its
+  `spec.machineId`, or for a resuming job the machine holding its pane). A job not pinned to `m` may
+  take a lane there only while `unpinned(m) < max(0, cap(m) - reservedLanes(m))`, where `unpinned(m)`
+  counts the lanes busy or draining with jobs not pinned to `m` — a lane whose job is not among the
+  inputs counts as unpinned, so the reserve stays free — plus this Decision's starts of such jobs.
+  Pinned jobs may use every lane. The room an unpinned job sees on `m` is that smaller figure, so it
+  goes to a machine with more room for it first. It counts against the **lane cap**, not `maxLanes`:
+  past a usage soft limit the reserve stays whole and unpinned jobs give way first.
+- **At or above the cap**, only jobs pinned to the machine run there.
+- **Wait reason.** An unpinned job with room on its machine save the reserved lanes waits with
+  `waiting for a lane: machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`.
+- A running job is never moved: the reserve applies to new starts. Absent or 0, placement is as before.
+
+**Verification:** `test/decider/reserved.test.ts` (cap less the reserve, the wait reason, a pinned job
+takes a reserved lane, pinned jobs use every lane, pinned lanes do not count against unpinned ones,
+unpinned jobs go elsewhere first, a reserve at the cap), `test/plugins/machine-targets.test.ts`,
+`test/plugins/host-sources.test.ts`, `test/adapters/ssh-machine.test.ts`,
+`test/adapters/machine-usage.test.ts`, `test/ui/machines.test.ts` (`reservedText`).
 
 ## Leak prevention: scope, sweep, shared dependencies (issue #410, 2026-10-08)
 
