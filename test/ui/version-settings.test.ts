@@ -12,8 +12,8 @@ const store = '../../ui/src/store/index.ts';
 interface Store { useHopper: { setState(s: Record<string, unknown>): void } }
 const COMMIT = 'c0ffee1'.padEnd(40, '0');
 const UPDATE = {
-  state: 'current', channel: 'main', autoUpdate: false, whatsNew: [],
-  installed: { kind: 'install', repo: 'git@github.com:o/r.git', branch: 'main', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
+  state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [],
+  installed: { kind: 'install', repo: 'git@github.com:o/r.git', branch: 'stable', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
   installedWhatsNew: ['You can now do the newest thing.', 'An older change.'],
   checkedAt: '2026-10-06T10:01:00Z',
 };
@@ -78,11 +78,19 @@ describe('the version, without an update notice', () => {
     await render('../../ui/src/views/settings.tsx', 'Settings');
     const text = document.querySelector('[data-slot="version-details"]')?.textContent ?? '';
     expect(text).toContain('0.1.0');
-    expect(text).toContain('main c0ffee1');
+    expect(text).toContain('stable c0ffee1');
     expect(text).toContain('Up to date');
     expect(text).toContain('In this version');
     expect(text).toContain('You can now do the newest thing.');
     expect(text).toContain('An older change.');
+  });
+
+  it('the channel picker offers exactly dev, beta and stable (issue #423)', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    const details = document.querySelector('[data-slot="version-details"]')!;
+    const channels = [...details.querySelectorAll('[data-slot="update-channels"] button')].map((b) => b.textContent);
+    expect(channels).toEqual(['dev', 'beta', 'stable']);
   });
 
   it('the header version is a visible, labelled control', async () => {
@@ -120,7 +128,7 @@ describe('the version history (issue #246)', () => {
 describe('a build that does not know all of itself (issue #409)', () => {
   const partial = {
     versions: [],
-    build: { kind: 'image', repo: 'https://github.com/o/r.git', branch: 'main', installedAt: '2026-10-07T12:00:00Z' },
+    build: { kind: 'image', repo: 'https://github.com/o/r.git', branch: 'stable', installedAt: '2026-10-07T12:00:00Z' },
     reason: 'this build does not know its commit: it was built without it (build the image with scripts/build-image.sh)',
   };
   const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
@@ -132,7 +140,7 @@ describe('a build that does not know all of itself (issue #409)', () => {
     const build = document.querySelector('[data-slot="build-info"]')?.textContent ?? '';
     expect(build).toContain('0.1.0');
     expect(build).toContain('https://github.com/o/r.git');
-    expect(build).toContain('main');
+    expect(build).toContain('stable');
     expect(build).toContain('image');
     expect(build).toMatch(/Commit\s*unknown/);
     expect(document.querySelector('[data-slot="build-note"]')?.textContent).toContain('does not know its commit');
@@ -149,7 +157,7 @@ describe('a build that does not know all of itself (issue #409)', () => {
 
   it('an image build offers no Update now: it says to pull or rebuild the image', async () => {
     window.location.hash = '#settings/version';
-    const target = { commit: 'beef'.padEnd(40, '0'), ref: 'main' };
+    const target = { commit: 'beef'.padEnd(40, '0'), ref: 'stable' };
     await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...UPDATE, state: 'available', target, installed: { ...UPDATE.installed, kind: 'image' } } });
     const details = document.querySelector('[data-slot="version-details"]');
     expect([...details!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
