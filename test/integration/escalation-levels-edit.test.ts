@@ -86,3 +86,19 @@ describe('POST /ui/api/plugins — escalation levels', () => {
     expect(read(a)).toEqual(LEVELS);
   });
 });
+
+// Issue #444: the levels have one editor (Question gates); the change is the UI's alone, so a stored list
+// starts unchanged: its order, names and options, a level with no machine picked included.
+describe('stored escalation levels across a start', () => {
+  it('custom, reordered and machine-less levels read back exactly as stored', async () => {
+    const levels = [
+      { name: 'careful', plugin: 'claude-cli', options: { model: 'fable', machine: 'local', timeoutMs: 60000 } },
+      { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } },
+      { name: 'quick', plugin: 'claude-cli', options: { model: 'sonnet', machine: 'local' } },
+    ];
+    const { a } = await start({ version: 1, escalationLevels: levels, executors: [{ name: 'test', plugin: 'test' }] });
+    expect(read(a).escalationLevels).toEqual(levels);
+    const r = await report(a);
+    expect(r.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual(levels);
+  });
+});

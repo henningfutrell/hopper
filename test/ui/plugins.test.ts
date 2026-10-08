@@ -182,3 +182,30 @@ describe('a shipped plugin that runs on a machine', () => {
     expect(fieldKind({ type: 'string', machine: true } as never)).toBe('choice');
   });
 });
+
+// Issue #444: the escalation levels are edited in Question gates alone, so no shipped-plugin switch adds or
+// removes one.
+describe('escalation levels: one editor', () => {
+  const machineSchema = { type: 'object', properties: { model: { type: 'string' }, machine: { type: 'string', machine: true } }, required: ['machine'] };
+  const report = {
+    config: { version: 'v1' },
+    instances: [
+      { role: 'escalation-level', instance: { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local' } } },
+      { role: 'escalation-level', instance: { name: 'level-2', plugin: 'claude-cli', options: { model: 'opus' } } },
+    ],
+    escalationLevels: [
+      { instance: { name: 'level-1', plugin: 'claude-cli' }, detection: { status: 'available' }, active: 'claude-cli' },
+      { instance: { name: 'level-2', plugin: 'claude-cli' }, detection: { status: 'available' }, active: null, reason: 'invalid options for claude-cli: machine: Invalid input' },
+    ],
+    plugins: [
+      { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: machineSchema },
+      { id: 'anthropic-api', role: 'escalation-level', describe: 'the API', builtin: true, detection: { status: 'available' }, options: {} },
+      { id: 'test', role: 'executor', describe: 'test', builtin: true, detection: { status: 'available' }, options: {} },
+    ],
+  } as unknown as PluginsReport;
+
+  it('the shipped plugins leave the escalation-level plugins out, as they do machines', () => {
+    expect(shippedPlugins(report).map((p) => p.id)).toEqual(['test']);
+  });
+
+});
