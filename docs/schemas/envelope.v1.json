@@ -66,6 +66,7 @@
         "job.cleaned_up",
         "source.stalled",
         "connected_account.expired",
+        "ui_session.ended",
         "jev.mode_changed",
         "router.mode_changed"
       ]

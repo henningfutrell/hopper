@@ -9,6 +9,7 @@ import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
+import { sessionsRenew } from './migration-session-lifetime.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
@@ -158,6 +159,9 @@ const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS join_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, user_id TEXT NOT NULL);
   `,
+  // 26: sessions renew (issue #439): no fixed expiry; when a session started, was last used and its gateway
+  // token last checked out, and the sign-in config's session lengths decide when it ends.
+  sessionsRenew,
 ];
 
 /**

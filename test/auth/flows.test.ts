@@ -18,7 +18,7 @@ describe('pending sign-in flows', () => {
       config: { local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [{
         name: 'corp', label: 'corp', type: 'oidc', enabled: true, issuer: idp.issuer, clientId: 'c', scopes: ['openid'],
         claims: { email: 'email', username: 'preferred_username', name: 'name', groups: 'groups' }, trustUnverifiedEmail: false, roles: { defaultRole: 'viewer' },
-      }] },
+      }], sessions: { idleHours: 168, maxHours: 720 } },
     });
     const urls: string[] = [];
     for (let i = 0; i < 5; i++) urls.push(await signIn.begin('corp', binding()));

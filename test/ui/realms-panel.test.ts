@@ -19,7 +19,7 @@ let refuse: string | undefined;
 const GITHUB = { name: 'github', label: 'GitHub', type: 'github', enabled: true, settings: { roles: { operator: { usernames: ['bea'] }, defaultRole: 'viewer' } }, secrets: [] };
 let VIEW: Record<string, unknown> & { realms: Record<string, unknown>[] };
 const BASE = {
-  version: 'v1', local: true, none: null, origin: 'http://localhost:4790', githubAdmin: { realm: 'github', user: 'octo' },
+  version: 'v1', local: true, none: null, origin: 'http://localhost:4790', sessions: { idleHours: 168, maxHours: 720 }, githubAdmin: { realm: 'github', user: 'octo' },
   people: [
     { realm: 'github', subject: '1', user: 'octo', role: 'admin', superAdmin: true },
     { realm: 'github', subject: '2', user: 'bea', role: 'operator', superAdmin: false },
@@ -249,6 +249,20 @@ describe('Settings: Sign-in', () => {
     expect(links.textContent).toContain('On');
     await click(switchIn(links));
     await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', local: false, version: 'v1' }));
+  });
+
+  it('session lengths (issue #439): the idle timeout and the maximum, in hours, saved together', async () => {
+    await render('admin');
+    await vi.waitFor(() => expect(rows()).toHaveLength(2));
+    const lengths = section('sessions');
+    expect(field('Idle timeout in hours').value).toBe('168');
+    expect(field('Longest session in hours').value).toBe('720');
+    expect(lengths.textContent).toMatch(/7 days/);
+    expect(lengths.textContent).toMatch(/30 days/);
+    await act(async () => type(field('Idle timeout in hours'), '12'));
+    await act(async () => type(field('Longest session in hours'), '48'));
+    await click(buttonIn(lengths, 'Save'));
+    await vi.waitFor(() => expect(posts).toContainEqual({ action: 'settings', sessions: { idleHours: 12, maxHours: 48 }, version: 'v1' }));
   });
 
   it('no sign-in: off, and only for a hopper behind something that decides who gets in', async () => {

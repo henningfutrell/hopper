@@ -54,7 +54,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       maxQuestions: 5,
       keepPanes: false,
       localMachine: true,
-      uiSessionHours: 12,
       publicUrl: undefined,
       lanNames: [],
       lanPeers: [],

@@ -23,7 +23,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
-import { createUiSessions } from './ui/sessions.ts';
+import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
@@ -46,7 +46,6 @@ export interface ServerOptions {
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
   port: () => number;
-  sessionHours: number;
   /** The sign-in config as it applies: local sign-in, no sign-in and the realms. */
   signIn: SignIn;
   /** The realms HOPPER_SIGN_IN_* variables set up (issue #216): Settings → Sign-in says so. */
@@ -64,7 +63,15 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
-  const sessions = createUiSessions({ repo: o.instance.uiSessions, clock: o.clock, hours: o.sessionHours });
+  // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
+  const sessions = createUiSessions({
+    repo: o.instance.uiSessions, clock: o.clock, signIn: o.signIn,
+    ended: ({ userId, identity, reason }) => {
+      console.warn(`hopper: UI session ended (${reason}): ${identity.realm} ${identityName(identity)} as user ${userId}`);
+      o.tenants.user(userId)?.store.events.append({ type: 'ui_session.ended', data: { reason, realm: identity.realm } });
+    },
+    unknown: () => console.warn('hopper: a request carried a UI session token this hopper holds no session for: it ended before, the database was reset, or it is another hopper\'s; the UI signs in again'),
+  });
   // The sign-in config may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: the sign-in config applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);

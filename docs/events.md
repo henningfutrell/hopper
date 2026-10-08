@@ -846,3 +846,19 @@ Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the
   "reason": "GitHub refused the refresh token (bad_refresh_token)"
 }
 ```
+
+## `ui_session.ended`
+
+Version 1 (`docs/schemas/ui_session.ended.v1.json`). A UI session of the user's ended (issue #439), with the realm it signed in with and why (`reason`): `expired-idle` (no request for the idle timeout), `expired-absolute` (its maximum passed), `refresh-refused` (a gateway realm's session whose forwarded token no longer checks out), `provider-unreachable` (that token's issuer stayed out of reach past the grace period), `realm-changed` (the sign-in config changed: its realm gone or off, or no rule grants it a role) or `logout`. The session lengths are Settings → Sign-in's.
+
+| field | type | required |
+|---|---|---|
+| `reason` | `expired-idle` \| `expired-absolute` \| `refresh-refused` \| `provider-unreachable` \| `realm-changed` \| `logout` | yes |
+| `realm` | string | yes |
+
+```json
+{
+  "reason": "expired-idle",
+  "realm": "corp"
+}
+```

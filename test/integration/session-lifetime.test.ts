@@ -97,11 +97,12 @@ describe('a gateway realm stays the authority', () => {
     const token = (JSON.parse(res.text) as { token: string }).token;
     await sleep(500);
     expect((await o.app.api('GET', '/api/queue', undefined, { 'x-hopper-session': token, ...good })).status).toBe(200);
-    expect((await session(o.app, token)).authenticated).toBe(true);
+    const user = (await session(o.app, token)).user.id as string;
     await sleep(500);
     const expired = { authorization: `Bearer ${await idp.token({ sub: 'ada-1', aud: 'hopper' }, -120)}` };
     await o.app.api('GET', '/api/queue', undefined, { 'x-hopper-session': token, ...expired });
     expect((await session(o.app, token)).authenticated).toBe(false);
-    expect(await endedEvents(o.app)).toEqual([{ reason: 'refresh-refused', realm: 'edge' }]);
+    // The gateway's person signs in as a user of their own: the event is theirs.
+    expect(o.app.user(user).store.events.recent(10, ['ui_session.ended']).map((e) => e.data)).toEqual([{ reason: 'refresh-refused', realm: 'edge' }]);
   });
 });
