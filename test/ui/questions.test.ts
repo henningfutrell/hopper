@@ -26,7 +26,7 @@ const handled = {
 interface Call { path: string; method: string; headers: Record<string, string>; body?: unknown }
 
 type Role = 'viewer' | 'operator' | 'admin';
-interface Boot { attempts?: unknown[]; lapsesAt?: string; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
+interface Boot { attempts?: unknown[]; lapsesAt?: string; authed: boolean; hash?: string; role?: Role; mutationStatus?: number; mutationError?: string; mutationDelayMs?: number; needs?: Role; realms?: { name: string; label: string; type: string }[] }
 
 function fakeDaemon(o: Boot) {
   const calls: Call[] = [];
@@ -57,8 +57,10 @@ function fakeDaemon(o: Boot) {
     if (path === '/api/questions') return json(200, { questions: new URLSearchParams(query).get('status') === 'all' ? [open, handled] : [open] });
     if (path === `/ui/api/questions/${question.id}/seen`) { open.seenAt ??= '2026-10-03T20:01:00.000Z'; return json(200, open); }
     if (path.startsWith('/ui/api/')) {
+      if (o.mutationDelayMs) await new Promise((r) => setTimeout(r, o.mutationDelayMs));
       const status = o.mutationStatus ?? 200;
       if (status === 200) return json(200, { ...question, status: 'closed' });
+      if (o.mutationError) return json(status, { error: o.mutationError });
       return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-hopper-session' });
     }
     if (path in routes) return json(200, routes[path]);
@@ -208,15 +210,60 @@ describe("the levels' recommendations on an escalated question", () => {
     { tier: 'fable', role: 'level', model: 'claude-fable-x', startedAt: '2026-10-03T20:00:01.000Z', answer: 'take option 1', escalate: true, reason: 'the owner picks', outcome: 'escalated' },
   ];
 
-  it('show on the trail with the model that ran; Use answer puts one in the answer box to send or edit', async () => {
+  const useButtons = () => [...card()!.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Use answer');
+  const answers = (daemon: { calls: Call[] }) => daemon.calls.filter((c) => c.path === `/ui/api/questions/${question.id}/answer`);
+  const result = () => card()?.querySelector('[data-slot="answer-result"]') ?? null;
+
+  it('show on the trail with the model that ran, each with Use answer', async () => {
     await boot({ authed: true, attempts });
     await vi.waitFor(() => expect(card()!.querySelector('textarea')).not.toBeNull());
     expect(card()!.textContent).toContain('take option 1');
     expect(card()!.textContent).toContain('claude-fable-x');
-    const use = [...card()!.querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Use answer');
-    expect(use).toHaveLength(2);
-    await click(use[1]);
-    expect(card()!.querySelector('textarea')!.value).toBe('take option 1');
+    expect(useButtons()).toHaveLength(2);
+  });
+
+  // Issue #459: one click sends; no separate Send. The same answer route as Send answer.
+  it('Use answer sends that answer at once: exactly one POST of it, and the card says it was sent', async () => {
+    const daemon = await boot({ authed: true, attempts });
+    await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
+    await click(useButtons()[1]);
+    await vi.waitFor(() => expect(answers(daemon)).toHaveLength(1));
+    const call = answers(daemon)[0]!;
+    expect(call.method).toBe('POST');
+    expect(call.headers['x-hopper-session']).toBe('a'.repeat(64));
+    expect(call.body).toEqual({ answer: 'take option 1' });
+    await vi.waitFor(() => expect(result()?.textContent).toMatch(/sent/i));
+    expect(card()!.querySelector('textarea')!.value).toBe('');
+  });
+
+  it('a double click is one submission: the buttons are disabled while it is in flight', async () => {
+    const daemon = await boot({ authed: true, attempts, mutationDelayMs: 100 });
+    await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
+    const use = useButtons()[0]!;
+    await act(async () => { use.click(); use.click(); });
+    expect(useButtons().every((b) => b.disabled)).toBe(true);
+    expect(button('Send answer')!.disabled).toBe(true);
+    await click(useButtons()[1]);
+    await vi.waitFor(() => expect(result()?.textContent).toMatch(/sent/i));
+    expect(answers(daemon)).toHaveLength(1);
+    expect(answers(daemon)[0]!.body).toEqual({ answer: 'wait for the owner' });
+  });
+
+  it('a failed send says why on the card, with Retry, which sends the same answer again', async () => {
+    const daemon = await boot({ authed: true, attempts, mutationStatus: 500, mutationError: 'database unavailable' });
+    await vi.waitFor(() => expect(useButtons()).toHaveLength(2));
+    await click(useButtons()[1]);
+    await vi.waitFor(() => expect(result()?.textContent).toContain('database unavailable'));
+    expect(answers(daemon)).toHaveLength(1);
+    await click(button('Retry'));
+    await vi.waitFor(() => expect(answers(daemon)).toHaveLength(2));
+    expect(answers(daemon)[1]!.body).toEqual({ answer: 'take option 1' });
+  });
+
+  it('the answer box and Send answer stay, for an answer of the owner\'s own', async () => {
+    await boot({ authed: true, attempts });
+    await vi.waitFor(() => expect(button('Send answer')).toBeDefined());
+    expect(card()!.querySelector('textarea')).not.toBeNull();
   });
 });
 

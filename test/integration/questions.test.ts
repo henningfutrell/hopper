@@ -149,6 +149,27 @@ describe('a question escalated to the human', () => {
     expect((await a.api('GET', '/api/questions?status=bogus')).status).toBe(400);
   });
 
+  // Issue #459: Use answer sends at once, and a retry must not answer twice. The answer is idempotent per
+  // question: the same answer again is the question as it is, with no second effect; another answer is 409.
+  it('the same UI answer sent twice is one answer: one question.answered, one resume; another answer is 409', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(ask('Is this risky?'));
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const path = `/ui/api/questions/${q.id}/answer`;
+    const [one, two] = await Promise.all([a.ui<Question>(path, { answer: 'take option 1' }, { token }), a.ui<Question>(path, { answer: 'take option 1' }, { token })]);
+    expect([one.status, two.status]).toEqual([200, 200]);
+    expect(two.body).toMatchObject({ id: q.id, status: 'answered', answeredBy: 'human', answer: 'take option 1' });
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'take option 1' });
+    expect((await a.ui<Question>(path, { answer: 'take option 1' }, { token })).status).toBe(200);
+    expect((await a.ui(path, { answer: 'take option 2' }, { token })).status).toBe(409);
+    const events = ofJob(await a.events(), job.id);
+    expect(events.filter((e) => e.type === 'question.answered')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'job.requeued')).toHaveLength(1);
+    const stored = (await a.api<Question>('GET', `/api/questions/${q.id}`)).body;
+    expect(stored.attempts.filter((x) => x.tier === 'human')).toHaveLength(1);
+  });
+
   it('a risk rule sends a question a level answered to the human, past the levels above', async () => {
     const a = await start();
     const job = await a.pull(ask('Should I delete the old branch?'));
