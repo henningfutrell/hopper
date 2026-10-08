@@ -39,7 +39,9 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     return d;
   }
 
+  /** An event that says it tells no one (`notify: false`, issue #516) is delivered to none. */
   function matches(sub: WebhookSubscription, event: DomainEvent): boolean {
+    if (event.data.notify === false) return false;
     return sub.active && (sub.events.includes('*') || sub.events.includes(event.type));
   }
 

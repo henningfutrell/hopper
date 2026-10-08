@@ -83,6 +83,17 @@ describe('webhook dispatcher', () => {
     expect(bySub(all.id)).toEqual(['job.queued', 'job.finished']);
   });
 
+  it('an event that says it tells no one (`notify: false`, issue #516) is not delivered', async () => {
+    const s = setup(ok);
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    fake.append('handoff.opened', { handoffId: 'h1', notify: false });
+    fake.append('handoff.opened', { handoffId: 'h2', notify: true });
+    await until(() => fake.deliveries().length === 1 && fake.deliveries()[0]!.status === 'delivered');
+    expect(receiver.received.map((r) => (JSON.parse(r.body) as { data: { handoffId: string } }).data.handoffId)).toEqual(['h2']);
+  });
+
   it('retries a 500 with growing backoff, then delivers (attempts 2)', async () => {
     const s = setup((n, res) => { res.statusCode = n === 1 ? 500 : 200; res.end(); });
     receiver = await s.receiverP;

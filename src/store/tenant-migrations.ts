@@ -246,6 +246,19 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
     body TEXT NOT NULL
   );
   CREATE INDEX problems_status ON problems (status, signature)`,
+  // 23: Needs a person (issue #516): a failed job automatic handling ended for, open until a person acts. A table
+  // only: the build before runs on it.
+  `CREATE TABLE handoffs (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    closed_at TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX handoffs_job ON handoffs (job_id);
+  CREATE INDEX handoffs_status ON handoffs (status, opened_at)`,
 ];
 
 /** A user schema's version once migrated. */

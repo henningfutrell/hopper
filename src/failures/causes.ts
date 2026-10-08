@@ -25,12 +25,17 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   cause({
     id: 'machine-offline', name: 'Machine offline', cls: 'shared', decision: 'redirect', scope: 'machine', check: 'online',
     description: 'The hopper cannot reach the machine: its jobs cannot start or report there until it is back.',
-    pattern: /did not reconnect|is not attached|machine \S+ (is )?(offline|unreachable)|EHOSTUNREACH|ECONNREFUSED|no route to host|ssh: connect to host|could not resolve hostname|host is down/i,
+    pattern: /did not reconnect|is not attached|is not dialled in|machine \S+ (is )?(offline|unreachable)|EHOSTUNREACH|ECONNREFUSED|no route to host|ssh: connect to host|could not resolve hostname|host is down/i,
   }),
   cause({
     id: 'daemon-restart', name: 'Daemon restart', cls: 'transient', decision: 'retry', scope: 'machine',
     description: 'The hopper restarted while the job ran: its work was cut off, not wrong.',
     pattern: /interrupted by daemon restart/i,
+  }),
+  cause({
+    id: 'link-closed', name: 'Link closed', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The machine\'s link to the hopper closed before it answered: it dropped for a moment, or the machine went away (then the next run finds it offline).',
+    pattern: /its link closed/i,
   }),
   cause({
     id: 'network', name: 'Network blip', cls: 'transient', decision: 'retry', scope: 'machine',

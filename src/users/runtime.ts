@@ -323,7 +323,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
   const failures = createFailures({
     store, clock, logger, sweepMs: config.tickMs,
-    rerun: (jobId, by) => sync.rerun(jobId, by),
+    rerun: (jobId, by) => sync.rerun(jobId, by), dismiss: (jobId) => { engine.dismiss(jobId); },
     machines: () => host.machines().list(),
     trigger: (reason) => engine.trigger(reason),
   });

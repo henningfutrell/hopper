@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, LOGIN_KINDS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -134,6 +134,12 @@ export const EVENT_SCHEMAS = {
     decision: z.enum(['hold', 'redirect']), scope: problemScope, affected: z.number().int().min(1),
   }),
   'failure.resolved': strict({ problemId: z.string(), title: z.string(), by: z.enum(['user', 'check']), released: z.number().int().min(0) }),
+  // Needs a person (issue #516): a failed job handed off to a person, and the hand-off ending.
+  'handoff.opened': strict({
+    handoffId: z.string(), reason: z.enum(HANDOFF_REASONS), summary: z.string(), notify: z.boolean(),
+    recordId: z.string().optional(), decision: z.enum(FAILURE_DECISIONS).optional(), class: z.enum(FAILURE_CLASSES).optional(),
+  }),
+  'handoff.closed': strict({ handoffId: z.string(), end: z.enum(HANDOFF_ENDS), nextJobId: z.string().optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

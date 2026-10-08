@@ -1,5 +1,6 @@
 // The failures settings (issue #509), an admin's: the retry limit and backoff, the grouping threshold, which
-// decisions act by themselves, and how long records are kept. Saved to the daemon, applied without a restart.
+// decisions act by themselves, how long records are kept; whether a job handed off to a person tells the webhooks,
+// and how long a cleared hand-off is kept (issue #516). Saved to the daemon, applied without a restart.
 // Keyed by the saved values, so a save starts the form from them again.
 import { Settings2 } from 'lucide-react';
 import { useState } from 'react';
@@ -9,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import type { FailureSettings } from '@/model/wire';
 import { saveFailureSettings } from '@/store';
 
-type NumberKey = Exclude<keyof FailureSettings, 'auto'>;
+type NumberKey = Exclude<keyof FailureSettings, 'auto' | 'handoffNotify'>;
 const NUMBERS: { key: NumberKey; label: string; step?: string }[] = [
   { key: 'maxAttempts', label: 'Retries per job' },
   { key: 'backoffSec', label: 'First wait (s)' },
@@ -18,6 +19,7 @@ const NUMBERS: { key: NumberKey; label: string; step?: string }[] = [
   { key: 'groupThreshold', label: 'Jobs to flag a cause' },
   { key: 'groupWindowMin', label: 'Within (min)' },
   { key: 'retentionDays', label: 'Keep records (days)' },
+  { key: 'handoffRetentionDays', label: 'Keep cleared hand-offs (days)' },
 ];
 const AUTO: { key: keyof FailureSettings['auto']; label: string }[] = [
   { key: 'retry', label: 'Retry transient failures' },
@@ -28,11 +30,12 @@ const AUTO: { key: keyof FailureSettings['auto']; label: string }[] = [
 function Form({ settings }: { settings: FailureSettings }) {
   const [numbers, setNumbers] = useState<Record<NumberKey, string>>(() => Object.fromEntries(NUMBERS.map((n) => [n.key, String(settings[n.key])])) as Record<NumberKey, string>);
   const [auto, setAuto] = useState(settings.auto);
+  const [notify, setNotify] = useState(settings.handoffNotify);
   const [busy, setBusy] = useState(false);
-  const changed = NUMBERS.some((n) => Number(numbers[n.key]) !== settings[n.key]) || AUTO.some((a) => auto[a.key] !== settings.auto[a.key]);
+  const changed = NUMBERS.some((n) => Number(numbers[n.key]) !== settings[n.key]) || AUTO.some((a) => auto[a.key] !== settings.auto[a.key]) || notify !== settings.handoffNotify;
   const save = async () => {
     setBusy(true);
-    await saveFailureSettings({ ...Object.fromEntries(NUMBERS.map((n) => [n.key, Number(numbers[n.key])])), auto });
+    await saveFailureSettings({ ...Object.fromEntries(NUMBERS.map((n) => [n.key, Number(numbers[n.key])])), auto, handoffNotify: notify });
     setBusy(false);
   };
   return (
@@ -54,6 +57,9 @@ function Form({ settings }: { settings: FailureSettings }) {
             <input type="checkbox" checked={auto[a.key]} disabled={busy} onChange={(e) => setAuto({ ...auto, [a.key]: e.target.checked })} />{a.label}
           </label>
         ))}
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={notify} disabled={busy} onChange={(e) => setNotify(e.target.checked)} />Tell webhooks when a job needs a person
+        </label>
       </div>
       <Button size="sm" disabled={busy || !changed} onClick={() => void save()}>Save</Button>
     </div>

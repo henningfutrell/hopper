@@ -1082,7 +1082,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 
 ## `job.assessed`
 
-Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job.
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person — or the job failed more than a day before it was assessed (issue #517). A job whose item already ran again is assessed too, acting on nothing: its `reasons` end `a newer job of its item exists: <job id>: nothing is left to do`. Once per failed job.
 
 | field | type | required |
 |---|---|---|
@@ -1163,5 +1163,49 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
   "title": "Disk full on desk",
   "by": "check",
   "released": 2
+}
+```
+
+## `handoff.opened`
+
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person runs it again or clears it — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off.
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `reason` | `retry_limit` \| `person` \| `auto_off` \| `not_retried` \| `dismissed` | yes |
+| `summary` | string | yes |
+| `notify` | boolean | yes |
+| `recordId` | string | no |
+| `decision` | `retry` \| `hold` \| `redirect` \| `person` | no |
+| `class` | `transient` \| `shared` \| `job` | no |
+
+```json
+{
+  "handoffId": "h1",
+  "reason": "retry_limit",
+  "summary": "Needs a person. Ran 4 times on desk, the last for 2 min. Failed: read ECONNRESET.",
+  "notify": true,
+  "recordId": "f1",
+  "decision": "person",
+  "class": "transient"
+}
+```
+
+## `handoff.closed`
+
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `cleared` (a person acknowledged it: no more work, its locked entry dismissed too), or `finished` (its job ended finished: its issue closed as complete).
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `end` | `run_again` \| `cleared` \| `finished` | yes |
+| `nextJobId` | string | no |
+
+```json
+{
+  "handoffId": "h1",
+  "end": "run_again",
+  "nextJobId": "j2"
 }
 ```

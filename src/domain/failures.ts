@@ -13,8 +13,10 @@ export type FailureClass = typeof FAILURE_CLASSES[number];
 /**
  * What became of a decision. `retried`, `redirected`, `released`: its job ran again (`nextJobId`). `held`: it
  * waits on its problem. `surfaced`: it waits on a person. `not_retried`: running it again was refused (`note`).
+ * `superseded` (issue #517): a newer job of its item exists (`nextJobId`) — a person's Run again, or anything
+ * else — so nothing is left to do for this one.
  */
-export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried'] as const;
+export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded'] as const;
 export type FailureOutcome = typeof FAILURE_OUTCOMES[number];
 
 /** A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job. */
@@ -71,6 +73,8 @@ export interface FailureRecord {
   outcomeAt?: string;
   note?: string;
   nextJobId?: string;
+  /** The hand-off it opened (issue #516): set once, so it is never handed off twice. */
+  handoffId?: string;
 }
 
 /** A shared cause: the failures of one signature grouped, shown once with the jobs it hit. */
@@ -129,16 +133,22 @@ export interface FailureSettings {
   auto: { retry: boolean; hold: boolean; redirect: boolean };
   /** Failure records and resolved problems older than this are deleted. */
   retentionDays: number;
+  /** Closed hand-offs older than this are deleted; an open one never is. */
+  handoffRetentionDays: number;
+  /** Whether a job handed off to a person tells the webhooks (`handoff.opened`'s `notify`). */
+  handoffNotify: boolean;
 }
 
 export const DEFAULT_FAILURE_SETTINGS: FailureSettings = {
   maxAttempts: 3, backoffSec: 60, backoffFactor: 2, backoffMaxSec: 1800, groupThreshold: 3, groupWindowMin: 60,
   auto: { retry: true, hold: true, redirect: true }, retentionDays: 90,
+  handoffRetentionDays: 30, handoffNotify: true,
 };
 
 export const FAILURE_SETTING_BOUNDS = {
   maxAttempts: { min: 0, max: 10 }, backoffSec: { min: 1, max: 3600 }, backoffFactor: { min: 1, max: 10 }, backoffMaxSec: { min: 1, max: 86400 },
   groupThreshold: { min: 2, max: 50 }, groupWindowMin: { min: 1, max: 10080 }, retentionDays: { min: 1, max: 3650 },
+  handoffRetentionDays: { min: 1, max: 3650 },
 } as const;
 
 /** The assessment a failed job carries (`Job.assessment`): what the Queue and Overview show beside its error. */
@@ -154,6 +164,42 @@ export interface JobAssessment {
   retryAt?: string;
 }
 
+/**
+ * Why a failed job was handed off to a person (issue #516): its retries used up, a job-specific failure, its
+ * decision's automatic action off, its run again refused, or its locked entry dismissed with nothing else to end it.
+ */
+export const HANDOFF_REASONS = ['retry_limit', 'person', 'auto_off', 'not_retried', 'dismissed'] as const;
+export type HandoffReason = typeof HANDOFF_REASONS[number];
+
+/** How a hand-off ended: its item ran again, a person cleared it, or its job ended finished. */
+export const HANDOFF_ENDS = ['run_again', 'cleared', 'finished'] as const;
+export type HandoffEnd = typeof HANDOFF_ENDS[number];
+
+/**
+ * A hand-off (issue #516): a failed job automatic handling ended for, waiting on a person — Failures, Needs a person.
+ * Open until a person runs it again or clears it; never dropped by age. It keeps what the assessment said, so it
+ * outlives the failure record's retention.
+ */
+export interface Handoff {
+  id: string;
+  jobId: string;
+  /** The failure record it came from; absent for a failed job never assessed. */
+  recordId?: string;
+  status: 'open' | 'closed';
+  reason: HandoffReason;
+  openedAt: string;
+  decision?: FailureDecision;
+  class?: FailureClass;
+  summary: string;
+  reasons: string[];
+  error: string;
+  problemId?: string;
+  closedAt?: string;
+  end?: HandoffEnd;
+  /** Run again: the new job. */
+  nextJobId?: string;
+}
+
 /** Whether the daemon takes an action now, and why not. */
 export type Allowed = { ok: true } | { ok: false; why: string };
 
@@ -161,6 +207,10 @@ export interface ProblemView extends Problem {
   /** The jobs that wait on its release. */
   held: string[];
   actions: { resolve: Allowed; release: Allowed };
+}
+
+export interface HandoffView extends Handoff {
+  actions: { runAgain: Allowed; clear: Allowed };
 }
 
 export interface FailureRecordView extends FailureRecord {
@@ -193,11 +243,22 @@ export interface FailureProfile {
   byExecutor: ProfileCount[];
 }
 
+/** How many failed jobs are left (issue #517): both zero, every failure is processed and none needs a person. */
+export interface FailureCounts {
+  /** Failed jobs the assessor has not assessed yet. */
+  unassessed: number;
+  /** Open hand-offs: Needs a person. */
+  needsPerson: number;
+}
+
 /** GET /api/failures. */
 export interface FailuresView {
   now: string;
+  counts: FailureCounts;
   settings: FailureSettings;
   causes: KnownCause[];
+  /** Needs a person (issue #516): every open hand-off, oldest first, then those closed in the last day. */
+  handoffs: HandoffView[];
   /** Open problems, then those resolved in the last day. */
   problems: ProblemView[];
   /** The newest assessed failures. */
