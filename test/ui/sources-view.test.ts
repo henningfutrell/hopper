@@ -10,7 +10,8 @@
 // Of the repositories the app reaches the person chooses which ones jobs may use, filtering a long list,
 // with a count of chosen against available (issue #321). A sign-in that expired says so and asks for a
 // new one (issue #359), in the header too, on every screen (issue #441); a renewal that failed for a reason
-// that may pass shows on the panel, and the connection reads as connected (issue #441).
+// that may pass shows on the panel, and the connection reads as connected (issue #441). Signed in with GitHub, a
+// connection that ended ended the session too: no reconnect, the page goes to sign-in at once (issue #513).
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -46,7 +47,10 @@ function fakeDaemon(over: Record<string, unknown> = {}) {
       const accounts = (routes['/api/connected-accounts'] as { accounts: { provider: string }[] }).accounts;
       routes['/api/connected-accounts'] = { accounts: accounts.map((a) => (a.provider === 'github' ? routes[path] : a)) };
     }
-    if (path === '/ui/api/session') return json(200, routes[path] ?? LOGIN_CODE_SESSION);
+    if (path === '/ui/api/session') {
+      const s = routes[path] ?? LOGIN_CODE_SESSION;
+      return json(200, typeof s === 'function' ? (s as () => unknown)() : s);
+    }
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
@@ -112,6 +116,25 @@ describe('Sources view: GitHub', () => {
     const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Connect GitHub again')!;
     await act(async () => { button.click(); });
     await vi.waitFor(() => expect(panel()!.querySelector('[data-device-code]')?.textContent).toBe('WDJB-MJHT'));
+  });
+
+  it('signed in with GitHub, a connection that ended goes to sign-in at once: no reconnect offered (#513)', async () => {
+    const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
+    let reads = 0;
+    // The daemon ended the session with the connection: the page's first read is from before.
+    const signedOut = { authenticated: false, signIn: GITHUB_SESSION.signIn };
+    await boot({
+      '/ui/api/session': () => (++reads === 1 ? GITHUB_SESSION : signedOut),
+      '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused, expired: true })] },
+      '/api/connected-accounts': { accounts: [{ provider: 'github', via: 'the hopper\'s app', state: 'expired', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', error: 'GitHub refused the refresh token (bad_refresh_token)' }] },
+    });
+    await vi.waitFor(() => expect(reads).toBeGreaterThan(1));
+    await vi.waitFor(() => expect(document.querySelector('header')).toBeNull());
+    expect(document.querySelector('[data-connection-ended]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Connect GitHub again');
+    expect(document.body.textContent).toContain('Sign in with GitHub');
+    // Signed in again, the page it was on opens.
+    expect(localStorage.getItem('jh_return')).toBe('#sources');
   });
 
   it('a renewal that failed shows on the panel; the connection reads as connected, and the header stays quiet (#441)', async () => {

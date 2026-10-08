@@ -19,6 +19,8 @@ const DAY = 24 * HOUR;
 const ada: Identity = { realm: 'dir', subject: 'ada', groups: [] };
 const edgeAda: Identity = { realm: 'edge', subject: 'ada-1', groups: [] };
 
+const githubAda: Identity = { realm: 'github', subject: '1', username: 'ada', groups: [] };
+
 const gatewayRealm = (issuer: string) => ({ name: 'edge', type: 'gateway', issuer, audience: ['hopper'], roles: { defaultRole: 'viewer' } });
 const ldapRealm = { name: 'dir', type: 'ldap', url: 'ldap://127.0.0.1:1', userBase: 'ou=people,dc=example,dc=org', roles: { defaultRole: 'viewer' } };
 
@@ -31,13 +33,18 @@ const clock = fixedClock(new Date().toISOString());
 const at = (ms: number) => clock.set(new Date(start + ms).toISOString());
 let start: number;
 
+/** The users whose GitHub connection ended (issue #513). */
+let connectionEnded: Set<string>;
+
 function setUp(o: { idleHours?: number; maxHours?: number; issuer?: string } = {}) {
   const config = loadSignInConfig({
     version: 1, sessions: { idleHours: o.idleHours ?? 168, maxHours: o.maxHours ?? 720 },
-    realms: [ldapRealm, gatewayRealm(o.issuer ?? idp.issuer)],
+    realms: [ldapRealm, gatewayRealm(o.issuer ?? idp.issuer), { name: 'github', type: 'github' }],
   });
   signIn = createSignIn({ config, clock, origin: () => 'http://localhost:1' });
-  sessions = createUiSessions({ repo: instance.uiSessions, clock, signIn, ended: (s) => ended.push(s) });
+  sessions = createUiSessions({
+    repo: instance.uiSessions, clock, signIn, ended: (s) => ended.push(s), connectionEnded: (userId) => connectionEnded.has(userId),
+  });
 }
 
 beforeEach(async () => {
@@ -45,6 +52,7 @@ beforeEach(async () => {
   clock.set(new Date(start).toISOString());
   instance = openInstanceStore({ url: t.url(), clock });
   ended = [];
+  connectionEnded = new Set();
   idp = await startOidcIdp();
 });
 afterEach(async () => {
@@ -196,5 +204,49 @@ describe('a session a gateway realm made: the gateway stays the authority', () =
     at(3 * 60_000);
     await sessions.renew(s.token, await forwarded());
     expect(sessions.find(s.token)?.expiresAt).toBe(new Date(start + HOUR).toISOString());
+  });
+});
+
+describe('a session signed in with GitHub, when the GitHub connection ends (issue #513)', () => {
+  it('ends every GitHub sign-in of that user, as connection-ended; the next lookup finds none', () => {
+    setUp();
+    const a = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    const b = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    expect(sessions.find(a.token)).toBeDefined();
+    connectionEnded.add('u1');
+    expect(sessions.find(a.token)).toBeUndefined();
+    expect(sessions.find(b.token)).toBeUndefined();
+    expect(ended).toEqual([
+      { userId: 'u1', identity: githubAda, reason: 'connection-ended' },
+      { userId: 'u1', identity: githubAda, reason: 'connection-ended' },
+    ]);
+  });
+
+  it('a request renewing it ends it too, with nothing renewed', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    connectionEnded.add('u1');
+    at(2 * 60_000);
+    await sessions.renew(s.token, {});
+    expect(ended.map((e) => e.reason)).toEqual(['connection-ended']);
+  });
+
+  it('keeps a session of that user signed in another way: it may connect GitHub again from Sources', () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    connectionEnded.add('u1');
+    expect(sessions.find(s.token)?.userId).toBe('u1');
+    expect(ended).toEqual([]);
+  });
+
+  it('keeps a GitHub sign-in whose connection lives, and another user\'s', () => {
+    setUp();
+    const mine = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    const theirs = sessions.create({ role: 'viewer', identity: { ...githubAda, subject: '2', username: 'bob' }, userId: 'u2' });
+    expect(sessions.find(mine.token)).toBeDefined();
+    connectionEnded.add('u1');
+    expect(sessions.find(theirs.token)?.userId).toBe('u2');
+    expect(sessions.find(mine.token)).toBeUndefined();
+    expect(ended.map((e) => e.userId)).toEqual(['u1']);
   });
 });
