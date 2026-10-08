@@ -23,4 +23,9 @@ describe('plugin store model', () => {
   it('offers only Remove for a store install the catalogue no longer lists', () => {
     expect(storeEntryView(entry({ listed: false, installed: installed(false) }))).toEqual({ label: 'no longer in the plugin store', tone: 'warn', install: null, removable: true });
   });
+
+  it('offers no Install or Update while the catalogue shown was read from another plugin store, only Remove', () => {
+    expect(storeEntryView(entry({}), false)).toEqual({ label: 'not installed', tone: 'muted', install: null, removable: false });
+    expect(storeEntryView(entry({ installed: installed(false) }), false)).toEqual({ label: 'update available', tone: 'warn', install: null, removable: true });
+  });
 });

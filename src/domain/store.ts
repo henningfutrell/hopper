@@ -4,7 +4,7 @@
 import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
+  Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
@@ -148,7 +148,7 @@ export interface UsageHistoryRepository {
   prune(before: Date): number;
 }
 
-/** The instance's settings (in the instance schema): self-update and the store installs. */
+/** The instance's settings (in the instance schema): self-update, the plugin store and its store installs. */
 export interface InstanceSettingsRepository {
   /** Self-update settings an admin chose; absent fields were never set. */
   getUpdateSettings(): Partial<UpdateSettings>;
@@ -156,6 +156,9 @@ export interface InstanceSettingsRepository {
   /** The store installs, by id (issue #93). */
   getPluginInstalls(): PluginInstall[];
   setPluginInstalls(installs: readonly PluginInstall[]): void;
+  /** The plugin store setting (issue #445); undefined: never set. */
+  getPluginStoreSource(): PluginStoreSource | undefined;
+  setPluginStoreSource(source: PluginStoreSource): void;
 }
 
 /** A stored UI session: never the token, only its SHA-256; the user it acts for (issue #158). */

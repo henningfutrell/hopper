@@ -143,6 +143,8 @@ export async function startTestApp(o: {
   const app = await startApp(config, {
     pluginsConfigIntervalMs: 50,
     env: secrets,
+    // No default plugin store: a test never fetches the published one; a test that wants one names it.
+    pluginStoreDefault: null,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realLevels ? {} : fakeLevels()),
     ...o.seams,
