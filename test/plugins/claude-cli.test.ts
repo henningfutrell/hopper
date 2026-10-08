@@ -44,7 +44,7 @@ const req = (over: Partial<AnswerRequest> = {}): AnswerRequest => ({
 /** This machine, the hopper's own: in the machine list like any other, named `local` (issue #174). */
 const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, online: true, executors: ['herdr-claude'] };
 const ctx = (machines: MachineSnapshot[] = [LOCAL]) => ({
-  clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, scratchDir: join(dir, 'scratch'), instanceName: 'opus',
+  clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, secretName: (n: string) => n, scratchDir: join(dir, 'scratch'), instanceName: 'opus',
   env: (_n: string): string | undefined => undefined, machine: async (id: string): Promise<MachineSnapshot | undefined> => machines.find((m) => m.id === id),
 });
 const signal = () => new AbortController().signal;

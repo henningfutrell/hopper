@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The Grok Bot routine's setup on the Plugins page now names the exact settings your account needs.
 - Jobs that have not started yet now follow your settings as they are now: change a source's model or a repository's folder, or add a routing rule, and waiting jobs pick it up within one sync — no need to reject them and take them again. Anything you changed on a job yourself stays as you set it. Jobs that have already started keep the settings they started with.
 - When the agent denies a permission prompt by itself because nobody answered in time, the question now says so, instead of showing it as answered by you. The question also shows when that will happen, and a prompt to delete files now waits for your answer instead of being refused after two minutes.
 - Notifiers and webhook subscriptions have a Send test event button that shows whether the receiver accepted it. Questions that were waiting for you before the Grok Bot routine was set up are now sent once it is, and Send open questions sends them all again on demand. Each question now says which machine and lane the job is on, its priority, the issue's labels, repository and number, and how long the question has been open. The routine's address and key can be changed while the hopper runs.

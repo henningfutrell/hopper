@@ -33,6 +33,8 @@ export function createDetectionKit(o: {
   env?: NodeJS.ProcessEnv;
   /** The runtime's secrets (src/secrets/runtime.ts); default from `env`. */
   secret?: RuntimeSecrets;
+  /** The runtime's name for a secret (the user's secret prefix and the name); default the name. */
+  secretName?: (name: string) => string;
   timeoutMs?: number;
 } = {}): DetectionKit & { timeoutMs: number } {
   const env = o.env ?? process.env;
@@ -85,5 +87,6 @@ export function createDetectionKit(o: {
       return (await run(path, ['-c', `import ${module}`], timeoutMs, { ...env, PYTHONDONTWRITEBYTECODE: '1' })) !== undefined;
     },
     env: secret,
+    secretName: o.secretName ?? ((name) => name),
   };
 }
