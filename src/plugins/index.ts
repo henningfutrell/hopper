@@ -22,7 +22,7 @@ import { applyEdit, configuredInstances, type Configured } from './edit.ts';
 import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
-import { buildNotifier, startNotifier, stopNotifiers } from './notifier-slot.ts';
+import { buildNotifier, notifierStatus, runNotifierAction, startNotifier, stopNotifiers } from './notifier-slot.ts';
 import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
 import { createTargetPool } from '../machines/index.ts';
@@ -283,6 +283,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     machineIds,
     routing: routingConfig.report,
     editRouting: routingConfig.edit,
+    notifierAction: (name, action) => runNotifierAction(host.notifiers(), name, action),
     async edit(e) {
       if (e.action === 'rescan') {
         await scan();
@@ -319,7 +320,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         jobSources: { instances: (jobSources.built ?? []).map(instanceStatus) },
         machines: { instances: (machines.built ?? []).map(instanceStatus) },
         usageSources: { instances: (usageSources.built ?? []).map(instanceStatus) },
-        notifiers: { instances: (notifiers.built ?? []).map(instanceStatus) },
+        notifiers: { instances: (notifiers.built ?? []).map(notifierStatus) },
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),

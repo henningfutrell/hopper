@@ -1,13 +1,15 @@
 // Plugins (design.md "UI and mutation"): per role, the configured instances, each with its own
 // options form (components/plugin-form.tsx) for every option, command-bearing ones too (issue #198), and
 // for a list role Add and Remove. Refreshes every 15 s unless a form holds unsaved edits. Every shipped
-// plugin of a list role has a switch that enables or disables it (issue #142).
-import { Package, Puzzle, RefreshCw } from 'lucide-react';
+// plugin of a list role has a switch that enables or disables it (issue #142). A notifier shows its
+// actions (issue #378): Send test event, Send open questions.
+import { Inbox, Package, Puzzle, RefreshCw, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Empty, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
+import { SendAction } from '@/components/send-action';
 import { StatusBadge } from '@/components/status';
 import { PluginStore } from '@/views/plugin-store';
 import { isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
@@ -26,9 +28,27 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
       {isListRole(role) && <AddInstance role={role} />}
       {role === 'machine-source' && <div className="text-xs text-muted-foreground">attach an ssh machine from the Machines view; a container or client target with its script</div>}
       {instances.length
-        ? instances.map((i) => <InstanceForm key={i.instance.name} role={role} inst={i.instance} />)
+        ? instances.map((i) => (
+          <div key={i.instance.name} className="space-y-2">
+            <InstanceForm role={role} inst={i.instance} />
+            {role === 'notifier' && <NotifierActions name={i.instance.name} report={report} />}
+          </div>
+        ))
         : <Empty>{role === 'escalation-level' ? 'none — questions go straight to the owner' : 'none'}</Empty>}
     </Panel>
+  );
+}
+
+/** A running notifier's actions (issue #378), the ones GET /api/plugins lists for it. */
+function NotifierActions({ name, report }: { name: string; report: PluginsReport }) {
+  const authed = useCanAdmin();
+  const actions = report.notifiers.instances.find((n) => n.instance.name === name)?.actions ?? [];
+  if (!authed || !actions.length) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {actions.includes('test') && <SendAction label="Send test event" icon={Send} path="/ui/api/notifiers" body={{ action: 'test', name }} />}
+      {actions.includes('send-open') && <SendAction label="Send open questions" icon={Inbox} path="/ui/api/notifiers" body={{ action: 'send-open', name }} />}
+    </div>
   );
 }
 
