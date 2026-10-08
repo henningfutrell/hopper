@@ -87,7 +87,8 @@ export interface QuestionRepository {
   create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
-  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
+  /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open questions, the longest waiting first; issue #450). A limit keeps the first of that order. */
+  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
   /** Append one attempt to the question's trail. */

@@ -341,7 +341,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => store.questions.list({ status: ['open'] }).filter((q) => q.tier === 'human').reverse(), answerUrl: o.answerUrl });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), answerUrl: o.answerUrl });
   const usageHistory = createUsageRecorder({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
     // Read at every prune: a retention set in the UI applies without a restart (issue #356).

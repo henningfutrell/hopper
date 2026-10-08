@@ -1080,6 +1080,19 @@ session whose role cannot answer sees a notice where the answer box would be. In
 dialog, `components/confirm.tsx`, never `window.confirm`); `test/ui/questions.test.ts` renders
 the whole app in happy-dom against a fake daemon.
 
+**Order and reading position** (issue #450). The open questions have one order, oldest first: the
+longest waiting on top, ties by `seq`. `GET /api/questions?status=open` answers in it, and the view sorts
+by `createdAt` again (`longestWaitingFirst`, `ui/src/model/questions.ts`), so a refresh or a reconnect
+never reorders the list. A gained attempt or a tier change ("With level-1" to "For you") never moves a
+question; there is no grouping by tier. Every other listing (`status=all`, a handled status) is a
+history, newest first. The view keeps the reading position (`ui/src/lib/reading-position.ts`): the first
+card whose top is on screen is the anchor, and after every change (an arrival, a question leaving, a
+card growing) the window scrolls by what it moved, so the card in view and the answer being typed stay
+put; when the anchor itself leaves, the next card takes its place. Arrivals are shown at once; those
+that land below the screen show as an "N new below" button (`data-slot="new-questions"`) that scrolls to
+the first of them. Nothing is held back, so seen marking is unchanged. `test/ui/questions-reading-position.test.ts`
+lays the cards out by hand (happy-dom has no layout).
+
 ## Decider changes
 
 `waiting_answer` jobs are in neither `waiting` nor `running`, hold no lane, and are not
@@ -1091,7 +1104,7 @@ job was already admitted once) — it is never re-held for the router.
 
 | method | path | returns |
 |--------|------|---------|
-| GET | `/api/questions?status=open\|answered\|expired\|cancelled\|all&limit=100` | `{ questions: Question[] }` newest first, default `open` |
+| GET | `/api/questions?status=open\|answered\|expired\|cancelled\|all&limit=100` | `{ questions: Question[] }` `open`: oldest first (the longest waiting on top); any other: newest first (issue #450); default `open` |
 | GET | `/api/questions/:id` | `Question` (with attempts) · 404 |
 | POST | `/api/questions/:id/answer` | body `{ answer: string (non-empty) }` → `Question` · 404 · 409 not open |
 
