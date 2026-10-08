@@ -18,6 +18,7 @@ const WHEN: Record<EventType, string> = {
   'job.requeued': 'A job went back to the queue (restart recovery, or a question answered or closed). `reason` is a free string.',
   'job.reattached': 'The executor watches a job\'s live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a parked job\'s pane; the job runs again on a lane.',
   'job.reprioritized': 'A source re-sorted a waiting job.',
+  'job.respecified': 'A sync worked out a job that has not started from the config as it is now (issue #375), and its executor, model, work tree, default work tree, machine pin or routing rule changed. `from` and `to` are what the source and routing rules gave it; a part changed on the job by hand keeps the hand value, so the spec can differ from `to`.',
   'lane.opened': 'A Decision opened a lane.',
   'lane.closed': 'A lane closed (decision reason, `drained`, or `daemon restart`).',
   'decision.made': 'The engine recorded a Decision.',

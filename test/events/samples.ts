@@ -19,6 +19,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.requeued': { from: 'x' },
   'job.reattached': {},
   'job.reprioritized': { from: 50, to: 'high', reason: 'r' },
+  'job.respecified': { from: { executor: 'x' }, to: { model: 'm' } },
   'lane.closed': {},
   'decision.made': { decisionId: 'd1' },
   'question.asked': { questionId: 'q1' },

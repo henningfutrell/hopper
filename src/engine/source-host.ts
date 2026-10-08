@@ -3,7 +3,7 @@
 // job a Decision has just claimed. design.md "Job sources".
 import type { SourceHost, SourceItem } from '../domain/ports.ts';
 import { isRerunnable } from '../domain/types.ts';
-import type { Job, JobSourceRef, JobSpec, RoutedBy } from '../domain/types.ts';
+import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -20,19 +20,71 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
   };
 }
 
-function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined): JobSpec {
-  // `body` is the item's own text, without the context block: what the command executor runs.
-  // The work tree (issue #324): a routing rule's, else the item's own (its repository's path); the
-  // source's default stays a default, so the lane's machine's work tree comes before it.
-  const cwd = routedBy?.set.workTree ?? item.cwd;
-  const payload = {
-    prompt: item.prompt, body: item.body, ...(cwd !== undefined ? { cwd } : {}), ...(item.defaultCwd !== undefined ? { defaultCwd: item.defaultCwd } : {}), ...(item.model ? { model: item.model } : {}), env: item.env,
-  };
+/**
+ * What the item and the routing rule give a job's spec (issue #375). The work tree (issue #324): a routing
+ * rule's, else the item's own (its repository's path); the source's default stays a default, so the lane's
+ * machine's work tree comes before it.
+ */
+function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined): SpecFromConfig {
+  return specFromConfig({
+    executor: routedBy?.set.executor ?? item.executor, model: item.model || undefined, cwd: routedBy?.set.workTree ?? item.cwd,
+    defaultCwd: item.defaultCwd, machineId: routedBy?.set.machine, rule: routedBy?.rule,
+  });
+}
+
+/** The same parts as the job's spec holds them now. */
+function fromSpec(spec: JobSpec): SpecFromConfig {
+  const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
+  return specFromConfig({
+    executor: spec.executor, model: text(spec.payload.model), cwd: text(spec.payload.cwd), defaultCwd: text(spec.payload.defaultCwd),
+    machineId: spec.machineId, rule: spec.routedBy?.rule,
+  });
+}
+
+/** One key order and no undefined values, so two compare by their JSON. */
+function specFromConfig(f: { executor: string } & { [K in Exclude<keyof SpecFromConfig, 'executor'>]: SpecFromConfig[K] | undefined }): SpecFromConfig {
   return {
-    executor: routedBy?.set.executor ?? item.executor, payload, priority, goal: item.title, submittedBy: `${source.name}:${item.author}`, kind: 'coding',
-    ...(routedBy?.set.machine !== undefined ? { machineId: routedBy.set.machine } : {}),
+    executor: f.executor, ...(f.model !== undefined ? { model: f.model } : {}), ...(f.cwd !== undefined ? { cwd: f.cwd } : {}),
+    ...(f.defaultCwd !== undefined ? { defaultCwd: f.defaultCwd } : {}), ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
+    ...(f.rule !== undefined ? { rule: f.rule } : {}),
+  };
+}
+
+const same = (a: SpecFromConfig, b: SpecFromConfig): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** `spec` with the parts `f` gives: set where `f` has one, removed where it has none. */
+function withParts(spec: JobSpec, f: SpecFromConfig, routedBy: RoutedBy | undefined): JobSpec {
+  const { cwd: _c, defaultCwd: _d, model: _m, ...rest } = spec.payload;
+  const { machineId: _p, routedBy: _r, ...base } = spec;
+  return {
+    ...base, executor: f.executor,
+    payload: { ...rest, ...(f.cwd !== undefined ? { cwd: f.cwd } : {}), ...(f.defaultCwd !== undefined ? { defaultCwd: f.defaultCwd } : {}), ...(f.model !== undefined ? { model: f.model } : {}) },
+    ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
     ...(routedBy ? { routedBy } : {}),
   };
+}
+
+function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined, f: SpecFromConfig): JobSpec {
+  // `body` is the item's own text, without the context block: what the command executor runs.
+  const spec: JobSpec = {
+    executor: f.executor, payload: { prompt: item.prompt, body: item.body, env: item.env }, priority, goal: item.title,
+    submittedBy: `${source.name}:${item.author}`, kind: 'coding',
+  };
+  return withParts(spec, f, routedBy);
+}
+
+/**
+ * The spec a job that has not started gets from `to`, what its source and routing rules give it now
+ * (issue #375): each part follows the config unless it was changed on the job by hand — it differs from
+ * what the config gave it last (`fromConfig`; absent on a job from before: the spec as it is) —, and then
+ * keeps the hand value.
+ */
+function respecified(job: Job, to: SpecFromConfig, routedBy: RoutedBy | undefined): JobSpec {
+  const now = fromSpec(job.spec);
+  const was = job.fromConfig ?? now;
+  const pick = <K extends keyof SpecFromConfig>(k: K): SpecFromConfig[K] | undefined => (now[k] === was[k] ? to[k] : now[k]);
+  const parts = specFromConfig({ executor: pick('executor')!, model: pick('model'), cwd: pick('cwd'), defaultCwd: pick('defaultCwd'), machineId: pick('machineId'), rule: to.rule });
+  return withParts(job.spec, parts, routedBy);
 }
 
 /**
@@ -71,7 +123,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     const routedBy = route(c, item, source);
     const priority = clamp(routedBy?.set.priority ?? item.priority);
     const ref = refFor(item, source);
-    const spec = specFor(item, source, priority, routedBy);
+    const fromConfig = fromConfigFor(item, routedBy);
+    const spec = specFor(item, source, priority, routedBy, fromConfig);
     const invalid = problemWith(c, item, spec);
     return store.tx((): Job | null => {
       const known = store.jobs.getBySourceKey(item.key);
@@ -79,7 +132,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       const job = store.jobs.create(spec, priority, ref);
       store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
       // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
-      if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, ...(known ? { rerunOf: known.id } : {}) });
+      if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
       // Created and failed together: the source reports claimed, then failed — once.
       store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
       return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c), ...(known ? { rerunOf: known.id } : {}) });
@@ -102,16 +155,34 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       }
     },
 
-    reprioritize(jobId, to, reason) {
+    refresh(jobId, item, source) {
+      const routedBy = route(c, item, source);
+      const priority = clamp(routedBy?.set.priority ?? item.priority);
+      const reason = routedBy?.set.priority !== undefined ? `rule:${routedBy.rule}` : item.priorityReason;
+      const to = fromConfigFor(item, routedBy);
       return store.tx(() => {
         const job = store.jobs.get(jobId);
-        const next = clamp(to);
-        if (!job || (job.status !== 'queued' && job.status !== 'held') || job.priority === next) return false;
-        // A routing rule set this job's priority at intake: the source's re-sort does not undo it.
-        if (job.spec.routedBy?.set.priority !== undefined) return false;
-        store.jobs.update(jobId, { priority: next });
-        store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: next, reason } });
-        return true;
+        if (!job || (job.status !== 'queued' && job.status !== 'held')) return false;
+        let changed = false;
+        // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
+        const was = job.fromConfig ?? fromSpec(job.spec);
+        if (job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
+          const spec = respecified(job, to, routedBy);
+          const invalid = problemWith(c, item, spec);
+          if (invalid !== undefined) console.warn(`hopper: job ${jobId} keeps its spec: ${invalid}`);
+          else {
+            store.jobs.respecify(jobId, spec);
+            store.jobs.update(jobId, { fromConfig: to });
+            store.events.append({ type: 'job.respecified', jobId, data: { from: was, to } });
+            changed = true;
+          }
+        }
+        if (job.priority !== priority) {
+          store.jobs.update(jobId, { priority });
+          store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: priority, reason } });
+          changed = true;
+        }
+        return changed;
       });
     },
 

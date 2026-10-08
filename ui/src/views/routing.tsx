@@ -200,7 +200,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
     <Panel title="Routing rules" icon={Route} count={list.length} bodyClassName="space-y-3">
       <p className="text-xs text-muted-foreground">
         When a source item becomes a job, the rules are tried in order and the <b>first</b> match sets the job's machine, executor, priority or work tree.
-        A change applies to new jobs only; jobs already queued keep how they were routed.
+        A change applies to new jobs, and to waiting jobs that have not started on the next sync of their source; a started job keeps how it was routed.
       </p>
       {report.error && <div className="text-xs text-bad">{report.error}</div>}
       {report.skipped.map((s) => <div key={s.rule} className="text-xs text-warn">skipped at intake: {s.rule} — {s.reason}</div>)}

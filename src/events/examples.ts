@@ -20,6 +20,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.requeued': { from: 'waiting_answer', reason: 'answered' },
   'job.reattached': { reason: 'daemon restart' },
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
+  'job.respecified': { from: { executor: 'herdr-claude', cwd: '~/code/app' }, to: { executor: 'herdr-claude', model: 'claude-opus-5-5', cwd: '~/code/app-win', machineId: 'win-native', rule: 'windows' } },
   'lane.opened': {},
   'lane.closed': { reason: 'drained' },
   'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], waits: [{ jobId: 'j3', reason: 'waiting for a lane: machine local\'s lane cap is 4, all 4 in use' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },

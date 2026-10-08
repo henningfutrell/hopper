@@ -74,7 +74,7 @@ describe('a waiting job takes the config as it is now', () => {
     const job = await a.pull({ op: 'echo' }, { key: 'hand-1', model: 'claude-sonnet-5-5' });
     // An operator's edit of the stored job, as the reported workaround did in the database.
     const store = a.user().store;
-    store.jobs.update(job.id, { spec: { ...job.spec, payload: { ...job.spec.payload, model: 'claude-fable-5-1' } } });
+    store.jobs.respecify(job.id, { ...job.spec, payload: { ...job.spec.payload, model: 'claude-fable-5-1' } });
     offer(a, job, { model: 'claude-opus-5-5', cwd: '/new/tree' });
     await a.sync();
     expect((await a.job(job.id)).spec.payload).toMatchObject({ model: 'claude-fable-5-1', cwd: '/new/tree' });

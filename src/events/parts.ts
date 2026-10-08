@@ -26,6 +26,12 @@ export const jobSpec = strict({
   }).optional(),
 });
 
+// What a job's source and routing rules give its spec (issue #375).
+export const specFromConfig = strict({
+  executor: z.string(), model: z.string().optional(), cwd: z.string().optional(), defaultCwd: z.string().optional(),
+  machineId: z.string().optional(), rule: z.string().optional(),
+});
+
 export const adviceAction = z.enum([
   'proceed_full', 'reuse_cache', 'stop_retry', 'run_deterministic',
   'chat_only', 'ask_human', 'allow_subagent', 'research_capped',
