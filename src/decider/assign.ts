@@ -26,6 +26,8 @@ export interface MachineState {
   assigned: number;
   /** Lanes over the cap this Decision gave critical jobs: at most 1 (issue #373). */
   overCap: number;
+  /** Lanes busy or draining, and starts, of jobs not pinned to it (issue #372). */
+  unpinned: number;
   /** Per executor the machine runs (issue #140). */
   executors: Map<string, ExecutorState>;
 }
@@ -104,18 +106,24 @@ function roomFor(s: MachineState, executor: string): number {
   return e ? Math.min(room(s), e.cap - e.occupied.length - e.assigned) : 0;
 }
 
-/** The machine is online, runs the job's executor and matches its pin. */
+/** The most lanes jobs not pinned to it may hold: its lane cap less its reserved lanes (issue #372). */
+const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
+
+/** Room for `job` there: a job not pinned to it also stays out of its reserved lanes. */
+function roomForJob(s: MachineState, job: Job): number {
+  const r = roomFor(s, job.spec.executor);
+  return pinOf(job) === s.machine.id ? r : Math.min(r, unpinnedCap(s) - s.unpinned);
+}
+
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return s.machine.online && s.machine.executors.includes(job.spec.executor) && (pin === undefined || pin === s.machine.id);
 }
 
-function fits(s: MachineState, job: Job): boolean {
-  return eligible(s, job) && roomFor(s, job.spec.executor) > 0;
-}
+const fits = (s: MachineState, job: Job): boolean => eligible(s, job) && roomForJob(s, job) > 0;
 
 /**
- * Where a critical job that fits nowhere may take one lane over the cap (issue #373): an eligible
+ * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
  * machine not at its hard limit, for the machine or the job's executor, and not over its cap already —
  * so at most one lane over it.
  */
@@ -125,13 +133,13 @@ function squeezes(s: MachineState, job: Job): boolean {
     && s.occupied + s.assigned <= s.cap;
 }
 
-/** Of two machines, the better pick for an executor's job: most placement pressure, then most room, then lowest id. */
-function better(a: MachineState, b: MachineState, executor: string): MachineState {
-  const pa = a.executors.get(executor)!.pressure;
-  const pb = b.executors.get(executor)!.pressure;
+/** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
+function better(a: MachineState, b: MachineState, job: Job): MachineState {
+  const pa = a.executors.get(job.spec.executor)!.pressure;
+  const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
-  const ra = roomFor(a, executor);
-  const rb = roomFor(b, executor);
+  const ra = roomForJob(a, job);
+  const rb = roomForJob(b, job);
   if (ra !== rb) return rb > ra ? b : a;
   return b.machine.id < a.machine.id ? b : a;
 }
@@ -146,10 +154,14 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  */
 function waitReason(job: Job, states: MachineState[]): string {
   const ex = job.spec.executor;
-  const s = states.filter((x) => eligible(x, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
+  const s = states.filter((m) => eligible(m, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
+  if (roomFor(s, ex) > 0) {
+    // Only its reserved lanes are free (issue #372).
+    return `waiting for a lane: machine ${id} keeps ${s.cap - unpinnedCap(s)} of its ${s.cap} lanes for jobs pinned to it, the other ${s.unpinned} are in use`;
+  }
   const executorInUse = e.occupied.length + e.assigned;
   const executorBinds = e.cap - executorInUse < room(s) || (e.cap - executorInUse === room(s) && e.cap < s.cap);
   if (executorBinds) {
@@ -173,14 +185,18 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
       wait.push({ jobId: job.id, reason: waitReason(job, states) });
       continue;
     }
-    const pick = options.reduce((a, b) => better(a, b, ex));
+    const pick = options.reduce((a, b) => better(a, b, job));
     const pressure = pick.executors.get(ex)!.pressure;
     const lane = pick.freeIdle.shift();
     pick.assigned += 1;
-    if (squeezed) pick.overCap += 1;
+    if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
+    const overCap = squeezed && pick.occupied + pick.assigned > pick.cap;
+    if (overCap) pick.overCap += 1;
     pick.executors.get(ex)!.assigned += 1;
     const why = [
-      ...(squeezed ? [`critical priority: one lane over the cap ${pick.cap}`] : [`${room(pick)} room left (cap ${pick.cap})`]),
+      ...(overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
+        : squeezed ? [`critical priority: past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
+          : [`${room(pick)} room left (cap ${pick.cap})`]),
       ...(pressure > 0 ? [`placement pressure ${pressure.toFixed(3)}/h`] : []),
       ...(note ? [note] : []),
     ];

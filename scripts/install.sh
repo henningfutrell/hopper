@@ -85,9 +85,7 @@ assemble() {
 
   if [ -n "$REPO" ] && [ -n "$COMMIT" ]; then
     step "write $target/install.json: $BRANCH at $COMMIT (self-update compares against it)"
-    node -e 'const [file, repo, branch, commit] = process.argv.slice(1);
-process.getBuiltinModule("node:fs").writeFileSync(file, JSON.stringify({ repo, branch, commit, installedAt: new Date().toISOString() }, null, 2) + "\n");' \
-      "$target/install.json" "$REPO" "$BRANCH" "$COMMIT"
+    node "$APP_DIR/scripts/write-install-json.ts" "$target/install.json" install "$REPO" "$BRANCH" "$COMMIT"
   else
     rm -f "$target/install.json"
     echo "warning: $APP_DIR is not a git clone with an origin: no install.json, so self-update is off for this install" >&2

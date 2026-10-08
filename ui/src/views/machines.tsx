@@ -1,4 +1,5 @@
-// Machines: what each can run, its lanes, and the usage budgets that cap them. Logged in, Add machine shows
+// Machines: what each can run, its lanes (and those it keeps for jobs pinned to it, issue #372), and
+// the usage budgets that cap them. Logged in, Add machine shows
 // one line that joins a computer or a sandbox box (issue #308, machine-join.tsx); or add this
 // machine — no ssh target, its name and herdr session (issue #260); an ssh target that is this machine is
 // added so too, and in a container there is no adding it (issue #275) — or attach a machine over ssh (POST /ui/api/machines), edit (its name and how it is reached too, issue #205) or remove
@@ -16,7 +17,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, diskText, kindOf, mayAddThisMachine, type MachineKind } from '@/model/machines';
+import { clientReleaseText, diskText, kindOf, mayAddThisMachine, reservedText, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -77,6 +78,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {m.client && <Fact label="connection">client, dialled in</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
+        {reservedText(m) && <Fact label="reserved lanes">{reservedText(m)}</Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
       </dl>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

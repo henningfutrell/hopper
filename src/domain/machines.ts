@@ -19,6 +19,8 @@ interface AttachedBase {
   executors: string[];
   /** Its default work tree (issue #324); `~` is its home. Never on a container target. */
   workTree?: string;
+  /** Lanes kept for jobs pinned to it (issue #372). */
+  reservedLanes?: number;
 }
 
 export interface SshMachine extends AttachedBase {

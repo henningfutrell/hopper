@@ -101,16 +101,18 @@ same Decision. Algorithm, in order:
    unknown or offline → hold.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
-   its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most **placement pressure**
-   when reset-aware placement is on ("Usage pacing"), then the most remaining room, then the
-   lowest machine id. No candidate, and the job's priority at or above the **critical priority**:
-   it may take one lane over the cap ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
+   its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
+   `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
+   **placement pressure** when reset-aware placement is on ("Usage pacing"), then the most remaining
+   room for that job, then the lowest machine id. No candidate, and the job's priority at or above the
+   **critical priority**: it may take one lane past its caps ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
    `laneId: null` (a lane this Decision opens). No candidate → a **wait**, not a hold (issue
    #381): the job stays `queued` with a reason naming the lane cap that binds on the eligible
    machine with the highest cap for its executor — the executor's when it leaves less room than
    the machine's (or ties and is lower), else the machine's — with its number and lanes in use
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
-   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)`).
+   `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
+   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
 8. **Lane plan per machine.** `occupied` = lanes `busy` or `draining`. `target =
    min(cap + overCap, occupied + assigned)`, `overCap` the lane a critical job took over the cap in
    this Decision (0 or 1); from the next Decision on it is past the cap, so it drains when its job ends. `open` = number of this machine's starts with
@@ -149,12 +151,13 @@ stays pure — every time it compares is `inputs.at`.
   hours with 80% left goes before one that resets in 4 days. Ties, and machines with no week window
   that names its reset (pressure 0), fall back to most room, then id. The start reason gives the
   pressure. Trade-off: unpinned jobs may fill the machine with the most pressure, and a job pinned to
-  it waits for a lane there.
+  it waits for a lane there; reserved lanes ("Reserved lanes", issue #372) keep lanes for it.
 - **Critical priority** (`HOPPER_CRITICAL_PRIORITY`, default 100; 0: off). The hopper never
-  preempts. A job at or above it that fits on no machine may take one lane over the cap on an
-  eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
+  preempts. A job at or above it that fits on no machine may take a lane past its caps — the
+  machine's lane cap, its executor's, or the reserved lanes — on an eligible machine (online, its executor, its pin) at neither the machine's nor the executor's hard
   limit, and not past its cap already — at most one lane over it per machine. The start reason says
-  `critical priority: one lane over the cap N`; step 8 counts that lane in `target`. From the next
+  `critical priority: one lane over the cap N` (or, inside the machine's cap, `… past the executor's
+  lane cap or the reserved lanes`); step 8 counts a lane over the cap in `target`. From the next
   Decision on the machine is past its cap: no other job starts there, and step 8 drains a busy lane
   (the newest), which closes when its job ends.
 
@@ -862,6 +865,14 @@ so a running job's pane and Claude outlive a restart.
   `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
   re-run: a second run repeats real side effects. A non-idempotent executor without
   `reattach` always takes this path.
+- Same job, its machine **not answering yet** (issue #368: `canReattach` rejects — a client target
+  not dialled in, an ssh target not replying; recovery runs before either can) → in the tx the job
+  stays `running` with its `laneId` and its lane is kept, as a reattached one, but no event yet.
+  After it the runner asks `canReattach` again every second, the job held by the runner as any
+  run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
+  and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
+  **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
+  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up.
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
@@ -2565,6 +2576,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |
@@ -5142,10 +5154,24 @@ job, a lane or a question: from the UI, or on its own with auto-update. Code: `s
 build, `restart.ts` the restart, `blockers.ts`); routes `GET /api/update`, `POST /ui/api/update`.
 
 **The install knows where it came from.** `install.json` in the install (beside `src/`):
-`{ repo, branch, commit, installedAt }`. `scripts/install.sh` writes it from the clone's `origin`
+`{ kind, repo, branch, commit, installedAt }`, written by `scripts/write-install-json.ts`. `scripts/install.sh`
+writes it (`kind: install`) from the clone's `origin`
 and `HEAD`; the branch is `main` unless `HOPPER_UPDATE_BRANCH` names another. An update writes
-the new one, with the channel's branch on a branch channel. No install.json (a checkout run with `npm start`, a clone without `origin`) → state
+the new one, with the channel's branch on a branch channel. One without `kind` (from before issue #409) is an install.
+No install.json (a checkout run with `npm start`, a clone without `origin`) → state
 `unavailable` with the reason; nothing else changes.
+
+**So does an image (issue #409).** Every build knows its repository, branch and commit, however it was built:
+the `Dockerfile` takes them as build arguments (`HOPPER_REPO`, default the public repository; `HOPPER_BRANCH`,
+default `main`; `HOPPER_COMMIT`), writes `/app/install.json` (`kind: image`, `installedAt` the build time) and the
+OCI labels `org.opencontainers.image.source` and `.revision`. `.github/workflows/image.yml` passes GitHub's;
+`scripts/build-image.sh`, the local image build, passes the checkout's (`origin`, a GitHub ssh URL as https —
+the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `main`) and tags `HOPPER_IMAGE` (default
+`localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
+install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
+install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
+rebuilding it, so the UI offers no Update now and the headline says to pull or rebuild. A build whose install.json
+lacks a field → `unavailable`, the reason naming the missing field.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
@@ -5186,7 +5212,9 @@ the installed commit is made of, newest first: each commit on the tracked branch
 that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
 those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
-checked first. Computed once per installed commit. No install.json → none, with the reason.
+checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
+always carries `build`: what install.json does say (issue #409), shown above the list with the version, every
+missing field as `unknown`, and the reason as a short note — never an error in place of the page.
 `update.available` is appended once per target, with `changes`: how many commits it adds (the log
 line too; never the UI).
 
@@ -5333,7 +5361,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
 `HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
-still does not apply to a container.
+still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
 start a container whose dependency has exited, so the `secrets` service (run once, then exited) stopped
@@ -5625,7 +5653,7 @@ has it (`git log -- src/migrate/local.ts`).
 - **A container** (`Dockerfile`, `deploy/compose.yaml` profile `container`): node 26, git, ssh,
   python3 + PyYAML, gh, the claude CLI; the UI built in a first stage. No herdr in the image: jobs run
   on attached machines over ssh (their keys and `~/.ssh/config` mounted, or the machine source
-  configured for none). Self-update does not apply (no install.json; an image is updated by
+  configured for none). Self-update does not apply (an image is updated by
   rebuilding it). Since issue #119 the image carries herdr and runs jobs itself, and the container
   deploy is `compose.yaml` at the root ("Docker Compose"; since issue #125 the published image,
 "The published image, with Podman").
@@ -7050,3 +7078,39 @@ was already true of `config set` and of the database itself.
 from the CLI — no caller yet.
 
 Tests: `test/integration/operator-cli.test.ts`.
+
+## Reserved lanes (issue #372, 2026-10-07)
+
+Reported: every lane of a machine was taken by jobs that could run on any machine, while a job a
+routing rule had pinned to it (work only that machine can do) waited for one to free. With long jobs it
+would wait hours while other machines had free lanes. Nothing in placement kept room for the jobs that
+can only run there.
+
+Three ways were offered: a per-machine count of reserved lanes, a placement rule that sends unpinned
+jobs elsewhere while pinned demand exists, or requeueing an unpinned job off the machine. Built the
+first: it is the smallest, it is per machine, and it needs no job moved once placed. The second would
+make one job's placement read every other job's pin; the third would stop work already begun.
+
+**As built:**
+- **`reservedLanes`**, an optional option of every machine-source plugin (`local`, `ssh`, `docker`,
+  `client`; a whole number ≥ 0, not command-bearing), reaches the decider on
+  `MachineSnapshot.reservedLanes`. Edited in the Plugins view's options form like any machine option;
+  the machine's card in the Machines view says how many it keeps.
+- **The decider (step 7).** A job is pinned to a machine when `pinOf(job)` names it (its
+  `spec.machineId`, or for a resuming job the machine holding its pane). A job not pinned to `m` may
+  take a lane there only while `unpinned(m) < max(0, cap(m) - reservedLanes(m))`, where `unpinned(m)`
+  counts the lanes busy or draining with jobs not pinned to `m` — a lane whose job is not among the
+  inputs counts as unpinned, so the reserve stays free — plus this Decision's starts of such jobs.
+  Pinned jobs may use every lane. The room an unpinned job sees on `m` is that smaller figure, so it
+  goes to a machine with more room for it first. It counts against the **lane cap**, not `maxLanes`:
+  past a usage soft limit the reserve stays whole and unpinned jobs give way first.
+- **At or above the cap**, only jobs pinned to the machine run there.
+- **Wait reason.** An unpinned job with room on its machine save the reserved lanes waits with
+  `waiting for a lane: machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`.
+- A running job is never moved: the reserve applies to new starts. Absent or 0, placement is as before.
+
+**Verification:** `test/decider/reserved.test.ts` (cap less the reserve, the wait reason, a pinned job
+takes a reserved lane, pinned jobs use every lane, pinned lanes do not count against unpinned ones,
+unpinned jobs go elsewhere first, a reserve at the cap), `test/plugins/machine-targets.test.ts`,
+`test/plugins/host-sources.test.ts`, `test/adapters/ssh-machine.test.ts`,
+`test/adapters/machine-usage.test.ts`, `test/ui/machines.test.ts` (`reservedText`).

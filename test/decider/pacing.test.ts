@@ -122,6 +122,14 @@ describe('critical priority (issue #373)', () => {
     expect(pinned.start).toEqual([expect.objectContaining({ jobId: 'c', machineId: 'm2' })]);
   });
 
+  it('may take a reserved lane, inside the machine\'s cap', () => {
+    const lanes = full.slice(0, 3);
+    const d = decide(inputs({ machines: [machine({ reservedLanes: 1 })], lanes, waiting: [job('c', { priority: 100 })], policy: critical }), 'd1');
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 'c', machineId: 'local' })]);
+    expect(d.start[0]!.reason).toContain('past the executor\'s lane cap or the reserved lanes');
+    expect(d.lanes[0]).toMatchObject({ open: 1, target: 4 });
+  });
+
   it('takes an idle lane left over the cap before opening one', () => {
     // 75% → soft band, cap 3: three busy, and an idle lane the cap leaves no room for.
     const lanes = [...full.slice(0, 3), lane(4)];

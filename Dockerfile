@@ -47,6 +47,16 @@ COPY scripts ./scripts
 COPY WHATS-NEW.md ./
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
+# What this image is built from (issue #409): install.json, as an install has, and the OCI labels — so Settings →
+# Version history and the update check work as for an install. scripts/build-image.sh passes them from a checkout,
+# .github/workflows/image.yml from GitHub. A build given none knows the repository and branch, and says it lacks
+# its commit. Last, so a new commit rebuilds only this layer.
+ARG HOPPER_REPO=https://github.com/henningfutrell/hopper.git
+ARG HOPPER_BRANCH=main
+ARG HOPPER_COMMIT=
+LABEL org.opencontainers.image.source=$HOPPER_REPO \
+      org.opencontainers.image.revision=$HOPPER_COMMIT
+RUN node scripts/write-install-json.ts /app/install.json image "$HOPPER_REPO" "$HOPPER_BRANCH" "$HOPPER_COMMIT"
 
 USER node
 ENV NODE_ENV=production \

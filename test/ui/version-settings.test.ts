@@ -13,25 +13,26 @@ interface Store { useHopper: { setState(s: Record<string, unknown>): void } }
 const COMMIT = 'c0ffee1'.padEnd(40, '0');
 const UPDATE = {
   state: 'current', channel: 'main', autoUpdate: false, whatsNew: [],
-  installed: { repo: 'git@github.com:o/r.git', branch: 'main', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
+  installed: { kind: 'install', repo: 'git@github.com:o/r.git', branch: 'main', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
   installedWhatsNew: ['You can now do the newest thing.', 'An older change.'],
   checkedAt: '2026-10-06T10:01:00Z',
 };
 let root: Root | undefined;
 
 const HISTORY = {
+  build: UPDATE.installed,
   versions: [
     { commit: COMMIT, at: '2026-10-05T15:00:00Z', changes: ['You can now do the newest thing.'] },
     { commit: 'abcdef1'.padEnd(40, '0'), at: '2026-10-01T09:00:00Z', changes: ['An older change.', 'Another older change.'] },
   ],
 };
 
-async function render(mod: string, name: string) {
+async function render(mod: string, name: string, o: { history?: unknown; update?: unknown } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/api/update/history' ? Response.json(HISTORY) : new Response('{}', { status: 404 })));
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => path === '/api/update/history' ? Response.json(o.history ?? HISTORY) : new Response('{}', { status: 404 })));
   const { useHopper } = (await import(store)) as Store;
-  useHopper.setState({ authed: true, update: UPDATE, health: { ok: true, version: '0.1.0', uptimeS: 1 } });
+  useHopper.setState({ authed: true, update: o.update ?? UPDATE, health: { ok: true, version: '0.1.0', uptimeS: 1 } });
   const view = (await import(mod)) as Record<string, () => El>;
   const tooltip = '../../ui/src/components/ui/tooltip.tsx';
   const { TooltipProvider } = (await import(tooltip)) as { TooltipProvider: (p: { children?: unknown }) => El };
@@ -113,5 +114,45 @@ describe('the version history (issue #246)', () => {
     expect(rows[1]!.textContent).toContain('abcdef1');
     expect(rows[1]!.textContent).not.toContain('installed');
     expect(rows[1]!.textContent).toContain('Another older change.');
+  });
+});
+
+describe('a build that does not know all of itself (issue #409)', () => {
+  const partial = {
+    versions: [],
+    build: { kind: 'image', repo: 'https://github.com/o/r.git', branch: 'main', installedAt: '2026-10-07T12:00:00Z' },
+    reason: 'this build does not know its commit: it was built without it (build the image with scripts/build-image.sh)',
+  };
+  const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+  it('Version history still shows the version, repository, branch and build time, with a short note on the missing commit', async () => {
+    window.location.hash = '#settings/version-history';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { history: partial, update: { ...UPDATE, state: 'unavailable', installed: undefined, reason: partial.reason } });
+    await settle();
+    const build = document.querySelector('[data-slot="build-info"]')?.textContent ?? '';
+    expect(build).toContain('0.1.0');
+    expect(build).toContain('https://github.com/o/r.git');
+    expect(build).toContain('main');
+    expect(build).toContain('image');
+    expect(build).toMatch(/Commit\s*unknown/);
+    expect(document.querySelector('[data-slot="build-note"]')?.textContent).toContain('does not know its commit');
+  });
+
+  it('a whole build shows its commit beside the versions, and no note', async () => {
+    window.location.hash = '#settings/version-history';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    await settle();
+    expect(document.querySelector('[data-slot="build-info"]')?.textContent).toContain('c0ffee1');
+    expect(document.querySelector('[data-slot="build-note"]')).toBeNull();
+    expect(document.querySelectorAll('[data-slot="version-history"] [data-slot="version"]')).toHaveLength(2);
+  });
+
+  it('an image build offers no Update now: it says to pull or rebuild the image', async () => {
+    window.location.hash = '#settings/version';
+    const target = { commit: 'beef'.padEnd(40, '0'), ref: 'main' };
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...UPDATE, state: 'available', target, installed: { ...UPDATE.installed, kind: 'image' } } });
+    const details = document.querySelector('[data-slot="version-details"]');
+    expect([...details!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
+    expect(details!.textContent).toMatch(/pull or rebuild the image/);
   });
 });

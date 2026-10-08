@@ -26,6 +26,8 @@ export interface Config {
   routerCheapBoost: number;
   webhookBaseMs: number;
   laneIdleGraceMs: number;
+  /** How long restart recovery waits for a running job's machine to answer before failing the job (issue #368). */
+  reconnectGraceMs: number;
   /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
   answerTimeoutMs: number;
   humanRenotifyMs: number;
@@ -95,6 +97,7 @@ const schema = z.object({
   HOPPER_ROUTER_CHEAP_BOOST: z.coerce.number().default(10),
   HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
+  HOPPER_RECONNECT_GRACE_MS: int(0).default(120000),
   HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
   HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
   HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
@@ -140,6 +143,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
+  HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
   HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
@@ -243,6 +247,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     routerCheapBoost: e.HOPPER_ROUTER_CHEAP_BOOST,
     webhookBaseMs: e.HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,
+    reconnectGraceMs: e.HOPPER_RECONNECT_GRACE_MS,
     answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,
     humanRenotifyMs: e.HOPPER_HUMAN_RENOTIFY_MS,
     humanTimeoutMs: e.HOPPER_HUMAN_TIMEOUT_MS,
