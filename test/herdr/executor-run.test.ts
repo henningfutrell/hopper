@@ -323,14 +323,15 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.agentStarts).toHaveLength(1);
   });
 
-  it('gives up at the start deadline when the shell never comes: failed, pane closed', async () => {
+  it('gives up at the start deadline of each of its 3 starts when the shell never comes (issue #462): failed, panes closed', async () => {
     const { herdr, clock, executor } = setup({ turns: [DONE], shellNotReadyStarts: Infinity });
     const t0 = clock.now().getTime();
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out.kind === 'failed' && out.error).toMatch(/shell/);
-    expect(clock.now().getTime() - t0).toBeGreaterThanOrEqual(60000);
-    expect(clock.now().getTime() - t0).toBeLessThan(62000);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    // Three start deadlines, and the pauses between them: 10 to 15 s, then 30 to 45 s.
+    expect(clock.now().getTime() - t0).toBeGreaterThanOrEqual(3 * 60000 + 40000);
+    expect(clock.now().getTime() - t0).toBeLessThan(3 * 62000 + 60000);
+    expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
     expect(herdr.prompts).toEqual([]);
   });
 
