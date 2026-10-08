@@ -22,6 +22,8 @@ export interface JobRepository {
   list(filter?: JobFilter): Job[];
   /** Shallow-merge patch; a key present with value `undefined` clears that field. Bumps updatedAt. */
   update(id: JobId, patch: Partial<Omit<Job, 'id' | 'spec' | 'createdAt'>>): Job;
+  /** Replace the spec of a job that has not started (issue #375). Bumps updatedAt. */
+  respecify(id: JobId, spec: JobSpec): Job;
 }
 
 export interface LaneRepository {

@@ -487,8 +487,13 @@ export interface SourceHost {
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
   cancel(jobId: JobId, reason: string): void;
-  /** Apply only if the job is queued/held and the priority differs; emits job.reprioritized. */
-  reprioritize(jobId: JobId, to: number, reason: string): boolean;
+  /**
+   * The item offered again for a waiting (queued/held) job (issue #375): its priority, from the item or a
+   * routing rule, as now (job.reprioritized); and, while it has not started, its spec's executor, model,
+   * work tree, default work tree and machine pin as its source and routing rules give them now, a part
+   * changed on the job by hand kept (job.respecified). True when anything changed.
+   */
+  refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
   /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */

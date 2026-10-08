@@ -40,13 +40,13 @@ describe('discover and ingest', () => {
     expect(kinds(source)).toEqual(['claimed', 'failed']);
   });
 
-  it('re-sorts every discovered item that already has a job', async () => {
+  it('refreshes every discovered item that already has a job', async () => {
     const { world, source, sync } = await setup();
     source.items = [item('k1', { priority: 50 })];
     await sync.syncNow();
     source.items = [item('k1', { priority: 90, priorityReason: 'label:p0' })];
     await sync.syncNow();
-    expect(world.calls.reprioritize).toEqual([['job-1', 90, 'label:p0']]);
+    expect(world.calls.refresh).toEqual([['job-1', 90, 'label:p0']]);
   });
 });
 
@@ -67,7 +67,7 @@ describe('re-run', () => {
     await sync.syncNow();
     expect(world.jobs.size).toBe(2);
     expect(world.jobs.get('job-2')).toMatchObject({ status: 'queued', source: { key: 'k1' } });
-    expect(world.calls.reprioritize).toEqual([]);
+    expect(world.calls.refresh).toEqual([]);
     expect(sync.statuses()[0]!.jobsCreated).toBe(2);
     expect(kinds(source)).toEqual(['claimed', status, 'claimed']);
   });
@@ -82,7 +82,7 @@ describe('re-run', () => {
     await settle();
     await sync.syncNow();
     expect(world.jobs.size).toBe(1);
-    expect(world.calls.reprioritize).toHaveLength(1);
+    expect(world.calls.refresh).toHaveLength(1);
   });
 
   it('an offered item whose job ended unreported is shown in status and logged once, not dropped silently', async () => {
@@ -111,7 +111,7 @@ describe('re-run', () => {
     await sync.syncNow();
     await sync.syncNow();
     expect(world.jobs.size).toBe(2);
-    expect(world.calls.reprioritize.map((c) => c[0])).toEqual(['job-2']);
+    expect(world.calls.refresh.map((c) => c[0])).toEqual(['job-2']);
   });
 });
 

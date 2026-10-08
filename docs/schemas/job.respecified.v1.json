@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "executor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "defaultCwd": {
+          "type": "string"
+        },
+        "machineId": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "executor"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "executor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "defaultCwd": {
+          "type": "string"
+        },
+        "machineId": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "executor"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "additionalProperties": false
+}

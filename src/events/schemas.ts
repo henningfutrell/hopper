@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
-import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, lanePlan, startPlan } from './parts.ts';
+import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
 const gateActor = z.enum(['user', 'pre-sort']);
@@ -35,6 +35,7 @@ export const EVENT_SCHEMAS = {
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.reattached': strict({ reason: z.string() }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
+  'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
   'lane.closed': strict({ reason: z.string() }),
   'decision.made': strict({
