@@ -32,6 +32,8 @@ export function installHostGuard(app: FastifyInstance, o: { port: () => number; 
       console.warn(`hopper: refused ${req.method} ${req.url.split('?')[0]} from ${req.socket.remoteAddress} Host ${JSON.stringify(req.headers.host ?? '')} (${r.refuse}): ${r.why}`);
       return reply.code(r.refuse).send({ error: r.why });
     }
+    // Every request of a session renews it (issue #439); one that has ended is gone before anything reads it.
+    await o.sessions.renew(sessionToken(req), req.headers);
     if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !o.sessions.find(sessionToken(req))) {
       return reply.code(401).send({ error: r.reach === 'lan' ? 'log in to read across the LAN: sign in, or open a device link from a logged-in browser' : 'sign in to read' });
     }

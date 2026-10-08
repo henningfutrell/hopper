@@ -39,6 +39,18 @@ describe('questions repository', () => {
     s.close();
   });
 
+  it('lists oldest first when asked: the longest waiting first, a limit keeping the oldest (issue #450)', () => {
+    const s = t.open(t.url());
+    const j = s.jobs.create(spec, 5);
+    const q1 = s.questions.create(input(j.id, 'one'));
+    const q2 = s.questions.create(input(j.id, 'two'));
+    const q3 = s.questions.create(input(j.id, 'three'));
+    expect(s.questions.list({ order: 'oldest-first' }).map((q) => q.id)).toEqual([q1.id, q2.id, q3.id]);
+    expect(s.questions.list({ order: 'oldest-first', limit: 2 }).map((q) => q.id)).toEqual([q1.id, q2.id]);
+    expect(s.questions.list({ order: 'newest-first' }).map((q) => q.id)).toEqual([q3.id, q2.id, q1.id]);
+    s.close();
+  });
+
   it('update merges, clears on undefined, bumps updatedAt, and keeps status filterable', () => {
     const clock = fixedClock();
     const s = t.open(t.url(), clock);

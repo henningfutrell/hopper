@@ -3,9 +3,11 @@
 // page (issue #213). Shown, the owner's
 // questions are marked seen (the nav badge clears). Only the open questions: the question history and
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
-// notice instead of the box.
-import { Archive, ChevronRight, Lock, MessageCircleQuestion, Send, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+// notice instead of the box. One order, the API's: oldest first, the longest waiting on top (issue #450).
+// The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
+// card in view or the answer being typed; an arrival below the screen shows as "N new below".
+import { Archive, ArrowDown, ChevronRight, Lock, MessageCircleQuestion, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
@@ -15,7 +17,8 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { Question, QuestionAttempt } from '@/model/wire';
-import { awaitsOwner } from '@/model/questions';
+import { awaitsOwner, longestWaitingFirst } from '@/model/questions';
+import { useReadingPosition } from '@/lib/reading-position';
 import { act, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 
@@ -29,6 +32,7 @@ function Attempt({ a, onUse }: { a: QuestionAttempt; onUse?: (answer: string) =>
         <StatusBadge status={a.tier} tone={a.tier === 'human' ? 'question' : 'muted'} />
         {a.role && <span className="text-muted-foreground">{a.role}</span>}
         {a.model && <span className="font-mono text-muted-foreground">{a.model}</span>}
+        {a.machine && <span className="text-muted-foreground" title={`picked: ${a.machine.why}`}>on <span className="font-mono">{a.machine.id}</span> ({a.machine.why})</span>}
         <StatusBadge status={a.outcome} />
         {a.confident != null && <span>confident <Mark ok={a.confident} /></span>}
         {a.escalate != null && <span>escalate <Mark ok={a.escalate} /></span>}
@@ -110,15 +114,23 @@ function QuestionCard({ q }: { q: Question }) {
 
 export function Questions() {
   const questions = useHopper((s) => s.questions);
+  const ordered = useMemo(() => longestWaitingFirst(questions), [questions]);
+  const list = useRef<HTMLDivElement>(null);
+  const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.
   const canAnswer = useCanOperate();
   const unseen = questions.filter(awaitsOwner).map((q) => q.id).join(',');
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
-    <div className="space-y-3">
-      {questions.length
-        ? questions.map((q) => <QuestionCard key={q.id} q={q} />)
+    <div ref={list} className="space-y-3 [overflow-anchor:none]">
+      {ordered.length
+        ? ordered.map((q) => <div key={q.id} data-question={q.id}><QuestionCard q={q} /></div>)
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
+      {below > 0 && (
+        <Button data-slot="new-questions" size="sm" onClick={showBelow} className="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full shadow-lg">
+          <ArrowDown />{below} new below
+        </Button>
+      )}
     </div>
   );
 }

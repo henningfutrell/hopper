@@ -16,6 +16,7 @@ import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
+import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -198,6 +199,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   CREATE INDEX usage_samples_at ON usage_samples (at)`,
   // 16: intake is by label and assignee (issue #387): the GitHub sources' `authors` option goes.
   noAuthors,
+  // 17: a claude-cli level or claude-plan source that names no machine names the one that can run claude, where one alone can (issue #442).
+  nameTheOnlyMachine,
 ];
 
 /** A user schema's version once migrated. */

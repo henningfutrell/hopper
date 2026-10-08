@@ -3,7 +3,7 @@
 
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  Identity, QueueGate, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
+  Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
@@ -87,7 +87,8 @@ export interface QuestionRepository {
   create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
-  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
+  /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open questions, the longest waiting first; issue #450). A limit keeps the first of that order. */
+  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
   /** Append one attempt to the question's trail. */
@@ -155,16 +156,26 @@ export interface InstanceSettingsRepository {
 }
 
 /** A stored UI session: never the token, only its SHA-256; the user it acts for (issue #158). */
-export interface UiSessionRow { tokenHash: string; expiresAt: string; role: UiRole; identity: Identity; userId: string }
+/**
+ * A stored UI session (issue #439): when it started, when a request last renewed it, and when a gateway realm's
+ * token last checked out for it (its start, for every other realm). How long it lasts is the sign-in config's,
+ * read at each lookup; `endsAt` is a fixed end of its own (the operator CLI's sessions), absent for every other.
+ */
+export interface UiSessionRow {
+  tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
+  role: UiRole; identity: Identity; userId: string;
+}
 
-/** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. */
+/** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
 export interface UiSessionRepository {
   create(row: UiSessionRow): void;
-  /** The live session with this hash, or undefined. Expired rows (`expires_at <= now`) are deleted first. */
-  find(tokenHash: string, now: string): UiSessionRow | undefined;
-  /** Every stored session, expired or not. */
+  /** The session with this hash, ended or not, or undefined. */
+  get(tokenHash: string): UiSessionRow | undefined;
+  /** Every stored session, ended or not. */
   all(): UiSessionRow[];
   setRole(tokenHash: string, role: UiRole): void;
+  /** Renewed at `lastSeenAt`; `checkedAt` too when given (a gateway token that checked out). */
+  touch(tokenHash: string, lastSeenAt: string, checkedAt?: string): void;
   drop(tokenHash: string): void;
 }
 
@@ -258,6 +269,8 @@ export interface StoredSignIn {
   githubAdmin?: { realm: string; subject: string };
   /** The super admins (issue #242), each an identity by realm and subject; absent: the first GitHub admin, else nobody. */
   superAdmins?: { realm: string; subject: string }[];
+  /** How long a UI session lasts (issue #439); absent: the defaults. */
+  sessions?: SessionLengths;
   /** In order: the order the form tries them and the buttons show them. */
   realms: StoredRealm[];
 }

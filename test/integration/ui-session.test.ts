@@ -4,7 +4,7 @@
 import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { databaseUrlFor } from '../support/database.ts';
-import { withInstance } from '../support/files.ts';
+import { withInstance, writeConfig } from '../support/files.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TOKEN_RE, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
@@ -149,12 +149,13 @@ describe('UI mutations', () => {
     expect(JSON.parse((await session(token)).text)).toMatchObject({ authenticated: false });
   });
 
-  it('a session expires after HOPPER_UI_SESSION_HOURS', async () => {
+  it('a session left alone for the idle timeout of the sign-in config expires', async () => {
     await t.stop();
     const db = tempDbPath();
     const prev = cleanup;
     cleanup = () => { prev(); db.cleanup(); };
-    t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_UI_SESSION_HOURS: '0.00005' } }); // 180 ms
+    writeConfig(db.dbPath, 'sign-in', { version: 1, sessions: { idleHours: 0.00005, maxHours: 1 } }); // 180 ms
+    t = await startTestApp({ dbPath: db.dbPath });
     const token = await t.login();
     expect(JSON.parse((await session(token)).text).authenticated).toBe(true);
     await new Promise((r) => setTimeout(r, 300));

@@ -38,8 +38,6 @@ export interface Config {
   keepPanes: boolean;
   /** This host is a machine: the built-in `local` instance runs jobs here. False in the container (issue #141). */
   localMachine: boolean;
-  /** Lifetime of a UI session, in hours. */
-  uiSessionHours: number;
   /** Custom plugins, one directory each; unset: none. */
   pluginDir?: string;
   /** Seeds the plugin store setting while it was never set (issue #445, design.md "Plugin store"). */
@@ -105,7 +103,6 @@ const schema = z.object({
   HOPPER_MAX_QUESTIONS: int(0).default(5),
   HOPPER_KEEP_PANES: flag(false),
   HOPPER_LOCAL_MACHINE: flag(true),
-  HOPPER_UI_SESSION_HOURS: z.coerce.number().finite().positive().default(12),
   HOPPER_PLUGIN_DIR: z.string().min(1).optional(),
   HOPPER_PLUGIN_STORE: z.string().min(1).optional(),
   HOPPER_UPDATE_CHECK_MS: int(0).default(60000),
@@ -151,7 +148,6 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_MAX_QUESTIONS: 'questions one job may ask; the next one fails it',
   HOPPER_KEEP_PANES: 'true: keep a job\'s pane open after it ends, for inspection',
   HOPPER_LOCAL_MACHINE: 'false: this host is not a machine (the container): the boot removes a `local` machine from the plugins config. A fresh plugins config lists none either way',
-  HOPPER_UI_SESSION_HOURS: 'lifetime of a UI session',
   HOPPER_UPDATE_CHECK_MS: 'how often self-update checks for a newer version; 0: the default, every minute (checks cannot be turned off)',
   HOPPER_RESTART: 'how the daemon starts again after an update: exit (a supervisor restarts it) or respawn. Unset: detected',
   HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
@@ -255,7 +251,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     maxQuestions: e.HOPPER_MAX_QUESTIONS,
     keepPanes: e.HOPPER_KEEP_PANES,
     localMachine: e.HOPPER_LOCAL_MACHINE,
-    uiSessionHours: e.HOPPER_UI_SESSION_HOURS,
     ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
     ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),
     publicUrl: e.HOPPER_PUBLIC_URL,

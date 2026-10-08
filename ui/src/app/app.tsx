@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { load, mustSignIn, setLoadError, useHopper } from '@/store';
+import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
@@ -70,6 +70,15 @@ export function App() {
     load().then((ok) => { if (ok && !cancelled) close = connect(); }, (e: Error) => setLoadError(e.message));
     return () => { cancelled = true; close?.(); };
   }, []);
+  // A session can end while the page is open (issue #439): ask now and then, and when the page is looked at again.
+  const authed = useHopper((s) => s.authed);
+  useEffect(() => {
+    if (!authed) return;
+    const check = () => { if (document.visibilityState === 'visible') void recheckSession(); };
+    const timer = setInterval(check, SESSION_CHECK_MS);
+    document.addEventListener('visibilitychange', check);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', check); };
+  }, [authed]);
   // Nothing until the session is read: no flash of the app before the landing page.
   if (!sessionRead) return null;
   return (

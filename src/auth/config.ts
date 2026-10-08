@@ -8,7 +8,7 @@
 // environment and stored with it (issue #216, design.md "Secrets"); a realm that is off need not have
 // them yet. A SAML IdP certificate is public and sits inline.
 import { z } from 'zod';
-import { DEVICE_REALM_TYPES, FORM_REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type UiRole } from '../domain/types.ts';
+import { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REDIRECT_REALM_TYPES, UI_ROLES, type RealmType, type SessionLengths, type UiRole } from '../domain/types.ts';
 import type { RoleRules } from './roles.ts';
 
 interface RealmBase { name: string; label: string; enabled: boolean }
@@ -103,6 +103,8 @@ export interface AuthConfig {
   superAdmins: SuperAdmin[];
   /** In order: the order the username and password form tries them and the sign-in buttons show. */
   realms: RealmConfig[];
+  /** How long a UI session lasts (issue #439): the same for every realm. */
+  sessions: SessionLengths;
 }
 
 /** The config record that holds it. */
@@ -184,7 +186,12 @@ const schema = z.strictObject({
   githubAdmin: z.strictObject({ realm: z.string().min(1), subject: z.string().min(1) }).optional(),
   superAdmins: z.array(z.strictObject({ realm: z.string().min(1), subject: z.string().min(1) })).optional(),
   realms: z.array(realm).default([]),
+  sessions: z.strictObject({
+    idleHours: z.number().positive().max(MAX_SESSION_HOURS),
+    maxHours: z.number().positive().max(MAX_SESSION_HOURS),
+  }).default(DEFAULT_SESSION_LENGTHS),
 }).superRefine((doc, ctx) => {
+  if (doc.sessions.idleHours > doc.sessions.maxHours) ctx.addIssue({ code: 'custom', path: ['sessions', 'idleHours'], message: 'must not be longer than maxHours' });
   doc.realms.forEach((r, i) => {
     const at = (...path: (string | number)[]) => ['realms', i, ...path];
     if (doc.realms.findIndex((q) => q.name === r.name) !== i) ctx.addIssue({ code: 'custom', path: at('name'), message: `${r.name} is named twice; names must be unique` });
@@ -224,12 +231,12 @@ export function signInConfigProblem(raw: unknown): string | undefined {
 
 /** The sign-in config (undefined: none yet → local sign-in only). Throws on anything invalid. */
 export function loadSignInConfig(raw: unknown): AuthConfig {
-  if (raw === undefined) return { local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [] };
+  if (raw === undefined) return { local: { enabled: true }, none: null, githubAdmin: null, superAdmins: [], realms: [], sessions: { ...DEFAULT_SESSION_LENGTHS } };
   const problem = signInConfigProblem(raw);
   if (problem) throw new Error(`invalid sign-in config: ${problem}`);
   const r = schema.parse(raw ?? {});
   const superAdmins = r.superAdmins ?? (r.githubAdmin ? [r.githubAdmin] : []);
-  return { local: r.local, none: r.none ?? null, githubAdmin: r.githubAdmin ?? null, superAdmins, realms: r.realms.map(resolve) };
+  return { local: r.local, none: r.none ?? null, githubAdmin: r.githubAdmin ?? null, superAdmins, realms: r.realms.map(resolve), sessions: { ...r.sessions } };
 }
 
 /** The realm types that send the browser to an identity provider. */

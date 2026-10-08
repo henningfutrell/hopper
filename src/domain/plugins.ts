@@ -1,4 +1,7 @@
 // Plugin vocabulary (design.md "Phase 5 — every part is a plugin"; docs/glossary.md).
+import type { MachineNote } from './machine-pick.ts';
+
+export type { MachineNote } from './machine-pick.ts';
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
 export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
@@ -63,6 +66,8 @@ export interface InstanceStatus {
   detection: Detection;
   active: string | null;
   reason?: string;
+  /** A part that runs claude and names no machine (issue #442): the machine it runs on, or that it needs one picked, in plain words. */
+  machine?: MachineNote;
 }
 
 /** The actions a notifier may offer the UI (issue #378): send a test event; send every question open at the human now. */
@@ -142,6 +147,11 @@ export type PluginsEdit =
   | { action: 'remove'; role: ListRole; name: string; version: string }
   /** Escalation level `name` moves to position `to` (0 is the lowest level); the others keep their order. */
   | { action: 'move'; role: 'escalation-level'; name: string; to: number; version: string }
+  /**
+   * The default escalation machine (issue #442): where a claude-cli level that names no machine runs when
+   * the job's machine cannot and several can. A configured machine; null: none.
+   */
+  | { action: 'escalation-machine'; machine: string | null; version: string }
   /** Load custom plugins added since start and re-run every detection. */
   | { action: 'rescan' };
 
@@ -163,6 +173,8 @@ export interface PluginsReport {
   queueSorter: QueueSorterStatus;
   /** The escalation levels now, lowest first (a live role). `active` null: that level cannot run, and escalates every question it gets. */
   escalationLevels: InstanceStatus[];
+  /** The default escalation machine (issue #442); absent: none set. */
+  escalationMachine?: string;
   /** The list roles as the plugins config names them now: each follows it live (executors since issue #142, the machine sources — this machine and the attached ones, issue #74 — since issue #18, the rest since issue #356). */
   executors: { instances: InstanceStatus[] };
   jobSources: { instances: InstanceStatus[] };

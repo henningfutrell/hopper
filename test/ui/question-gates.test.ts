@@ -3,7 +3,7 @@
 // so unsaved edits survive a refresh, sent back with the version it was based on.
 import { describe, expect, it } from 'vitest';
 import type { PluginsReport, RulesView } from '../../src/domain/types.ts';
-import { gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
+import { escalationMachineChoices, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES } from '../../ui/src/model/question-gates.ts';
 
 const base = {
   escalationLevels: [
@@ -25,10 +25,35 @@ describe('gateChain', () => {
     expect(gateChain(base, 6)[1]).toMatchObject({ name: 'level-2', label: 'cannot run — escalates', tone: 'bad', reason: 'no claude' });
   });
 
+  it('a level that names no machine and has none to run on needs a machine: it says so plainly (#442)', () => {
+    const note = 'No machine can run claude for this level. Pick one.';
+    const report = { escalationLevels: [{ ...base.escalationLevels[0]!, machine: { needsMachine: true, note } }] } as unknown as PluginsReport;
+    expect(gateChain(report, 6)[0]).toMatchObject({ name: 'level-1', label: 'needs a machine', tone: 'bad', reason: note });
+  });
+
+  it('a level that names no machine but has one to run on is active, with which one (#442)', () => {
+    const note = 'names no machine: runs on desk, the only machine that can run claude';
+    const report = { escalationLevels: [{ ...base.escalationLevels[0]!, machine: { machine: 'desk', needsMachine: false, note } }] } as unknown as PluginsReport;
+    expect(gateChain(report, 6)[0]).toMatchObject({ label: 'active', tone: 'ok', reason: note });
+  });
+
   it('no levels: questions go straight to the owner', () => {
     const none = { escalationLevels: [] } as unknown as PluginsReport;
     expect(gateChain(none, 6).map((s) => s.stage)).toEqual(['level', 'risk-rules', 'human']);
     expect(gateChain(none, 6)[0]).toMatchObject({ name: null, label: 'none — straight to the owner', tone: 'muted' });
+  });
+});
+
+describe('escalationMachineChoices (#442)', () => {
+  it('the configured machines claude-cli runs on: this one and the ssh ones', () => {
+    const report = { instances: [
+      { role: 'machine-source', instance: { name: 'here', plugin: 'local' } },
+      { role: 'machine-source', instance: { name: 'desk', plugin: 'ssh' } },
+      { role: 'machine-source', instance: { name: 'phone', plugin: 'client' } },
+      { role: 'machine-source', instance: { name: 'box', plugin: 'docker' } },
+      { role: 'escalation-level', instance: { name: 'level-1', plugin: 'claude-cli' } },
+    ] } as unknown as PluginsReport;
+    expect(escalationMachineChoices(report)).toEqual(['here', 'desk']);
   });
 });
 

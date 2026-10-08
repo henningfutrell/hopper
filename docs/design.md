@@ -36,9 +36,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, pure — issue #442), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -886,6 +886,37 @@ Tenant migration 3 names the `local` machine in every claude-cli level and claud
 that named none: they ran here. Detection runs nothing here: claude runs on the machine, and whether
 it does shows in each question's trail.
 
+**A level that names no machine** (issue #442; owner decision: both — fill it where it is certain, and
+pick it at run time as a safety net). The edits above still refuse a level or source without its
+machine, but a plugins config written with none (a fresh store, issue #259; the container) holds
+claude-cli levels and a claude-plan source that name none, and the option's schema made them
+unavailable: every question went to the owner with a zod message on its trail. The `machine` option
+is now optional in the schema, and `src/domain/machine-pick.ts` decides, pure:
+
+- **At run time** (`pickMachine`). A claude-cli level that names no machine picks one per question:
+  the job's machine (`AnswerRequest.jobMachine`: `resumeOn`, else its pin) where claude can run there
+  — online, and this machine or an ssh target, never a client or container target (`refusal`) —; else
+  the only machine that can; else the **default escalation machine** (the plugins config's
+  `escalationMachine`, `EscalationLevelContext.escalationMachine()`). The reply carries `machine:
+  { id, why }`, and the question service puts it on the attempt: the trail says on which machine the
+  level ran and why. None: the level does not run; it escalates with the plain reason
+  (`NO_MACHINE_FOR_LEVEL`, or that several can and nothing says which) and how to fix it. A claude-plan
+  source that names none reads the only machine there is (any connection), at each read, its readings
+  and account that machine's; none, or several: its state says so, and it reads again soon.
+- **In Settings** (`machineNote`, from the configured machines, not their state). Each such level and
+  source in `GET /api/plugins` carries `machine: { machine?, needsMachine, note }`: the machine it
+  runs on, or, when none can run it or several can with no default set, `needsMachine` and the plain
+  reason. The UI shows the level as *needs a machine*. No question action needs a level, so none is
+  hidden: an escalated question waits for the owner as before.
+- **In the store** (`fillMachines`, tenant migration 17, `migration-name-the-machine.ts`): a level or
+  source that names none names the one machine that can run it, where exactly one is configured
+  (claude-cli: `local` or `ssh`; claude-plan: any). Anywhere else it is left unnamed, and flagged. The
+  plugins config is re-read by version, so the parts follow it live.
+- **The default escalation machine** is set in the Question gates panel (`POST /ui/api/plugins`
+  `{ action: 'escalation-machine', machine | null }`): a configured machine, else refused. It is a
+  machine reference like a machine option: a rename follows it, and a removal of that machine is
+  refused while it names it.
+
 **Anthropic API plugin** (`anthropic-api`, an escalation level, not in the built-in instances). The
 other way a hopper without a claude CLI answers: one Messages request per question through
 `@anthropic-ai/sdk` (`messages.parse`, `output_config.format` = the level reply schema, optional
@@ -1049,6 +1080,19 @@ session whose role cannot answer sees a notice where the answer box would be. In
 dialog, `components/confirm.tsx`, never `window.confirm`); `test/ui/questions.test.ts` renders
 the whole app in happy-dom against a fake daemon.
 
+**Order and reading position** (issue #450). The open questions have one order, oldest first: the
+longest waiting on top, ties by `seq`. `GET /api/questions?status=open` answers in it, and the view sorts
+by `createdAt` again (`longestWaitingFirst`, `ui/src/model/questions.ts`), so a refresh or a reconnect
+never reorders the list. A gained attempt or a tier change ("With level-1" to "For you") never moves a
+question; there is no grouping by tier. Every other listing (`status=all`, a handled status) is a
+history, newest first. The view keeps the reading position (`ui/src/lib/reading-position.ts`): the first
+card whose top is on screen is the anchor, and after every change (an arrival, a question leaving, a
+card growing) the window scrolls by what it moved, so the card in view and the answer being typed stay
+put; when the anchor itself leaves, the next card takes its place. Arrivals are shown at once; those
+that land below the screen show as an "N new below" button (`data-slot="new-questions"`) that scrolls to
+the first of them. Nothing is held back, so seen marking is unchanged. `test/ui/questions-reading-position.test.ts`
+lays the cards out by hand (happy-dom has no layout).
+
 ## Decider changes
 
 `waiting_answer` jobs are in neither `waiting` nor `running`, hold no lane, and are not
@@ -1060,7 +1104,7 @@ job was already admitted once) — it is never re-held for the router.
 
 | method | path | returns |
 |--------|------|---------|
-| GET | `/api/questions?status=open\|answered\|expired\|cancelled\|all&limit=100` | `{ questions: Question[] }` newest first, default `open` |
+| GET | `/api/questions?status=open\|answered\|expired\|cancelled\|all&limit=100` | `{ questions: Question[] }` `open`: oldest first (the longest waiting on top); any other: newest first (issue #450); default `open` |
 | GET | `/api/questions/:id` | `Question` (with attempts) · 404 |
 | POST | `/api/questions/:id/answer` | body `{ answer: string (non-empty) }` → `Question` · 404 · 409 not open |
 
@@ -1242,7 +1286,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
    code, appears on any command line (`/proc` is readable by every user).
 3. **`POST /ui/login`** (form body `code`; Origin may be `null` — the code is the
    credential) — constant-time compare; on match: create a session (random 32-byte token,
-   expiry `HOPPER_UI_SESSION_HOURS`, default 12), rotate the code, and answer with a
+   expiry `HOPPER_UI_SESSION_HOURS`, default 12 — since issue #439 an idle timeout and a maximum from the sign-in config, "Session lifetime"), rotate the code, and answer with a
    same-origin HTML page whose inline script stores the token in `localStorage`
    (`jh_session`) and goes to `/`. Mismatch → 403. `localStorage` is scoped to the exact
    origin incl. port, so no other server on `127.0.0.1` can read it. Sessions live in the store
@@ -1701,7 +1745,7 @@ folded into plugins.yaml `jobSources`; the gh bin became github-gh's `bin` optio
 | `HOPPER_SOURCES_FILE` | `~/.config/hopper/sources.yaml` |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_GH_BIN` | `gh` |
-| `HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
 
 ## Construction contract added
 
@@ -2676,7 +2720,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
-| `HOPPER_UI_SESSION_HOURS` | `12` |
+| `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
 | `HOPPER_PLUGIN_DIR` | `~/.config/hopper/plugins` |
 | `HOPPER_PLUGINS_FILE` | `~/.config/hopper/plugins.yaml` |
 | `HOPPER_AUTH_FILE` | `~/.config/hopper/auth.yaml` (issue #39, "Sign-in: realms") |
@@ -4122,7 +4166,7 @@ The landing page takes no pasted code and names no command (issue #247): a code 
 only through a link.
 
 Sessions are already in the store (migration 6), so a daemon restart does not log a device out; a
-session still expires after `HOPPER_UI_SESSION_HOURS` (12).
+session still ends after its idle timeout or its maximum (issue #439, "Session lifetime").
 
 **Residual risk, stated.** Plain HTTP: a host on the LAN that can sniff traffic can take a session
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
@@ -4151,7 +4195,12 @@ each level's instance and state, and edits what is configuration:
   `POST /ui/api/plugins` `add` / `remove` / `move` / `options`. A level's state comes from
   `GET /api/plugins` `escalationLevels[]`: active plugin, detection, and the reason one cannot run
   (it escalates every question). The levels are live: an edit applies to the next question,
-  never `restart pending`. The form is shared with the Plugins and Routing views:
+  never `restart pending`. **This panel is their one editor** (issue #444, owner decision
+  2026-10-08): the Plugins view shows the levels read-only (order, plugin, state) with a link here,
+  and the shipped-plugin switches leave the escalation-level plugins out, as they do machines. A level
+  whose plugin has a machine option and names none cannot save its options until one is picked: Save
+  waits for it, as the server refuses them without one (issue #174). UI only: the stored
+  `escalationLevels` is unchanged, so no migration. The form is shared with the Plugins and Routing views:
   `ui/src/components/plugin-form.tsx` (`InstanceForm { role, inst }`, `AddInstance { role }`,
   `PluginSelector { role }`, `sendPluginsEdit`, `pluginEditsUnsaved`); each form holds its own
   unsaved edits.
@@ -4922,6 +4971,43 @@ the next visit takes a new session. With `introspection`, the issuer is asked on
 per request.
 
 
+### Session lifetime (issue #439, 2026-10-08)
+
+Sessions ended too early: a fixed `HOPPER_UI_SESSION_HOURS` (12) set at creation, never extended, and only
+changeable by a restart. What is settled, of the issue's options: the hopper's own sliding session, plus a
+re-check of the gateway's token for a gateway realm's sessions:
+
+- **The session is the hopper's own.** No realm keeps the provider's access, ID or refresh token for it: an
+  OIDC realm reads who signed in and drops them, as before. Storing refresh tokens would be a fifth stored
+  secret ("Secrets"), and only OIDC has a refresh grant (not GitHub's device flow, LDAP or SAML). The cost,
+  accepted: a person revoked at an OIDC or SAML provider keeps a session until it is idle, reaches its
+  maximum, or the sign-in config changes under it.
+- **Sliding renewal plus an absolute maximum.** `ui_sessions` keeps `started_at`, `last_seen_at`,
+  `checked_at` and, for the operator CLI's alone, `ends_at` (migration 27 replaced `expires_at`; live
+  sessions stay, counted from the migration). A session ends at `last_seen_at + idleHours` or at
+  `min(started_at + maxHours, ends_at)`, whichever is first. The Host guard's hook renews every request's
+  session before anything reads it (`UiSessions.renew`), writing at most every `RENEW_EVERY_MS` (60 s, or a
+  tenth of the idle timeout when that is shorter).
+- **The lengths are a setting in the database**: the sign-in config's `sessions: { idleHours, maxHours }`
+  (defaults 168 and 720, at most 8760, idle ≤ max), one pair for the instance, edited in Settings → Sign-in
+  through the realms edit's `settings` action. They are read at each lookup, so a change applies to new and
+  existing sessions without a restart. Per-realm lengths waited for a case that needs them.
+  `HOPPER_UI_SESSION_HOURS` is not read (a leftover variable, warned at boot), and seeds nothing.
+- **A gateway realm stays the authority.** Its session renews only when the forwarded token checks out
+  again (`SignIn.checkGateway`) for the same realm and subject; refused → `refresh-refused`. An issuer out
+  of reach (the check's 502) leaves the session as it is, unrenewed, until `GATEWAY_GRACE_MS` (5 minutes)
+  after the last good check (`checked_at`) → `provider-unreachable`. A provider briefly down ends nothing.
+- **Every end has a reason**: `expired-idle`, `expired-absolute`, `refresh-refused`, `provider-unreachable`,
+  `realm-changed` (a reconcile), `logout` — logged, and the event `ui_session.ended { reason, realm }` in
+  the session user's event log. Expired sessions no request names end in a sweep on lookup, at most once
+  per renewal interval, so each still gets its event. A token no row holds is logged once per token; it has
+  no user to record an event for.
+- **The UI signs in again at once.** A refused call (a 403 without `needs`, or a 401 on a read that sent a
+  session), or its own check of `GET /ui/api/session` every minute and when the page is shown again, sends
+  it to sign-in with the session's realm (`ui/src/lib/reauth.ts`): the identity provider for an OIDC, SAML
+  or redirecting GitHub realm, a reload through the gateway, else the landing page. The page it was on is
+  kept in `localStorage` (`jh_return`) across the round trip and opened once signed in.
+
 ### The API door: a token reads as the user it signs in as (issue #255, 2026-10-06)
 
 Owner request: a GitHub OIDC token that signs a person in to the UI must authenticate them against the
@@ -5447,8 +5533,8 @@ connected account, and a job gets its GitHub token from that connection (`GH_TOK
 **Built-in instances: no machine of its own (issue #259).** The hopper no longer registers its own
 host as a machine by default. The plugins config the boot writes for a store that has none (a new
 hopper's users, a user added later) is the built-in instances with `machines: []`, and its claude-cli
-levels and claude-plan usage source name no machine: they are unavailable until one is picked
-(issue #174). This machine is added like any other, as a `local` instance (the Plugins view's add, or
+levels and claude-plan usage source name no machine: until one is picked they pick one as they run, or
+say plainly that none can (issue #442, "A level that names no machine"). This machine is added like any other, as a `local` instance (the Plugins view's add, or
 the Machines view). A config already written is never changed: an existing `local` instance stays,
 and a section left out keeps its meaning (`builtinInstances` with `HOPPER_LOCAL_MACHINE`: `local`,
 4 lanes, where this host may be a machine), which tenant migration 3 relied on.
@@ -6095,7 +6181,8 @@ never edit plugins.yaml**: for now the shipped plugins are enabled and disabled 
 plugins from a store URL is a separate issue.
 
 - **The switch.** The Plugins view lists every **shipped plugin** (built-in) of a list role but
-  `machine-source` (attached in the Machines view) with a switch. On sends `POST /ui/api/plugins`
+  `machine-source` (attached in the Machines view) and, since issue #444, `escalation-level` (edited in
+  Question gates alone) with a switch. On sends `POST /ui/api/plugins`
   `{ action: 'add', role, plugin: <id>, name: <id> }` (the plugin's defaults); off sends
   `{ action: 'remove', name: <its one instance> }`. Blocked, with the reason, when the plugin is not
   available here (its detection reason: `needs-setup` for one whose options have no defaults), when

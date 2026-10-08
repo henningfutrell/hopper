@@ -53,6 +53,7 @@ export const pluginsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('add'), role: z.enum(LIST_ROLES), plugin: z.string().min(1), name: z.string().min(1), options: z.record(z.string(), z.unknown()).optional(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('remove'), role: z.enum(LIST_ROLES), name: z.string().min(1), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('move'), role: z.literal('escalation-level'), name: z.string().min(1), to: z.number().int().min(0), version: z.string().min(1) }),
+  z.strictObject({ action: z.literal('escalation-machine'), machine: z.string().min(1).nullable(), version: z.string().min(1) }),
   z.strictObject({ action: z.literal('rescan') }),
 ]);
 // The plugin store (issue #75): ids only — what is installed is what the store catalogue lists.
@@ -60,13 +61,9 @@ export const pluginsEditBody = z.discriminatedUnion('action', [
 const pluginId = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a plugin id');
 // The plugin store setting (issue #445): the default plugin store, none, or a git repository — anything
 // `git fetch` takes, never read as an option.
+const storeRepo = z.string().trim().min(1, 'repo must name a git repository').max(2048).refine((r) => !r.startsWith('-'), 'repo must not start with -');
 const pluginStoreSource = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('default') }),
-  z.strictObject({ kind: z.literal('none') }),
-  z.strictObject({
-    kind: z.literal('repo'),
-    repo: z.string().trim().min(1, 'repo must name a git repository').max(2048).refine((r) => !r.startsWith('-'), 'repo must not start with -'),
-  }),
+  z.strictObject({ kind: z.literal('default') }), z.strictObject({ kind: z.literal('none') }), z.strictObject({ kind: z.literal('repo'), repo: storeRepo }),
 ]);
 export const pluginStoreBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('refresh') }),
@@ -92,7 +89,11 @@ export const realmsEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('remove'), name: realmName, ...realmsVersion }),
   z.strictObject({ action: z.literal('move'), name: realmName, to: z.number().int().min(0), ...realmsVersion }),
   z.strictObject({ action: z.literal('enable'), name: realmName, enabled: z.boolean(), ...realmsVersion }),
-  z.strictObject({ action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(), ...realmsVersion }),
+  z.strictObject({
+    action: z.literal('settings'), local: z.boolean().optional(), none: z.enum(UI_ROLES).nullable().optional(),
+    // How long a UI session lasts (issue #439); whether it loads is the sign-in config's check, naming the field.
+    sessions: z.strictObject({ idleHours: z.number(), maxHours: z.number() }).optional(), ...realmsVersion,
+  }),
   // Two admin tiers (issue #242): any admin makes an identity admin; only a super admin makes one super admin or hands it over.
   z.strictObject({ action: z.literal('admin'), who: personRef, ...realmsVersion }),
   z.strictObject({ action: z.literal('super-admin'), who: personRef, transfer: z.boolean().optional(), ...realmsVersion }),
@@ -387,9 +388,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
-    const s = sessions.find(String(req.headers[SESSION_HEADER]));
-    if (s) console.warn(`hopper: UI session ended: ${s.identity.realm} ${identityName(s.identity)}`);
-    sessions.drop(String(req.headers[SESSION_HEADER]));
+    sessions.drop(String(req.headers[SESSION_HEADER]), 'logout');
     return { ok: true };
   });
 }

@@ -1,7 +1,8 @@
 // Plugins (design.md "UI and mutation"): per role, the configured instances, each with its own
 // options form (components/plugin-form.tsx) for every option, command-bearing ones too (issue #198), and
 // for a list role Add and Remove. Refreshes every 15 s unless a form holds unsaved edits. Every shipped
-// plugin of a list role has a switch that enables or disables it (issue #142). A notifier shows its
+// plugin of a list role has a switch that enables or disables it (issue #142). The escalation levels are
+// the exception (issue #444): shown read-only with a link to Question gates, their one editor, and no switch. A notifier shows its
 // actions (issue #378): Send test event, Send open questions.
 import { Inbox, Package, Puzzle, RefreshCw, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -12,14 +13,44 @@ import { AddInstance, InstanceForm, PluginSelector, pluginEditsUnsaved, sendPlug
 import { SendAction } from '@/components/send-action';
 import { StatusBadge } from '@/components/status';
 import { PluginStore } from '@/views/plugin-store';
-import { isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
+import { instanceState, isListRole, isSelectable, ROLE_TITLES, shippedPlugins, toggleEdit } from '@/model/plugins';
 import type { PluginsReport, Role } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 const REFRESH_MS = 15000;
 
+/** The escalation levels, read-only (issue #444): edited in Question gates alone, linked from here. */
+function LevelsSummary({ report }: { report: PluginsReport }) {
+  const levels = report.instances.filter((i) => i.role === 'escalation-level').map((i) => i.instance);
+  return (
+    <Panel title={ROLE_TITLES['escalation-level']} icon={Puzzle} count={levels.length || ''} bodyClassName="space-y-2"
+      action={<a href="#settings/questions" className="text-xs underline underline-offset-2">Edit in Question gates</a>}>
+      <div data-slot="escalation-levels-summary" className="space-y-1.5 text-xs">
+        {levels.length
+          ? <ol className="space-y-1.5">
+            {levels.map((inst, at) => {
+              const st = instanceState(report, 'escalation-level', inst.name);
+              return (
+                <li key={inst.name} data-level={inst.name} className="flex flex-wrap items-center gap-2">
+                  <span className="num text-muted-foreground">level {at + 1}</span>
+                  <span className="font-medium">{inst.name}</span>
+                  <span className="font-mono text-muted-foreground">{inst.plugin}</span>
+                  <StatusBadge status={st.label} tone={st.tone} />
+                  {st.reason && <span className="break-words text-muted-foreground">{st.reason}</span>}
+                </li>
+              );
+            })}
+          </ol>
+          : <Empty>none — questions go straight to the owner</Empty>}
+        <div className="text-muted-foreground">Add, remove, reorder and tune the levels in <a href="#settings/questions" className="underline underline-offset-2">Question gates</a>, next to the risk rules and the owner.</div>
+      </div>
+    </Panel>
+  );
+}
+
 function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
+  if (role === 'escalation-level') return <LevelsSummary report={report} />;
   const instances = report.instances.filter((i) => i.role === role);
   return (
     <Panel title={ROLE_TITLES[role]} icon={Puzzle} count={instances.length || ''} bodyClassName="space-y-3"
@@ -34,7 +65,7 @@ function RoleBlock({ role, report }: { role: Role; report: PluginsReport }) {
             {role === 'notifier' && <NotifierActions name={i.instance.name} report={report} />}
           </div>
         ))
-        : <Empty>{role === 'escalation-level' ? 'none — questions go straight to the owner' : 'none'}</Empty>}
+        : <Empty>none</Empty>}
     </Panel>
   );
 }

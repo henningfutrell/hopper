@@ -90,10 +90,13 @@ mutation").
 ## Machine options
 
 An option that names the machine a part runs on is marked `.meta({ machine: true })` and has no
-default: it is required. The UI picks it from the configured machines (this one is the `local`
-machine in that list, never an implicit default), and an edit or an added instance naming no
-configured machine is refused. Find the machine with the context's `machine(id)`; one with no `ssh`,
-`docker` or `client` is this machine (issue #174).
+default. The UI picks it from the configured machines (this one is the `local` machine in that list,
+never an implicit default), and an edit or an added instance naming no configured machine is refused.
+Find the machine with the context's `machine(id)`; one with no `ssh`, `docker` or `client` is this
+machine (issue #174). A config stored before a machine was picked may lack it: the context's
+`machines()` lists every machine, so the part can pick one as it runs, and say which (issue #442). An
+escalation level also gets `escalationMachine()`, the default escalation machine, and the request's
+`jobMachine`; a level that picked its machine returns it on its reply as `machine: { id, why }`.
 
 ## Detection
 

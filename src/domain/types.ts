@@ -354,6 +354,8 @@ export interface QuestionAttempt {
   role: AttemptRole;
   /** The model that ran, as the level reports it, else the configured one. */
   model?: string;
+  /** The machine the level ran on and why, when it named none and picked it (issue #442). */
+  machine?: { id: string; why: string };
   startedAt: string;
   finishedAt?: string;
   /** The level's answer (escalating: its recommendation), or the human's answer. */
@@ -450,8 +452,8 @@ export type { JobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { DEVICE_REALM_TYPES, FORM_REALM_TYPES, REALM_TYPES, REDIRECT_REALM_TYPES, UI_ROLES, roleAllows } from './sign-in.ts';
+export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
+export { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
