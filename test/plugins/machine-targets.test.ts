@@ -56,6 +56,27 @@ describe('disk thresholds (issue #410)', () => {
   });
 });
 
+describe('sweep settings (issue #410)', () => {
+  it('are plain options of local, ssh and client, not of a container target', () => {
+    for (const id of ['local', 'ssh', 'client']) {
+      const props = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === id)!).properties as Record<string, unknown>;
+      expect(props).toHaveProperty('reapEveryMinutes');
+      expect(props).toHaveProperty('scratchMaxAgeHours');
+    }
+    const docker = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === 'docker')!).properties as Record<string, unknown>;
+    expect(docker).not.toHaveProperty('reapEveryMinutes');
+  });
+
+  it('ride on the attached machine when set, and are refused out of range', () => {
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 5, scratchMaxAgeHours: 2 } }))
+      .toMatchObject({ sweep: { everyMinutes: 5, scratchMaxAgeHours: 2 } });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY } })).not.toHaveProperty('sweep');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 0 } }))).not.toBe('accepted');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 1.5 } }))).not.toBe('accepted');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', scratchMaxAgeHours: 0 } }))).not.toBe('accepted');
+  });
+});
+
 describe('targetOf: an instance as the attached machine it names', () => {
   it('an ssh instance, with its defaults', () => {
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', lanes: 2 } })).toEqual({

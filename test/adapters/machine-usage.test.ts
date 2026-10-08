@@ -20,6 +20,13 @@ describe('local machine source', () => {
     const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], workTree: '~/trees' });
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
   });
+  it('carries how the sweep treats this machine, read at every list (issue #410)', async () => {
+    let sweep: { everyMinutes?: number } | undefined = { everyMinutes: 3 };
+    const src = createLocalMachineSource({ maxLanes: 1, executors: () => [], disk: () => undefined, sweep: () => sweep });
+    expect((await src.list())[0]).toMatchObject({ sweep: { everyMinutes: 3 } });
+    sweep = undefined;
+    expect((await src.list())[0]).not.toHaveProperty('sweep');
+  });
   it('honours id and label', async () => {
     const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one', disk: () => undefined });
     expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);
