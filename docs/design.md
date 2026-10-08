@@ -594,7 +594,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   It prints `hopper-reaped` last. What it kept is never removed silently: `cleanup` answers it
   (`Executor.cleanup` → `Reaped`), and the engine records `job.work_kept { paths }` on the job; the
   sweep below tries it again. A machine the reap cannot reach leaves the job to the sweep.
-  `HOPPER_KEEP_PANES` skips the reap with the close.
+  `HOPPER_KEEP_PANES` skips the reap with the close. A container a job starts with rootless podman runs
+  in a scope of podman's own and outlives the reap, but its monitor (`conmon`) carries the job's id and
+  stays in the job's scope, so it is stopped: the container goes on unmonitored (no restart policy, no
+  `--rm`). A service meant to outlive the job is started outside it, e.g. `env -u HOPPER_JOB_ID
+  systemd-run --user …`, or through a socket's daemon (`docker compose` against a podman socket).
 - **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
   crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
   startup, after recovery and the reap of each job it ended, and then on each machine every
