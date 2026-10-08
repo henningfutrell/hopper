@@ -923,7 +923,8 @@ The same for every realm, no sign-in and the login code:
 - **Every end has a reason**, logged to the journal (`hopper: UI session ended (<reason>): …`) and recorded as
   the event `ui_session.ended` of the session's user ([events](events.md)): `expired-idle`,
   `expired-absolute`, `refresh-refused` and `provider-unreachable` (a gateway realm's), `realm-changed` (the
-  change below) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
+  change below), `connection-ended` (signed in with GitHub, and the GitHub connection ended: GitHub refused
+  to renew it; sign in with GitHub again to restore both) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
   the database was reset, or it is another hopper's) is logged once. Read them to tell why someone was
   sent back to sign-in: `journalctl --user -u hopper | grep 'UI session'`.
 - **Log out** (the header's button) ends the hopper session. It does not sign you out of the

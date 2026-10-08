@@ -9,7 +9,8 @@
 // cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Signed in
 // with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
 // to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
-// its token and keeps the sign-in (issue #322). The connection's job source is shown in it, its sync under the
+// its token and keeps the sign-in (issue #322). Signed in with GitHub, a connection that ended ended the session too: no
+// Connect again here, signing in with GitHub again restores both (issue #513). The connection's job source is shown in it, its sync under the
 // account (issue #254): one GitHub piece, not a card beside it. Of the repositories the app reaches the
 // person ticks the job repositories — the only ones jobs come from — filtering a long list, with how many
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
@@ -104,7 +105,9 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           <div data-expired className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
             The sign-in of <span className="font-mono">{s.account}</span> expired: {s.error}. No jobs come from {name} until you connect it again.
           </div>
-          <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>
+          {signedInWith
+            ? <div>Your hopper session ended with it: sign in with {name} again to connect it.</div>
+            : <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
         </>}
         {(s.state === 'not-connected' || s.state === 'failed') && <>
           {s.state === 'failed' && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">{s.error}</div>}
