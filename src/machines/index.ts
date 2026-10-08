@@ -5,6 +5,7 @@ import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
 import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts';
 import { diskAt, judged } from './disk.ts';
+import { DEFAULT_WORK_TREE, makeWorkTree } from '../client/work-tree.ts';
 
 /** How often this machine's herdr session is checked, and started when it is not running. */
 const SESSION_EVERY_MS = 30000;
@@ -19,7 +20,7 @@ export function createLocalMachineSource(o: {
   label?: string;
   /** The herdr session jobs here run in (issue #260); absent: the herdr-claude instance's own. */
   session?: string;
-  /** Its jobs' default work tree (issue #324). */
+  /** Its jobs' work tree (issues #324, #361); absent: the jobs directory. Made and checked in the background, at most once per 30 s. */
   workTree?: string;
   /** Starts that session when it is not running. Called in the background, at most once per 30 s; list() never waits for it. */
   ensureSession?: () => Promise<unknown>;
@@ -34,6 +35,18 @@ export function createLocalMachineSource(o: {
 }): MachineSource {
   const disk = o.disk ?? (() => diskAt(homedir()));
   const now = o.now ?? Date.now;
+  // Issue #361: the work tree is made here before a job is routed here; what is wrong with it is said.
+  let checkedAt = -Infinity;
+  let workTreeProblem: string | undefined;
+  const check = (): void => {
+    if (now() - checkedAt < SESSION_EVERY_MS) return;
+    checkedAt = now();
+    setImmediate(() => {
+      const problem = makeWorkTree(o.workTree ?? DEFAULT_WORK_TREE, homedir());
+      if (problem && problem !== workTreeProblem) o.logger?.warn(`hopper: this machine takes no new job: ${problem}`);
+      workTreeProblem = problem;
+    });
+  };
   let last = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -58,6 +71,7 @@ export function createLocalMachineSource(o: {
       const read = disk();
       const d = read && judged(read, o.diskLow?.());
       const sweep = o.sweep?.();
+      check();
       return [
         {
           id: o.id ?? 'local',
@@ -70,6 +84,7 @@ export function createLocalMachineSource(o: {
           ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
           ...(d ? { disk: d } : {}),
           ...(sweep ? { sweep } : {}),
+          ...(workTreeProblem ? { workTreeProblem } : {}),
         },
       ];
     },
@@ -78,6 +93,6 @@ export function createLocalMachineSource(o: {
 
 export { createAttachedMachineSource, createTargetPool, hostKeyFingerprint, hostKeyOffer, probeClient, probeContainer, knownHostKey, scanHostKey, probeHerdrOverSsh, probeSsh, resolveSshTarget, type MachineProbe, type ResolvedTarget } from './attached.ts';
 export { diskAt, diskOf } from './disk.ts';
-export { createClientReleaseKeeper, type ClientReleaseKeeper } from './client-release.ts';
+export { createClientReleaseKeeper, withClientWorkTree, type ClientReleaseKeeper } from './client-release.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';
 export { isThisMachine, type ThisMachineDeps } from './this-machine.ts';

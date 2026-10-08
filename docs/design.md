@@ -38,12 +38,12 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, pure — issue #442), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential`, `/work-tree` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
@@ -575,8 +575,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
-  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
-  (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
+  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
   until the 60000 ms start deadline, then fails the job (`pane … never ran the scratch dir
@@ -596,8 +596,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   <pane> on <machine> is PowerShell, and the hopper needs a POSIX shell …`, the pane closed. The
   hopper does not translate its commands per shell: the fix is on the machine, a POSIX shell as herdr's
   default for the hopper's session (README "A Windows computer").
-- **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (herdr-claude and
-  cursor-agent `cwd`, the GitHub sources' `defaultCwd` and `repoPaths`), and the executor resolves it
+- **`~` is the job's machine's home** (issue #323). Config keeps `~` as written (a machine's
+  `workTree`, a routing rule's `workTree`: issue #361), and the executor resolves it
   when the job starts, against the home of the lane's machine: this process's for this machine, and
   for an attached one the home its probe found (`MachineSnapshot.home`: an ssh target's
   `printf '%s\n' "$HOME"` over ssh, a client target's `homedir()` in its `/release` answer). A hopper
@@ -619,14 +619,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   starts, when it is that home, above it, or `/`
   (`the work tree <cwd> on <machine> is its home or above it: …`). A machine whose home is not known
   yet still refuses `/`. The default work tree is the **jobs directory** `~/hopper-jobs`
-  (`JOBS_DIR`, `src/domain/types.ts`): the herdr-claude and cursor-agent `cwd` and the GitHub
-  sources' `defaultCwd` default to it, and tenant migration 11 moves a stored `~` (executor `cwd`,
-  source `defaultCwd`, a `repoPaths` value) to it. The jobs directory, and a work tree under it, is
-  made when missing — the scratch command starts `mkdir -p <cwd> &&` — so a fresh machine runs a
-  default job; any other missing work tree still fails as above (#323). Which work tree applies —
-  the job's own, its machine's, its source's, the executor's — is "Default work trees per machine and
-  per repository". This is direction plus refusal, not a sandbox: an agent can still write where
-  its OS user can ("Sandboxing jobs: mechanisms compared").
+  (`JOBS_DIR`, `src/domain/types.ts`): a machine's work tree when it names none (issue #361; tenant
+  migration 11 had moved a stored `~` to it). A machine's work tree is made when missing — the
+  scratch command starts `mkdir -p <cwd> &&` — and one that cannot be made fails as above (#323); a
+  routing rule's is a directory named on purpose, never made. Which work
+  tree applies is "Per-machine work trees" (issue #361). This is direction plus refusal, not a
+  sandbox: an agent can still write where its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
   tells the job to ask rather than work in a tree outside it. It sends clones and git worktrees
   made only for this job to the scratch dir, and says the reap below removes it.
@@ -699,13 +697,17 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   ignored), runs `git worktree prune`, makes the **job worktree**
   `<work tree>/.hopper-scratch/<job id>/<work tree's name>` with `git worktree add --detach` at
   `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
-  `hopper-job-worktree-made` (waited for up to 120000 ms, for the fetch). A worktree an earlier run of
+  `hopper-job-worktree-made` (waited for up to 10 minutes, for the fetch or a first clone). A worktree an earlier run of
   the job left is entered as it is. Claude starts there; the pane state keeps the work tree as `cwd`
   (the reap's scratch dir follows from it) and the job worktree as `jobWorktree`; the job reports the
   job worktree (`job.workTree`, so the lane shows it), the trust dialog naming it is accepted, and the
   footer adds the fixed `[hopper job worktree]` line after the work-tree line: work there, it is the
-  job's alone, the work tree is shared and left as it is. Not a repository's top:
-  `hopper-job-worktree-none`, and the job runs in its work tree as before. Git refusing:
+  job's alone, the work tree is shared and left as it is. Not a repository's top, and the job has a repository (a GitHub issue's,
+  issue #361): the command first fetches its **checkout** `<work tree>/<name>`, or clones it there from
+  `https://github.com/<owner/name>.git` the first time, then makes the job worktree
+  `<work tree>/.hopper-scratch/<job id>/<name>` of the checkout the same way, enters it and prints
+  `hopper-job-worktree-checkout`; the pane state keeps the checkout as `checkout`, and the footer names
+  it as what the worktree is of. Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
   remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
@@ -4742,8 +4744,9 @@ routing:
   `label` means the item has that label. `title` is a substring match. An empty `match` matches
   every item. `set` needs at least one field: `machine` (a configured machine id, which becomes the
   `spec.machineId` pin), `executor` (a configured executor instance), `priority` (0..100), or
-  `workTree` (an absolute path or one under `~`: the job's own work tree, issue #324). The
-  schema is strict, so a `lane` anywhere is refused.
+  `workTree` (an absolute path or one under `~`: the job's own work tree, issue #324; only with
+  `machine`, since a path is one machine's, issue #361). The schema is strict, so a `lane` anywhere is
+  refused.
 - **The first matching rule wins.** Rules are applied at intake (`SourceHost.ingest`,
   `src/engine/source-host.ts`), when a source item becomes a job. The item's source, repo, labels,
   author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
@@ -5835,8 +5838,8 @@ directory for escalation level calls, each plugin's scratch dir, ssh control soc
 `gate-router-runs.jsonl` debug log (grok-bot-jev's run log, not the hopper's state), self-update's mirror and next
 install. Losing it loses nothing the hopper needs; the host unit points it at the user's cache dir
 (`%C/hopper`) so the update mirror survives restarts. Defaults that named one machine's layout are
-gone: `jevSrc` has no default, and a job's working directory defaults to `~` (herdr-claude `cwd`,
-the GitHub sources' `defaultCwd`), resolved on the job's machine (issue #323).
+gone: `jevSrc` has no default, and a job's work tree is its machine's (issue #361), the jobs
+directory `~/hopper-jobs` by default, resolved on the job's machine (issue #323).
 
 ### Operator CLI
 
@@ -7133,6 +7136,9 @@ filter, Choose shown, Save sends the whole list, an unreached chosen repository)
 
 ## Default work trees per machine and per repository (issue #324, 2026-10-07)
 
+**Superseded in part by issue #361** ("Per-machine work trees"): the source's `repoPaths` and
+`defaultCwd` and the executor's `cwd` are gone, and a routing rule's work tree needs its machine.
+
 Owner request: default job directories set per machine and per repository, with a fallback, resolved on
 the machine that runs the job, never in the hopper's own home; a repository routed to the right machine
 and tree; the chosen machine and directory shown on the job's lane; a misconfigured directory failing at
@@ -7552,3 +7558,96 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
   field; v1 and v2 keep their old lane plan (`legacyLanePlan`).
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
   is the user's act from Sources, never the hopper's own.
+
+## Per-machine work trees (issue #361, 2026-10-08)
+
+Owner request: jobs failed when routed to a machine that did not have the configured work tree — four
+jobs went to an agent box while the host's lanes were full, carried the host-only path the GitHub source
+set, and failed the scratch check within seconds. Each machine has its own work tree, set in the UI; the
+hopper provisions it on the machine itself (directory, the job's repository, scratch, trust) with no
+manual setup; a path valid on one machine never reaches another; the router never picks a machine whose
+work tree cannot be made usable — the job stays queued, with why, never failed; ephemeral agent boxes
+work the same way. Configured on the machine, as the issue recommended: the work tree belongs to the
+machine; a routing rule may still override it per repository, on the machine it names. The issue's word
+"workspace" is the glossary's **machine work tree** (herdr's own workspaces are something else).
+
+**As built:**
+- **The work tree is the machine's.** `resolvePayload` (`src/executors/herdr/payload.ts`, herdr-claude
+  and the print agents): the job's own `cwd` — only a routing rule's, which pins the job to the rule's
+  machine — applies only on the machine the job is pinned to (`spec.machineId`); anywhere else the
+  lane's machine's `workTree`; absent, the jobs directory. No other path exists: the GitHub sources'
+  `repoPaths` and `defaultCwd` and the herdr-claude and print agent executors' `cwd` are gone
+  (`SourceItem.cwd`/`defaultCwd` and `SpecFromConfig.defaultCwd` too), because none of them names a
+  machine. A routing rule's `workTree` without `machine` is refused (`src/routing/`, and the Routing view
+  says so first).
+- **Set in the Machines view.** An attached machine's Edit form has a `work tree` field (ssh and client
+  targets; a container target runs commands only and has none), this machine's Edit form too; empty
+  removes the option. The machine panel shows the work tree (the jobs directory when none is set) and
+  its work tree problem.
+- **Made on the machine when it is probed.** The probe that finds a machine online (at attach, then
+  every 30 s) makes its work tree there and says what is wrong — `MachineSnapshot.workTreeProblem`:
+  - this machine: `createLocalMachineSource` makes it in the background (`src/client/work-tree.ts`
+    `makeWorkTree`: `mkdir -p`, writable, never the home or above it), at most once per 30 s;
+  - an ssh target (an agent box is one): in the same ssh call that asks its home and its disk
+    (`probeSsh`), a shell `mkdir -p` and a write check, `~` as `"$HOME"` there; the answer's last line
+    says made or not. A box made again from its image, with an empty home, has its work tree again at
+    the first probe after attach;
+  - a client target running the hopper's client release: `POST /work-tree {workTree}` on its link
+    (`src/client/server.ts`, signed like every call), answered `{workTreeProblem?}`. The call is in a new
+    client file (`work-tree.ts`), so the release id changes and the release keeper loads it onto every
+    client first; a client on another release is not asked.
+  A probe that cannot run the check (the client call fails) reports that as the problem.
+- **Never routed there.** The decider (`src/decider/assign.ts`, `workTreeHolds`) takes a machine with a
+  work tree problem for no new job, as a machine whose disk is low. A job no other machine can take is
+  held — `no machine running executor <x> has a usable work tree: <m>: <problem>`, or `pinned machine
+  <m>: <problem>` — and starts once a probe finds the work tree usable or another machine has room; a job
+  that waits for the other machines' lanes says that. A job already running there keeps its lane, and a
+  job resuming there returns to its pane. The hold reason is the job's `holdReason`, shown in the UI;
+  the attached machine's log line says it takes no new job and why.
+- **The repository, at each start** (`src/executors/herdr/job-worktree.ts`). A work tree that is the top
+  of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
+  and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
+  jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
+  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>`, whose
+  `origin` must be that repository, or clones it there from `https://github.com/<owner/name>.git` the
+  first time (into `<name>.hopper-clone-<pid>`, then moved in, so two jobs cloning at once leave one),
+  and makes the job's worktree of it, `<work tree>/.hopper-scratch/<job id>/<name>`. Git takes github.com
+  credentials from `GH_TOKEN` when the pane has it, else from `gh auth git-credential` (the job's
+  credentials dir, issue #441), through `GIT_CONFIG_*` variables naming a helper: the token is never on
+  a command line. `GIT_TERMINAL_PROMPT=0`: git never waits for a person. A checkout of another
+  repository under that name, or a refused clone, fails the job at once with what git said. With
+  `jobWorktrees` off, the checkout is fetched or cloned and the job runs in the work tree. The print
+  agents run the same command, worktrees off, before their first turn, its output on stderr.
+- **Scratch and trust.** The scratch dir is made first, as before; the machine's work tree is made by the
+  scratch command too (`mkdir -p`), a routing rule's never. Claude's folder-trust dialog for the job
+  worktree is accepted at startup (`trustWorkdir`, default on) — on a fresh box too; no trust is written
+  into any file of Claude's, which running Claude processes also write.
+- **Migration.** Tenant migration 18 (`src/store/migration-machine-work-trees.ts`): the path jobs fell
+  back to (the first job source's `defaultCwd`, else the first work tree executor's `cwd`) becomes the
+  `workTree` of each `local`, `ssh` and `client` machine that has none — not when it is the jobs
+  directory, the default — so every job runs where it ran before; a `repoPaths` entry that is not that
+  path becomes a routing rule `{ name: '<source> <repo>', match: { source, repo }, set: { machine,
+  workTree } }` after the existing rules when there is exactly one such machine, else it is dropped; a
+  routing rule's `workTree` without a machine gets the one machine there is, else loses the work tree (a
+  rule left setting nothing goes); every executor `cwd` and source `repoPaths`/`defaultCwd` goes. Stored
+  jobs lose `defaultCwd`, and `cwd` unless a rule set it with the machine the job is pinned to; their
+  `fromConfig` follows. A machine that got a path it does not have is then held off by its probe, with
+  why, instead of failing jobs: fix its work tree in Machines. The build before runs on the migrated
+  store: it reads a machine's `workTree` (issue #324) and defaults the gone options.
+
+**Residual.** A failure at start (a clone refused for credentials, a disk filled since the probe) still
+fails that job with what the shell said: the probe checks that the work tree can be made and written,
+not that every repository can be cloned there. A work tree a routing rule names is not probed (only the
+machine's own is); a missing one fails the job at start, as a misconfigured path should (issue #324).
+
+**Verification:** `test/herdr/machine-work-tree.test.ts` (the machine's work tree, the jobs directory,
+a job's own path only on its pinned machine, made wherever it is, the job's repository named to the job
+worktree command), `test/herdr/job-worktree.test.ts` (against real git: a clone into a plain work tree
+and its job worktree, a fetch of an existing checkout, a checkout of another repository refused, a work
+tree that is a repository left without a clone), `test/decider/work-tree.test.ts`,
+`test/adapters/ssh-machine.test.ts` (`probeSsh` makes the work tree, the jobs directory by default,
+one that cannot be made, the home), `test/adapters/machine-usage.test.ts` (this machine),
+`test/adapters/client-transport.test.ts` (the client's `/work-tree`), `test/store/tenant-migration-18.test.ts`,
+`test/integration/attached-machines.test.ts` (held with why through the real composition root, then run
+once the probe finds it usable), `test/routing/rules.test.ts`, `test/ui/machines.test.ts`,
+`test/ui/routing.test.ts`, `test/sources/config.test.ts`.

@@ -8,13 +8,13 @@ import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
 /**
- * A machine's default work tree (issue #324): an absolute path or one under `~`, which resolves on that
- * machine. Command-bearing: it is where its jobs' commands run. Not on a container target, whose
- * command jobs take no work tree.
+ * A machine's work tree (issues #324, #361): an absolute path or one under `~`, which resolves on that
+ * machine. The hopper makes it there and puts each job's repository in it. Command-bearing: it is where
+ * its jobs' commands run. Not on a container target, whose command jobs take no work tree.
  */
 export const workTreeOption = (z: typeof Z) => z.string().min(1)
   .refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'workTree must be an absolute path or start with ~')
-  .optional().meta({ commandBearing: true, description: 'the default work tree of jobs here that name none of their own; ~ is this machine\'s home' });
+  .optional().meta({ commandBearing: true, description: 'where its jobs run, made by the hopper, each job\'s repository fetched or cloned in it; ~ is this machine\'s home. Absent: ~/hopper-jobs' });
 
 /**
  * Lanes kept for jobs pinned to the machine (issue #372): jobs with no machine pin use at most its lane

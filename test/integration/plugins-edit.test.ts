@@ -64,7 +64,7 @@ describe('GET /api/plugins: what the UI edits', () => {
     expect(names).toEqual(expect.arrayContaining(['escalation-level:level-2', 'executor:herdr-a', 'executor:herdr-b', 'executor:test']));
     expect(names.some((n: string) => n.startsWith('router:'))).toBe(true);
     const herdr = body.plugins.find((p: { id: string }) => p.id === 'herdr-claude');
-    expect(herdr.options.properties.cwd.commandBearing).toBe(true);
+    expect(herdr.options.properties.args.commandBearing).toBe(true);
     expect(herdr.options.properties.pollMs.commandBearing).toBeUndefined();
   });
 

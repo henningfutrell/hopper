@@ -23,7 +23,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createTargetPool, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
+import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh, type MachineProbe, type ResolvedTarget } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
@@ -216,12 +216,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0)
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
-          // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
-          // One after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (found) => ({
+          // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
+          // and its work tree is made there (issue #361). One after the other, over the one shared ssh connection.
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}) }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             ...found,
           })))),

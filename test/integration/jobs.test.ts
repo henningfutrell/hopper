@@ -22,10 +22,10 @@ const typesFor = (events: DomainEvent[], jobId: string) => events.filter((e) => 
 
 describe('jobs pulled from a source', () => {
   it('an item becomes one queued job with the source spec, its source ref, and a clamped priority', async () => {
-    const job = await t.pull({ op: 'echo', message: 'hi' }, { title: 'Say hi', author: 'owner', priority: 500, cwd: '/tmp/w', env: { HOPPER_X: '1' } });
+    const job = await t.pull({ op: 'echo', message: 'hi' }, { title: 'Say hi', author: 'owner', priority: 500, env: { HOPPER_X: '1' } });
     expect(job).toMatchObject({ priority: 100, approved: false });
     expect(job.spec).toEqual({
-      executor: 'scripted', payload: { prompt: '{"op":"echo","message":"hi"}', body: 'body', cwd: '/tmp/w', env: { HOPPER_X: '1' } },
+      executor: 'scripted', payload: { prompt: '{"op":"echo","message":"hi"}', body: 'body', env: { HOPPER_X: '1' } },
       priority: 100, goal: 'Say hi', submittedBy: 'manual:owner', kind: 'coding',
     });
     expect(job.source).toMatchObject({ source: 'manual', kind: 'manual', key: expect.any(String), title: 'Say hi', author: 'owner' });

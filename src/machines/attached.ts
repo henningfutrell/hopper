@@ -17,7 +17,8 @@ import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
-import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
+import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
+import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -32,6 +33,8 @@ export interface MachineProbe {
   home?: string;
   /** The disk its home is on (issue #401). Absent: not read. */
   disk?: DiskReading;
+  /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
+  workTreeProblem?: string;
 }
 
 interface AttachedOptions {
@@ -64,6 +67,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let home: string | undefined;
   // Only the last probe's: a disk fills.
   let disk: DiskReading | undefined;
+  // What the last probe found wrong with its work tree (issue #361); each probe says afresh.
+  let workTreeProblem: string | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -80,8 +85,12 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
-      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (p) => {
+        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; workTreeProblem = p.online ? p.workTreeProblem : undefined;
+        say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`
+          : workTreeProblem ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${workTreeProblem}` : `hopper: attached machine ${name} online (${reached()})`);
+      },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; workTreeProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -89,7 +98,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
@@ -108,30 +117,48 @@ export async function probeHerdrOverSsh(o: { target: string; session: string; co
 
 /**
  * An ssh target's home, asked over ssh with the hopper's key: it answers, so it is online (issue #142),
- * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). Rejects when
- * ssh fails or the answer is not an absolute path. With it, the disk the home is on (issue #401), when its df says.
+ * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). In the same
+ * call its work tree (the jobs directory when it names none) is made there, and what is wrong with it said
+ * (issue #361): the home or above it, or a directory that cannot be made or written. Rejects when ssh
+ * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says.
  */
-export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<{ home: string; disk?: DiskReading }> {
+export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string }): Promise<{ home: string; disk?: DiskReading; workTreeProblem?: string }> {
+  const workTree = o.workTree ?? DEFAULT_WORK_TREE;
+  // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
+  const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
+  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+    + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
       mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
-      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, `${DF_COMMAND}; printf '%s\\n' "$HOME"`);
+      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, command);
     } catch (e) {
       return reject(e instanceof Error ? e : new Error(String(e)));
     }
     execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (!e) {
-        const home = stdout.trim().split('\n').at(-1) ?? '';
+        const lines = stdout.trim().split('\n');
+        const home = lines[0] ?? '';
+        if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
         const disk = readDf(stdout);
-        return home.startsWith('/') ? resolve({ home, ...(disk ? { disk } : {}) }) : reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
+        const found = { home, ...(disk ? { disk } : {}) };
+        const refused = resolveWorkTree(workTree, home);
+        if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
+        if (lines.at(-1) === WORK_TREE_OK) return resolve(found);
+        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ')).join(' ').trim() || 'no answer';
+        return resolve({ ...found, workTreeProblem: `its work tree ${workTree} cannot be made: ${said}` });
       }
       if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
       reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
     });
   });
 }
+
+/** What the work tree check prints last: made and writable, or not. */
+const WORK_TREE_OK = 'hopper-work-tree-ok';
+const WORK_TREE_UNUSABLE = 'hopper-work-tree-unusable';
 
 /** Whether a client target's herdr session runs: `status server` through its tunnel, signed. Rejects when the client cannot be reached or does not prove itself. */
 export async function probeClient(t: ClientTransport): Promise<boolean> {

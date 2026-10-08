@@ -237,12 +237,11 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    | option | |
    |---|---|
    | `repos` | on `github-app`, an optional allowlist inside the App's installations (`your-org/your-repo`); `github-account` takes the job repositories chosen in Sources |
-   | `repoPaths` | where each repo's jobs run (`your-org/your-repo` → `/srv/checkouts/your-repo`) |
 
    <img src="docs/screenshots/sources.webp" width="720" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button.">
 
-   A job runs in `repoPaths[<repo>]` (a checkout of that repo), else in `defaultCwd` (default: the
-   home directory). That path must exist on whichever machine runs the job ([Add machines](#add-machines)). Restart the daemon
+   A job runs in the work tree of the machine that runs it, and the hopper fetches or clones the
+   issue's repository there first ([Where jobs work](#where-jobs-work)). Restart the daemon
    (`systemctl --user restart hopper`, or the container).
 2. Label an issue `hopper` and assign it to yourself. The issue body is the job's prompt. Unassign it
    and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
@@ -375,8 +374,8 @@ machine (`HOPPER_LOCAL_MACHINE=false`), and jobs run on the machines attached be
    A key of your own instead (optional): mount it as the secret `HOPPER_SSH_KEY_FILE` and prepare the
    target with `bash ~/.local/lib/hopper/scripts/attach-machine.sh my-desktop 2`, which lets that key in
    and prints the options to set in Settings → Plugins → Machine sources.
-5. Make the jobs' working directories exist there, at the same paths (`repoPaths`, `defaultCwd`):
-   a job whose directory is missing fails.
+5. Optional: give it a work tree (Machines → Edit → work tree). Default `~/hopper-jobs` there. The
+   hopper makes it and clones each job's repository into it; nothing to set up by hand.
 
 Within 30 s the Machines view shows it online.
 
@@ -457,10 +456,17 @@ rule that matches wins. Edit them in the UI's Settings → Routing. Three exampl
 ### Where jobs work
 
 A job works in its **work tree**, on the machine that runs it; `~` is that machine's home, never the
-hopper's. The first that is set applies: a routing rule's work tree, the repository's path in its
-source's `repoPaths`, the machine's own `workTree` (Settings → Plugins → Machine sources, on that
-machine), the source's `defaultCwd`, the executor's `cwd`. The default is `~/hopper-jobs`, made when
-missing. A work tree that is the machine's home, above it, or missing there fails the job at once.
+hopper's. Each machine has its own (Machines → Edit → work tree; default `~/hopper-jobs`). A routing
+rule can give a repository another path on the machine the rule names. A path is one machine's: it is
+never used on another.
+
+The hopper makes the work tree on each machine when it checks the machine (at attach, then every
+30 s). A work tree that is a git repository you keep is used as it is: each Claude job gets its own
+worktree of it. Any other work tree gets the job's repository: at the job's start the hopper fetches
+`<work tree>/<repo>`, or clones it there the first time, and the job works in its own worktree of that
+checkout, so a new machine or agent box needs nothing set up by hand. A machine whose work tree cannot be
+made (not writable, the home itself) takes no job: its jobs wait, held with the reason, for a machine
+that can take them, and the Machines view says what is wrong.
 
 A job pinned to a machine that is offline waits for it. To keep room for pinned jobs, give a machine
 `reservedLanes` (Settings → Plugins → Machine sources): jobs that could run on any machine leave that
