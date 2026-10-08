@@ -111,6 +111,20 @@ describe('the pipeline end to end through the seams', () => {
   });
 });
 
+describe('the order of the question lists (issue #450)', () => {
+  it('open questions come oldest first, the longest waiting on top; every other listing newest first', async () => {
+    const a = await start({}, { seams: { levels: [] } });
+    const first = await a.pull(ask('Which colour?'));
+    const q1 = await a.waitForQuestion(first.id, (x) => x.tier === 'human');
+    const second = await a.pull(ask('Which size?'));
+    const q2 = await a.waitForQuestion(second.id, (x) => x.tier === 'human');
+    const ids = async (path: string) => (await a.api<{ questions: Question[] }>('GET', path)).body.questions.map((x) => x.id);
+    expect(await ids('/api/questions')).toEqual([q1.id, q2.id]);
+    expect(await ids('/api/questions?status=open')).toEqual([q1.id, q2.id]);
+    expect(await ids('/api/questions?status=all')).toEqual([q2.id, q1.id]);
+  });
+});
+
 describe('a question escalated to the human', () => {
   it('every level escalates; nothing goes to the source, and a UI answer resumes the job', async () => {
     const a = await start();

@@ -1,5 +1,6 @@
 // Question routes (design.md "API additions"): list, and read with its escalation trail. The
-// human answer is a UI session mutation (src/http/ui/).
+// human answer is a UI session mutation (src/http/ui/). The open questions list oldest first, the
+// longest waiting on top; every other listing is a history, newest first (issue #450).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
@@ -18,7 +19,7 @@ const idParams = z.object({ id: z.string() });
 export function questionRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/questions', async (req) => {
     const q = parseWith(questionsQuery, req.query);
-    return { questions: o.tenant(req).store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit }) };
+    return { questions: o.tenant(req).store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit, order: q.status === 'open' ? 'oldest-first' : 'newest-first' }) };
   });
 
   app.get('/api/questions/:id', async (req) => {
