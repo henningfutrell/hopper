@@ -10,8 +10,16 @@
 # one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY (an anthropic-api escalation level), … (GitHub needs none: the GitHub account
 # you sign in with is the connection). HOPPER_PORT moves the UI port;
 # HOPPER_IMAGE runs another image (one built from a checkout: `bash scripts/build-image.sh`,
-# HOPPER_IMAGE=localhost/hopper). Upgrade, removing the image it replaces:
-#   podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper
+# HOPPER_IMAGE=localhost/hopper).
+#
+# Update: you do it, the hopper never updates a container itself (no Auto-update here). The update channel
+# is the image tag: HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev, :beta or :stable in .env (unset:
+# :latest, the same image as :stable). Pull it and recreate the hopper's container alone, Postgres and
+# the volumes untouched; then, optionally, remove the image it replaced:
+#   podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper
+#   podman image prune -f --filter label=org.opencontainers.image.title=hopper
+# (docker compose / docker image prune the same). Recreating ends jobs a restart would lose: when an update
+# is out, the UI shows how many; wait until none.
 name: hopper
 
 services:

@@ -84,7 +84,7 @@ systemctl --user enable podman-restart.service                        # once: st
 ```
 
 The container is not a machine: jobs run on attached machines ("Add machines"). Settings and secrets: a
-`.env` beside `compose.yaml` (`.env.example`). Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper`.
+`.env` beside `compose.yaml` (`.env.example`). Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the `HOPPER_IMAGE` tag; `podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper`, then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`).
 Details: `docs/deploy.md` "In containers, with Podman".
 
 The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.

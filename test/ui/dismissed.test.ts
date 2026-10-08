@@ -46,7 +46,7 @@ describe('noticeKey', () => {
   });
 
   it('the update notice is one occurrence per state and target', () => {
-    const base = { channel: 'stable' as const, autoUpdate: false, whatsNew: [], installedWhatsNew: [] };
+    const base = { channel: 'stable' as const, autoUpdate: false, whatsNew: [], installedWhatsNew: [], restartBlockers: 0 };
     const a = noticeKey.update({ ...base, state: 'available', target: { commit: 'a', ref: 'stable' } });
     expect(noticeKey.update({ ...base, state: 'available', target: { commit: 'b', ref: 'stable' } })).not.toBe(a);
     expect(noticeKey.update({ ...base, state: 'error', reason: 'fetch failed' })).not.toBe(a);
@@ -61,7 +61,7 @@ describe('forgetCleared', () => {
   });
 
   it('the router answering again, a source syncing again, no update notice: forgotten, so a recurrence shows', () => {
-    const upToDate = { state: 'current' as const, channel: 'stable' as const, autoUpdate: false, whatsNew: [], installedWhatsNew: [] };
+    const upToDate = { state: 'current' as const, channel: 'stable' as const, autoUpdate: false, whatsNew: [], installedWhatsNew: [], restartBlockers: 0 };
     expect(forgetCleared(list, { health: health(false), sources: [source('gh', 'ok'), source('app', 'error', 'x')], update: upToDate }))
       .toEqual([noticeKey.source(source('app', 'error', 'x')), 'question:q1']);
   });
