@@ -22,6 +22,8 @@ export interface MachineState {
   /** Idle lanes, not yet given to a job, in id order. */
   freeIdle: Lane[];
   assigned: number;
+  /** Lanes busy or draining, and starts, of jobs not pinned to it (issue #372). */
+  unpinned: number;
   /** Per executor the machine runs (issue #140). */
   executors: Map<string, ExecutorState>;
 }
@@ -113,11 +115,21 @@ function roomFor(s: MachineState, executor: string): number {
   return e ? Math.min(room(s), e.cap - e.occupied.length - e.assigned) : 0;
 }
 
-function fits(s: MachineState, job: Job): boolean {
-  const pin = pinOf(job);
-  return s.machine.online && s.machine.executors.includes(job.spec.executor)
-    && (pin === undefined || pin === s.machine.id) && roomFor(s, job.spec.executor) > 0;
+/** The most lanes jobs not pinned to it may hold: its lane cap less its reserved lanes (issue #372). */
+const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
+
+/** Room for `job` there: a job not pinned to it also stays out of its reserved lanes. */
+function roomForJob(s: MachineState, job: Job): number {
+  const r = roomFor(s, job.spec.executor);
+  return pinOf(job) === s.machine.id ? r : Math.min(r, unpinnedCap(s) - s.unpinned);
 }
+
+function eligible(s: MachineState, job: Job): boolean {
+  const pin = pinOf(job);
+  return s.machine.online && s.machine.executors.includes(job.spec.executor) && (pin === undefined || pin === s.machine.id);
+}
+
+const fits = (s: MachineState, job: Job): boolean => eligible(s, job) && roomForJob(s, job) > 0;
 
 const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
 const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' ? ` (usage soft limit, used ${percent(usedFrac)})` : '');
@@ -129,12 +141,14 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  */
 function waitReason(job: Job, states: MachineState[]): string {
   const ex = job.spec.executor;
-  const eligible = states.filter((s) => s.machine.online && s.machine.executors.includes(ex)
-    && (pinOf(job) === undefined || pinOf(job) === s.machine.id));
-  const s = eligible.reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
+  const s = states.filter((m) => eligible(m, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
+  if (roomFor(s, ex) > 0) {
+    // Only its reserved lanes are free (issue #372).
+    return `waiting for a lane: machine ${id} keeps ${s.cap - unpinnedCap(s)} of its ${s.cap} lanes for jobs pinned to it, the other ${s.unpinned} are in use`;
+  }
   const executorInUse = e.occupied.length + e.assigned;
   const executorBinds = e.cap - executorInUse < room(s) || (e.cap - executorInUse === room(s) && e.cap < s.cap);
   if (executorBinds) {
@@ -154,9 +168,10 @@ export function assign(ordered: Candidate[], states: MachineState[]): { start: S
       continue;
     }
     const ex = job.spec.executor;
-    const pick = options.reduce((a, b) => (roomFor(b, ex) > roomFor(a, ex) || (roomFor(b, ex) === roomFor(a, ex) && b.machine.id < a.machine.id) ? b : a));
+    const pick = options.reduce((a, b) => (roomForJob(b, job) > roomForJob(a, job) || (roomForJob(b, job) === roomForJob(a, job) && b.machine.id < a.machine.id) ? b : a));
     const lane = pick.freeIdle.shift();
     pick.assigned += 1;
+    if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
     pick.executors.get(ex)!.assigned += 1;
     start.push({
       jobId: job.id, laneId: lane?.id ?? null, machineId: pick.machine.id, effectivePriority,

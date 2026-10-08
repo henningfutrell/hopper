@@ -226,6 +226,14 @@ export function diskText(disk: MachineSnapshot['disk']): string | null {
   return disk.low ? `${text}: low, jobs may fail as it fills` : text;
 }
 
+/** A machine's reserved lanes (issue #372) as its card says them; null when it keeps none. */
+export function reservedText(m: Pick<MachineSnapshot, 'maxLanes' | 'reservedLanes'>): string | null {
+  const n = m.reservedLanes ?? 0;
+  if (n <= 0) return null;
+  if (n >= m.maxLanes) return `all ${m.maxLanes}: only jobs pinned here run here`;
+  return `${n} of ${m.maxLanes}, for jobs pinned here; jobs that could run anywhere use the other ${m.maxLanes - n}`;
+}
+
 /** The agents a sandbox box is offered with (issue #308): those an executor drives on a client target. */
 export const BOX_AGENTS = ['claude'] as const;
 export type BoxAgent = (typeof BOX_AGENTS)[number];

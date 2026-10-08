@@ -38,7 +38,7 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
   readonly executorNames: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, refresh, setSourceState). */
   readonly sourceHost: SourceHost;
-  /** Recover from a previous run (jobs — reattaching live ones —, then questions), ask the router, take the first Decision, start the tick. */
+  /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
   stop(): Promise<void>;
@@ -58,7 +58,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, notComplete: o.notComplete, credentials: o.credentials,
+    questions: o.questions, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -83,6 +83,7 @@ export function createEngine(o: EngineOptions): Engine {
       // Deferred before this start (issue #371): tried again now, and on every tick.
       cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
+      for (const claim of recovered.awaiting) runner.reattachWhenReachable(claim);
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
         if (event.type === 'job.queued' && event.jobId) {

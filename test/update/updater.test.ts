@@ -123,6 +123,7 @@ describe('detecting an update', () => {
     const w = world();
     const h = await updater(w, join(w.root, 'bare')).u.history();
     expect(h.versions).toEqual([]);
+    expect(h.build).toEqual({});
     expect(h.reason).toMatch(/install\.json/);
   });
 

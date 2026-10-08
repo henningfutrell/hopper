@@ -92,8 +92,9 @@ export interface Executor {
   resume?(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome>;
   /**
    * Restart recovery, before anything is written: is the work of this `running` job still alive
-   * outside the process (its pane and agent), so `reattach` can watch it? Absent → never. Must
-   * not throw (an error is `false`).
+   * outside the process (its pane and agent), so `reattach` can watch it? Absent → never. Rejects
+   * when that cannot be told now — its machine does not answer yet (a client target not dialled
+   * in, an ssh target not replying): recovery asks again until the reconnect grace runs out.
    */
   canReattach?(job: Job): Promise<boolean>;
   /**

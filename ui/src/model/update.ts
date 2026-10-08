@@ -14,6 +14,8 @@ export const CHANNELS: { channel: UpdateStatus['channel']; hint: string }[] = [
 export function headline(s: UpdateStatus): string {
   switch (s.state) {
     case 'available':
+      // An image is replaced by pulling or rebuilding it, never in place (issue #409).
+      if (s.installed?.kind === 'image') return 'Update available: pull or rebuild the image';
       if (s.channel === 'release') return `Update available: release ${s.target?.ref}`;
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';

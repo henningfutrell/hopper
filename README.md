@@ -408,7 +408,9 @@ source's `repoPaths`, the machine's own `workTree` (Settings → Plugins → Mac
 machine), the source's `defaultCwd`, the executor's `cwd`. The default is `~/hopper-jobs`, made when
 missing. A work tree that is the machine's home, above it, or missing there fails the job at once.
 
-A job pinned to a machine that is offline waits for it. How each kind works and why:
+A job pinned to a machine that is offline waits for it. To keep room for pinned jobs, give a machine
+`reservedLanes` (Settings → Plugins → Machine sources): jobs that could run on any machine leave that
+many of its lanes free for the jobs pinned to it, and go to other machines first. How each kind works and why:
 `docs/design.md` "Attached machines", "Container targets", "Client targets", "Target
 authentication".
 

@@ -1,6 +1,8 @@
 // Job lifecycle after a claim: started → progressed (throttled) → finished | failed |
 // cancelled | waiting_answer. A claim of a job with a pending answer resumes it. A job
-// reattached by restart recovery skips `started` and goes on from its executor's present state.
+// reattached by restart recovery skips `started` and goes on from its executor's present state;
+// one whose machine did not answer at recovery is asked again until it does (issue #368).
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
 import { readJobRules } from '../job-rules/index.ts';
@@ -10,6 +12,8 @@ import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 
 const PROGRESS_EVERY_MS = 500;
+/** How often a job waiting for its machine after a restart asks again whether its work is alive. */
+const REACHABLE_EVERY_MS = 1000;
 
 interface Running {
   controller: AbortController;
@@ -22,6 +26,12 @@ export interface Runner {
   start(claim: Claim): void;
   /** Watch a job restart recovery kept `running` on its lane (Executor.reattach). */
   reattach(claim: Claim): void;
+  /**
+   * A job restart recovery kept `running` on its lane though its machine did not answer: ask
+   * `canReattach` again until it answers, then reattach it, or fail it once the reconnect grace
+   * runs out. Cancel and shutdown abort the wait as they abort a run.
+   */
+  reattachWhenReachable(claim: Claim): void;
   /** Abort a claimed/running job as a cancel, recorded with `reason`. False when it is not running here. */
   cancel(jobId: string, reason: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
@@ -31,6 +41,9 @@ export interface Runner {
 /** Abort reasons the executor reads from `ctx.signal.reason` (ports.ts ExecutionContext). */
 const CANCEL = 'cancel';
 const SHUTDOWN = 'shutdown';
+
+/** How a launch begins: a fresh run (or resume), a reattach, or a reattach once the machine answers. */
+type Launch = 'run' | 'reattach' | 'reattach-when-reachable';
 
 async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext, reattach: boolean): Promise<ExecutionOutcome> {
   if (!executor) return { kind: 'failed', error: `executor ${job.spec.executor} is not registered` };
@@ -81,18 +94,41 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     };
   }
 
+  /**
+   * Issue #368: a client target dials in, an ssh target answers, some seconds after the daemon
+   * starts. Undefined once the job's work is alive again and `job.reattached` is recorded; else the
+   * outcome that ends it.
+   */
+  async function whenReachable(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal): Promise<ExecutionOutcome | undefined> {
+    const until = c.clock.now().getTime() + c.reconnectGraceMs;
+    for (;;) {
+      const alive = await executor.canReattach!(job).catch(() => undefined);
+      if (signal.aborted) return { kind: 'failed', error: 'aborted' };
+      if (alive === false) return { kind: 'failed', error: 'interrupted by daemon restart' };
+      if (alive) {
+        if (!c.stopping()) c.store.events.append({ type: 'job.reattached', jobId: job.id, laneId: claim.laneId, data: { reason: 'daemon restart' } });
+        return undefined;
+      }
+      if (c.clock.now().getTime() >= until) {
+        return { kind: 'failed', error: `machine ${machineId} did not reconnect within ${c.reconnectGraceMs / 1000} s after the daemon restart` };
+      }
+      await sleep(REACHABLE_EVERY_MS, undefined, { signal }).catch(() => {});
+    }
+  }
+
   /** The machine snapshot of the lane's machine; undefined once it is no longer attached. */
   async function machineOf(laneId: LaneId): Promise<MachineSnapshot | undefined> {
     const lane = c.store.lanes.list().find((l) => l.id === laneId);
     return lane ? (await c.machines.list()).find((m) => m.id === lane.machineId) : undefined;
   }
 
-  async function run(claim: Claim, entry: Running, reattach: boolean): Promise<void> {
+  async function run(claim: Claim, entry: Running, launch: Launch): Promise<void> {
     const { store } = c;
     const job = store.jobs.get(claim.jobId);
     if (!job) return;
     const executor = c.executors.get(job.spec.executor);
     const machine = await machineOf(claim.laneId);
+    const reattach = launch !== 'run';
     const started = reattach ? job : store.tx(() => {
       const j = store.jobs.update(job.id, { status: 'running', startedAt: nowIso(c) });
       store.events.append({ type: 'job.started', jobId: job.id, laneId: claim.laneId, data: { attempts: j.attempts } });
@@ -102,8 +138,10 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     let outcome: ExecutionOutcome;
     try {
       // Asked now, never stored: the job acts through its source's connection as it is at this start.
-      const credentials = machine ? await c.credentials(started) : {};
-      outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : await execute(executor, started, {
+      const waited = machine && executor && launch === 'reattach-when-reachable'
+        ? await whenReachable(executor, started, claim, machine.id, entry.controller.signal) : undefined;
+      const credentials = machine && !waited ? await c.credentials(started) : {};
+      outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, {
         // The job rules as they are at this start (issue #172): an edit reaches the next job.
         job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, credentials, jobRules: readJobRules(store.config),
         progress: (f, m) => progress.report(f, m),
@@ -122,17 +160,18 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     else await cleanup(job.id);
   }
 
-  function launch(claim: Claim, reattach: boolean): void {
+  function launch(claim: Claim, how: Launch): void {
     const entry: Running = { controller: new AbortController(), done: Promise.resolve() };
     running.set(claim.jobId, entry);
-    entry.done = run(claim, entry, reattach)
+    entry.done = run(claim, entry, how)
       .catch((e) => console.error('job runner failed', claim.jobId, e))
       .finally(() => { if (running.get(claim.jobId) === entry) running.delete(claim.jobId); });
   }
 
   return {
-    start: (claim) => launch(claim, false),
-    reattach: (claim) => launch(claim, true),
+    start: (claim) => launch(claim, 'run'),
+    reattach: (claim) => launch(claim, 'reattach'),
+    reattachWhenReachable: (claim) => launch(claim, 'reattach-when-reachable'),
     cancel(jobId, reason) {
       const entry = running.get(jobId);
       if (!entry) return false;

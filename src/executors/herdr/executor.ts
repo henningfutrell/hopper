@@ -329,8 +329,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       });
     },
 
+    // An unreachable herdr rejects (issue #368): the machine may not have dialled in yet.
     async canReattach(job) {
-      return (await liveTurn(job).catch(() => undefined)) !== undefined;
+      return (await liveTurn(job)) !== undefined;
     },
 
     reattach(ctx) {

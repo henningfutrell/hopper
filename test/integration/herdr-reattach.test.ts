@@ -35,8 +35,8 @@ function freshDb(): void {
   dbPath = db.dbPath;
 }
 
-async function boot(herdr: FakeHerdrClient, laneCount = 4): Promise<TestApp> {
-  const a = await startTestApp({ dbPath, source, plugins: { executors: EXECUTORS, machines: lanes(laneCount) }, seams: { herdr } });
+async function boot(herdr: FakeHerdrClient, laneCount = 4, env: Record<string, string> = {}): Promise<TestApp> {
+  const a = await startTestApp({ dbPath, source, env, plugins: { executors: EXECUTORS, machines: lanes(laneCount) }, seams: { herdr } });
   apps.push(a);
   return a;
 }
@@ -50,6 +50,19 @@ async function runThenStop(herdr: FakeHerdrClient): Promise<{ job: Job; paneId: 
   await first.stop();
   const { paneId, agentName } = job.executorState as { paneId: string; agentName: string };
   return { job, paneId, agentName };
+}
+
+/** The same herdr, unreachable while `down` (a client target not dialled in yet, an ssh probe not answered): every call rejects. */
+function reachable(herdr: FakeHerdrClient): { herdr: FakeHerdrClient; link: { down: boolean } } {
+  const link = { down: false };
+  const proxied = new Proxy(herdr, {
+    get(target, key, receiver) {
+      const value = Reflect.get(target, key, receiver) as unknown;
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => (link.down ? Promise.reject(new Error('client lab is not dialled in')) : (value as (...a: unknown[]) => unknown).apply(target, args));
+    },
+  });
+  return { herdr: proxied, link };
 }
 
 describe('herdr-claude job across a daemon restart', () => {
@@ -132,17 +145,73 @@ describe('herdr-claude job across a daemon restart', () => {
     expect(herdr.prompts).toHaveLength(1);
   });
 
-  // Issue #371: the job's machine is not reached at the restart (a client target not dialled in yet), so
-  // its Claude is never seen and the job fails, but the pane and Claude live on there.
+  // Issue #368: a client target dials in a few seconds after the daemon starts; its running job was failed before it did.
+  it('its machine not reachable yet at startup: the job stays running on its lane and is reattached once the machine answers', async () => {
+    freshDb();
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
+    const { job, paneId } = await runThenStop(herdr);
+    link.down = true;
+
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '30000' });
+    await new Promise((r) => setTimeout(r, 300));
+    const waiting = await second.job(job.id);
+    expect(waiting.status).toBe('running');
+    expect(waiting.laneId).toBe(job.laneId);
+    const held = (await second.api('GET', '/api/machines')).body.machines[0].lanes as { id: string; state: string; jobId?: string }[];
+    expect(held.find((l) => l.id === job.laneId)).toMatchObject({ state: 'busy', jobId: job.id });
+
+    link.down = false;
+    const done = await second.waitForStatus(job.id, 'finished', 8000);
+    expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.'), paneId });
+    expect(herdr.agentStarts).toHaveLength(1);
+    const events = (await second.events()).filter((e) => e.jobId === job.id);
+    expect(events.find((e) => e.type === 'job.reattached')).toMatchObject({ laneId: job.laneId, data: { reason: 'daemon restart' } });
+    expect(events.some((e) => e.type === 'job.failed' || e.type === 'job.requeued')).toBe(false);
+  });
+
+  it('its machine never reachable within the reconnect grace: failed with a reason naming the machine, lane freed', async () => {
+    freshDb();
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
+    const { job } = await runThenStop(herdr);
+    link.down = true;
+
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
+    const failed = await second.waitForStatus(job.id, 'failed', 8000);
+    expect(failed.error).toBe('machine local did not reconnect within 0.5 s after the daemon restart');
+    const after = (await second.api('GET', '/api/machines')).body.machines[0].lanes as { id: string; jobId?: string }[];
+    expect(after.some((l) => l.jobId === job.id)).toBe(false);
+    const events = (await second.events()).filter((e) => e.jobId === job.id);
+    expect(events.some((e) => e.type === 'job.reattached')).toBe(false);
+  });
+
+  it('cancelled while its machine is not reachable yet: cancelled, never reattached', async () => {
+    freshDb();
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
+    const { job } = await runThenStop(herdr);
+    link.down = true;
+
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '30000' });
+    await new Promise((r) => setTimeout(r, 300));
+    second.user().engine.cancel(job.id, 'no longer wanted');
+    await second.waitForStatus(job.id, 'cancelled', 8000);
+    const after = (await second.api('GET', '/api/machines')).body.machines[0].lanes as { id: string; jobId?: string }[];
+    expect(after.some((l) => l.jobId === job.id)).toBe(false);
+    link.down = false;
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await second.job(job.id)).status).toBe('cancelled');
+  });
+
+  // Issue #371: the job's machine is not reached within the reconnect grace (issue #368), so the job fails,
+  // but its pane and Claude live on there.
   it('a pane the restart could not reach stays due for cleanup; a rerun of its item is held until it is closed', async () => {
     freshDb();
-    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG, { output: ['● Done.', '  HOPPER_DONE'] }] });
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG, { output: ['● Done.', '  HOPPER_DONE'] }] }));
     const { job, paneId, agentName } = await runThenStop(herdr);
-    herdr.setUnreachable(true);
+    link.down = true;
 
-    const second = await boot(herdr);
-    const failed = await second.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe('interrupted by daemon restart');
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
+    const failed = await second.waitForStatus(job.id, 'failed', 8000);
+    expect(failed.error).toBe('machine local did not reconnect within 0.5 s after the daemon restart');
     const deferred = await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
     expect(deferred.error).toContain('not dialled in');
     expect((await second.events('types=job.cleanup_deferred')).filter((e) => e.jobId === job.id)).toHaveLength(1);
@@ -155,7 +224,7 @@ describe('herdr-claude job across a daemon restart', () => {
     expect(herdr.agentStarts).toHaveLength(1); // the rerun never ran beside the live pane
 
     // The machine comes back: the pane is closed at the next try, then the rerun runs.
-    herdr.setUnreachable(false);
+    link.down = false;
     await waitFor(() => herdr.closed.includes(paneId), { what: 'the old pane closed' });
     expect(await herdr.getAgent(agentName)).toBeNull();
     await second.waitForStatus(rerun.id, 'finished', 8000);
@@ -167,10 +236,10 @@ describe('herdr-claude job across a daemon restart', () => {
 
   it('Mark closed ends a deferred cleanup by hand: it is no longer tried, and the held rerun is admitted', async () => {
     freshDb();
-    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
     const { job, paneId } = await runThenStop(herdr);
-    herdr.setUnreachable(true);
-    const second = await boot(herdr);
+    link.down = true;
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
     await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
     const token = await second.login();
     await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
@@ -185,7 +254,7 @@ describe('herdr-claude job across a daemon restart', () => {
 
     // No longer held: it is admitted at once (and here fails, its machine still unreached).
     await waitFor(async () => !['queued', 'held'].includes((await second.job(rerun.id)).status), { what: 'the rerun admitted' });
-    herdr.setUnreachable(false);
+    link.down = false;
     await new Promise((r) => setTimeout(r, 300));
     expect(herdr.closed).not.toContain(paneId); // never tried again once marked
   });
