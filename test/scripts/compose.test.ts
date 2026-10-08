@@ -157,7 +157,9 @@ describe('the install page', () => {
     expect(page).toContain('data-copy="podman compose up -d"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
-    expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
+    // Updated by its user, recreating the hopper's container alone (issue #494).
+    expect(page).toContain('data-copy="podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper"');
+    expect(page).toContain('data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
   });
 
   it('upgrades without leaving the replaced image behind: the prune takes only dangling hopper images (issue #401)', () => {

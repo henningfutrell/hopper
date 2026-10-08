@@ -5441,8 +5441,19 @@ the image holds no ssh key; `HEAD`; `HOPPER_UPDATE_BRANCH` or `stable`) and tags
 `localhost/hopper`). A bare `docker build .` cannot see the commit (`.dockerignore` leaves out `.git`): its
 install.json leaves the field out, never guessed. The check and the version history read an image's install.json as an
 install's. **Apply** refuses an image: its files are not the hopper's to swap, and it is replaced by pulling or
-rebuilding it, so the UI offers no Update now and the headline says to pull or rebuild. A build whose install.json
+rebuilding it, so the UI offers no Update now. A build whose install.json
 lacks a field → `unavailable`, the reason naming the missing field.
+
+**A container install is updated by its user (issue #494).** Auto-update does not apply to an image: the
+updater reports `autoUpdate: false` for it whatever is stored, so a check never applies; a settings patch turning
+it on is ignored, not stored; the UI shows no Auto-update switch, only the one-line reason. The update notice and
+Settings → Version give the commands instead (`imageUpdate`, `ui/src/model/update.ts`): `HOPPER_IMAGE=` the
+selected channel's tag in `.env` (the image tag is the channel; `latest` is `stable`), pull and recreate the
+`hopper` service alone (`--no-deps`, so Postgres and the volumes are untouched; `--force-recreate`, which
+podman-compose needs to take a newly pulled image), and the optional prune — for Podman and Docker. When the
+running image's branch is not the selected channel, pulling the same tag can never clear the notice, so it says
+to switch the image tag. `UpdateStatus.restartBlockers` is the restart-blocker count now, the one an apply waits
+on; the notice shows it, and asks to wait until it is zero.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and
@@ -5640,7 +5651,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 **compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
-`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
+`HOPPER_IMAGE=localhost/hopper`. Upgrade (since issue #494: `podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper`, then `podman image prune -f --filter label=org.opencontainers.image.title=hopper`; "Self-update" above) — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
 still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to

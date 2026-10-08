@@ -57,7 +57,8 @@ host install, no build, nothing to set before the first start. The hopper is the
 `ghcr.io/henningfutrell/hopper` (`latest` follows `stable`; `dev`, `beta` and `stable` follow the branch of
 that name; `sha-<commit>` pins one build; Intel/AMD and ARM), built and pushed by `.github/workflows/image.yml`
 on every change to those three branches ("Update channels and promotion" below). The install page serves the
-compose file. To run another channel, set `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev` (or `:beta`) in `.env`.
+compose file. The update channel is the image tag: to run another channel, set `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev`
+(or `:beta`, `:stable`) in `.env` ("Upgrade" below).
 
 Needs Podman 4.7 or later with a compose provider: `podman compose` runs `docker-compose` or
 `podman-compose`, whichever is installed (Debian/Ubuntu: `sudo apt install podman podman-compose`;
@@ -109,10 +110,33 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it
   starts every container whose restart policy is `always` or `unless-stopped`) and
   `sudo loginctl enable-linger "$USER"`, once.
-- **Upgrade:** `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` (self-update does not apply to a
-  container). The prune removes the image the upgrade replaced, and only untagged hopper images, so
-  repeated upgrades do not pile up images. It recreates the hopper's container, so it ends the running jobs' panes: upgrade when none
-  runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
+- **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
+  Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
+  server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
+  and Settings → Version give these commands with the selected channel's tag.
+  - **The channel is the image tag.** `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel>` in `.env` beside
+    `compose.yaml`, where `<channel>` is the channel picked in Settings → Version: `dev`, `beta` or `stable`.
+    Unset, it is `:latest`, the same image as `:stable`. A container on `:latest` with the channel set to `dev`
+    never reaches `dev`'s head by pulling, so the notice says "this container runs the `stable` image; the
+    selected channel is `dev`: switch the image tag". **Switch channels** by changing `HOPPER_IMAGE` and running
+    the commands below; pick the same channel in Settings → Version.
+  - **Pull and recreate the hopper's container alone**, in the folder that holds `compose.yaml`. Postgres and
+    every volume stay as they are:
+
+    ```sh
+    podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper   # Podman
+    docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper   # Docker
+    ```
+
+    `--force-recreate`: podman-compose keeps the old container on a newly pulled image without it.
+  - **Optionally, remove the image it replaced:** `podman image prune -f --filter label=org.opencontainers.image.title=hopper`
+    (`docker image prune …` the same). It removes only untagged hopper images, so repeated upgrades do not
+    pile up images.
+  - **When.** Recreating the container is a restart. A job whose machine reattaches (a herdr pane on an
+    attached machine) keeps running through restart recovery (issue #368); a job a restart would lose (a
+    restart blocker) ends. The notice shows how many there are, the same count the host updater waits on:
+    wait until it is zero.
+  - A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
 - **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
 - **An image from a checkout:** `bash scripts/build-image.sh` (Docker, else Podman; `HOPPER_BUILDER` picks one),
   then `HOPPER_IMAGE=localhost/hopper` in `.env`. It builds `localhost/hopper` with the checkout's repository,
@@ -358,7 +382,9 @@ its `compose.yaml` from `stable` only.
 
 A hopper picks its channel in Settings → Version (dev, beta, stable); it takes effect without a restart.
 An install from `scripts/install.sh` or the curl install starts on the branch it was installed from
-(`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by pulling the tag of its channel.
+(`HOPPER_SOURCE_REF`, default `stable`). An image is replaced by its user pulling the tag of its channel
+(`HOPPER_IMAGE`, "In containers, with Podman", "Upgrade"): the channel picked in Settings → Version only
+decides what the update check compares against.
 
 **From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
 is set to `stable` when it starts on a version with these channels (store migration 26). Once that version

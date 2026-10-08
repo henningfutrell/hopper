@@ -2,8 +2,10 @@
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
+// A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag.
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -13,7 +15,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { CHANNELS, headline, showNotice } from '@/model/update';
+import { CHANNELS, headline, imageUpdate, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
@@ -65,6 +67,37 @@ function ApplyButton({ s }: { s: UpdateStatus }) {
   );
 }
 
+function Command({ text }: { text: string }) {
+  const copy = () => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
+  return (
+    <div className="flex items-start gap-2">
+      <pre className="min-w-0 flex-1 overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{text}</pre>
+      <Button variant="outline" size="xs" onClick={() => void copy()}>Copy</Button>
+    </div>
+  );
+}
+
+/** How to update a container install: the channel's tag in .env, pull and recreate the hopper's container, prune; and what a recreate would end now. */
+function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
+  const u = imageUpdate(s);
+  if (!u) return null;
+  return (
+    <div data-slot="image-update" className="space-y-2 text-xs">
+      {u.mismatch && <p className={TEXT.warn}>{u.mismatch}.</p>}
+      <p>In the folder that holds <code>compose.yaml</code>, set the {s.channel} channel's image in <code>.env</code> beside it{s.channel === 'stable' && <> (<code>latest</code> is the same image)</>}:</p>
+      <Command text={u.env} />
+      {u.commands.map((c) => (
+        <div key={c.tool} className="space-y-1">
+          <p className="text-muted-foreground">{c.tool}: pull the image and recreate the hopper's container (Postgres and the volumes stay as they are); then, optionally, remove the image it replaced.</p>
+          <Command text={c.update} />
+          <Command text={c.prune} />
+        </div>
+      ))}
+      <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>
+    </div>
+  );
+}
+
 export function UpdateNotice() {
   const s = useHopper((st) => st.update);
   const dismissed = useDismissed();
@@ -86,6 +119,7 @@ export function UpdateNotice() {
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss: hide here, in this browser; the header version still shows the update"
           className="text-muted-foreground" onClick={() => dismissNotice(noticeKey.update(s))}><X /></Button>
       </div>
+      {imageUpdate(s) && <div className="pt-2"><ImageUpdateSteps s={s} /></div>}
       <CollapsibleContent className="pt-2"><WhatsNew lines={s.whatsNew} /></CollapsibleContent>
     </Collapsible>
   );
@@ -115,7 +149,9 @@ export function VersionDetails({ className }: { className?: string }) {
         <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
       </dl>
       {s.state === 'applying' && s.apply && <p className={cn('text-xs', TEXT.warn)}>{s.apply.detail}</p>}
-      {s.installed?.kind === 'image' && <p className="text-xs text-muted-foreground">Runs from a container image: pull or rebuild the image to update it; it is never updated in place.</p>}
+      {s.installed?.kind === 'image' && (imageUpdate(s)
+        ? <ImageUpdateSteps s={s} />
+        : <p className="text-xs text-muted-foreground">Runs from a container image: you update it by pulling the image of its channel; the hopper never updates it in place.</p>)}
       {(s.state === 'error' || s.state === 'unavailable') && s.reason && <p className={cn('text-xs break-words', s.state === 'error' ? TEXT.bad : TEXT.muted)}>{s.reason}</p>}
       <div className="flex flex-wrap items-center gap-2">
         <ApplyButton s={s} />
@@ -124,11 +160,15 @@ export function VersionDetails({ className }: { className?: string }) {
         </Button>
       </div>
       <div className="space-y-2 border-t pt-3">
-        <label className="flex items-center justify-between gap-3 text-xs">
-          <span>Auto-update<span className="block text-muted-foreground">Apply an update as soon as a check finds it.</span></span>
-          <Switch aria-label="Auto-update" checked={s.autoUpdate} disabled={!authed}
-            onCheckedChange={(autoUpdate) => void updateAct({ action: 'settings', autoUpdate }, autoUpdate ? 'Auto-update on' : 'Auto-update off')} />
-        </label>
+        {s.installed?.kind === 'image'
+          ? <p data-slot="auto-update-image" className="text-xs text-muted-foreground">Auto-update does not apply to a container: you update it by pulling its image.</p>
+          : (
+            <label className="flex items-center justify-between gap-3 text-xs">
+              <span>Auto-update<span className="block text-muted-foreground">Apply an update as soon as a check finds it.</span></span>
+              <Switch aria-label="Auto-update" checked={s.autoUpdate} disabled={!authed}
+                onCheckedChange={(autoUpdate) => void updateAct({ action: 'settings', autoUpdate }, autoUpdate ? 'Auto-update on' : 'Auto-update off')} />
+            </label>
+          )}
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
           <span>Channel<span className="block text-muted-foreground">{CHANNELS.find((c) => c.channel === s.channel)?.hint}</span></span>
           <div data-slot="update-channels" className="flex gap-1">

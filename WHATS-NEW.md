@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A hopper running in a container no longer offers to update itself: when an update is out, it shows the exact commands to pull the image of your channel and restart on it, says when your container runs another channel's image, and how many running jobs a restart would end.
 - A job that waits on work it left running in the background is no longer prompted again and again: the hopper lets it wait until that work wakes it. A job that keeps ending without a marker is reminded less and less often, then shows as waiting.
 - Every question now says which machine asked it, in Questions, the question history, events and notifications, even after the job moves on or the machine is renamed.
 - A webhook's signing secret is now set in Settings → Webhooks: type in the receiver's, or let the hopper make one and copy it once. The hopper keeps it locked in its database and never shows it again; Replace secret and Rotate secret change it, and the next delivery uses the new one. Webhooks added before keep working as they are until you replace their secret.

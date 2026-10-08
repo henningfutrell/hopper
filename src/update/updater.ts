@@ -111,7 +111,13 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
 
   const settings = (): UpdateSettings => {
     const read = readInstallInfo(o.appDir);
-    return { ...defaults(read.ok ? read.info : undefined), ...o.settings.getUpdateSettings() };
+    const s = { ...defaults(read.ok ? read.info : undefined), ...o.settings.getUpdateSettings() };
+    // An image is updated by its user, never by the hopper (issues #51, #494): a stored auto-update is off for it.
+    return read.ok && read.info.kind === 'image' ? { ...s, autoUpdate: false } : s;
+  };
+  const isImage = (): boolean => {
+    const read = readInstallInfo(o.appDir);
+    return read.ok && read.info.kind === 'image';
   };
   const append = (type: 'update.available' | 'update.started' | 'update.applied' | 'update.failed', data: Record<string, unknown>): void => {
     if (!stopped) o.events.append({ type, data });
@@ -123,7 +129,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
 
   function status(): UpdateStatus {
     const { commits: _commits, ...rest } = checked;
-    const base = { ...settings(), ...rest, installedWhatsNew: installedNews };
+    const base = { ...settings(), ...rest, installedWhatsNew: installedNews, restartBlockers: o.restartBlockers() };
     if (applying) return { ...base, state: 'applying', apply: applying };
     if (applyError) return { ...base, state: 'error', reason: applyError };
     return base;
@@ -275,7 +281,9 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     history: versionHistory,
     settings(patch) {
       const before = settings();
-      o.settings.setUpdateSettings(patch);
+      // Auto-update does not apply to an image (issue #494): turning it on there is ignored, never stored.
+      const { autoUpdate: _, ...rest } = patch;
+      o.settings.setUpdateSettings(isImage() ? rest : patch);
       const after = settings();
       // A check already running may have read the old channel: check again once it is done.
       if (after.channel !== before.channel) void (checking ?? Promise.resolve()).catch(() => {}).then(() => check()).catch(() => {});

@@ -43,7 +43,7 @@ export interface UpdateApply {
 
 export interface UpdateSettings {
   channel: UpdateChannel;
-  /** Apply an available update as soon as a check finds it. */
+  /** Apply an available update as soon as a check finds it. Always off for an image (issue #494): its user updates it. */
   autoUpdate: boolean;
 }
 
@@ -78,4 +78,6 @@ export interface UpdateStatus extends UpdateSettings {
   installedWhatsNew: string[];
   checkedAt?: string;
   apply?: UpdateApply;
+  /** How many running jobs, of every user, a restart would lose now: what an apply waits on, and what recreating an image's container would end (issue #494). */
+  restartBlockers: number;
 }
