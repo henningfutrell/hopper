@@ -3,6 +3,9 @@
 
 export const CHROME = ['─'.repeat(40), '❯ ', '─'.repeat(40), '  ⏵⏵ bypass permissions on (shift+tab to cycle)'];
 
+/** The footer while background work runs (issue #491), as captured live: "⏵⏵ bypass permissions on · 1 shell · ← for agents · ↓ to manage". */
+export const backgroundFooter = (work: string): string => `  ⏵⏵ bypass permissions on · ${work} · ← for agents · ↓ to manage`;
+
 export function wrap(text: string, width: number): string[] {
   const out: string[] = [];
   text.split('\n').forEach((para, i) => {

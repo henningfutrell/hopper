@@ -5,6 +5,7 @@ import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from
 import type { Job, LaneId } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
+import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
@@ -48,7 +49,7 @@ export interface HerdrClaudeExecutorOptions {
   /** A job worktree's node_modules linked to dependencies shared with the repository's other jobs (issue #410). Default false. */
   sharedDependencies?: boolean;
   pollMs: number;
-  /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
+  /** Idle without a marker this long, a turn is a status note and the agent is nudged; further ones in a row wait NUDGE_GAPS_MS. */
   idleNudgeMs: number;
   /** Set on the tab of a job in this machine's herdr: the user's CLI config dirs (issue #158). Default none. */
   paneEnv?: Readonly<Record<string, string>>;
@@ -178,8 +179,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
   }
 
-  /** Status notes so far in a row, and when the turn they belong to began; lost sends of the text in flight. */
-  interface Notes { count: number; startedAt: number; lost?: number }
+  /**
+   * Nudges so far in a row, and when the turn they belong to began; lost sends of the text in flight; `quiet`
+   * once the nudges stopped (issue #491), until Claude works again by itself.
+   */
+  interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean }
 
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string, notes?: Notes): Promise<ExecutionOutcome | Interrupt> {
     const herdr = herdrOn(s);
@@ -207,7 +211,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    */
   async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
-      herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs * 2 ** notes.count, ctx, agentName: s.agentName,
+      herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
       parked: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
@@ -235,7 +239,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return watch(ctx, s, p, next, again);
     }
     if (!('statusNote' in result)) return result;
-    return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { count: notes.count + 1, startedAt: notes.startedAt });
+    const next = afterStatusNote(notes);
+    if ('spent' in next) { ctx.progress(0, next.spent); return watch(ctx, s, p, turn, { count: notes.count, startedAt: notes.startedAt, quiet: true }); }
+    return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { count: next.nudges, startedAt: notes.startedAt });
   }
 
   /** The saved pane, with its turn, when Claude still runs in that pane. */

@@ -778,7 +778,8 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
-| idle/done with no marker after the anchor for `idleNudgeMs` (20000) | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again; each further status note in a row waits twice as long before its nudge |
+| idle/done with no marker after the anchor for `idleNudgeMs` (20000), and no background work in the footer | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again. Further status notes in a row wait 1, 5, 15 and 30 minutes idle before their nudge (`NUDGE_GAPS_MS`, `nudge.ts`, issue #491); the one after that gets none: progress `waiting: N status notes in a row without a marker; no more nudges until claude works again`, and the watch goes on until Claude works again by itself (a background notification, a person in its pane), which begins a new row, or `timeoutMs` |
+| idle/done with no marker, and the footer under the input box names background work (`backgroundWork`, `screen.ts`: `· 1 shell ·`, `background task`, `monitor`, `agent`) | no status note, no nudge (issue #491): Claude Code wakes the job when that work ends. Progress once: `waiting on background work (1 shell): no nudge while it runs`. When the footer no longer names it and Claude stays idle, the status note timer starts |
 | stalled, and the anchor nowhere on screen or text unsent in the input box | **lost send** (issue #278): what was sent never reached Claude (seen live: Claude sat idle, the job running, across daemon restarts; once the pasted prompt sat in the input box as `[Pasted text #1 +29 lines]`, its Enter lost). Text in the input box (`inputBoxText`, a `Try "…"` suggestion aside) is submitted with `enter`, progress `the prompt sat unsent in claude's input: submitted it`, never pasted twice; else the executor sends the same text again (`turn.text`, saved with the turn), progress `the prompt never reached claude: sent it again`; after 3 sends in all, or for a turn saved without its text, `failed` `the prompt never reached claude …` with the screen |
 | stalled at a dialog (a picked option that never landed) | `question`, `detectedBy: blocked`, as above |
 | agent gone (`agent get` error / pane closed) | `failed`, `claude exited` + last output |
@@ -1002,8 +1003,10 @@ or Claude's own dialog (`blocked`). A turn that ends without a marker is a statu
 It opens no question, fires no `question.*` event or webhook, and holds nothing: its last line is
 already the job's progress, and the executor nudges the agent (`STATUS_NOTE_NUDGE`, `screen.ts`):
 go on; ask with the marker if an answer is needed; end with `HOPPER_DONE` or `HOPPER_FAILED`. An
-agent that asked in prose asks again with the marker. herdr-claude nudges after `idleNudgeMs`,
-doubling per status note in a row, until the turn's `timeoutMs`; cursor-agent resumes its chat
+agent that asked in prose asks again with the marker. herdr-claude nudges after `idleNudgeMs`, then
+after 1, 5, 15 and 30 minutes for further status notes in a row, then no more until Claude works again
+by itself, and never while its footer names background work (issue #491: each nudge is a paid turn,
+and one job waiting on a background poll got six in minutes); cursor-agent resumes its chat
 with the nudge, at most three times in a row, then fails the job (a print-mode turn never waits on
 background work). Questions stored before keep `detectedBy: idle`; no new one carries it.
 

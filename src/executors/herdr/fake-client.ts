@@ -7,7 +7,7 @@ import { HerdrError } from './client.ts';
 import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
-import { CHROME, WINDOWS_SHELLS, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
+import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
 
 export interface FakeTurn {
   /** Lines appended while working, one per poll. */
@@ -23,6 +23,12 @@ export interface FakeTurn {
    * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
    */
   hiddenUntilScrolled?: boolean;
+  /**
+   * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
+   * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
+   * turn by itself, unless `wakes` is false.
+   */
+  background?: { work: string; polls: number; wakes?: boolean };
 }
 
 export { CTRL_END };
@@ -106,6 +112,8 @@ interface Pane {
   dialogLines?: number;
   /** The shell runs in the job's scope (issue #410). */
   scoped?: boolean;
+  /** Background work the last turn started, still running (FakeTurn.background). */
+  background?: { work: string; polls: number; wakes?: boolean };
 }
 
 export interface FakeHerdrClient extends HerdrClient {
@@ -126,6 +134,8 @@ export interface FakeHerdrClient extends HerdrClient {
   lapseDialog(name: string): void;
   /** Claude disappears from its pane (crashed, closed by hand). */
   killAgent(name: string): void;
+  /** Claude goes on with the next scripted turn by itself, nothing sent: a background notification, or a person typing in its pane. */
+  wake(name: string): void;
   /** The next call of `method` rejects with a HerdrError of this code. */
   failNext(method: keyof HerdrClient, code: string): void;
   /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
@@ -168,15 +178,26 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const closeDialog = (p: Pane): void => { if (p.dialogLines) p.lines.splice(-p.dialogLines); p.dialogLines = undefined; };
   const exit = (p: Pane): void => { p.agent = undefined; p.status = 'unknown'; p.lines.push('$ '); };
 
-  const submit = (p: Pane, text: string): void => {
-    p.input = undefined;
-    p.lines.push(...wrap(text, width));
+  /** Claude goes on with the next scripted turn. */
+  const wake = (p: Pane): void => {
     p.turn = turns.shift() ?? { output: [] };
     p.step = 0;
     settle(p, 'working');
   };
 
+  const submit = (p: Pane, text: string): void => {
+    p.input = undefined;
+    p.lines.push(...wrap(text, width));
+    wake(p);
+  };
+
   const advance = (p: Pane): void => {
+    if (p.background && p.status === 'idle' && --p.background.polls <= 0) {
+      const { wakes } = p.background;
+      p.background = undefined;
+      if (wakes !== false) wake(p);
+      return;
+    }
     if (p.status !== 'working' || !p.turn) return;
     const t = p.turn;
     if (t.end === 'working') return;
@@ -187,6 +208,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     if (t.hiddenUntilScrolled) p.hidden = [...t.output, '✻ Cooked for 1s'];
     else p.lines.push(...t.output, '✻ Cooked for 1s');
     p.turn = undefined;
+    if (t.background) p.background = { ...t.background };
     if (t.end === 'blocked' && t.dialog) { p.lines.push(...t.dialog); p.dialogLines = t.dialog.length; }
     if (t.end === 'exit') exit(p);
     else settle(p, t.end === 'blocked' ? 'blocked' : 'idle');
@@ -198,21 +220,21 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     addTurns: (...more) => { turns.push(...more); },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
+    wake(name) { const p = byAgent(name); if (p) wake(p); },
     lapseDialog(name) {
       const p = byAgent(name);
       if (!p || p.status !== 'blocked') return;
       closeDialog(p);
       p.lines.push('  ⎿  Denied: no response within 2 minutes');
-      p.turn = turns.shift() ?? { output: [] };
-      p.step = 0;
-      settle(p, 'working');
+      wake(p);
     },
     failNext(method, code) { failures.set(method, code); },
     setUnreachable(on) { unreachable = on; },
     screen: (id) => {
       const p = panes.get(id);
       const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];
-      const chrome = p?.input === undefined ? CHROME : [CHROME[0]!, `❯ [Pasted text #1 +${p.input.split('\n').length - 1} lines]`, ...CHROME.slice(2)];
+      const box = p?.input === undefined ? CHROME.slice(0, 3) : [CHROME[0]!, `❯ [Pasted text #1 +${p.input.split('\n').length - 1} lines]`, CHROME[2]!];
+      const chrome = [...box, p?.background ? backgroundFooter(p.background.work) : CHROME[3]!];
       return [...(p?.lines ?? []), ...indicator, ...chrome].join('\n');
     },
 
@@ -286,9 +308,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       // A digit at a dialog picks that option: Claude goes on with the next scripted turn.
       if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none' && droppedPicks-- <= 0) {
         closeDialog(p);
-        p.turn = turns.shift() ?? { output: [] };
-        p.step = 0;
-        settle(p, 'working');
+        wake(p);
       }
     },
     async sendKeys(paneId, keys) {

@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that waits on work it left running in the background is no longer prompted again and again: the hopper lets it wait until that work wakes it. A job that keeps ending without a marker is reminded less and less often, then shows as waiting.
 - Every question now says which machine asked it, in Questions, the question history, events and notifications, even after the job moves on or the machine is renamed.
 - A webhook's signing secret is now set in Settings → Webhooks: type in the receiver's, or let the hopper make one and copy it once. The hopper keeps it locked in its database and never shows it again; Replace secret and Rotate secret change it, and the next delivery uses the new one. Webhooks added before keep working as they are until you replace their secret.
 - Each machine now has its own work folder, set when you edit it in the Machines view. The hopper makes the folder and fetches or clones each job's repository into it, so a new machine or a fresh agent box needs no setup by hand. A job is never sent to a machine whose folder cannot be used: it waits for one that can, and the Machines view says why.
