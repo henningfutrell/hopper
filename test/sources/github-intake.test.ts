@@ -204,3 +204,19 @@ describe('repos outside the job repositories (issue #440)', () => {
     expect(source.describe().outsideRepos).toEqual([{ repo: 'owner/elsewhere', items: [url(1, 'owner/elsewhere')] }]);
   });
 });
+
+describe('the intake migration on an unassigned issue with a stale claim (issue #440)', () => {
+  it('releases the claim though the issue is not assigned; it keeps its reason, and is taken once assigned', async () => {
+    const { gh, source, migration } = setup();
+    gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper', 'hopper:claimed'] });
+    expect(await source.discover()).toEqual([]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+    expect(reasons(source)).toEqual({ [url(1)]: 'not assigned to you' });
+    expect(migration()?.changes).toEqual([
+      { key: url(1), change: 'released a claim with no holder recorded and no job in this hopper' },
+      { key: url(1), change: 'not assigned to you: assign it to you to take it' },
+    ]);
+    gh.assign(REPO, 1, 'owner');
+    expect((await source.discover()).map((i) => i.number)).toEqual([1]);
+  });
+});
