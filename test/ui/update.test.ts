@@ -1,7 +1,7 @@
 // The update notice's words and links (issue #44): pure, from GET /api/update.
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { CHANNELS, channelBadge, headline, imageUpdate, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
+import { CHANNELS, channelBadge, headline, imageUpdate, parseContainerTool, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -42,6 +42,13 @@ describe('update model', () => {
         expect(u.mismatch).toBeUndefined();
       });
     }
+
+    it('the container tool a browser remembers: Podman, unless it chose Docker (issue #521)', () => {
+      expect(parseContainerTool(null)).toBe('Podman');
+      expect(parseContainerTool('Docker')).toBe('Docker');
+      expect(parseContainerTool('Podman')).toBe('Podman');
+      expect(parseContainerTool('nerdctl')).toBe('Podman');
+    });
 
     it('says so plainly when the running image is not the selected channel\'s', () => {
       const s = image('dev', 'stable');

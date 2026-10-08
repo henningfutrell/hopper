@@ -3,20 +3,21 @@
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 // A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag.
+// The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the commands are one container tool's, the one this browser chose last.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Dot, TEXT, type Tone } from '@/components/status';
+import { setContainerTool, useContainerTool } from '@/hooks/use-container-tool';
 import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { CHANNELS, channelBadge, headline, imageUpdate, showNotice } from '@/model/update';
+import { CHANNELS, CONTAINER_TOOLS, channelBadge, headline, imageUpdate, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
@@ -78,51 +79,65 @@ function Command({ text }: { text: string }) {
   );
 }
 
-/** How to update a container install: the channel's tag in .env, pull and recreate the hopper's container, prune; and what a recreate would end now. */
+/** How to update a container install: the channel's tag in .env, pull and recreate the hopper's container, prune — for the chosen container tool; and what a recreate would end now. */
 function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
+  const tool = useContainerTool();
   const u = imageUpdate(s);
   if (!u) return null;
+  const c = u.commands.find((x) => x.tool === tool) ?? u.commands[0]!;
   return (
     <div data-slot="image-update" className="space-y-2 text-xs">
       {u.mismatch && <p className={TEXT.warn}>{u.mismatch}.</p>}
       <p>In the folder that holds <code>compose.yaml</code>, set the {s.channel} channel's image in <code>.env</code> beside it{s.channel === 'stable' && <> (<code>latest</code> is the same image)</>}:</p>
       <Command text={u.env} />
-      {u.commands.map((c) => (
-        <div key={c.tool} className="space-y-1">
-          <p className="text-muted-foreground">{c.tool}: pull the image and recreate the hopper's container (Postgres and the volumes stay as they are); then, optionally, remove the image it replaced.</p>
-          <Command text={c.update} />
-          <Command text={c.prune} />
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 text-muted-foreground">Pull the image and recreate the hopper's container (Postgres and the volumes stay as they are); then, optionally, remove the image it replaced.</p>
+        <div data-slot="container-tool" className="flex gap-1">
+          {CONTAINER_TOOLS.map((t) => (
+            <Button key={t} data-tool={t} size="xs" variant={t === tool ? 'secondary' : 'ghost'} aria-pressed={t === tool} onClick={() => setContainerTool(t)}>{t}</Button>
+          ))}
         </div>
-      ))}
+      </div>
+      <Command text={c.update} />
+      <Command text={c.prune} />
       <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>
     </div>
+  );
+}
+
+/** What opens below the notice's line: one at a time. */
+type Panel = 'news' | 'steps';
+
+function PanelToggle({ panel, open, onOpen, children }: { panel: Panel; open: Panel | null; onOpen: (p: Panel | null) => void; children: string }) {
+  return (
+    <Button variant="ghost" size="xs" aria-expanded={open === panel} onClick={() => onOpen(open === panel ? null : panel)}>
+      {children}<ChevronDown className={cn('transition-transform', open === panel && 'rotate-180')} />
+    </Button>
   );
 }
 
 export function UpdateNotice() {
   const s = useHopper((st) => st.update);
   const dismissed = useDismissed();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<Panel | null>(null);
   if (!s || !showNotice(s) || dismissed.includes(noticeKey.update(s))) return null;
   const tone = TONE[s.state];
+  const image = imageUpdate(s) !== undefined;
   return (
-    <Collapsible open={open} onOpenChange={setOpen} data-update-notice
-      className={cn('rounded-lg border px-3 py-2 text-sm', tone === 'bad' ? 'border-bad/40 bg-bad/5' : tone === 'warn' ? 'border-warn/40 bg-warn/5' : 'border-busy/40 bg-busy/5')}>
+    <div data-update-notice
+      className={cn('rounded-lg border px-3 py-1.5 text-sm', tone === 'bad' ? 'border-bad/40 bg-bad/5' : tone === 'warn' ? 'border-warn/40 bg-warn/5' : 'border-busy/40 bg-busy/5')}>
       <div className="flex flex-wrap items-center gap-2">
         <Dot tone={tone} pulse={s.state === 'applying'} />
         <span className={cn('min-w-0 flex-1 truncate font-medium', TEXT[tone])} title={headline(s)}>{headline(s)}</span>
-        {s.whatsNew.length > 0 && (
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="xs">What's new<ChevronDown className={cn('transition-transform', open && 'rotate-180')} /></Button>
-          </CollapsibleTrigger>
-        )}
+        {s.whatsNew.length > 0 && <PanelToggle panel="news" open={open} onOpen={setOpen}>What's new</PanelToggle>}
+        {image && <PanelToggle panel="steps" open={open} onOpen={setOpen}>How to update</PanelToggle>}
         <ApplyButton s={s} />
         <Button variant="ghost" size="icon-xs" aria-label="Dismiss" title="Dismiss: hide here, in this browser; the header version still shows the update"
           className="text-muted-foreground" onClick={() => dismissNotice(noticeKey.update(s))}><X /></Button>
       </div>
-      {imageUpdate(s) && <div className="pt-2"><ImageUpdateSteps s={s} /></div>}
-      <CollapsibleContent className="pt-2"><WhatsNew lines={s.whatsNew} /></CollapsibleContent>
-    </Collapsible>
+      {open === 'news' && s.whatsNew.length > 0 && <div className="pt-2"><WhatsNew lines={s.whatsNew} /></div>}
+      {open === 'steps' && image && <div className="pt-2"><ImageUpdateSteps s={s} /></div>}
+    </div>
   );
 }
 
