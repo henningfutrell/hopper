@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The update notice on a container install is now a single line: open How to update for the steps, shown for Podman or Docker — whichever you picked last.
 - A failed job the hopper has stopped trying on now waits under Needs a person on the Failures page until you run it again or clear it, with its own count on the menu. It no longer slips out of sight when it ages out of the recent failures or is dismissed from the queue, and you can choose whether your webhooks are told when one arrives.
 - Your GitHub connection now stays alive when you run several hoppers or test copies on the same GitHub account: disconnecting or connecting again tidies away the old GitHub sign-in instead of leaving it to push out a working one, and a hopper given a new security key no longer asks you to connect GitHub again — it says to give it the key it had, and changing the key keeps the connection.
 - When your GitHub connection ends and you signed in with GitHub, the hopper signs you out instead of staying half-working: sign in with GitHub again and you are back on the page you were on, with GitHub connected.

@@ -14,18 +14,26 @@ export const CHANNELS: { channel: UpdateStatus['channel']; hint: string }[] = [
 export const IMAGE = 'ghcr.io/henningfutrell/hopper';
 const PRUNE = 'image prune -f --filter label=org.opencontainers.image.title=hopper';
 
+/** The container tools a container install's commands are given for (issue #494). */
+export const CONTAINER_TOOLS = ['Podman', 'Docker'] as const;
+export type ContainerTool = (typeof CONTAINER_TOOLS)[number];
+
+/** The container tool a browser remembers (issue #521): Podman, the one the docs lead with, until Docker is chosen. */
+export const parseContainerTool = (text: string | null): ContainerTool => (text === 'Docker' ? 'Docker' : 'Podman');
+
 /** How the user updates a container install (issue #494): run from the folder that holds compose.yaml, with `env` in `.env` beside it. */
 export interface ImageUpdate {
   /** The `.env` line that names the selected channel's tag. */
   env: string;
   /** Pull, then recreate the hopper's container alone (never Postgres, never a volume); then the optional prune of the replaced image. */
-  commands: { tool: 'Podman' | 'Docker'; update: string; prune: string }[];
+  commands: { tool: ContainerTool; update: string; prune: string }[];
   /** Set when the running image is another channel's than the selected one. */
   mismatch?: string;
   /** What a recreate would end now: the restart blockers, as the host updater waits on them. */
   blockers: string;
 }
 
+const cli = (tool: ContainerTool) => tool.toLowerCase();
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -56,10 +64,10 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   return {
     env: `HOPPER_IMAGE=${IMAGE}:${s.channel}`,
     // --force-recreate: podman-compose keeps the old container on a newly pulled image without it.
-    commands: (['podman', 'docker'] as const).map((cli) => ({
-      tool: cli === 'podman' ? 'Podman' : 'Docker',
-      update: `${cli} compose pull hopper && ${cli} compose up -d --force-recreate --no-deps hopper`,
-      prune: `${cli} ${PRUNE}`,
+    commands: CONTAINER_TOOLS.map((tool) => ({
+      tool,
+      update: `${cli(tool)} compose pull hopper && ${cli(tool)} compose up -d --force-recreate --no-deps hopper`,
+      prune: `${cli(tool)} ${PRUNE}`,
     })),
     mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,
     blockers: n > 0

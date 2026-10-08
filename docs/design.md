@@ -5465,10 +5465,17 @@ it on is ignored, not stored; the UI shows no Auto-update switch, only the one-l
 Settings → Version give the commands instead (`imageUpdate`, `ui/src/model/update.ts`): `HOPPER_IMAGE=` the
 selected channel's tag in `.env` (the image tag is the channel; `latest` is `stable`), pull and recreate the
 `hopper` service alone (`--no-deps`, so Postgres and the volumes are untouched; `--force-recreate`, which
-podman-compose needs to take a newly pulled image), and the optional prune — for Podman and Docker. When the
-running image's branch is not the selected channel, pulling the same tag can never clear the notice, so it says
-to switch the image tag. `UpdateStatus.restartBlockers` is the restart-blocker count now, the one an apply waits
-on; the notice shows it, and asks to wait until it is zero.
+podman-compose needs to take a newly pulled image), and the optional prune — for one **container tool** at a
+time, Podman or Docker, the one this browser chose last (`localStorage` `jh_container_tool`, Podman until Docker
+is chosen; issue #521): the hopper cannot see which tool runs it from inside the container, so the viewer picks.
+When the running image's branch is not the selected channel, pulling the same tag can never clear the notice, so
+it says to switch the image tag. `UpdateStatus.restartBlockers` is the restart-blocker count now, the one an apply
+waits on; the commands show it, and ask to wait until it is zero.
+
+**The notice is one line (issue #521).** Above the overview it holds the headline, *What's new*, *How to update*
+(an image install) or *Update now* (an install), and Dismiss. What's new and How to update open below the line,
+one at a time and closed by default; the commands, the restart-blocker note and the tag mismatch live behind How
+to update, as they do in Settings → Version, never as a standing block.
 
 **Detecting.** A bare mirror at `<data dir>/update/repo.git`, fetched from install.json's `repo` on
 every check — the git CLI, never prompting (`GIT_TERMINAL_PROMPT=0`, ssh `BatchMode=yes`, and

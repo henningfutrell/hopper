@@ -192,21 +192,12 @@ describe('a container install is updated by its user (issue #494)', () => {
     const text = block.textContent ?? '';
     expect(text).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
     expect(text).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
-    expect(text).toContain('docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper');
     expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
     expect(text).toContain('2 running jobs would be lost');
-    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBeGreaterThanOrEqual(3);
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(3);
   });
 
-  it('the update notice gives the same commands and the restart-blocker count', async () => {
-    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: image });
-    const notice = document.querySelector('[data-update-notice]')!;
-    expect(notice.textContent).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
-    expect(notice.textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
-    expect(notice.textContent).toContain('2 running jobs would be lost');
-    expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
-  });
 });
 
 describe('the release notes in Version and updates (issue #493)', () => {
