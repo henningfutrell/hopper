@@ -1,7 +1,7 @@
 // The hopper screen protocol over a Claude Code pane: pure functions, no I/O.
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
-import { DEFAULT_JOB_RULES, PROTOCOL_LINES, workTreeRule } from '../../job-rules/index.ts';
+import { DEFAULT_JOB_RULES, PROTOCOL_LINES, jobWorktreeRule, workTreeRule } from '../../job-rules/index.ts';
 
 export { SCRATCH_DIR } from '../../job-rules/index.ts';
 
@@ -13,11 +13,12 @@ export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, 
 
 /**
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
- * its work tree, the protocol. The job rules are editable; the work tree and the protocol are not.
+ * its work tree (then its own git worktree of it, when it has one: issue #379), the protocol. The job rules
+ * are editable; the work tree and the protocol are not.
  */
-export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string): string {
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string): string {
   const rules = jobRules.trim();
-  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...PROTOCOL_LINES].join('\n');
+  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, cwd)] : []), ...PROTOCOL_LINES].join('\n');
 }
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
