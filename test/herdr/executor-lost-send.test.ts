@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { STATUS_NOTE_NUDGE, protocolFooter } from '../../src/executors/herdr/index.ts';
-import { CWD, contextFor, jobWith, setup, until } from './support.ts';
+import { CWD, JOB_ID, contextFor, jobWith, setup, until } from './support.ts';
 
 const DONE = { output: ['● Wrote hello.txt.', '  HOPPER_DONE'] };
 
@@ -10,7 +10,7 @@ describe('herdr-claude executor: lost sends', () => {
     const { herdr, clock, executor } = setup({ turns: [DONE], dropsPrompts: 1 }, { idleNudgeMs: 20000 });
     const { ctx, progress, saved } = contextFor(jobWith({ prompt: 'Write hello.txt' }));
     expect(await executor.run(ctx)).toEqual({ kind: 'finished', result: { summary: 'Wrote hello.txt.', paneId: 'w1:p1' } });
-    const sent = `Write hello.txt\n\n${protocolFooter(CWD)}`;
+    const sent = `Write hello.txt\n\n${protocolFooter(CWD, undefined, `${CWD}/.hopper-scratch/${JOB_ID}`)}`;
     expect(herdr.prompts.map((p) => p.text)).toEqual([sent, sent]);
     expect(clock.elapsed()).toBeGreaterThanOrEqual(20000);
     expect(clock.elapsed()).toBeLessThan(40000);

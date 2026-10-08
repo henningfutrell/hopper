@@ -13,7 +13,8 @@ export async function startDockerProxy(containers: string[]): Promise<DockerProx
   // Short: a unix socket path is capped at 108 bytes.
   const dir = mkdtempSync('/tmp/jh-dp-');
   chmodSync(dir, 0o700);
-  const name = `jh-test-proxy-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  // The pid last: a dead run's proxy is swept by name (support/sweep.ts).
+  const name = `jh-test-proxy-${Math.random().toString(36).slice(2, 8)}-${process.pid}`;
   const gid = execFileSync('stat', ['-c', '%g', '/var/run/docker.sock'], { encoding: 'utf8' }).trim();
   execFileSync('docker', [
     'run', '-d', '--rm', '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',

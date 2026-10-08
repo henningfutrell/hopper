@@ -36,6 +36,11 @@ describe('dismiss', () => {
 });
 
 describe('noticeKey', () => {
+  it('a machine\'s low disk is one occurrence per machine, not per byte (issue #401)', () => {
+    expect(noticeKey.disk('desk')).toBe(noticeKey.disk('desk'));
+    expect(noticeKey.disk('desk')).not.toBe(noticeKey.disk('laptop'));
+  });
+
   it('a source error is one occurrence per error text', () => {
     expect(noticeKey.source(source('gh', 'error', 'HTTP 401'))).not.toBe(noticeKey.source(source('gh', 'error', 'HTTP 500')));
   });
