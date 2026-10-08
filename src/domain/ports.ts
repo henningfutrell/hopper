@@ -1,6 +1,7 @@
 // Seams. Everything the engine talks to that is not pure domain logic sits behind one of
 // these. Adapters live in src/{executors,machines,usage,plugins,store,webhooks}.
 
+import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.ts';
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
@@ -499,6 +500,13 @@ export interface JobSource {
   closedAsComplete?(job: Job): Promise<boolean>;
   /** The variables the job's processes run with to act through the source's connection (ExecutionContext.credentials); absent: none. */
   credentials?(job: Job): Promise<Record<string, string>>;
+  /**
+   * What became of every open item the last discover listed (issue #440): taken, or the one reason it was not.
+   * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
+   */
+  intake?(): IntakeOutcome[];
+  /** The user's act on items the last discover listed (Assign to me, Release claim; issue #440). Throws SourceError. */
+  intakeAction?(action: IntakeAction): Promise<IntakeActionResult>;
 }
 
 export class SourceError extends Error {
@@ -557,7 +565,16 @@ export interface SourceRegistry {
    * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
   rerun(jobId: JobId): Promise<RerunResult>;
+  /**
+   * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
+   * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
+   */
+  intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
 }
+
+export type IntakeActionOutcome =
+  | { ok: true; result: IntakeActionResult }
+  | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
 export type RerunResult =
   | { ok: true; job: Job }

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "hopper",
+        "migration",
+        "user"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "key",
+    "by",
+    "reason"
+  ],
+  "additionalProperties": false
+}

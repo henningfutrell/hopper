@@ -8,6 +8,7 @@
 // hopper comments by their marker; `app` writes as the app bot, scans only the repos the app is
 // installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
 
+import type { IntakeAction, IntakeActionResult, IntakeChange, IntakeContext, IntakeOutcome, OutsideRepo } from '../../domain/intake.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -16,7 +17,8 @@ import { checkJobs } from './check.ts';
 import { closedAsComplete, completionOf, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
-import { discoverIssues, type Rejection } from './discover.ts';
+import { NOT_ASSIGNED, claimLabels, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
+import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { reportToGitHub, takeBack } from './report.ts';
@@ -54,7 +56,17 @@ export interface GitHubSourceOptions {
   paused?: () => string | undefined;
   /** App mode: slug/htmlUrl for the install link, or why the app is not usable. */
   appInfo?: () => GitHubAppInfo | undefined;
+  /** Claim holders, the intake migration and intake events (issue #440); absent: claims carry no holder and nothing is migrated. */
+  intake?: IntakeContext;
 }
+
+/** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
+export const OUTSIDE_EVERY_MS = 10 * 60_000;
+export const NOT_IN_SCOPE = 'not in this source\'s scope';
+export const MIGRATION_RELEASED = 'released a claim with no holder recorded and no job in this hopper';
+export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to take it';
+
+const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
 export const CONFIG_URL = 'https://github.com/settings/installations';
 export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
@@ -67,8 +79,12 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let repoErrors: Record<string, string> = {};
   let projectErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
-  let skippedClaimedWithoutJob: string[] = [];
-  let skippedRejected: string[] = [];
+  let outcomes: IntakeOutcome[] = [];
+  /** The labels of each issue the last discover listed, by URL: what a release removes. */
+  let listedLabels = new Map<string, string[]>();
+  let outsideRepos: OutsideRepo[] = [];
+  let outsideError: string | undefined;
+  let outsideAt: number | undefined;
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
   let nothingToScan = false;
@@ -139,9 +155,73 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     };
   };
 
+  /** The intake migration (issue #440): once, listing the claims it released and the issues not assigned to the user. */
+  const migrate = (intake: IntakeContext, released: string[]) => {
+    const changes: IntakeChange[] = [
+      ...released.map((key) => ({ key, change: MIGRATION_RELEASED })),
+      ...outcomes.filter((x) => x.reason === NOT_ASSIGNED).map((x) => ({ key: x.key, change: MIGRATION_UNASSIGNED })),
+    ];
+    intake.migrated({ at: o.clock.now().toISOString(), changes });
+    intake.record('source.intake_migrated', { source: o.name, changes });
+  };
+
+  /**
+   * Repos the account reaches outside the scope with open labelled issues for the user that would be taken there
+   * (issue #440): only suggested in Sources, never added. A connected account only (the app has no user), at most
+   * every OUTSIDE_EVERY_MS; with no scope at all, nothing is read.
+   */
+  const listOutside = async (repos: string[], assignee: string) => {
+    if (!api.listAssignedIssues || repos.length === 0) return;
+    const now = o.clock.now().getTime();
+    if (outsideAt !== undefined && now - outsideAt < OUTSIDE_EVERY_MS) return;
+    outsideAt = now;
+    try {
+      const inScope = new Set(repos.map((r) => r.toLowerCase()));
+      const byRepo = new Map<string, string[]>();
+      for (const i of await api.listAssignedIssues(config.label)) {
+        if (inScope.has(i.repo.toLowerCase()) || !isAssignedTo(i, assignee) || labelReason(i, config.hopperName)) continue;
+        byRepo.set(i.repo, [...(byRepo.get(i.repo) ?? []), i.url]);
+      }
+      outsideRepos = [...byRepo].map(([repo, items]) => ({ repo, items })).sort((a, b) => a.repo.localeCompare(b.repo));
+      outsideError = undefined;
+    } catch (err) {
+      outsideError = (err as Error).message;
+    }
+  };
+
+  /** Assign to me, or release a claim (issue #440): only on items the last discover offered it for. */
+  const act = async (a: IntakeAction): Promise<IntakeActionResult> => {
+    const offered = new Map(outcomes.map((x) => [x.key, x]));
+    const assignee = o.assignee();
+    const done: string[] = [];
+    const failed: Record<string, string> = {};
+    for (const key of [...new Set(a.keys)]) {
+      const x = offered.get(key);
+      if (!x?.repo) { failed[key] = NOT_IN_SCOPE; continue; }
+      if (x.action !== a.kind) { failed[key] = `not offered: ${x.reason ?? 'taken'}`; continue; }
+      try {
+        if (a.kind === 'assign') {
+          if (!assignee) throw new Error('no GitHub account connected');
+          await api.addAssignees(x.repo, numberOf(key), [assignee]);
+        } else {
+          const holders = (listedLabels.get(key) ?? []).filter((l) => l.startsWith(HOLDER_PREFIX));
+          await api.removeLabels(x.repo, numberOf(key), [LABEL_CLAIMED, ...holders]);
+          o.intake?.record('source.claim_released', { source: o.name, key, by: 'user', reason: 'released in Sources' });
+        }
+        done.push(key);
+      } catch (err) {
+        failed[key] = (err as Error).message;
+      }
+    }
+    if (a.kind === 'assign' && done.length > 0) o.intake?.record('source.issues_assigned', { source: o.name, keys: done, assignee });
+    return { done, failed };
+  };
+
   return {
     name: o.name,
     kind: o.kind ?? o.name,
+    intake: () => outcomes.map((x) => ({ ...x })),
+    intakeAction: act,
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -151,8 +231,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         account: account(paused, detail),
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, completion: config.completion, projectErrors,
-        ...(skippedClaimedWithoutJob.length ? { skippedClaimedWithoutJob } : {}),
-        ...(skippedRejected.length ? { skippedRejected } : {}),
+        ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
+        ...(outsideRepos.length ? { outsideRepos } : {}),
+        ...(outsideError ? { outsideError } : {}),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
@@ -165,18 +246,24 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       nothingToScan = app && repos.length === 0;
       if (nothingToScan || assignee === undefined) {
         repoErrors = {};
-        skippedClaimedWithoutJob = [];
-        skippedRejected = [];
+        outcomes = [];
+        listedLabels = new Map();
         projectErrors = {};
         lastDiscoverAt = o.clock.now().toISOString();
         return [];
       }
+      const intake = o.intake;
+      const migrating = intake !== undefined && intake.migration() === undefined;
       const found = await discoverIssues(api, config, {
         repos, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
+        ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
       });
       repoErrors = found.repoErrors;
-      skippedClaimedWithoutJob = found.skippedClaimedWithoutJob;
-      skippedRejected = found.skippedRejected;
+      outcomes = found.outcomes;
+      listedLabels = found.listed;
+      for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
+      if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key));
+      await listOutside(repos, assignee);
       const projects = await readProjects(api, config, found.issues);
       projectErrors = projects.errors;
       const urls = found.issues.map((i) => i.url);
@@ -195,10 +282,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return r.signals;
     },
     report(r) {
-      return reportToGitHub({ api, labelledRepos }, r);
+      return reportToGitHub({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, r);
     },
     async rerun(job) {
-      const issue = await takeBack({ api, labelledRepos }, config.label, job);
+      const issue = await takeBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job);
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
