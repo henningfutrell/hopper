@@ -129,10 +129,13 @@ describe('escalation levels in /api/plugins', () => {
     ]);
   });
 
-  it('a level that names no machine is shown unable to run, with the reason: this machine is no default (#174)', async () => {
+  it('a level that names no machine runs, and says which machine it uses: the only one there is (#442)', async () => {
     const a = await start({ plugins: { escalationLevels: [{ name: 'level-1', plugin: 'claude-cli', options: { bin: 'claude' } }] } });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.escalationLevels).toEqual([expect.objectContaining({ instance: expect.objectContaining({ name: 'level-1' }), detection: expect.objectContaining({ status: 'unavailable' }), active: null, reason: expect.stringContaining('machine') })]);
+    expect(body.escalationLevels).toEqual([expect.objectContaining({
+      instance: expect.objectContaining({ name: 'level-1' }), detection: expect.objectContaining({ status: 'available' }), active: 'claude-cli',
+      machine: { machine: 'local', needsMachine: false, note: 'names no machine: runs on local, the only machine that can run claude' },
+    })]);
   });
 
   it('escalationLevels: [] — no levels', async () => {
