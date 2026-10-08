@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A machine that is running out of disk space no longer takes new jobs: they go to another machine, or wait in the queue with the reason shown, until space is freed. Jobs already running there carry on. You choose per machine how little free space counts as running out.
 - A script or assistant working for you can now accept, reject or rerun jobs, order the queue, switch the queue gate, and answer, close or dismiss questions from the hopper command line, without signing in as you in a browser. It goes through the same checks and leaves the same history as doing it in the UI.
 - Claude jobs that run at the same time in one git repository no longer step on each other: each job gets its own copy of the repository, started from the latest default branch, and the lane shows where each job works. The copy is cleared away when the job ends, unless it holds work that was not pushed. You can turn this off per Claude executor.
 - The Grok Bot routine's setup on the Plugins page now names the exact settings your account needs.

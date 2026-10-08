@@ -19,6 +19,8 @@ interface AttachedBase {
   executors: string[];
   /** Its default work tree (issue #324); `~` is its home. Never on a container target. */
   workTree?: string;
+  /** When its disk is low (issue #410); absent fields take the defaults. Never on a container target. */
+  diskLow?: DiskThresholds;
 }
 
 export interface SshMachine extends AttachedBase {
@@ -138,5 +140,8 @@ export type MachineEditOutcome =
   | { ok: true; config: MachinesConfig }
   | { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 
-/** A machine's disk (issue #401): bytes free and in all, and whether that is low enough to warn (below a tenth or 5 GiB free). */
+/** A machine's disk (issue #401): bytes free and in all, and whether it is low by the machine's thresholds. */
 export type DiskReading = NonNullable<MachineSnapshot['disk']>;
+
+/** A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%. */
+export interface DiskThresholds { belowGiB?: number; belowPercent?: number }

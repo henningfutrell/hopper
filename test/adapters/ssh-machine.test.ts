@@ -46,7 +46,7 @@ describe('attached machine source', () => {
 
   it('judges its disk low by the machine\'s own thresholds, as they are at each list (issue #410)', async () => {
     const GIB = 1024 ** 3;
-    let belowGiB: number | undefined;
+    let belowGiB = 0;
     const src = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper', ...(belowGiB ? { diskLow: { belowGiB } } : {}) }),
       probe: async () => ({ online: true, disk: diskOf(30 * GIB, 100 * GIB) }),

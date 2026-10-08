@@ -2733,10 +2733,18 @@ carries it on its snapshot, `MachineSnapshot.disk` — `{ freeBytes, totalBytes,
 its home is on, where the jobs directory and the scratch dirs live. This machine's is read with
 `statfs` at every list; an ssh target's in its probe (`df -Pk "$HOME"`, before the home it prints); a
 client target's by its client, in its `/release` answer (a client older than this says none). A container
-target has none. It is **low** below a tenth free or below 5 GiB free, whichever comes first. The
+target has none. It is **low** below 5 GiB free or below a tenth free, whichever comes first — the
+machine's own thresholds (issue #410): the `local`, `ssh` and `client` machine-source options
+`diskLowBelowGiB` (default 5) and `diskLowBelowPercent` (default 10). The source judges each reading
+by the thresholds as they are at that list, so a change in Plugins applies at the next Decision. The
 Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
-Attention panel lists each machine running low, once per machine. Nothing is refused on a low disk:
-the reap ("Work tree") is what keeps it flat; this is the warning for what it cannot remove.
+Attention panel lists each machine running low, once per machine. **A machine whose disk is low takes no
+new job** (issue #410, the decider's `fits`, `src/decider/assign.ts`): a job goes to another machine
+that runs its executor; when none can take it for that reason alone, it is held with the reason
+`disk low on <machine> (<n> GiB free), …: no new job is claimed there` (pinned: `pinned machine <machine>
+disk low (…)`), which the queue shows under the job. A job resuming on the machine (an answered
+question) returns to its pane as before, and running jobs go on. The reap ("Work tree") is what keeps
+the disk flat; this keeps new work off a machine it could not keep flat.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
