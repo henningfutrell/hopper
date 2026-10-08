@@ -284,9 +284,9 @@ copy, and how to check it works:
 <p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
 
 <h2 id="upgrade">Upgrade</h2>
-<p><strong>With Podman:</strong> in the hopper's folder, download the newest image and restart on it. It keeps your
-settings, database and sign-ins. It ends the jobs running at the time, so upgrade when none runs.</p>
-<div class="cmd"><pre>podman compose pull &amp;&amp; podman compose up -d</pre><button type="button" data-copy="podman compose pull &amp;&amp; podman compose up -d">Copy</button></div>
+<p><strong>With Podman:</strong> in the hopper's folder, download the newest image, restart on it, and remove the image it
+replaced. It keeps your settings, database and sign-ins. It ends the jobs running at the time, so upgrade when none runs.</p>
+<div class="cmd"><pre>podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>

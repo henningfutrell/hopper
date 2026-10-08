@@ -1,21 +1,26 @@
 // The herdr-claude executor: one Claude Code job per herdr tab, driven through the screen
 // protocol. docs/design.md "Phase 2" → "herdr-claude executor".
 
-import type { Clock, ExecutionContext, ExecutionOutcome, Executor } from '../../domain/ports.ts';
+import type { Clock, ExecutionContext, ExecutionOutcome, Executor, Reaped } from '../../domain/ports.ts';
 import type { Job, LaneId } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
-import { removeJobWorktreeInPane } from './job-worktree.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
-import { openPane, startClaude } from './start.ts';
+import { readReap, reapCommand, REAP_DONE } from './reap.ts';
+import { jobScratchOf, openPane, startClaude } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 
 const UNBLOCK_POLLS = 10;
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
 const MAX_SENDS = 3;
+/** How long Claude has to exit before its pane closes; the reap is never typed into a Claude still up. */
+const EXIT_WAIT_MS = 5000;
+/** Tries at the reap, each waited on this long: a shell can drop what is typed, and stopping processes takes seconds. */
+const REAP_TRIES = 3;
+const REAP_WAIT_MS = 10000;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -31,7 +36,7 @@ export interface HerdrClaudeExecutorOptions {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted (issue #267): its warning is accepted at startup. Default false. */
   yolo?: boolean;
-  /** Each job its own git worktree of a work tree that is a git repository's top, removed at its end once pushed (issue #379). Default false. */
+  /** Each job its own git worktree of a work tree that is a git repository's top, in its scratch dir (issue #379). Default false. */
   jobWorktrees?: boolean;
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
@@ -56,8 +61,8 @@ const realSleep: Sleep = (ms, signal) => new Promise((resolve) => {
 
 const lastLineOf = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).at(-1) ?? text.trim();
 
-const heldOf = (s: PaneState): HeldPane => ({
-  paneId: s.paneId, ...(s.ssh ? { ssh: s.ssh } : {}), ...(s.session ? { session: s.session } : {}),
+const heldOf = (s: PaneState, jobId: string): HeldPane => ({
+  paneId: s.paneId, jobId, agentName: s.agentName, cwd: s.cwd, ...(s.ssh ? { ssh: s.ssh } : {}), ...(s.session ? { session: s.session } : {}),
   ...(s.client ? { client: { machine: s.client.machine } } : {}),
 });
 
@@ -76,18 +81,21 @@ export type RemoteHerdr = { ssh: string; session: string } | { client: ClientTar
 interface Where { ssh?: string; session?: string; client?: ClientTarget }
 
 /** A pane on one machine: pane ids are per herdr server, so two machines can share one. */
-interface HeldPane extends Where { paneId: string }
+interface PaneOn extends Where { paneId: string }
 
-/** A pane to release, with the job worktree in it when it has one (issue #379). */
-type Releasable = HeldPane & Partial<Pick<PaneState, 'agentName' | 'cwd' | 'jobWorktree'>>;
+/** A pane a lane holds, with the job it runs, for the reap. */
+interface HeldPane extends PaneOn { jobId: string; agentName: string; cwd: string }
 
-const samePane = (a: HeldPane, b: HeldPane): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
+
+const samePane = (a: PaneOn, b: PaneOn): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
   && (a.ssh !== undefined || a.client !== undefined || a.session === b.session);
 
 export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrClaudeExecutor {
   const { clock } = o;
   const sleep = o.sleep ?? realSleep;
   const lanes = new Map<LaneId, HeldPane>();
+  /** What the reap kept, by job, until cleanup answers it: a pane closed on cancel or timeout is reaped then. */
+  const reaped = new Map<string, Reaped>();
 
   /** The herdr a pane lives on: this machine's, or the attached machine's over ssh. */
   function herdrOn(p: Where): HerdrClient {
@@ -113,36 +121,47 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
-  function heldElsewhere(laneId: LaneId, pane: HeldPane): ExecutionOutcome | null {
+  function heldElsewhere(laneId: LaneId, pane: PaneOn): ExecutionOutcome | null {
     for (const [lane, held] of lanes) {
       if (samePane(held, pane) && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${pane.paneId} is already held by lane ${lane}` };
     }
     return null;
   }
 
-  /** Never aborted: releasing a pane runs to its end. */
-  const unaborted = new AbortController().signal;
-
   /**
-   * esc, ctrl+c twice, then the job worktree's removal in the pane's shell when it has one, close.
-   * Swallows every error: the pane may already be gone.
+   * The reap (issue #401, reap.ts) in the pane's shell, once Claude has exited: the job's processes
+   * stopped, its scratch dir removed unless it holds work not pushed. Undefined when Claude never exited
+   * (the reap is never typed into it) or the shell never finished it.
    */
-  async function exitAndClose(pane: Releasable): Promise<void> {
+  async function reap(herdr: HerdrClient, pane: HeldPane): Promise<Reaped | undefined> {
+    for (let waited = 0; await herdr.getAgent(pane.agentName) !== null; waited += o.pollMs) {
+      if (waited >= EXIT_WAIT_MS) return undefined;
+      await sleep(o.pollMs, new AbortController().signal);
+    }
+    const command = reapCommand(pane.jobId, jobScratchOf(pane.cwd, pane.jobId));
+    for (let i = 0; i < REAP_TRIES; i++) {
+      await herdr.runInPane(pane.paneId, command);
+      if (!await herdr.waitOutput(pane.paneId, REAP_DONE, REAP_WAIT_MS)) continue;
+      const said = readReap(await herdr.read(pane.paneId, { source: 'recent-unwrapped', lines: 200 }));
+      if (said) return { kept: [...new Set(said.kept)] };
+    }
+    return undefined;
+  }
+
+  /** esc, ctrl+c twice, the reap, close. Swallows every error: the pane may already be gone. */
+  async function exitAndClose(pane: HeldPane): Promise<void> {
     const close = async (herdr: HerdrClient): Promise<void> => {
       await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
-      if (pane.jobWorktree && pane.agentName && pane.cwd) {
-        const at = { paneId: pane.paneId, agentName: pane.agentName, cwd: pane.cwd, from: pane.jobWorktree.from };
-        const outcome = await removeJobWorktreeInPane(herdr, (ms) => sleep(ms, unaborted), at).catch(() => undefined);
-        if (outcome !== 'removed') console.warn(`hopper: kept the job worktree ${pane.cwd}: ${outcome === 'kept' ? 'it holds uncommitted or unpushed work' : 'its pane never answered'}`);
-      }
+      const said = await reap(herdr, pane).catch(() => undefined);
+      if (said) reaped.set(pane.jobId, said);
       await herdr.closePane(pane.paneId).catch(() => {});
     };
     await Promise.resolve().then(() => close(herdrOn(pane))).catch(() => {});
     for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
   }
 
-  async function settle(result: ExecutionOutcome | Interrupt, pane: Releasable): Promise<ExecutionOutcome> {
+  async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;
     if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
     await exitAndClose(pane);
@@ -218,7 +237,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   /** Runs `body` with the lane mapped to the pane; never rejects; on error the pane is released. */
-  async function onLane(ctx: ExecutionContext, getPane: () => Releasable | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
+  async function onLane(ctx: ExecutionContext, getPane: () => HeldPane | undefined, body: () => Promise<ExecutionOutcome | Interrupt>): Promise<ExecutionOutcome> {
     try {
       const result = await body();
       const pane = getPane();
@@ -252,7 +271,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = { ...asked, cwd: tree.cwd, makeWorkTree: tree.make };
       ctx.workTree(p.cwd);
       let state: PaneState | undefined;
-      return onLane(ctx, () => state, async () => {
+      return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
         const where = whereOn(ctx.machine);
         const deps = depsOn(where);
         const local = !where.ssh && !where.client;
@@ -262,15 +281,15 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const refused = heldElsewhere(ctx.laneId, opened);
         if (refused) return refused;
         state = opened;
-        lanes.set(ctx.laneId, heldOf(state));
+        lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
         const failed = await startClaude(deps, ctx, state, p);
         if (failed) {
-          await exitAndClose(state);
+          await exitAndClose(heldOf(state, ctx.job.id));
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(state.cwd, ctx.jobRules, state.jobWorktree?.from)}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree)}`, FOOTER_ANCHOR);
       });
     },
 
@@ -280,11 +299,11 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
       const refused = heldElsewhere(ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
-      return onLane(ctx, () => state, async () => {
+      return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
         const herdr = herdrOn(state);
         const agent = await herdr.getAgent(state.agentName);
         if (!agent) return { kind: 'failed', error: 'pane lost' };
-        lanes.set(ctx.laneId, heldOf(state));
+        lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
         const s = { ...state, laneId: ctx.laneId };
         // Claude waits at a dialog (a permission it asks for without yolo, issue #267) and the answer
         // names one of its options: pick it, and the parked turn goes on. Any other answer dismisses
@@ -308,12 +327,12 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const saved = paneStateOf(ctx.job);
       const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
       // A job started before an install that reported work trees has none on it yet: the one its pane opened in.
-      const tree = saved ? { cwd: saved.cwd } : workTreeOn(ctx.machine, p.cwd);
+      const tree = saved ? { cwd: saved.jobWorktree ?? saved.cwd } : workTreeOn(ctx.machine, p.cwd);
       if ('cwd' in tree) ctx.workTree(tree.cwd);
-      return onLane(ctx, () => saved, async () => {
+      return onLane(ctx, () => saved && heldOf(saved, ctx.job.id), async () => {
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
-        lanes.set(ctx.laneId, heldOf(state));
+        lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
         return watch(ctx, state, p, state.turn);
       });
     },
@@ -342,7 +361,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
     async cleanup(job) {
       const state = paneStateOf(job);
-      if (state) await exitAndClose(state);
+      if (state) await exitAndClose(heldOf(state, job.id));
+      const said = reaped.get(job.id);
+      reaped.delete(job.id);
+      return said;
     },
   };
 }

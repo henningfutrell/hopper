@@ -1,6 +1,7 @@
 // Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
+import type { MachineSnapshot } from './types.ts';
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
@@ -136,3 +137,6 @@ export interface MachinesConfig {
 export type MachineEditOutcome =
   | { ok: true; config: MachinesConfig }
   | { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
+
+/** A machine's disk (issue #401): bytes free and in all, and whether that is low enough to warn (below a tenth or 5 GiB free). */
+export type DiskReading = NonNullable<MachineSnapshot['disk']>;

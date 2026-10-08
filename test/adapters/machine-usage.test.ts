@@ -7,7 +7,7 @@ describe('local machine source', () => {
   it('lists one online machine with defaults', async () => {
     const src = createLocalMachineSource({ maxLanes: 4, executors: () => ['test'] });
     expect(await src.list()).toEqual([
-      { id: 'local', label: hostname(), maxLanes: 4, online: true, executors: ['test'] },
+      { id: 'local', label: hostname(), maxLanes: 4, online: true, executors: ['test'], disk: expect.objectContaining({ low: expect.any(Boolean) }) },
     ]);
   });
   it('names the executors registered when it is asked, not when it was made', async () => {
@@ -21,7 +21,7 @@ describe('local machine source', () => {
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
   });
   it('honours id and label', async () => {
-    const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one' });
+    const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one', disk: () => undefined });
     expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);
   });
 });

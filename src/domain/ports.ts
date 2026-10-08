@@ -3,7 +3,7 @@
 
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
-  PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
+  NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
@@ -105,12 +105,16 @@ export interface Executor {
    */
   answeredInPane?(job: Job): Promise<PaneAnswer | null>;
   /**
-   * Release whatever a job holds outside the process (close its pane). Called when a
-   * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it
-   * fails. Must not throw; idempotent.
+   * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
+   * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
+   * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it fails.
+   * Answers what the reap kept, when it ran. Must not throw; idempotent.
    */
-  cleanup?(job: Job): Promise<void>;
+  cleanup?(job: Job): Promise<Reaped | void>;
 }
+
+/** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
+export interface Reaped { kept: string[] }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
 
@@ -132,19 +136,34 @@ export interface UsageSource {
   stop?(): void;
 }
 
-/** What a notifier is given at start: the event log's live feed, and the job an event names. */
+/**
+ * What a notifier is given at start: the event log's live feed, the job and question an event names,
+ * and the questions open at the human now with where each is answered (issue #378).
+ */
 export interface NotifierEvents {
   /** Called after each append (listeners must not re-enter synchronously: defer the work). Returns the unsubscribe. */
   subscribe(listener: (event: DomainEvent) => void): () => void;
   job(id: JobId): Job | undefined;
+  question(id: string): Question | undefined;
+  /** The questions open at the human stage, oldest first. */
+  waitingOnHuman(): Question[];
+  /** Where the human answers a question. */
+  answerUrl(questionId: string): string;
 }
 
-/** The notifier role: tells something outside about events. Started once, stopped at shutdown. */
+/**
+ * The notifier role: tells something outside about events. Started once, stopped at shutdown.
+ * `test` and `sendOpen` (issue #378) are optional: what the UI's notifier actions call.
+ */
 export interface Notifier {
   readonly name: string;
   start(events: NotifierEvents): void;
   /** Unsubscribes and settles in-flight work. */
   stop(): Promise<void>;
+  /** Send one marked test payload now, one attempt; the receiver's answer. */
+  test?(): Promise<NotifierActionResult>;
+  /** Send every question open at the human now, once each per call. */
+  sendOpen?(): Promise<NotifierActionResult>;
 }
 
 /** The router role: advise on one job. Never throws (a failure is advice with `source: fallback`). */
@@ -193,6 +212,8 @@ export interface PluginsView {
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
   editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
+  /** POST /ui/api/notifiers (issue #378): a running notifier's action, by instance name. */
+  notifierAction(name: string, action: NotifierAction): Promise<NotifierActionOutcome>;
 }
 
 /** The plugin store (design.md "Plugin store"): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -278,6 +299,11 @@ export interface WebhookDispatcher {
   stop(): Promise<void>;
   /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
   onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
+  /**
+   * POST /ui/api/webhooks/test (issue #378): one signed `webhook.test` event to the subscription now,
+   * one attempt, no delivery stored and nothing appended; undefined for no such subscription.
+   */
+  test(name: string): Promise<NotifierActionResult | undefined>;
 }
 
 export type AnswerByHumanResult =

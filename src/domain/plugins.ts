@@ -65,6 +65,27 @@ export interface InstanceStatus {
   reason?: string;
 }
 
+/** The actions a notifier may offer the UI (issue #378): send a test event; send every question open at the human now. */
+export type NotifierAction = 'test' | 'send-open';
+
+/** One notifier instance in GET /api/plugins: its status and the actions it offers. */
+export interface NotifierStatus extends InstanceStatus {
+  actions: NotifierAction[];
+}
+
+/** What a notifier action did. `status`: the receiver's HTTP status, when one answered. `sent`/`failed`: for `send-open`. */
+export interface NotifierActionResult {
+  ok: boolean;
+  status?: number;
+  detail: string;
+  sent?: number;
+  failed?: number;
+}
+
+export type NotifierActionOutcome =
+  | { ok: true; result: NotifierActionResult }
+  | { ok: false; code: 'invalid' | 'not_found'; error: string };
+
 /** One instance as the plugins config (or, with no section, the built-in instances) names it now: what an options edit acts on. */
 export interface ConfiguredInstance {
   role: Role;
@@ -147,7 +168,8 @@ export interface PluginsReport {
   jobSources: { instances: InstanceStatus[] };
   machines: { instances: InstanceStatus[] };
   usageSources: { instances: InstanceStatus[] };
-  notifiers: { instances: InstanceStatus[] };
+  /** `actions`: what a running notifier offers the UI (issue #378): `test`, `send-open`. */
+  notifiers: { instances: NotifierStatus[] };
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;

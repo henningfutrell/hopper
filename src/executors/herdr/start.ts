@@ -59,8 +59,8 @@ export interface PaneState {
   paneId: string;
   agentName: string;
   cwd: string;
-  /** The job runs in its own git worktree (`cwd`) of `from`, the work tree it was given (issue #379). */
-  jobWorktree?: { from: string };
+  /** The job's own git worktree of `cwd`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
+  jobWorktree?: string;
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
@@ -95,15 +95,21 @@ export interface StartDeps {
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
-/** The job's scratch dir: Claude's scratchpad and every temp file, inside its work tree (design.md "Work tree"). */
+/** The work tree's scratch dirs, git-ignored as one (design.md "Work tree"). */
 export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}/${SCRATCH_DIR}`;
+
+/**
+ * The job's own scratch dir: Claude's scratchpad, every temp file, and the clones it makes only for this
+ * job. Its own, so the reap can remove it when the job ends (issue #401, reap.ts).
+ */
+export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
 
 /**
  * Create the tab and record it at once, before anything can fail in it. The tab's environment
  * points Claude's scratchpad and every temp file at the scratch dir.
  */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
-  const scratch = scratchDirOf(cwd);
+  const scratch = jobScratchOf(cwd, ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
@@ -139,7 +145,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
     if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
     if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
       const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-      const dialog = d.trustWorkdir && isTrustDialog(screen, s.cwd) ? `trusted workdir ${s.cwd}`
+      const dir = s.jobWorktree ?? s.cwd;
+      const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
         : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
       if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
       // Both dialogs open on their refusing option; the next one down accepts.
@@ -164,8 +171,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * prompt, so the command runs again until its output shows. Null when made, else the failure.
  */
 async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
-  const scratch = scratchDirOf(s.cwd);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratch}/.gitignore`)}`
+  const scratch = jobScratchOf(s.cwd, ctx.job.id);
+  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
     + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
@@ -180,15 +187,14 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
 }
 
 /**
- * Make the job its own git worktree of the work tree, when that is the top of a git repository, and move the
- * pane's shell into it (issue #379): `s` then names it as its cwd, saved and reported as the job's work
- * tree. A work tree that is no repository's top is used as it is. Git refusing fails the job with what it
- * said. The scratch command has run, so the shell is at its prompt: the command is typed once.
+ * Make the job its own git worktree of the work tree, when that is the top of a git repository, and move
+ * the pane's shell into it (issue #379): `s` then names it, saved, and it is reported as the job's work
+ * tree. A work tree that is no repository's top is used as it is. Git refusing fails the job with what
+ * it said. The scratch command has run, so the shell is at its prompt: the command is typed once.
  */
 async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
-  const from = s.cwd;
-  const path = jobWorktreeOf(from, ctx.job.id);
-  await d.herdr.runInPane(s.paneId, makeJobWorktreeCommand(from, path));
+  const path = jobWorktreeOf(s.cwd, ctx.job.id);
+  await d.herdr.runInPane(s.paneId, makeJobWorktreeCommand(s.cwd, path));
   const seen = await d.herdr.waitOutput(s.paneId, JOB_WORKTREE_MARK, JOB_WORKTREE_WAIT_MS);
   const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
   const outcome = seen ? jobWorktreeOutcome(screen) : undefined;
@@ -197,8 +203,7 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
       : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
   }
-  s.cwd = path;
-  s.jobWorktree = { from };
+  s.jobWorktree = path;
   ctx.saveState({ ...s });
   ctx.workTree(path);
   return null;

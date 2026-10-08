@@ -53,7 +53,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       trustWorkdir: z.boolean().default(true),
       // Issue #379: jobs at one work tree share it; a git repository's top gets each job a worktree of its own.
       jobWorktrees: z.boolean().default(true).meta({
-        description: 'job worktrees: when a job\'s work tree is the top of a git repository, the job runs in its own git worktree of it (under .hopper-jobs, from the freshly fetched default branch), removed when the job ends once nothing in it is unpushed. Off: jobs at one work tree share it',
+        description: 'job worktrees: when a job\'s work tree is the top of a git repository, the job runs in its own git worktree of it, made in its scratch dir from the freshly fetched default branch; the reap removes it when the job ends unless it holds uncommitted or unpushed work. Off: jobs at one work tree share it',
       }),
       pollMs: z.number().int().positive().default(1000),
       idleNudgeMs: z.number().int().positive().default(20000),

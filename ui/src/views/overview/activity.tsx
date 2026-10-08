@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { dismissNotice, showDismissed, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
+import { diskText } from '@/model/machines';
 import { ago } from '@/model/format';
 import { useHopper } from '@/store';
 import { useJobBoard, useJobName } from '@/store/selectors';
@@ -33,6 +34,7 @@ export function AttentionPanel() {
   const { ended } = useJobBoard();
   const sources = useHopper((s) => s.sources);
   const health = useHopper((s) => s.health);
+  const machines = useHopper((s) => s.machines);
   const dismissed = useDismissed();
   const nameOf = useJobName();
   const now = useNow();
@@ -40,6 +42,7 @@ export function AttentionPanel() {
     ...questions.map((q): Alert => ({ key: noticeKey.question(q.id), tone: 'question', label: q.tier === 'human' ? 'for you' : q.tier, text: `${nameOf(q.jobId)} — ${q.text}`, href: '#questions', at: q.createdAt, ...(q.tier === 'human' && q.expiresAt ? { expires: q.expiresAt } : {}) })),
     ...(health?.fallback ? [{ key: noticeKey.router(health), tone: 'warn' as const, label: 'router', text: `${health.router} is not answering: pass-through advice` }] : []),
     ...sources.filter((s) => s.state === 'error').map((s): Alert => ({ key: noticeKey.source(s), tone: 'bad', label: 'source', text: `${s.name}: ${s.lastError ?? 'error'}`, href: '#sources', ...(s.lastSyncAt ? { at: s.lastSyncAt } : {}) })),
+    ...machines.filter((m) => m.disk?.low).map((m): Alert => ({ key: noticeKey.disk(m.id), tone: 'warn', label: 'disk', text: `${m.label || m.id}: ${diskText(m.disk)}`, href: '#machines' })),
     ...ended.filter((j) => j.status === 'failed').slice(0, 5).map((j): Alert => ({ key: noticeKey.failed(j.id), tone: 'bad', label: 'failed', text: `${nameOf(j.id)} — ${j.error ?? ''}`, ...(j.finishedAt ? { at: j.finishedAt } : {}) })),
   ];
   const alerts = all.filter((a) => !dismissed.includes(a.key));

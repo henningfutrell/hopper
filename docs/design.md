@@ -41,7 +41,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — env-file reader and notifier; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load` over HTTP/2 on its link), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
@@ -482,7 +482,7 @@ which one runs a job. `claudeArgsFor(yolo, args)` (`src/executors/herdr/start.ts
 - **not yolo** — the args, minus every argument that would grant every permission
   (`--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`, `--permission-mode
   bypassPermissions`). Claude asks before it acts; each permission dialog parks the job as a
-  question (`detectedBy: blocked`, the dialog's screen as its text), and the escalation levels or the
+  question (`detectedBy: blocked`, the dialog as its text), and the escalation levels or the
   owner answer it.
 
 **Startup dialogs** (`settleStartup`). After `agent start` — refused with `agent_not_ready`, or
@@ -511,11 +511,13 @@ outside it (`/tmp` or anywhere else). Opening the pane there is not enough on it
 Code's scratchpad lives under `/tmp` by default and its system prompt sends temp files there,
 which is how a job drifted out of its tree. So the hopper directs it three ways:
 
-- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch`,
+- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch/<job id>`,
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
-  tree. The payload cannot move them.
-- **The scratch dir ignores itself.** Before `agent start`, the pane's own shell runs
-  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <scratch>/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
+  cannot move them. (cursor-agent and the other print agents keep the shared `<cwd>/.hopper-scratch`;
+  they have no reap.)
+- **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
+  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
@@ -550,7 +552,28 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   per repository". This is direction plus refusal, not a sandbox: an agent can still write where
   its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
-  tells the job to ask rather than work in a tree outside it.
+  tells the job to ask rather than work in a tree outside it. It sends clones and git worktrees
+  made only for this job to the scratch dir, and says the reap below removes it.
+- **The reap** (issue #401, `src/executors/herdr/reap.ts`). A job left processes and copies
+  behind: dev servers and watchers started with `&` or `setsid` outlive the pane (herdr's close
+  hangs up only the pane's own session), and every job's clone and `npm install` stayed on disk. On
+  one machine that filled the home and left dozens of processes in deleted work trees. So when a
+  job's pane closes — every terminal outcome, a cancel, a timeout, a reclaim at restart — the
+  executor sends `esc`, `ctrl+c` twice, waits up to 5000 ms for Claude to exit (`agent get` finds no
+  agent; if Claude is still up, the reap is never typed into it and the pane only closes), and then
+  the pane's shell runs the reap, on whichever machine the job ran:
+  1. every process whose environment carries the job's `HOPPER_JOB_ID` (the tab sets it, and every
+     child inherits it) gets `SIGTERM`, then `SIGKILL` after 3 s; the pane's shell is spared, and the
+     reap runs with the variable unset so it never matches itself. Linux only (`/proc`); elsewhere
+     this step is skipped.
+  2. the job's scratch dir is removed — only a path that is `…/.hopper-scratch/<job id>` — unless a
+     repository in it (`.git`, outside `node_modules`) has uncommitted changes, or commits no remote
+     has (a worktree: its `HEAD`; a clone: `HEAD` and every branch). Then nothing is removed and each
+     such repository is printed; a pushed git worktree of a repository outside is removed through
+     `git worktree remove`, so its repository keeps no stale entry.
+  It prints `hopper-reaped` last (`pane wait-output`, up to 10000 ms, three tries). What it kept is
+  never removed silently: `cleanup` answers it (`Executor.cleanup` → `Reaped`), and the engine
+  records `job.work_kept { paths }` on the job. `HOPPER_KEEP_PANES` skips the reap with the close.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -559,26 +582,21 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `makeJobWorktreeCommand` (`src/executors/herdr/job-worktree.ts`): when the work tree is the top of a
   git repository (`git rev-parse --show-toplevel` is the shell's `pwd -P`; a directory inside a
   repository, such as a home kept in git, is not), it fetches (`GIT_TERMINAL_PROMPT=0`, a failure
-  ignored), makes `<work tree>/.hopper-jobs/<job id>` with `git worktree add --detach` at
-  `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD` (`.hopper-jobs` ignores
-  itself, as the scratch dir does; `git worktree prune` first), enters it, makes its scratch dir and
-  exports `TMPDIR` and `CLAUDE_CODE_TMPDIR` there, and prints `hopper-job-worktree-made`. A worktree an
-  earlier run of the job left is entered as it is. That path is then the job's work tree: saved in the
-  pane state (`cwd`, with `jobWorktree.from`, the work tree it was made from), reported (`job.workTree`,
-  so the lane shows it), named by the trust dialog and the footer, whose fixed `[hopper job worktree]`
-  line follows the work-tree line: the worktree is the job's alone, the work tree it came from is
-  shared and left as it is. Not a repository's top: `hopper-job-worktree-none`, and the job runs in its
-  work tree as before. Git refusing: `hopper-job-worktree-unmade`, the job fails at once with what git
-  said, pane closed. The wait is up to 120000 ms, for the fetch.
-  **At the end** — finished, failed, cancelled, timed out; never while parked on a question — the
-  executor's exit-and-close waits (up to 5 s) for Claude to leave the pane, so the command is never
-  typed into Claude, then runs `removeJobWorktreeCommand` in the pane's shell: when `git status
-  --porcelain` is empty (ignored files aside) and `git log HEAD --not --remotes` is empty, `git worktree
-  remove --force` and delete the branch the job made (its commits are on a remote);
-  otherwise the worktree is **kept** for whoever looks next, with a warning in the log. A pane gone
-  before its end (a daemon restart, `keepPanes`) leaves its worktree in place, as kept.
-  Print-mode agent executors and the command executor make no job worktree: jobs on them that share a
-  work tree share it, so give each its own lane or work tree, or a job-rules line.
+  ignored), runs `git worktree prune`, makes the **job worktree**
+  `<work tree>/.hopper-scratch/<job id>/<work tree's name>` with `git worktree add --detach` at
+  `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
+  `hopper-job-worktree-made` (waited for up to 120000 ms, for the fetch). A worktree an earlier run of
+  the job left is entered as it is. Claude starts there; the pane state keeps the work tree as `cwd`
+  (the reap's scratch dir follows from it) and the job worktree as `jobWorktree`; the job reports the
+  job worktree (`job.workTree`, so the lane shows it), the trust dialog naming it is accepted, and the
+  footer adds the fixed `[hopper job worktree]` line after the work-tree line: work there, it is the
+  job's alone, the work tree is shared and left as it is. Not a repository's top:
+  `hopper-job-worktree-none`, and the job runs in its work tree as before. Git refusing:
+  `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
+  ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
+  remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
+  kept and recorded as `job.work_kept`. Print-mode agent executors and the command executor make no
+  job worktree: jobs there that share a work tree share it.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
@@ -620,10 +638,10 @@ marker still on screen, a marker in backticks or bold. Then:
 
 | observed | outcome |
 |----------|---------|
-| marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }` |
+| marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }`; a block that opens with a tool call (`● Bash(…)`) is the text after the call's output, never the call (issue #377) |
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
-| status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
+| status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000) | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again; each further status note in a row waits twice as long before its nudge |
 | stalled, and the anchor nowhere on screen or text unsent in the input box | **lost send** (issue #278): what was sent never reached Claude (seen live: Claude sat idle, the job running, across daemon restarts; once the pasted prompt sat in the input box as `[Pasted text #1 +29 lines]`, its Enter lost). Text in the input box (`inputBoxText`, a `Try "…"` suggestion aside) is submitted with `enter`, progress `the prompt sat unsent in claude's input: submitted it`, never pasted twice; else the executor sends the same text again (`turn.text`, saved with the turn), progress `the prompt never reached claude: sent it again`; after 3 sends in all, or for a turn saved without its text, `failed` `the prompt never reached claude …` with the screen |
 | stalled at a dialog (a picked option that never landed) | `question`, `detectedBy: blocked`, as above |
@@ -1094,6 +1112,8 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/webhooks/test` | `{ name }` | Send test event (issue #378): one signed `webhook.test` event to the subscription, one attempt; answers `{ ok, status?, detail }`. No delivery row, nothing appended |
+| POST | `/ui/api/notifiers` | `{ action: test \| send-open, name }` | a running notifier's action (issue #378): a marked test payload, or every question open at the human now; answers `{ ok, status?, detail, sent?, failed? }` ("Grok Bot routine webhook") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{ keep? }` | `{ links }`: `keep`'s code again while it is live, else a fresh login code, as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
 | POST | `/ui/api/logout` | `{}` | drop the session |
@@ -1879,21 +1899,35 @@ question reaches the owner (questions never go onto the issue), and when intake 
 - Events: `question.escalated` with `data.target === 'human'` and not `data.renotify`; `source.stalled`
   (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
   `account`, `reason`). Never `job.finished` or `job.failed`.
-- Config: the instance's `envFile` option (plugins.yaml `notifiers:`; the built-in `grok-bot`
-  instance's is `grokbot-webhook.env` beside plugins.yaml), `GROKBOT_WEBHOOK_URL=` and `GROKBOT_WEBHOOK_KEY=`, parsed with `util.parseEnv`. Read at
-  each matching event, so a file created later applies without a restart.
-  Absent: silent no-op. Present but missing a variable or unreadable: one warning
-  per event, skipped. Mode readable by group/other: one warning per process.
-- Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId,
-  issueTitle, issueUrl, question, questionId, answerUrl? }` (title/url from the job's source
-  ref, else null).
-  200 = a run started.
+- Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
+  `GROKBOT_WEBHOOK_KEY`) name two runtime secrets ("Secrets"): the variable, or the mounted file the
+  variable `<name>_FILE` names. Read at each use, so a file written or changed later applies without a
+  restart. Only the `_FILE` variables must be there at start; `compose.yaml` sets both by default to
+  files in the hopper's home volume (`~/.config/hopper/grokbot-webhook-url` and `-key`), so the routine is
+  set up, or its key rotated, by writing those files into the running container. A file named but not
+  there yet, or either value unset: needs-setup, and nothing is sent. (Before issue #378 this section
+  described an `envFile` option the plugin never had.)
+- Open questions (issue #378): a question escalated while the routine is not configured is not lost.
+  The notifier checks every 5 s; when the routine **becomes** configured it sends each question open at
+  the human, once each (`offered: true`). Configured already at start: nothing is re-sent on a restart.
+  The UI's **Send open questions** sends every open one again, on each press.
+- Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
+  issueUrl }` (title/url from the job's source ref, else null); a question adds `question, questionId,
+  answerUrl?` and what the job already knows, so a receiver can route and rank it without calling back
+  (issue #378): `machineId`, `laneId`, `priority`, `labels` (the item's labels at intake; null for jobs
+  taken before), `repo`, `issueNumber`, `detectedBy`, `askedAt`, `escalatedAt`, `openSeconds`,
+  `offered`. 200 = a run started.
+- Test event (issue #378): **Send test event** in the UI (`POST /ui/api/notifiers`, `action: test`)
+  posts `{ source: 'hopper', kind: 'test', test: true, at, message }` once, no retry, and answers the
+  HTTP status. A notifier offers its actions in GET /api/plugins (`actions`); a custom notifier offers
+  one by having the optional `test` or `sendOpen` member (`Notifier`, ports.ts).
 - Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
   network error, 429, 5xx; other non-2xx is final. Success logs kind, jobId, status; final
   failure logs an error. The key is never logged. Work runs deferred, off the event listener;
   `stop()` unsubscribes and awaits in-flight posts.
-- `createGrokBotNotifier({ name, path, logger, baseMs?, timeoutMs? })` → `Notifier`; the job's
-  title and url come from `events.job(id)`. `AppSeams.grokbotBaseMs` lets tests shorten the backoff.
+- `createGrokBotNotifier({ name, routine, logger, clock, baseMs?, timeoutMs?, watchMs? })` → `Notifier`;
+  the job, the question and the open questions come from the `NotifierEvents` feed.
+  `AppSeams.grokbot` (`baseMs`, `watchMs`) lets tests shorten the backoff and the check.
 
 `HOPPER_GROKBOT_WEBHOOK_FILE` was this section's env var; removed in slice 5 ("Settled in slice 5").
 
@@ -2058,7 +2092,7 @@ jobSources:
   - { name: github-app, plugin: github-app, options: { appFile: ~/.config/hopper/github-app.json, authors: [owner], label: hopper } }
 machines:  { name: local, plugin: local, options: { lanes: 4 } }
 usageSources: []
-notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { envFile: ~/.config/hopper/grokbot-webhook.env } } ]
+notifiers: [ { name: grok-bot, plugin: grokbot-routine, options: { urlEnv: GROKBOT_WEBHOOK_URL, keyEnv: GROKBOT_WEBHOOK_KEY } } ]
 ```
 
 The `jobSources` options are the old sources.yaml blocks' keys (design "GitHub source", "Phase 4
@@ -2657,6 +2691,17 @@ drives that machine's herdr and records `ssh` and `session` in its pane state, s
 reattach and cleanup (which have only the job) reach the same herdr. Pane ids are per herdr server:
 held panes are keyed by machine and pane. An executor that cannot run elsewhere is simply not listed
 in the machine's `executors`.
+
+**A machine's disk** (issue #401, `src/machines/disk.ts`). Jobs filled one machine's home: clones, installs
+and test temp dirs piled up until nothing could be written. So every machine whose disk can be read
+carries it on its snapshot, `MachineSnapshot.disk` — `{ freeBytes, totalBytes, low }` for the filesystem
+its home is on, where the jobs directory and the scratch dirs live. This machine's is read with
+`statfs` at every list; an ssh target's in its probe (`df -Pk "$HOME"`, before the home it prints); a
+client target's by its client, in its `/release` answer (a client older than this says none). A container
+target has none. It is **low** below a tenth free or below 5 GiB free, whichever comes first. The
+Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
+Attention panel lists each machine running low, once per machine. Nothing is refused on a low disk:
+the reap ("Work tree") is what keeps it flat; this is the warning for what it cannot remove.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
@@ -5211,7 +5256,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 **compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
-`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d`. Self-update
+`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
 still does not apply to a container.
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
@@ -5343,7 +5388,22 @@ rolled-back append can leave a gap in `seq`: seq only rises.
 
 **Tests and local development** run against Postgres too: `npm test` starts a throwaway container
 through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own
-schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead. A local
+schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead.
+
+**A test run leaves nothing behind** (issue #401), on a pass, a failure or a crash. The first
+globalSetup (`test/support/run.ts`) makes one run root, `jh-run-<pid>-*` in the tmpdir, and sets
+`TMPDIR` to it, so every worker and every process a test starts makes its temp dirs inside it (the
+throwaway HOME of `test/support/isolate.ts` too); it sets `HOPPER_TEST_RUN` to a fresh id, the run's
+marker, which every process of the run inherits. Its teardown kills every process whose environment
+(`/proc/<pid>/environ`, Linux only) carries the marker — SIGTERM, then SIGKILL — removes the run's
+containers and removes the run root. Setup and teardown both sweep what a dead run left
+(`test/support/sweep.ts`): run roots whose pid is dead, containers named `jh-<kind>-<pid>` (a test's
+container names end in its pid) and containers labelled `hopper.test-pid=<pid>` (the Postgres) whose
+pid is dead. A live pid's are never touched: they belong to a run still going. Older leftovers in the
+tmpdir (`jh-test-home-*`, …) are not swept by name; another suite may own them. A unix socket path is
+capped at 108 bytes, so a test that listens on a socket makes its dir in `/tmp`, not under the run root.
+
+A local
 hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given will do).
 
 ### Config documents

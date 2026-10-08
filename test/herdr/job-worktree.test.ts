@@ -1,12 +1,14 @@
-// The job worktree commands (issue #379), run for real: the pane's shell is sh here, the git is the
-// machine's own, the origin a bare repository beside the work tree. Nothing is faked: what these
-// commands do to a repository is what they do in a job's pane.
+// The job worktree command (issue #379), and the reap that ends it (issue #401), run for real: the
+// pane's shell is sh here, the git is the machine's own, the origin a bare repository beside the work
+// tree. Nothing is faked: what these commands do to a repository is what they do in a job's pane.
 import { describe, expect, it } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { jobWorktreeOf, makeJobWorktreeCommand, removeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
+import { jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
+import { reapCommand } from '../../src/executors/herdr/reap.ts';
+import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
 const ID = 'abcdef12-3456-7890-abcd-ef1234567890';
 const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_CONFIG_NOSYSTEM: '1' };
@@ -15,6 +17,9 @@ const git = (cwd: string, ...args: string[]): string => execFileSync('git', args
 
 /** Runs the command as the pane's shell would, then `after` in the same shell; what it printed. */
 function sh(cwd: string, command: string, after = ''): string {
+  // What the scratch command did first: the job's scratch dir, the scratch dirs ignored.
+  mkdirSync(jobScratchOf(cwd, ID), { recursive: true });
+  writeFileSync(join(cwd, '.hopper-scratch', '.gitignore'), '*\n');
   const r = spawnSync('sh', ['-c', `${command}${after ? `\n${after}` : ''}`], { cwd, env: GIT_ENV, encoding: 'utf8' });
   return `${r.stdout}${r.stderr}`;
 }
@@ -39,13 +44,12 @@ function repository(): { root: string; tree: string; origin: string } {
 }
 
 describe('the job worktree command (issue #379)', () => {
-  it('makes the job its own git worktree of the work tree, detached at the remote default branch as just fetched, and enters it', () => {
+  it('makes the job its own git worktree of the work tree in its scratch dir, detached at the remote default branch as just fetched, and enters it', () => {
     const { tree, origin } = repository();
     const path = jobWorktreeOf(tree, ID);
-    const out = sh(tree, makeJobWorktreeCommand(tree, path), 'pwd; printf "%s %s\\n" "$TMPDIR" "$CLAUDE_CODE_TMPDIR"');
-    expect(out).toContain('hopper-job-worktree-made');
-    expect(out).toContain(`${path}\n`);
-    expect(out).toContain(`${path}/.hopper-scratch ${path}/.hopper-scratch`);
+    expect(path).toBe(`${tree}/.hopper-scratch/${ID}/tree`);
+    const out = sh(tree, makeJobWorktreeCommand(tree, path), 'pwd');
+    expect(out).toBe(`hopper-job-worktree-made\n${path}\n`);
     expect(git(path, 'rev-parse', 'HEAD')).toBe(git(origin, 'rev-parse', 'main'));
     expect(spawnSync('git', ['symbolic-ref', '-q', 'HEAD'], { cwd: path }).status).not.toBe(0);
     expect(git(tree, 'worktree', 'list')).toContain(path);
@@ -57,7 +61,6 @@ describe('the job worktree command (issue #379)', () => {
     sh(tree, makeJobWorktreeCommand(tree, jobWorktreeOf(tree, ID)));
     expect(git(tree, 'rev-parse', 'HEAD')).toBe(before);
     expect(git(tree, 'status', '--porcelain')).toBe('');
-    expect(existsSync(join(jobWorktreeOf(tree, ID), '.hopper-scratch', '.gitignore'))).toBe(true);
     expect(git(jobWorktreeOf(tree, ID), 'status', '--porcelain')).toBe('');
   });
 
@@ -69,7 +72,7 @@ describe('the job worktree command (issue #379)', () => {
     const inner = join(tree, 'sub');
     mkdirSync(inner);
     expect(sh(inner, makeJobWorktreeCommand(inner, jobWorktreeOf(inner, ID)))).toBe('hopper-job-worktree-none\n');
-    expect(existsSync(join(inner, '.hopper-jobs'))).toBe(false);
+    expect(existsSync(jobWorktreeOf(inner, ID))).toBe(false);
   });
 
   it('starts from HEAD when the repository has no remote', () => {
@@ -111,70 +114,49 @@ describe('the job worktree command (issue #379)', () => {
   });
 });
 
-describe('the job worktree removal command (issue #379)', () => {
-  function made(): { tree: string; path: string; origin: string } {
-    const { tree, origin } = repository();
+describe('the reap ends a job worktree (issues #379, #401)', () => {
+  function made(): { tree: string; path: string; reap: () => string } {
+    const { tree } = repository();
     const path = jobWorktreeOf(tree, ID);
     sh(tree, makeJobWorktreeCommand(tree, path));
-    return { tree, path, origin };
+    return { tree, path, reap: () => sh(path, reapCommand(ID, jobScratchOf(tree, ID))) };
   }
 
-  it('removes a worktree with nothing uncommitted and nothing unpushed, from inside it too', () => {
-    const { tree, path } = made();
-    expect(sh(path, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-removed\n');
+  it('removes a worktree with nothing uncommitted and nothing unpushed, with the scratch dir, and its repository keeps no entry for it', () => {
+    const { tree, path, reap } = made();
+    expect(reap()).toContain('hopper-reaped');
+    expect(existsSync(jobScratchOf(tree, ID))).toBe(false);
+    expect(git(tree, 'worktree', 'list')).not.toContain(path);
+  });
+
+  it('removes it once the branch the job made is pushed, and with ignored build output in it', () => {
+    const { tree, path, reap } = made();
+    git(path, 'switch', '--quiet', '-c', 'fix');
+    writeFileSync(join(path, '.gitignore'), 'node_modules/\n');
+    git(path, 'add', '.gitignore');
+    git(path, 'commit', '--quiet', '-m', 'fix');
+    git(path, 'push', '--quiet', '-u', 'origin', 'fix');
+    mkdirSync(join(path, 'node_modules'));
+    writeFileSync(join(path, 'node_modules', 'x.js'), '\n');
+    expect(reap()).not.toContain('hopper-kept');
     expect(existsSync(path)).toBe(false);
     expect(git(tree, 'worktree', 'list')).not.toContain(path);
   });
 
-  it('removes it with ignored build output in it, and its own scratch dir', () => {
-    const { tree, path } = made();
-    writeFileSync(join(path, '.gitignore'), 'node_modules/\n');
-    git(path, 'add', '.gitignore');
-    git(path, 'commit', '--quiet', '-m', 'ignore');
-    git(path, 'push', '--quiet', 'origin', 'HEAD:refs/heads/ignore');
-    mkdirSync(join(path, 'node_modules'));
-    writeFileSync(join(path, 'node_modules', 'x.js'), '\n');
-    writeFileSync(join(path, '.hopper-scratch', 'tmp'), '\n');
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-removed\n');
-    expect(existsSync(path)).toBe(false);
-  });
-
-  it('removes it, and its branch, once the branch is pushed', () => {
-    const { tree, path, origin } = made();
-    git(path, 'switch', '--quiet', '-c', 'fix');
-    writeFileSync(join(path, 'fix.txt'), 'fix\n');
-    git(path, 'add', 'fix.txt');
-    git(path, 'commit', '--quiet', '-m', 'fix');
-    git(path, 'push', '--quiet', '-u', 'origin', 'fix');
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-removed\n');
-    expect(git(tree, 'branch', '--list', 'fix')).toBe('');
-    expect(git(origin, 'branch', '--list', 'fix')).toContain('fix');
-  });
-
-  it('keeps it while a commit in it is not pushed', () => {
-    const { tree, path } = made();
+  it('keeps it, and names it, while a commit in it is not pushed', () => {
+    const { path, reap } = made();
     git(path, 'switch', '--quiet', '-c', 'local-only');
     writeFileSync(join(path, 'x.txt'), 'x\n');
     git(path, 'add', 'x.txt');
     git(path, 'commit', '--quiet', '-m', 'x');
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-kept\n');
+    expect(reap()).toContain(`hopper-kept ${path}`);
     expect(existsSync(join(path, 'x.txt'))).toBe(true);
-    expect(git(tree, 'branch', '--list', 'local-only')).toContain('local-only');
   });
 
-  it('keeps it while a file in it is changed or untracked', () => {
-    const { tree, path } = made();
+  it('keeps it while a file in it is changed', () => {
+    const { path, reap } = made();
     writeFileSync(join(path, 'a.txt'), 'changed\n');
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-kept\n');
-    git(path, 'checkout', '--quiet', '--', 'a.txt');
-    writeFileSync(join(path, 'new.txt'), 'new\n');
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-kept\n');
-    expect(existsSync(join(path, 'new.txt'))).toBe(true);
-  });
-
-  it('says removed when it is already gone, so running it twice is harmless', () => {
-    const { tree, path } = made();
-    sh(tree, removeJobWorktreeCommand(tree, path));
-    expect(sh(tree, removeJobWorktreeCommand(tree, path))).toBe('hopper-job-worktree-removed\n');
+    expect(reap()).toContain(`hopper-kept ${path}`);
+    expect(existsSync(path)).toBe(true);
   });
 });

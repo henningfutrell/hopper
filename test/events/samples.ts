@@ -35,5 +35,6 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'queue.ordered': { jobIds: 'j1' },
   'job.claimed_by_operator': { by: 'someone' },
   'job.rerun': { by: 'pre-sort' },
+  'job.work_kept': { paths: 'p' },
   'queue.gate_changed': { from: { mode: 'open', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: 0 } },
 };

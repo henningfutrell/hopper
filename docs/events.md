@@ -705,6 +705,22 @@ Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assi
 }
 ```
 
+## `job.work_kept`
+
+Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401) kept its scratch dir: each of `paths` is a repository in it holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. Remove it by hand once the work is pushed.
+
+| field | type | required |
+|---|---|---|
+| `paths` | string[] | yes |
+
+```json
+{
+  "paths": [
+    "/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper"
+  ]
+}
+```
+
 ## `source.stalled`
 
 Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in error since `since` for longer than the stall threshold (30 minutes): nothing new is pulled from it. Recorded once per run of failures; `error` is its last error. The notifiers send it.

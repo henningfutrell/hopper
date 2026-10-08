@@ -1,7 +1,7 @@
 // Phase 5 slice 3: the built-in executor plugins (herdr-claude, test) — options, detection (cheap:
 // `which` only, never a model call, never a GUI), create — and the command-bearing mark on every
 // option that names a program, its arguments, a working directory or an interpreter.
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import anthropicApi from '../../src/plugins/escalation-level/anthropic-api/index.ts';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
@@ -167,7 +167,7 @@ describe('herdr-claude', () => {
       laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
       progress() {}, saveState() {}, workTree(path) { trees.push(path); },
     });
-    expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-jobs/abcdef12-0000` : cwd);
+    expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-scratch/abcdef12-0000/${basename(cwd)}` : cwd);
   });
 });
 

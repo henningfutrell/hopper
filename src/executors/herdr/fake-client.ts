@@ -35,14 +35,16 @@ export interface FakeHerdrOptions {
   startupBlockedBy?: string[];
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
+  /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
+  reapKeeps?: string[];
+  /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
+  ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
   unusableDirs?: string[];
   /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
   repositories?: string[];
   /** Git refuses to make a job worktree. */
   worktreeFails?: boolean;
-  /** A job worktree holds unpushed work when the job ends: the removal command keeps it. */
-  keepsWorktrees?: boolean;
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
@@ -289,18 +291,22 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
           p.lines.push('  ⎿  Interrupted');
           p.turn = undefined;
           settle(p, 'idle');
-        } else if (key === 'ctrl+c' && p.agent && ++p.ctrlC >= 2) exit(p);
+        } else if (key === 'ctrl+c' && p.agent && !o.ignoresCtrlC && ++p.ctrlC >= 2) exit(p);
       }
     },
     async runInPane(paneId, command) {
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      // The reap at job end (reap.ts): what it kept, then its last line.
+      if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
+        p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
+        return;
+      }
       // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
       const worktree = /^cd '([^']*)' && if .*printf 'hopper-job-%s-%s\\n' worktree/.exec(command);
       if (worktree) {
-        const outcome = command.includes('worktree remove') ? (o.keepsWorktrees ? 'kept' : 'removed')
-          : !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
+        const outcome = !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
         p.lines.push(`$ ${command}`, ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`, '$ ');
         return;
       }

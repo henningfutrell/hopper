@@ -11,6 +11,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
 import type { AttachedMachine, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
+import type { DiskReading } from '../domain/machines.ts';
+import { DF_COMMAND, readDf } from './disk.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
@@ -28,6 +30,8 @@ export interface MachineProbe {
   client?: { release?: string; current: boolean };
   /** The machine's home, where `~` in a job's work tree resolves there (issue #323). Absent: it did not say. */
   home?: string;
+  /** The disk its home is on (issue #401). Absent: not read. */
+  disk?: DiskReading;
 }
 
 interface AttachedOptions {
@@ -58,6 +62,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let clientRelease: MachineProbe['client'];
   // Kept across probes that do not say: a machine's home does not move while it is the same machine.
   let home: string | undefined;
+  // Only the last probe's: a disk fills.
+  let disk: DiskReading | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -74,8 +80,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
-      (e: unknown) => { online = false; clientRelease = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -83,7 +89,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
@@ -103,14 +109,14 @@ export async function probeHerdrOverSsh(o: { target: string; session: string; co
 /**
  * An ssh target's home, asked over ssh with the hopper's key: it answers, so it is online (issue #142),
  * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). Rejects when
- * ssh fails or the answer is not an absolute path.
+ * ssh fails or the answer is not an absolute path. With it, the disk the home is on (issue #401), when its df says.
  */
-export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<string> {
+export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<{ home: string; disk?: DiskReading }> {
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
       mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
-      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, `printf '%s\\n' "$HOME"`);
+      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, `${DF_COMMAND}; printf '%s\\n' "$HOME"`);
     } catch (e) {
       return reject(e instanceof Error ? e : new Error(String(e)));
     }
@@ -118,7 +124,8 @@ export function probeSsh(o: { target: string; controlDir: string; sshBin?: strin
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (!e) {
         const home = stdout.trim().split('\n').at(-1) ?? '';
-        return home.startsWith('/') ? resolve(home) : reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
+        const disk = readDf(stdout);
+        return home.startsWith('/') ? resolve({ home, ...(disk ? { disk } : {}) }) : reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
       }
       if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
       reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
