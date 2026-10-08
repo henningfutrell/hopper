@@ -113,7 +113,9 @@ export interface Executor {
    * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
    * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
    * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it fails.
-   * Answers what the reap kept, when it ran. Must not throw; idempotent.
+   * Answers what the reap kept, when it ran. Idempotent. Rejects only when it could not reach where
+   * the job's work lives (its machine not dialled in or not answering), so that work may still run:
+   * the engine defers the cleanup and tries it again until it goes through (issue #371).
    */
   cleanup?(job: Job): Promise<Reaped | void>;
 }

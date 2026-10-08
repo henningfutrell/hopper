@@ -5,7 +5,7 @@ import { TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import type { Cleanup } from './cleanup.ts';
+import type { Cleanups } from './cleanup.ts';
 import type { Runner } from './runner.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
@@ -28,12 +28,15 @@ export interface Commands {
   claimByOperator(id: string): Job;
   /** Take a locked entry out of the queue (issue #355): the failed job stays failed, and can still run again. */
   dismiss(id: string): Job;
+  /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
+  markCleanedUp(id: string): Job;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
 
-export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanup): Commands {
+export function createCommands(c: EngineContext, runner: Runner, cleanups: Cleanups): Commands {
   const { store } = c;
+  const cleanup = cleanups.run;
   return {
     cancel(id, reason) {
       const job = existing(c, id);
@@ -82,6 +85,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanup: Cleanu
         return next;
       });
     },
+
+    markCleanedUp: (id) => cleanups.markCleanedUp(id),
 
     setFakeUsage(reading) {
       if (!c.fakeUsage) throw new EngineError('not_found', 'no fake usage source is configured');

@@ -1,6 +1,6 @@
 // Waiting (queue order), the jobs on a question, the operator-led jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
-import { Archive, Check, Hourglass, Lock, RotateCcw, X } from 'lucide-react';
+import { Archive, Check, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -19,6 +19,23 @@ function RerunButton({ job }: { job: Job }) {
   return (
     <Button size="xs" variant="outline" title="Run again: a new job for its item joins the queue now"
       onClick={() => void rerun(job.id)}><RotateCcw />Run again</Button>
+  );
+}
+
+/**
+ * Issue #371: the job ended, but its cleanup could not reach its machine, so its pane and agent may still
+ * run there. The hopper tries again on every tick; Mark closed is for a pane closed by hand, or a machine gone for good.
+ */
+function CleanupDeferredFlag({ job, className }: { job: Job; className?: string }) {
+  const operate = useCanOperate();
+  const d = job.cleanupDeferred;
+  if (!d) return null;
+  return (
+    <div data-cleanup-deferred className={`flex items-start gap-1.5 text-xs text-warn ${className ?? ''}`} title={`since ${d.at}: ${d.error}`}>
+      <span className="min-w-0 flex-1">Its pane may still be open: the hopper could not reach its machine to close it, and tries again until it can. A new job for its item waits until then.</span>
+      {operate && <Button size="xs" variant="ghost" title="Mark closed: you closed its pane by hand, or its machine is gone for good. The hopper stops trying."
+        onClick={() => act(`/ui/api/jobs/${job.id}/cleaned-up`, {}, 'Marked closed')}><SquareX />Mark closed</Button>}
+    </div>
   );
 }
 
@@ -53,6 +70,7 @@ export function LockedRows({ heading = true }: { heading?: boolean }) {
           <span className="ml-auto" title={job.finishedAt}>failed {ago(job.finishedAt ?? job.updatedAt, now)}</span>
         </div>
         {job.error && <div className="line-clamp-2 pl-5.5 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+        <CleanupDeferredFlag job={job} className="pl-5.5" />
       </div>
     ))}
   </>;
@@ -154,6 +172,7 @@ export function EndedPanel() {
             {job.startedAt && <span>took {between(job.startedAt, job.finishedAt)}</span>}
           </div>
           {job.error && <div className="line-clamp-2 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+          <CleanupDeferredFlag job={job} />
         </div>
       )) : <Empty>nothing ended in 24 h</Empty>}
     </Panel>

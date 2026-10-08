@@ -96,7 +96,9 @@ same Decision. Algorithm, in order:
    is the only behaviour.
 5. **Native holds.** A job not yet accepted at the queue gate (`accepted: false`) → hold
    `awaiting acceptance`, before anything else is judged ("Queue gate"). No online machine runs the job's executor → hold. Pinned machine
-   unknown or offline → hold.
+   unknown or offline → hold. An ended job of the same item (`source.key`) whose cleanup is running or
+   deferred (`DecisionInputs.cleanupDue`, "Deferred cleanup") → hold `job <id> of this item may still run: its
+   cleanup waits for its machine (<error>)`, or `… is being cleaned up` while the first try runs.
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`. Pick the one with the most remaining room
@@ -379,6 +381,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
+| `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
+| `job.cleaned_up` | `{ deferredAt, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`) |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -667,7 +671,10 @@ If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then th
 **Cancel** (`ctx.signal`, reason `'cancel'`): `send-keys esc`, then `ctrl+c` twice, then
 `pane close`; outcome `failed` `aborted`. **Shutdown** (reason `'shutdown'`): return
 `failed` `shutdown` at once, pane untouched (the engine discards outcomes during shutdown).
-**cleanup(job)**: same exit-and-close from `job.executorState`; swallow errors; idempotent.
+**cleanup(job)**: same exit-and-close from `job.executorState`; idempotent. Rejects only when the
+pane may still be open: its herdr not reached (a client target not dialled in, ssh failing), or
+`pane close` refused for any reason but `pane_not_found` (a pane already gone resolves). The engine
+then defers it ("Deferred cleanup").
 The executor is `idempotent: false`. `timeoutMs` and the `expectedMs` progress clock apply
 per `run`/`resume` call; time spent waiting for an answer does not count.
 
@@ -825,7 +832,8 @@ so a running job's pane and Claude outlive a restart.
   other run's. The decider is unchanged: the kept lane is an ordinary busy lane.
 - Same job, work gone (no `turn`, agent gone, pane differs, or the lane row lost) →
   `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
-  re-run: a second run repeats real side effects. A non-idempotent executor without
+  re-run: a second run repeats real side effects. A pane not reached then (its machine not
+  connected yet) may still run: the cleanup is deferred and tried again ("Deferred cleanup"). A non-idempotent executor without
   `reattach` always takes this path.
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
@@ -1022,6 +1030,20 @@ Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `mess
 - **Panes close on every terminal outcome** (finished, failed, cancelled, restart failure)
   via `executor.cleanup`, unless `HOPPER_KEEP_PANES=true`. Timeouts and failed startups
   close their pane too.
+- **Deferred cleanup** (issue #371). A cleanup that cannot reach the job's machine is not dropped.
+  Seen live: restart recovery failed a job on a client target that had not dialled back in yet; the
+  one cleanup it queued never reached the pane, Claude kept working, and a rerun of the issue started
+  beside it seven minutes later. The two collided until the old pane was closed by hand.
+  `src/engine/cleanup.ts`: when `Executor.cleanup` rejects, the job gets `cleanupDeferred { at, error }`
+  and `job.cleanup_deferred { error }` (once per deferral). Every tick tries each deferred cleanup again
+  that is not running; the first that goes through clears the field and records `job.cleaned_up
+  { deferredAt }` (an engine trigger). The deferrals are read back from the store at start, so a
+  restart keeps them. Meanwhile the decider holds a waiting job of the same item (step 5): the
+  engine passes `DecisionInputs.cleanupDue`, the ended jobs whose cleanup is deferred or running now.
+  The UI flags such a job (Ended, the locked entries, Attention). **Mark closed**
+  (`POST /ui/api/jobs/:id/cleaned-up`, operator) ends a deferral by hand — the pane closed by hand, or
+  its machine gone for good — with `job.cleaned_up { by: "user" }`; without it a machine that never
+  comes back would hold its items for good.
 - **herdr unit:** a second `herdr --session X server` exits 1, so
   `hopper-herdr.service` has an `ExecCondition` that skips the start when that
   session's server already runs; it unsets `CLAUDECODE` and the `CLAUDE_CODE_*` markers

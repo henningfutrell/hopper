@@ -165,6 +165,31 @@ describe('herdr-claude job across a daemon restart', () => {
     expect((await second.events('types=job.cleanup_deferred')).filter((e) => e.jobId === job.id)).toHaveLength(1);
   });
 
+  it('Mark closed ends a deferred cleanup by hand: it is no longer tried, and the held rerun is admitted', async () => {
+    freshDb();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
+    const { job, paneId } = await runThenStop(herdr);
+    herdr.setUnreachable(true);
+    const second = await boot(herdr);
+    await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
+    const token = await second.login();
+    await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
+    const rerun = (await second.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).body;
+    await waitFor(async () => (await second.job(rerun.id)).status === 'held', { what: 'the rerun held' });
+
+    const marked = await waitFor(async () => { const r = await second.ui<Job>(`/ui/api/jobs/${job.id}/cleaned-up`, {}, { token }); return r.status === 200 ? r : undefined; }, { what: 'Mark closed accepted' });
+    expect(marked.body.cleanupDeferred).toBeUndefined();
+    expect((await second.events('types=job.cleaned_up')).find((e) => e.jobId === job.id)?.data).toMatchObject({ by: 'user' });
+    expect((await second.ui(`/ui/api/jobs/${job.id}/cleaned-up`, {}, { token })).status).toBe(409);
+    expect((await second.ui(`/ui/api/jobs/${rerun.id}/cleaned-up`, {}, { token })).status).toBe(409);
+
+    // No longer held: it is admitted at once (and here fails, its machine still unreached).
+    await waitFor(async () => !['queued', 'held'].includes((await second.job(rerun.id)).status), { what: 'the rerun admitted' });
+    herdr.setUnreachable(false);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(herdr.closed).not.toContain(paneId); // never tried again once marked
+  });
+
   it('a claimed herdr-claude job (nothing ran yet) is requeued and runs', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });

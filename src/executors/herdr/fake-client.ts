@@ -147,8 +147,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const width = o.width ?? 100;
   const panes = new Map<string, Pane>();
   const failures = new Map<string, string>();
-  let unreachable = false;
-  let n = 0;
+  /** setUnreachable: every call rejects. */
+  let n = 0, unreachable = false;
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;

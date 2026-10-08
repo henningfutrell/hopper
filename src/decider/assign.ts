@@ -1,4 +1,4 @@
-import type { DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, StartPlan, WaitPlan } from '../domain/types.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -56,6 +56,19 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.online) return `pinned machine ${pin} offline`;
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   return undefined;
+}
+
+/**
+ * Issue #371: an ended job of the same item whose cleanup has not gone through may still run in its pane;
+ * starting this one beside it runs the item twice. Held until that cleanup goes through.
+ */
+export function cleanupHold(job: Job, due: readonly CleanupDue[]): string | undefined {
+  const key = job.source?.key;
+  const earlier = key === undefined ? undefined : due.find((d) => d.sourceKey === key && d.jobId !== job.id);
+  if (!earlier) return undefined;
+  return earlier.error === undefined
+    ? `job ${earlier.jobId} of this item is being cleaned up`
+    : `job ${earlier.jobId} of this item may still run: its cleanup waits for its machine (${earlier.error})`;
 }
 
 /**
