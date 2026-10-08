@@ -46,8 +46,9 @@ node --input-type=module -e '
 if [ -n "$name" ]; then node "$lib/main.ts" join "$line" "$name"; else node "$lib/main.ts" join "$line"; fi
 
 if ! command -v systemctl >/dev/null 2>&1 || ! systemctl --user show-environment >/dev/null 2>&1; then
-  printf '%s\n' 'hopper-client install: no systemd user session here; run the client yourself:' \
-    "  $herdr --session hopper-client server &" "  $node $lib/main.ts"
+  # The client exits 75 after the hopper loads a new release into it: whatever runs it starts it again.
+  printf '%s\n' 'hopper-client install: no systemd user session here; run the client yourself (restarted after a release load, exit 75):' \
+    "  $herdr --session hopper-client server &" "  cd && while :; do $node $lib/main.ts; [ \$? -eq 75 ] || break; done"
   exit 0
 fi
 units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"

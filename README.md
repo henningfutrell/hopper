@@ -288,6 +288,15 @@ line carries a one-time join code: it works once, for 10 minutes.
   nothing of the computer mounted. Sign its agent in once:
   `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
   so a recreated box is the same machine.
+- **Windows, without WSL** (no systemd): once the client is installed and joined there, start herdr
+  (`herdr --session hopper-client server`) and the client from your home directory, never from the
+  client's own directory (Windows cannot replace a directory a process is in, which breaks a release
+  load), and start the client again when it exits 75 — it does so after each new client release:
+  ```powershell
+  Set-Location $HOME
+  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
+  ```
+  `claude` must be on its PATH as `claude.exe` (the native installer's); the client runs it with no shell.
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working

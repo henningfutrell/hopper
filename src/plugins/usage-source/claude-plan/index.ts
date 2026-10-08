@@ -6,11 +6,13 @@
 // every job (issue #140); a window of one model is informational. `claude auth status` gives the
 // account, refreshed with the usage. Both run on the source's `machine` — this machine, the `local`
 // one in the list, or an attached one through its connection (ssh or docker exec, as the command
-// executor) — and the readings are that machine's: its own Claude account (issue #139). The machine is
-// always named, never a default (issue #174).
+// executor; a client target through its client, which runs its own claude, issue #366) — and the
+// readings are that machine's: its own Claude account (issue #139). The machine is always named, never
+// a default (issue #174).
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { clientClaude } from '../../../executors/client.ts';
 import { commandOn } from '../../../executors/command.ts';
 import { dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
@@ -39,7 +41,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
   role: 'usage-source',
   describe: 'Claude subscription usage (session and week throttle the Claude executors\' jobs; a window of one model is shown only) and the Claude account, from the claude CLI on the machine it names',
   options: (z) => z.object({
-    bin: z.string().min(1).default('claude').meta({ commandBearing: true, description: 'the claude CLI' }),
+    bin: z.string().min(1).default('claude').meta({ commandBearing: true, description: 'the claude CLI (a client target runs its own)' }),
     intervalSeconds: z.number().int().min(120).default(600).meta({ description: 'seconds between reads (each is a local command: no tokens)' }),
     machine: z.string().min(1).meta({ machine: true, description: 'the machine to read the Claude account of (its usage caps that machine only): this one, or an attached one' }),
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
@@ -68,7 +70,8 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
       const m = await ctx.machine(id);
       if (!m) return { error: `machine ${id} is not configured` };
       if (!m.online) return { error: `machine ${id} is offline` };
-      if (!m.ssh && !m.docker && !m.client) return runHere(args, signal);
+      if (m.client) return runOnClient(id, args);
+      if (!m.ssh && !m.docker) return runHere(args, signal);
       let file: string;
       let argv: string[];
       try {
@@ -80,6 +83,16 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
       }
       return runCli(file, argv, { cwd: ctx.scratchDir, timeoutMs: TIMEOUT_MS, signal });
+    };
+    /** On a client target, its client runs its own claude: `bin` names the hopper's, not the machine's. */
+    const runOnClient = async (id: string, args: string[]): Promise<CliRun> => {
+      const t = ctx.client(id);
+      if (!t) return { error: `machine ${id}: client ${id} is not dialled in` };
+      try {
+        return await clientClaude(t, args, TIMEOUT_MS);
+      } catch (e) {
+        return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
+      }
     };
     /** A failure of the run itself (no machine, offline): the reason as it is, not as claude's. */
     const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
