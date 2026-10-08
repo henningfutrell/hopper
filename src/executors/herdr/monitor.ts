@@ -3,7 +3,7 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
+import { CTRL_END, dialogText, inputBoxText, isScrolledUp, readTurn } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -69,7 +69,9 @@ async function exitedError(w: TurnWatch): Promise<string> {
 
 async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionOutcome> {
   const visible = await w.herdr.read(w.paneId, { source: 'visible', lines: 60 });
-  return { kind: 'question', question: { text: tail(visible, 30), recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked' } };
+  // The question is the dialog itself (issue #377); what led up to it is the recent output.
+  const text = dialogText(visible) || tail(visible, 30);
+  return { kind: 'question', question: { text, recentOutput: tail(recent, OUTPUT_LINES), detectedBy: 'blocked' } };
 }
 
 export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend> {

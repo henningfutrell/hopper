@@ -482,7 +482,7 @@ which one runs a job. `claudeArgsFor(yolo, args)` (`src/executors/herdr/start.ts
 - **not yolo** — the args, minus every argument that would grant every permission
   (`--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions`, `--permission-mode
   bypassPermissions`). Claude asks before it acts; each permission dialog parks the job as a
-  question (`detectedBy: blocked`, the dialog's screen as its text), and the escalation levels or the
+  question (`detectedBy: blocked`, the dialog as its text), and the escalation levels or the
   owner answer it.
 
 **Startup dialogs** (`settleStartup`). After `agent start` — refused with `agent_not_ready`, or
@@ -615,10 +615,10 @@ marker still on screen, a marker in backticks or bold. Then:
 
 | observed | outcome |
 |----------|---------|
-| marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }` |
+| marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }`; a block that opens with a tool call (`● Bash(…)`) is the text after the call's output, never the call (issue #377) |
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
-| status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the visible dialog |
+| status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000) | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again; each further status note in a row waits twice as long before its nudge |
 | stalled, and the anchor nowhere on screen or text unsent in the input box | **lost send** (issue #278): what was sent never reached Claude (seen live: Claude sat idle, the job running, across daemon restarts; once the pasted prompt sat in the input box as `[Pasted text #1 +29 lines]`, its Enter lost). Text in the input box (`inputBoxText`, a `Try "…"` suggestion aside) is submitted with `enter`, progress `the prompt sat unsent in claude's input: submitted it`, never pasted twice; else the executor sends the same text again (`turn.text`, saved with the turn), progress `the prompt never reached claude: sent it again`; after 3 sends in all, or for a turn saved without its text, `failed` `the prompt never reached claude …` with the screen |
 | stalled at a dialog (a picked option that never landed) | `question`, `detectedBy: blocked`, as above |
