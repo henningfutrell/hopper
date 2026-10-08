@@ -4,6 +4,8 @@
 // nonce, bound to the place it is kept (the context), padded so its length does not show, and marked with
 // the master key's id so the key can be rotated (HOPPER_TOKEN_KEY_PREVIOUS opens what an old key sealed).
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { createSealer, SecretUnreadable, sealerOf } from '../../src/secrets/sealer.ts';
 
@@ -99,10 +101,12 @@ describe('sealerOf: the sealer under the runtime\'s key', () => {
     expect(r.sealer?.open(createSealer(OTHER).seal('v', CONTEXT), CONTEXT)).toBe('v');
   });
 
-  it('no key: no sealer, and a problem that says what to set', () => {
+  it('no key: no sealer, and a problem that says what to set and where it is documented', () => {
     const r = sealerOf(() => undefined);
     expect(r.sealer).toBeUndefined();
     expect(r.problem).toMatch(/HOPPER_TOKEN_KEY is not set/);
+    const section = /docs\/deploy\.md "([^"]+)"/.exec(r.problem ?? '')?.[1];
+    expect(readFileSync(fileURLToPath(new URL('../../docs/deploy.md', import.meta.url)), 'utf8')).toContain(`## ${section}\n`);
   });
 
   it('a key that is no key: throws, so the daemon does not start on it', () => {
