@@ -74,6 +74,7 @@ function QuestionCard({ q }: { q: Question }) {
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
+      {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>
         <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />recent output ({Math.min(40, lines.length)} of {lines.length} lines)

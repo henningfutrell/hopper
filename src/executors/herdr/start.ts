@@ -66,6 +66,8 @@ export interface PaneState {
   turn?: TurnAnchor;
   /** state_change_seq when the turn parked on a question: Claude moving past it means the owner answered in the pane. */
   parkedSeq?: number;
+  /** The parked turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
+  lapsesAt?: string;
 }
 
 /** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */
@@ -113,8 +115,10 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
-    // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
-    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id },
+    // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
+    // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
+    // which takes longer than its two minutes.
+    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),

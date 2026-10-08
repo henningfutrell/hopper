@@ -296,6 +296,20 @@ export function dialogText(text: string): string {
     .join('\n');
 }
 
+/** Claude Code's own countdown on a dialog (issue #376): "… will automatically deny this request in 1:59, …" or "in about 2 minutes". */
+const AUTO_DENY = /automatically deny this request in (?:(\d+):(\d{2})|about (\d+) (second|minute)s?)\b/;
+
+/**
+ * How long until Claude Code denies the dialog on screen by itself (issue #376), from its countdown; undefined
+ * when the dialog has none. Read once, when the question is asked: the countdown is never watched.
+ */
+export function autoDenyMs(text: string): number | undefined {
+  const m = AUTO_DENY.exec(text);
+  if (!m) return undefined;
+  if (m[1] !== undefined) return (Number(m[1]) * 60 + Number(m[2])) * 1000;
+  return Number(m[3]) * (m[4] === 'minute' ? 60_000 : 1000);
+}
+
 /**
  * What was typed into the pane after the turn that parked the job: the first user echo (❯ and
  * its continuation lines) after Claude's reply to `anchor`, above the input box. Undefined when

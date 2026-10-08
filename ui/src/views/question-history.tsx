@@ -11,7 +11,7 @@ import type { Question, QuestionStatus } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobIndex } from '@/store/selectors';
 
-const OUTCOME: Record<Exclude<QuestionStatus, 'open'>, Tone> = { answered: 'ok', closed: 'warn', dismissed: 'muted', expired: 'bad', cancelled: 'muted' };
+const OUTCOME: Record<Exclude<QuestionStatus, 'open'>, Tone> = { answered: 'ok', closed: 'warn', dismissed: 'muted', expired: 'bad', lapsed: 'warn', cancelled: 'muted' };
 const firstLine = (s: string) => s.split('\n').find((l) => l.trim())?.trim() ?? '';
 
 /** One handled question, one line: when, outcome, the question's first line. Opens to the question, the answer and the job. */
@@ -35,6 +35,7 @@ function HandledRow({ q }: { q: Question }) {
         </div>}
         {q.status === 'dismissed' && <div className="text-xs text-muted-foreground">dismissed: nothing was typed into the job</div>}
         {q.status === 'expired' && <div className="text-xs text-bad">expired unanswered: the job failed</div>}
+        {q.status === 'lapsed' && <div className="text-xs text-warn">lapsed: nobody answered in time, so Claude Code denied it by itself and the job went on</div>}
         {q.status === 'cancelled' && <div className="text-xs text-muted-foreground">cancelled with its job</div>}
         <div className="num text-[11px] text-muted-foreground">asked {clock(q.createdAt)} · {q.attempts.length} attempt{q.attempts.length === 1 ? '' : 's'}</div>
       </CollapsibleContent>

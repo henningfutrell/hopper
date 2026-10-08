@@ -53,6 +53,8 @@ export interface ExecutionQuestion {
   recentOutput: string;
   /** How it was detected: "marker" | "blocked" | "idle". */
   detectedBy: string;
+  /** A dialog with a countdown (issue #376): when the agent denies it by itself, unless answered first. */
+  lapsesAt?: string;
 }
 
 export type ExecutionOutcome =
@@ -61,8 +63,11 @@ export type ExecutionOutcome =
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion };
 
-/** What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with. */
-export interface PaneAnswer { answer?: string; executorState: Record<string, unknown> }
+/**
+ * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
+ * `lapsed`: nobody answered; the agent denied its dialog by itself when the countdown ran out (issue #376).
+ */
+export interface PaneAnswer { answer?: string; lapsed?: true; executorState: Record<string, unknown> }
 
 /**
  * Runs one job on one lane. `name` matches JobSpec.executor: "test" (built in) and
@@ -336,6 +341,13 @@ export interface QuestionService {
    * Undefined when the question is not open.
    */
   answeredInPane(questionId: string, answer: string): Question | undefined;
+  /**
+   * Nobody answered: the agent denied the question's dialog by itself when its countdown ran out (issue
+   * #376). Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers, status
+   * `lapsed`, `question.lapsed`; no answer, nobody answered it, no onAnswered. Undefined when the question
+   * is not open or has no countdown.
+   */
+  lapsedInPane(questionId: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */

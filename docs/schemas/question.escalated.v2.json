@@ -31,6 +31,9 @@
     },
     "renotify": {
       "type": "boolean"
+    },
+    "lapsesAt": {
+      "type": "string"
     }
   },
   "required": [
