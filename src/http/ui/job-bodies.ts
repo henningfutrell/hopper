@@ -1,0 +1,6 @@
+// The bodies of the job and question actions of the UI session.
+import { z } from 'zod';
+
+export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
+/** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */
+export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() });

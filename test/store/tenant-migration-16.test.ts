@@ -1,4 +1,4 @@
-// Tenant migration 15 (issue #387): intake is by label and assignee, so the GitHub sources' `authors`
+// Tenant migration 16 (issue #387): intake is by label and assignee, so the GitHub sources' `authors`
 // option goes from every github-account and github-app instance. Nothing else changes.
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../../src/store/db.ts';
@@ -7,17 +7,17 @@ import { useTempStore } from './helpers.ts';
 
 const t = useTempStore();
 
-function at14(plugins?: unknown): Db {
-  const raw = t.tenantAt(t.url(), 14);
+function at15(plugins?: unknown): Db {
+  const raw = t.tenantAt(t.url(), 15);
   if (plugins !== undefined) raw.run("INSERT INTO config (name, value, updated_at) VALUES ('plugins', ?, 'x')", JSON.stringify(plugins));
   return raw;
 }
 
 const plugins = (raw: Db) => JSON.parse(String(raw.get("SELECT value FROM config WHERE name = 'plugins'")!.value)) as Record<string, unknown>;
 
-describe('tenant migration 15: no authors option', () => {
+describe('tenant migration 16: no authors option', () => {
   it('drops authors from every GitHub source instance; other options and other plugins stay', () => {
-    const raw = at14({
+    const raw = at15({
       version: 1,
       jobSources: [
         { name: 'github-account', plugin: 'github-account', options: { label: 'work', authors: ['someone'] } },
@@ -25,7 +25,7 @@ describe('tenant migration 15: no authors option', () => {
         { name: 'other', plugin: 'custom', options: { authors: ['kept'] } },
       ],
     });
-    migrateTenant(raw, 15);
+    migrateTenant(raw, 16);
     expect(plugins(raw)).toEqual({
       version: 1,
       jobSources: [
@@ -39,12 +39,12 @@ describe('tenant migration 15: no authors option', () => {
 
   it('a config with no authors, or none at all: nothing changes', () => {
     const doc = { version: 1, jobSources: [{ name: 'github-account', plugin: 'github-account' }] };
-    const raw = at14(doc);
-    migrateTenant(raw, 15);
+    const raw = at15(doc);
+    migrateTenant(raw, 16);
     expect(plugins(raw)).toEqual(doc);
     raw.close();
-    const none = at14();
-    migrateTenant(none, 15);
+    const none = at15();
+    migrateTenant(none, 16);
     expect(none.get("SELECT value FROM config WHERE name = 'plugins'")).toBeUndefined();
     none.close();
   });

@@ -6,15 +6,13 @@
 // app's installed repos, a connected account's chosen repos), listed repo by repo. Never a search: the app
 // never passes an empty list, and a connected account's source with none chosen is paused (issue #321).
 
+import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { ADDRESS_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED } from './labels.ts';
 
-/**
- * The newest job of an item was rejected (issue #387): when, and the assignee it was taken for. A job
- * taken before assignment intake has none: its issue is left to its labels, as then.
- */
-export interface Rejection { at: string; assignee?: string }
+/** A rejection with no assignee (a job taken before assignment intake) leaves its issue to its labels, as then. */
+export type { Rejection } from '../../domain/rejection.ts';
 
 export interface DiscoverResult {
   issues: GitHubIssue[];

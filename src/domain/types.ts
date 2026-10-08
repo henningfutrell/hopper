@@ -449,6 +449,7 @@ export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 export type * from './routing.ts';
 export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
+export * from './usage-history.ts';
 export type * from './plugins.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------

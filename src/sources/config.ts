@@ -3,7 +3,7 @@
 // source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown. There is no `authors`
 // option (issue #387): a source takes an issue by its label and its assignee, never by who filed it. An
-// instance still carrying one loads with it dropped; tenant migration 15 removes it from the stored config.
+// instance still carrying one loads with it dropped; tenant migration 16 removes it from the stored config.
 import { z } from 'zod';
 import { JOBS_DIR } from '../domain/types.ts';
 

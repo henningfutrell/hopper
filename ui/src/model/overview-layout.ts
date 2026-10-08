@@ -4,12 +4,12 @@
 // Pure: reading a stored layout never throws and never loses a panel — a field it cannot use takes
 // its default, a panel it does not know goes, a panel the stored layout lacks comes back at the end.
 
-export const PANEL_IDS = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'live'] as const;
+export const PANEL_IDS = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'live'] as const;
 export type PanelId = typeof PANEL_IDS[number];
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   kpis: 'Numbers', timeline: 'Lane timeline', attention: 'Attention', lanes: 'Lanes', waiting: 'Waiting',
-  ended: 'Ended', throughput: 'Ended per hour', usage: 'Usage', live: 'Live activity',
+  ended: 'Ended', throughput: 'Ended per hour', usage: 'Usage', usageHistory: 'Usage over time', live: 'Live activity',
 };
 
 /** Thirds of the overview's row; on a narrow screen every panel takes the whole row. */
@@ -35,7 +35,7 @@ export interface OverviewSettings {
 
 export interface OverviewLayout { panels: PanelPlacement[]; settings: OverviewSettings }
 
-const WIDTH: Record<PanelId, PanelWidth> = { kpis: 3, timeline: 2, attention: 1, lanes: 1, waiting: 1, ended: 1, throughput: 2, usage: 1, live: 3 };
+const WIDTH: Record<PanelId, PanelWidth> = { kpis: 3, timeline: 2, attention: 1, lanes: 1, waiting: 1, ended: 1, throughput: 2, usage: 1, usageHistory: 3, live: 3 };
 
 export const DEFAULT_LAYOUT: OverviewLayout = {
   panels: PANEL_IDS.map((id) => ({ id, shown: true, width: WIDTH[id] })),

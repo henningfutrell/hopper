@@ -68,7 +68,7 @@ describe('movePanel', () => {
 describe('placePanel', () => {
   it('a panel dropped on one before it goes in front of it; on one after it, behind it', () => {
     expect(ids(placePanel(DEFAULT_LAYOUT, 'live', 'kpis'))).toEqual(['live', ...ids().filter((id) => id !== 'live')]);
-    expect(ids(placePanel(DEFAULT_LAYOUT, 'kpis', 'lanes'))).toEqual(['timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage', 'live']);
+    expect(ids(placePanel(DEFAULT_LAYOUT, 'kpis', 'lanes'))).toEqual(['timeline', 'attention', 'lanes', 'kpis', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'live']);
   });
 
   it('keeps every panel once, with its visibility and width', () => {

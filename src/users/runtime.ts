@@ -9,8 +9,8 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, JobSource, PluginsView, QuestionService, Router, SettableUsageSource, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import type { AttachedMachine, ConnectedAccountProvider, HostKeyOffer, Job, Question, User } from '../domain/types.ts';
-import { IN_FLIGHT_STATUSES, isRerunnable } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, isRerunnable, type AttachedMachine, type ConnectedAccountProvider, type HostKeyOffer, type Job, type Question, type User } from '../domain/types.ts';
+import { rejectionOf } from '../domain/rejection.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
@@ -43,6 +43,7 @@ import { createConnectedAccounts, type ConnectedAccountsService } from '../conne
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { renewal } from '../connected-accounts/renewal.ts';
 import { CLIENT_SECRET_VARIABLE } from '../connected-accounts/web-flow.ts';
+import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, secretProblem } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
@@ -133,6 +134,8 @@ export interface UserRuntime {
   secretProblem: (secretEnv: string) => string | undefined;
   /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
   machineLink: UserMachineLink;
+  /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
+  usageHistory: UsageRecorder;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -250,11 +253,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: {
       knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
       rerunnable: (keys) => new Set(keys.filter((k) => { const j = store.jobs.getBySourceKey(k); return j !== undefined && isRerunnable(j); })),
-      rejections: (keys) => new Map(keys.flatMap((k) => {
-        const j = store.jobs.getBySourceKey(k);
-        if (j?.status !== 'rejected') return [];
-        return [[k, { at: j.finishedAt ?? j.updatedAt, ...(j.source?.assignee ? { assignee: j.source.assignee } : {}) }] as const];
-      })),
+      rejections: (keys) => new Map(keys.flatMap((k) => { const r = rejectionOf(store.jobs.getBySourceKey(k)); return r ? [[k, r] as const] : []; })),
       connectedAccounts,
     },
     machineContext: { executors: () => executorNames(), target },
@@ -342,11 +341,17 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
+  const usageHistory = createUsageRecorder({
+    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
+    // Read at every prune: a retention set in the UI applies without a restart (issue #356).
+    retentionDays: () => store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS,
+  });
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, dispatcher, executors,
     connectedAccounts,
+    usageHistory,
     webhooksEditor: createWebhooksEditor({ store }),
     // The variable the user's runtime reads: the subscription's, under the user's prefix.
     secretProblem: (secretEnv) => secretProblem(raw, `${user.secretPrefix}${secretEnv}`),
@@ -360,10 +365,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       started = true;
       await engine.start();
       sync.start();
+      usageHistory.start();
     },
     stop() {
       stopped ??= (async () => {
         await sync.stop();
+        usageHistory.stop();
         connectedAccounts.stop();
         await questions.stop();
         await engine.stop();

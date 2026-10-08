@@ -1,4 +1,4 @@
-// Tenant migration 15 (issue #387): a GitHub source takes an issue by its label and its assignee, never
+// Tenant migration 16 (issue #387): a GitHub source takes an issue by its label and its assignee, never
 // by who filed it, so the `authors` option goes from every github-account and github-app instance. Every
 // other option, and every other plugin's instance, stays as it is.
 import type { Db } from './db.ts';
