@@ -1,7 +1,7 @@
 // The plugins config: which instance fills which role (design.md "Configuration — the plugins
 // config"), the config record `plugins` in the store (design.md "Config in the database"). Read:
 // router, queueSorter, escalationLevels, executors, jobSources, machines (this machine and the
-// attached ones, issue #74), usageSources, notifiers, routing, machineDefaults. A UI edit (edit.ts,
+// attached ones, issue #74), usageSources, notifiers, routing, machineDefaults, escalationMachine. A UI edit (edit.ts,
 // attached-edit.ts) replaces it against its version.
 import { z } from 'zod';
 import { isModelName } from '../domain/plugins.ts';
@@ -14,7 +14,7 @@ export type PluginsConfigResult =
   | {
     router?: InstanceSpec; queueSorter?: InstanceSpec; escalationLevels?: InstanceSpec[]; executors?: InstanceSpec[];
     jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
-    routing?: RoutingRule[]; machineDefaults?: Partial<MachineDefaults>; warnings: string[];
+    routing?: RoutingRule[]; machineDefaults?: Partial<MachineDefaults>; escalationMachine?: string; warnings: string[];
   }
   | { error: string };
 
@@ -60,6 +60,8 @@ const CONFIG = z.strictObject({
     lanes: z.number().int().min(1, 'machineDefaults.lanes must be at least 1').optional(),
     executors: z.array(z.string().min(1)).optional(),
   }).optional(),
+  // Where a claude-cli level that names no machine runs when the job's machine cannot and several can (issue #442).
+  escalationMachine: z.string().min(1).optional(),
 });
 
 /** Why a plugins config is refused, or undefined when it is valid. */
@@ -77,7 +79,7 @@ export function loadPluginsConfig(raw: unknown): PluginsConfigResult {
   const parsed = CONFIG.safeParse(raw);
   if (!parsed.success) return { error: `the plugins config: ${pluginsConfigProblem(raw)}` };
   const warnings: string[] = [];
-  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing, machineDefaults } = parsed.data;
+  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing, machineDefaults, escalationMachine } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(queueSorter ? { queueSorter } : {}),
@@ -89,6 +91,7 @@ export function loadPluginsConfig(raw: unknown): PluginsConfigResult {
     ...(notifiers ? { notifiers } : {}),
     ...(routing ? { routing } : {}),
     ...(machineDefaults ? { machineDefaults } : {}),
+    ...(escalationMachine ? { escalationMachine } : {}),
     warnings,
   };
 }

@@ -4,6 +4,7 @@
 import { cpSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { NO_MACHINE_FOR_LEVEL } from '../../src/domain/machine-pick.ts';
 import type { AnswerRequest } from '../../src/domain/ports.ts';
 import type { Job, Question } from '../../src/domain/types.ts';
 import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
@@ -264,16 +265,15 @@ describe('escalation levels (0..n, lowest first, live)', () => {
     expect(byId.get('claude-cli')).toMatchObject({ role: 'escalation-level', builtin: true, options: { properties: { bin: {}, model: {}, timeoutMs: {}, effort: {} } } });
   });
 
-  it('a level that names no machine stays in its place, cannot run, and escalates every question; shown in the report (#174)', async () => {
-    const { host } = start({ file: { version: 1, escalationLevels: [{ name: 'level-1', plugin: 'claude-cli' }, { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local' } }] } });
+  it('a level that names no machine runs, and picks one per question; with none there it escalates, saying so plainly, and the report flags it (#442)', async () => {
+    const { host } = start({ file: { version: 1, machines: [], escalationLevels: [{ name: 'level-1', plugin: 'claude-cli' }, { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local' } }] } });
     await host.start();
     expect(host.levels().map((l) => l.name)).toEqual(['level-1', 'level-2']);
     expect(host.report().escalationLevels[0]).toMatchObject({
-      instance: { name: 'level-1', plugin: 'claude-cli' }, detection: { status: 'unavailable' }, active: null, reason: expect.stringContaining('machine'),
+      instance: { name: 'level-1', plugin: 'claude-cli' }, detection: { status: 'available' }, active: 'claude-cli', machine: { needsMachine: true, note: NO_MACHINE_FOR_LEVEL },
     });
-    expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({
-      escalate: true, reason: expect.stringMatching(/^unavailable: /),
-    });
+    expect(host.report().escalationLevels[1]!.machine).toBeUndefined();
+    expect(await host.levels()[0]!.answer(request, new AbortController().signal)).toEqual({ escalate: true, reason: NO_MACHINE_FOR_LEVEL });
   });
 
   it.each([

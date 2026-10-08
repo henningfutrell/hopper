@@ -46,7 +46,7 @@ describe('claude-plan on a client target (issue #366)', () => {
     const ctx = {
       clock: { now: () => new Date('2026-10-03T17:00:00.000Z') }, logger: { info() {}, warn() {} }, dataDir: scratch, userEnv: {}, secretName: (n: string) => n, scratchDir: scratch,
       instanceName: 'studio-claude', env: () => undefined,
-      machine: async (id: string) => (id === 'studio' ? STUDIO : undefined),
+      machine: async (id: string) => (id === 'studio' ? STUDIO : undefined), machines: async () => [STUDIO],
       client: (id: string) => (id === 'studio' ? client()?.transport(TOKEN, 'studio') : undefined),
     };
     // `bin` names the hopper's claude; a client target runs its own (the client's claudeBin).

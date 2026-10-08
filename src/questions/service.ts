@@ -171,6 +171,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function requestFor(q: Question, number: number, of: number): { req: AnswerRequest; rulesNote: string } {
     const rules = readRules(o.config);
     const job = store.jobs.get(q.jobId);
+    const jobMachine = job?.resumeOn ?? job?.spec.machineId;
     return {
       req: {
         question: q,
@@ -179,6 +180,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         rules: rules.text,
         previous: q.attempts,
         level: { number, of },
+        ...(jobMachine ? { jobMachine } : {}),
       },
       rulesNote: rules.missing ? ' (no rules yet)' : '',
     };
@@ -204,7 +206,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       const q = stillAt(id, level.name);
       if (!q) return void superseded(id, level, startedAt);
       const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
-      const base: QuestionAttempt = { tier: level.name, role: 'level', ...(model ? { model } : {}), startedAt, finishedAt: iso(), outcome: 'escalated' };
+      const machine = reply.ok ? reply.value.machine : undefined;
+      const base: QuestionAttempt = { tier: level.name, role: 'level', ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso(), outcome: 'escalated' };
       if (!reply.ok) {
         store.questions.addAttempt(id, { ...base, error: reply.error, reason: `error${rulesNote}` });
         return `${level.name} failed: ${reply.error}`;

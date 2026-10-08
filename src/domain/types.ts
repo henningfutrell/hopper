@@ -354,6 +354,8 @@ export interface QuestionAttempt {
   role: AttemptRole;
   /** The model that ran, as the level reports it, else the configured one. */
   model?: string;
+  /** The machine the level ran on and why, when it named none and picked it (issue #442). */
+  machine?: { id: string; why: string };
   startedAt: string;
   finishedAt?: string;
   /** The level's answer (escalating: its recommendation), or the human's answer. */
