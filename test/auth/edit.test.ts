@@ -70,6 +70,10 @@ describe('editSignIn: realms', () => {
     expect(editSignIn(after, { action: 'settings', none: null })).not.toHaveProperty('none');
   });
 
+  it('sets the session lengths (issue #439)', () => {
+    expect(editSignIn(SIGN_IN, { action: 'settings', sessions: { idleHours: 12, maxHours: 48 } }).sessions).toEqual({ idleHours: 12, maxHours: 48 });
+  });
+
   it('changes nothing it was given', () => {
     const before = structuredClone(SIGN_IN);
     editSignIn(SIGN_IN, { action: 'remove', name: 'dir' });
