@@ -1,7 +1,7 @@
 // The print-mode agent executors (design.md "Print-mode agent executors"; issue #142 for Cursor's agent,
 // #307 for codex, opencode and omp): one job is an agent CLI in print mode, run on the job's machine
 // through its connection — this machine or an ssh target — in the job's work tree. Each turn is one run;
-// its last message ends with the hopper protocol's marker. A question parks the job with the agent's
+// its last message ends with the hopper protocol's marker. A question pauses the job with the agent's
 // session id, and the answer resumes that session. Not idempotent: a restart fails a running job and
 // never runs the agent twice. As a herdr-claude job (issue #410): its own scratch dir, each turn in the
 // job's systemd user scope where the machine has one (the turn before stopped first), and the reap when
@@ -44,7 +44,7 @@ export interface PrintAgentExecutorOptions {
 
 /**
  * What a job keeps: the work tree it runs in and the ssh target it runs on (absent: this machine), for the
- * reap; once parked, the agent's session (its chat) to resume.
+ * reap; once on a question, the agent's session (its chat) to resume.
  */
 type PrintAgentState = { cwd: string; ssh?: string; chatId?: string };
 

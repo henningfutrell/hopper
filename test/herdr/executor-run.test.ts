@@ -49,11 +49,13 @@ describe('herdr-claude executor: shape and validation', () => {
 describe('herdr-claude executor: run', () => {
   it('opens one tab in the hopper workspace, starts Claude, saves state before prompting', async () => {
     const { herdr, executor } = setup({ turns: [DONE] }, { claudeArgs: ['--dangerously-skip-permissions'] });
-    const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
+    const { ctx, saved, sessions } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
-    expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
+    expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus', '--session-id', sessions[0]!], timeoutMs: 60000 }]);
+    // The session the hopper chose (issue #501), reported once Claude is up: a parked job resumes it.
+    expect(sessions).toEqual([expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('createTab')).toBeLessThan(order.indexOf('startAgent'));

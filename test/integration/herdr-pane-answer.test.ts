@@ -1,4 +1,4 @@
-// The owner answers a parked herdr-claude job by typing into its pane, not the UI (design.md
+// The owner answers a herdr-claude job on a question by typing into its pane, not the UI (design.md
 // "Questions" → "Answered in the pane"). The fake herdr stands in for the pane: the test calls
 // `herdr.prompt` itself, as the owner's keyboard would. The hopper notices Claude working again,
 // marks the question answered by the human with the typed text, aborts the answer chain, and
@@ -41,9 +41,9 @@ describe('a question answered by typing into the pane', () => {
     const a = await start(herdr);
     const job = await a.pull({}, item);
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
-    const parked = await a.job(job.id);
-    expect(parked.status).toBe('waiting_answer');
-    const { agentName } = parked.executorState as { agentName: string };
+    const waiting = await a.job(job.id);
+    expect(waiting.status).toBe('waiting_answer');
+    const { agentName } = waiting.executorState as { agentName: string };
 
     await herdr.prompt(agentName, 'Blue.');
 

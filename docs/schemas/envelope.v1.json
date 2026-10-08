@@ -64,6 +64,8 @@
         "job.work_removed",
         "job.cleanup_deferred",
         "job.cleaned_up",
+        "job.parked",
+        "job.unparked",
         "source.stalled",
         "connected_account.expired",
         "ui_session.ended",

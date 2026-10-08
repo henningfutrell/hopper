@@ -1,4 +1,4 @@
-// Waiting (queue order), the jobs on a question, the operator-led jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
+// Waiting (queue order), the jobs on a question, the operator-led jobs, the parked jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
 import { Archive, Check, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,12 +7,12 @@ import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
-import { canRerun, waitingRows } from '@/model/board';
+import { canRerun, machineName, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { act, rerun, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
-import { CancelButton, OperatorLedButton } from './lanes';
+import { CancelButton, OperatorLedButton, ParkButton, RequeueButton } from './lanes';
 
 /** Run again: a new job for the item joins the queue now (issue #354). */
 function RerunButton({ job }: { job: Job }) {
@@ -84,6 +84,34 @@ const WAITING_MEANING: Record<string, string> = {
   approved: 'A person approved it: no router hold applies.',
 };
 
+/**
+ * The parked jobs (issue #501): out of their lanes, no pane or agent, their work tree and agent session kept on their
+ * machine until re-queued. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ */
+export function ParkedRows({ heading = true }: { heading?: boolean }) {
+  const { parked } = useJobBoard();
+  const machines = useHopper((s) => s.machines);
+  if (parked.length === 0) return null;
+  return <>
+    {heading && <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+      Parked<span className="num font-normal text-muted-foreground/70">{parked.length}</span>
+    </div>}
+    {parked.map((job) => (
+      <div key={job.id} data-job-group="parked" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
+        <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><RequeueButton job={job} /><CancelButton job={job} /></div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <StatusBadge status="parked" title="Out of its lane, its pane and agent ended: its work tree, branch and agent session are kept on its machine until it is re-queued." />
+          {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
+          {job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer' && <span>answered, resumes with it</span>}
+          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#questions" className="text-question hover:underline">question open →</a>}
+          <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
+        </div>
+        {job.workTree && <div className="truncate font-mono text-xs text-muted-foreground" title={`work tree ${job.workTree}`}>{job.workTree}</div>}
+      </div>
+    ))}
+  </>;
+}
+
 export function WaitingPanel() {
   const board = useJobBoard();
   const latest = useHopper((s) => s.decisions[0]);
@@ -123,7 +151,7 @@ export function WaitingPanel() {
         </div>
         {board.waitingAnswer.map((job) => (
           <div key={job.id} data-job-group="waitingAnswer" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
-            <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><CancelButton job={job} /></div>
+            <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <a href="#questions"><StatusBadge status="waiting_answer" label="on a question →" title="Paused on a question: its lane is free until the question is answered." /></a>
               <span className="ml-auto">for <Since iso={job.updatedAt} /></span>
@@ -148,6 +176,7 @@ export function WaitingPanel() {
           </div>
         ))}
       </>}
+      <ParkedRows />
       <LockedRows />
     </Panel>
   );

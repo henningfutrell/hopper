@@ -1,11 +1,11 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
-import { FolderOpen, Hand, Layers, X } from 'lucide-react';
+import { FolderOpen, Hand, Layers, Pause, Play, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { laneRows, machineName, type LaneRow } from '@/model/board';
+import { canPark, canRequeue, laneRows, machineName, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
 import type { Job } from '@/model/wire';
 import { act, useHopper } from '@/store';
@@ -21,6 +21,31 @@ export function CancelButton({ job }: { job: Job }) {
       description={<>“{goalOf(job)}” stops now and its source is told it was cancelled.</>}>
       <Button variant="ghost" size="icon-xs" aria-label="Cancel job" className="text-muted-foreground hover:text-bad"><X /></Button>
     </Confirm>
+  );
+}
+
+/**
+ * Park a running job or one on a question (issue #501): it leaves its lane now, its pane and agent end, and its work
+ * tree, session, machine and question are kept until it is re-queued. Shown only where the daemon takes it.
+ */
+export function ParkButton({ job }: { job: Job }) {
+  const authed = useCanOperate();
+  if (!authed || !canPark(job)) return null;
+  return (
+    <Confirm title="Park this job?" action="Park job" onConfirm={() => act(`/ui/api/jobs/${job.id}/park`, {}, 'Job parked')}
+      description={<>“{goalOf(job)}” leaves its lane now{job.status === 'running' ? ', stopped mid-turn' : ''}. Its work tree, branch and agent session stay on its machine{job.status === 'waiting_answer' ? ', and its question stays open and never expires' : ''}, until you re-queue it.</>}>
+      <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane, keep its work and session for later"><Pause />Park</Button>
+    </Confirm>
+  );
+}
+
+/** Re-queue a parked job (issue #501): it returns to its machine and resumes its agent session there. */
+export function RequeueButton({ job }: { job: Job }) {
+  const authed = useCanOperate();
+  if (!authed || !canRequeue(job)) return null;
+  return (
+    <Button size="xs" variant="outline" title="Re-queue: back to its machine, resuming its agent session"
+      onClick={() => act(`/ui/api/jobs/${job.id}/requeue`, {}, 'Job re-queued')}><Play />Re-queue</Button>
   );
 }
 
@@ -61,7 +86,7 @@ function LaneCard({ row, machine, idle }: { row: LaneRow; machine: string; idle?
       </div>
       {job ? (
         <div data-job-group="running" data-job-id={job.id} data-status={job.status} className="space-y-2">
-          <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><CancelButton job={job} /></div>
+          <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
             {/* A bar only for a percentage the job reported (issue #381): none reads as stuck at 0%. */}

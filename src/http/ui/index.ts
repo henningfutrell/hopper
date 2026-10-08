@@ -203,6 +203,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
+  // Park a job and re-queue it (issue #501).
+  for (const act of ['park', 'requeue'] as const) app.post(`/ui/api/jobs/:id/${act}`, operator, async (req) => o.tenant(req).engine[act](parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));

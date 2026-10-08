@@ -90,7 +90,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
 
-  it('a question parks the job with its session; the answer resumes that session', async () => {
+  it('a question pauses the job with its session; the answer resumes that session', async () => {
     reply('Which language should it be in?\nHOPPER_QUESTION');
     const firstTurn = ctxFor({ prompt: 'Write a greeting', cwd: work });
     expect(await ex.run(firstTurn.ctx)).toEqual({

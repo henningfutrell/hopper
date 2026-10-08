@@ -16,7 +16,7 @@ const DETAIL = {
     { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
     { key: url(3), title: 'Also unassigned', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
     { key: url(4), title: 'Old claim', repo: 'octo-user/hopper', reason: 'claimed by another hopper', action: 'release' },
-    { key: url(5), title: 'Parked', repo: 'octo-user/hopper', reason: 'on the backburner' },
+    { key: url(5), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner' },
   ],
   intakeMigration: { at: '2026-10-08T10:00:00.000Z', changes: [{ key: url(6), change: 'released a claim with no holder recorded and no job in this hopper' }] },
   outsideRepos: [{ repo: 'octo-user/other', items: [url(1, 'octo-user/other')] }],
@@ -38,7 +38,7 @@ const posts: { path: string; body: unknown }[] = [];
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': MACHINES, '/api/decisions': { decisions: [DECISION] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: SOURCES },

@@ -40,7 +40,7 @@ describe('a machine whose home is not known yet', () => {
   });
 });
 
-// Issue #365: a client target parked with 0 lanes stays a machine; it takes no jobs.
+// Issue #365: a client target resting at 0 lanes stays a machine; it takes no jobs.
 describe('a machine with 0 lanes', () => {
   it('jobs wait for a lane; nothing starts there', () => {
     const d = decide(inputs({ machines: [machine({ maxLanes: 0 })], waiting: [job('a')] }), 'd1');

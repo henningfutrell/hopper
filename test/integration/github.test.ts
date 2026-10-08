@@ -233,10 +233,10 @@ describe('GitHub issue → job → issue', () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     a.setUsage(100);
-    const parked = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:backburner'] });
+    const backburner = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:backburner'] });
     const waiting = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
-    expect(await jobFor(a, parked.url)).toBeUndefined();
+    expect(await jobFor(a, backburner.url)).toBeUndefined();
     const job = (await jobFor(a, waiting.url))!;
     expect(['queued', 'held']).toContain(job.status);
 
@@ -247,10 +247,10 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     expect((await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs).toHaveLength(1);
 
-    gh.removeLabel(REPO, parked.number, 'hopper:backburner');
+    gh.removeLabel(REPO, backburner.number, 'hopper:backburner');
     gh.removeLabel(REPO, waiting.number, 'hopper:backburner');
     await a.sync();
-    expect(['queued', 'held']).toContain((await jobFor(a, parked.url))?.status);
+    expect(['queued', 'held']).toContain((await jobFor(a, backburner.url))?.status);
     const jobs = (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === waiting.url);
     expect(jobs.map((j) => j.status === 'cancelled' ? 'cancelled' : 'waiting').sort()).toEqual(['cancelled', 'waiting']);
     expect(gh.commentsOn(REPO, waiting.number)).toEqual([]);

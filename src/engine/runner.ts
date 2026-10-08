@@ -1,5 +1,5 @@
 // Job lifecycle after a claim: started → progressed (throttled) → finished | failed |
-// cancelled | waiting_answer. A claim of a job with a pending answer resumes it. A job
+// cancelled | waiting_answer | parked. A claim of a job with a pending answer resumes it. A job
 // reattached by restart recovery skips `started` and goes on from its executor's present state;
 // one whose machine did not answer at recovery is asked again until it does (issue #368).
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -11,6 +11,7 @@ import { nowIso, type EngineContext } from './context.ts';
 import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
+import { recordPark, releaseParked } from './park.ts';
 
 const PROGRESS_EVERY_MS = 500;
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
@@ -20,6 +21,8 @@ interface Running {
   controller: AbortController;
   /** Set by cancel(): the reason recorded on job.cancelled. */
   cancelReason?: string;
+  /** Set by park() (issue #501): the job is parked once its executor has stepped aside, unless it finished meanwhile. */
+  parking?: boolean;
   done: Promise<void>;
 }
 
@@ -35,12 +38,15 @@ export interface Runner {
   reattachWhenReachable(claim: Claim): void;
   /** Abort a claimed/running job as a cancel, recorded with `reason`. False when it is not running here. */
   cancel(jobId: string, reason: string): boolean;
+  /** Abort a running job to park it (issue #501): its lane frees once its executor has stepped aside. False when it is not running here. */
+  park(jobId: string): boolean;
   /** Abort everything for shutdown and wait up to `ms`. Nothing is written afterwards. */
   stopAll(ms: number): Promise<void>;
 }
 
 /** Abort reasons the executor reads from `ctx.signal.reason` (ports.ts ExecutionContext). */
 const CANCEL = 'cancel';
+const PARK = 'park';
 const SHUTDOWN = 'shutdown';
 
 /** How a launch begins: a fresh run (or resume), a reattach, or a reattach once the machine answers. */
@@ -150,9 +156,18 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
+        agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
       }, reattach);
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
+    }
+    // Parked mid-turn (issue #501): the executor left its pane as it was; it is ended now, the work tree and session kept.
+    // A job that ended done meanwhile is recorded as any other.
+    if (entry.parking && entry.cancelReason === undefined && outcome.kind !== 'finished' && !c.stopping()) {
+      progress.flush();
+      const parked = store.tx(() => recordPark(c, store.jobs.get(job.id) ?? started, 'running', claim.laneId));
+      await releaseParked(c, parked);
+      return;
     }
     if (entry.cancelReason === undefined) outcome = await completeOrFailed(c, started, outcome);
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
@@ -180,6 +195,13 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       if (!entry) return false;
       entry.cancelReason = reason;
       entry.controller.abort(CANCEL);
+      return true;
+    },
+    park(jobId) {
+      const entry = running.get(jobId);
+      if (!entry || entry.cancelReason !== undefined) return false;
+      entry.parking = true;
+      entry.controller.abort(PARK);
       return true;
     },
     async stopAll(ms) {

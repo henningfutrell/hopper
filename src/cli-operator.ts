@@ -1,7 +1,7 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
 // accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
 // question. Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
-// runtime (a source told, an answer typed into a parked pane) apply as they do for a click. The session it
+// runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';

@@ -83,8 +83,8 @@ describe('the router never holds a resuming job', () => {
 
 describe('waiting_answer in inputs is ignored', () => {
   it('in waiting: not started, not held, not counted; reason notes it', () => {
-    const parked = job('p', { status: 'waiting_answer' });
-    const d = decide(inputs({ waiting: [parked, job('a')] }), 'd1');
+    const waiting = job('p', { status: 'waiting_answer' });
+    const d = decide(inputs({ waiting: [waiting, job('a')] }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['a']);
     expect(d.hold).toEqual([]);
     expect(d.reasons).toContain('ignored p: status waiting_answer is not an input');
@@ -92,8 +92,8 @@ describe('waiting_answer in inputs is ignored', () => {
   });
 
   it('in running: does not count against anything; reason notes it', () => {
-    const parked = job('p', { status: 'waiting_answer' });
-    const d = decide(inputs({ running: [parked] }), 'd1');
+    const waiting = job('p', { status: 'waiting_answer' });
+    const d = decide(inputs({ running: [waiting] }), 'd1');
     expect(d.reasons).toContain('ignored p: status waiting_answer is not an input');
   });
 });

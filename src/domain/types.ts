@@ -18,6 +18,7 @@ export type JobStatus =
   | 'running'
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
+  | 'parked' // taken out of its lane by a person (issue #501): no lane, no pane, no agent; its work tree and agent session kept until re-queued
   | 'finished' | 'failed' | 'cancelled'
   | 'rejected'; // turned away at the queue gate: kept, never run
 
@@ -105,8 +106,19 @@ export interface Job {
   questionId?: string;
   /** An answer to deliver on the next claim: the job resumes instead of starting fresh. */
   pendingAnswer?: string;
-  /** Machine a resuming job must return to (its pane lives there). */
+  /** Machine a resuming job must return to (its pane lives there, or its parked work tree and agent session). */
   resumeOn?: MachineId;
+  /**
+   * The agent session its executor started the job's agent with (issue #501), so a parked job resumes it
+   * (`claude --resume <session>`). Absent: the executor records none, and the job cannot be parked.
+   */
+  agentSession?: string;
+  /**
+   * Set when the job was parked (issue #501): its pane and agent ended, its work tree and agent session kept,
+   * `from` the status it was parked from. Kept through the re-queue until the resumed run records an outcome:
+   * that claim reopens the session instead of typing into a pane.
+   */
+  parked?: { at: string; from: 'running' | 'waiting_answer' };
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
   fromConfig?: SpecFromConfig;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */

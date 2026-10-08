@@ -82,7 +82,7 @@ describe('everything runs in parallel', () => {
 });
 
 describe('a question frees its lane at once', () => {
-  it('the parked job\'s lane goes to the next queued job in the Decision the question woke', async () => {
+  it('the lane of the job on a question goes to the next queued job in the Decision the question woke', async () => {
     const held = heldLevel();
     const a = await start(1, { seams: { levels: [held.level] } });
     const [asker, next] = await pullAll(a, [{ op: 'ask', message: 'Which colour?', ms: 100 }, { op: 'sleep', ms: 3000 }]);
@@ -97,7 +97,7 @@ describe('a question frees its lane at once', () => {
 });
 
 describe('a herdr-claude question frees its lane at once', () => {
-  it('the parked pane stays open; the next herdr job runs on the same lane while a level works on the question', async () => {
+  it('the waiting pane stays open; the next herdr job runs on the same lane while a level works on the question', async () => {
     const herdr = createFakeHerdrClient({
       session: 'jh-test',
       turns: [{ output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] }, { steps: ['● Working'], output: [], end: 'working' }],
@@ -110,9 +110,9 @@ describe('a herdr-claude question frees its lane at once', () => {
     const herdrItem = (prompt: string) => ({ executor: 'herdr-claude', prompt, cwd: '/tmp', env: {} });
     const [asker, next] = await pullAll(a, [herdrItem('Paint the shed'), herdrItem('Mow the lawn')], true);
     await waitFor(async () => (await a.job(next!.id)).status === 'running' && herdr.prompts.length === 2, { what: 'next job prompted', timeoutMs: 4000 });
-    const parked = await a.job(asker!.id);
-    expect(parked.status).toBe('waiting_answer');
-    expect(parked.laneId).toBeUndefined();
+    const waiting = await a.job(asker!.id);
+    expect(waiting.status).toBe('waiting_answer');
+    expect(waiting.laneId).toBeUndefined();
     expect(herdr.closed).toEqual([]);
     const claims = await ofType(a, 'job.claimed');
     const nextClaim = claims.find((e) => e.jobId === next!.id)!;

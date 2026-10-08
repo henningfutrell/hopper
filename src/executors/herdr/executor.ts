@@ -10,8 +10,9 @@ import type { Interrupt, Sleep } from './monitor.ts';
 import { afterLoginAct, loginWait, restoreLogin, takeLogin, type LoginRef } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter, typedAfterQuestion } from './screen.ts';
-import { jobScratchOf, openPane, startClaude } from './start.ts';
+import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter } from './screen.ts';
+import { readPaneAnswer } from './pane-answer.ts';
+import { jobScratchOf, startInPane } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, type HeldPane, type PaneOn, type RemoteHerdr, type Where } from './panes.ts';
 
@@ -22,18 +23,6 @@ const UNBLOCK_POLLS = 10;
 const MAX_SENDS = 3;
 /** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
 const EXIT_WAIT_MS = 5000;
-/**
- * How early a dialog may count as lapsed (issue #376): its countdown is read when the job parks, in whole
- * seconds and up to a poll after the dialog showed, so Claude Code's own deadline can come a little sooner.
- */
-const LAPSE_SLACK_MS = 5000;
-/**
- * Starts of one run (issue #462): a start that times out is tried again in a new pane, after a pause
- * that grows and is spread at random, so lanes that filled at once do not start again at once.
- */
-const START_ATTEMPTS = 3;
-const START_PAUSES_MS = [10000, 30000];
-const START_PAUSE_SPREAD = 0.5;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -110,27 +99,27 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   /**
    * The reap (issues #401, #410): Claude gets a moment to exit by itself, then the job's machine — through
    * its own connection, never the pane — stops the job's scope and its processes, Claude among them if it
-   * is still up, and removes its scratch dir unless it holds work not pushed. Undefined when the machine
-   * could not be reached: the sweep reaps it later.
+   * is still up, and removes its scratch dir unless it holds work not pushed — or keeps it (`scratch` false: a
+   * parked job's, issue #501). Undefined when the machine could not be reached: the sweep reaps it later.
    */
-  async function reap(herdr: HerdrClient, pane: HeldPane): Promise<Reaped | undefined> {
+  async function reap(herdr: HerdrClient, pane: HeldPane, scratch = true): Promise<Reaped | undefined> {
     for (let waited = 0; waited < EXIT_WAIT_MS && await herdr.getAgent(pane.agentName).catch(() => null) !== null; waited += o.pollMs) {
       await sleep(o.pollMs, new AbortController().signal);
     }
-    return herdr.reap(pane.jobId, jobScratchOf(pane.cwd, pane.jobId));
+    return herdr.reap(pane.jobId, scratch ? jobScratchOf(pane.cwd, pane.jobId) : undefined);
   }
 
   /**
    * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
    * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
-   * closed or gone (issue #371).
+   * closed or gone (issue #371). `scratch` false: the scratch dir stays (a parked job's, issue #501).
    */
-  async function exitAndClose(pane: HeldPane): Promise<string | undefined> {
+  async function exitAndClose(pane: HeldPane, scratch = true): Promise<string | undefined> {
     const close = async (herdr: HerdrClient): Promise<string | undefined> => {
       await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
-      const said = await reap(herdr, pane).catch(() => undefined);
-      if (said) reaped.set(pane.jobId, said);
+      const said = await reap(herdr, pane, scratch).catch(() => undefined);
+      if (said && scratch) reaped.set(pane.jobId, said);
       return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
     };
     const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
@@ -141,6 +130,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;
     if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
+    // The engine parks the job, then asks `park` to end its pane: nothing of it is closed here.
+    if (result.interrupt === 'park') return { kind: 'failed', error: 'parked' };
     await exitAndClose(pane);
     return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
   }
@@ -180,7 +171,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
-      parked: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
+      onQuestion: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
     });
     if ('authPending' in result) {
@@ -244,13 +235,56 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return pane ? await settle(result, pane) : ('interrupt' in result ? { kind: 'failed', error: 'aborted' } : result);
     } catch (err) {
       const pane = getPane();
-      if (pane && !(ctx.signal.aborted && abortReason(ctx.signal) === 'shutdown')) await exitAndClose(pane);
+      if (pane && !(ctx.signal.aborted && abortReason(ctx.signal) !== 'cancel')) await exitAndClose(pane);
       return { kind: 'failed', error: `herdr: ${(err as Error).message}` };
     } finally {
       const held = lanes.get(ctx.laneId);
       const pane = getPane();
       if (held && pane && samePane(held, pane)) lanes.delete(ctx.laneId);
     }
+  }
+
+  /** Open the job's pane in `p.cwd` and start Claude there (start.ts `startInPane`); `held` learns each pane, for onLane. */
+  function startIn(ctx: ExecutionContext, p: ClaudeJobPayload, held: (s: PaneState | undefined) => void, resume?: string): Promise<PaneState | ExecutionOutcome | Interrupt> {
+    const where = whereOn(ctx.machine);
+    const local = !where.ssh && !where.client;
+    return startInPane(depsOn(where), ctx, p, {
+      // The job acts through its source's connection (issue #214), never through its payload: its token kept
+      // current in the job's credentials dir on the machine, the pane's environment pointing there (issue #441).
+      env: async () => {
+        const env = { ...p.env, ...(await ctx.credentials?.(jobScratchOf(p.cwd, ctx.job.id), p.makeWorkTree)) };
+        return local ? { ...env, ...o.paneEnv } : env;
+      },
+      opened: (s) => {
+        const refused = heldElsewhere(ctx.laneId, s);
+        if (refused) return refused;
+        held(s);
+        lanes.set(ctx.laneId, heldOf(s, ctx.job.id));
+        return null;
+      },
+      close: async (s) => { await exitAndClose(heldOf(s, ctx.job.id)); held(undefined); },
+      random, ...(resume ? { resume } : {}),
+    });
+  }
+
+  /**
+   * A parked job re-queued (issue #501): whatever of it still runs on its machine is stopped first — two agents in
+   * one session would interleave —, then a new pane opens in its work tree, Claude resumes its recorded session
+   * there (its worktree found where it was left), and the answer goes to it. Never a fresh session.
+   */
+  function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
+    const session = ctx.job.agentSession;
+    if (!saved || !session) return Promise.resolve({ kind: 'failed', error: 'the parked job has no agent session to resume' });
+    const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
+    ctx.workTree(saved.jobWorktree ?? saved.cwd);
+    let state: PaneState | undefined;
+    return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
+      await herdrOn(whereOn(ctx.machine)).reap(ctx.job.id);
+      const started = await startIn(ctx, p, (s) => { state = s; }, session);
+      if ('kind' in started || 'interrupt' in started) return started;
+      ctx.progress(0, `resumed agent session ${session}`);
+      return send(ctx, started, p, answer, lastLineOf(answer));
+    });
   }
 
   return {
@@ -272,39 +306,15 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       ctx.workTree(p.cwd);
       let state: PaneState | undefined;
       return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
-        const where = whereOn(ctx.machine);
-        const deps = depsOn(where);
-        const local = !where.ssh && !where.client;
-        // A start that times out is tried again in a new pane (issue #462): nothing of the job has run yet.
-        // The pane's close reaped its scratch dir, credentials too, so each start places them again.
-        for (let attempt = 1; ; attempt++) {
-          // The job acts through its source's connection (issue #214), never through its payload: its token kept
-          // current in the job's credentials dir on the machine, the pane's environment pointing there (issue #441).
-          const env = { ...p.env, ...(await ctx.credentials?.(jobScratchOf(p.cwd, ctx.job.id), p.makeWorkTree)) };
-          const opened = await openPane(deps, ctx, p.cwd, local ? { ...env, ...o.paneEnv } : env);
-          const refused = heldElsewhere(ctx.laneId, opened);
-          if (refused) return refused;
-          state = opened;
-          lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
-          if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-          const failed = await startClaude(deps, ctx, state, p);
-          if (!failed) break;
-          await exitAndClose(heldOf(state, ctx.job.id));
-          state = undefined;
-          if (!('startTimedOut' in failed)) return failed;
-          if (attempt >= START_ATTEMPTS) return { kind: 'failed', error: `claude did not start in ${attempt} attempts: ${failed.startTimedOut}` };
-          const pause = Math.round(START_PAUSES_MS[attempt - 1]! * (1 + START_PAUSE_SPREAD * random()));
-          ctx.progress(0, `claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
-          await sleep(pause, ctx.signal);
-          if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        }
-        if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree, state.sharedDependencies === true, state.checkout)}`, FOOTER_ANCHOR);
+        const started = await startIn(ctx, p, (s) => { state = s; });
+        if ('kind' in started || 'interrupt' in started) return started;
+        return send(ctx, started, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), started.jobWorktree, started.sharedDependencies === true, started.checkout)}`, FOOTER_ANCHOR);
       });
     },
 
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);
+      if (ctx.job.parked) return reopen(ctx, state, answer);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job, ctx.machine);
       const refused = heldElsewhere(ctx.laneId, state);
@@ -354,32 +364,21 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     },
 
     async answeredInPane(job) {
-      try {
-        const s = paneStateOf(job);
-        if (!s?.turn) return null;
-        const herdr = herdrOn(s);
-        const agent = await herdr.getAgent(s.agentName);
-        if (!agent || agent.paneId !== s.paneId) return null;
-        // Parked before parkedSeq was saved: the send's seq (the turn had already ended past it).
-        const parked = s.parkedSeq ?? s.turn.seq;
-        if (agent.stateChangeSeq <= parked) return null;
-        const recent = await herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
-        const typed = typedAfterQuestion(recent, s.turn.anchor);
-        // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner.
-        if (agent.status !== 'working' && typed === undefined) return null;
-        const turn: TurnAnchor = { seq: parked, anchor: typed ? lastLineOf(typed) : s.turn.anchor, blockedAtSend: false };
-        const { parkedSeq: _drop, lapsesAt, ...rest } = s;
-        // Nothing typed, and the dialog's countdown has run out: Claude Code denied it by itself, nobody answered (issue #376).
-        const lapsed = typed === undefined && lapsesAt !== undefined && clock.now().getTime() >= Date.parse(lapsesAt) - LAPSE_SLACK_MS;
-        if (lapsed) return { lapsed: true, executorState: { ...rest, turn } };
-        return { ...(typed ? { answer: typed } : {}), executorState: { ...rest, turn } };
-      } catch {
-        return null;
-      }
+      const s = paneStateOf(job);
+      return s?.turn ? readPaneAnswer(herdrOn(s), { ...s, turn: s.turn }, clock).catch(() => null) : null;
+    },
+
+    // Claude exits as at a close, its scope and processes stop, its pane closes; its worktree and session stay.
+    async park(job) {
+      const state = paneStateOf(job);
+      const open = state ? await exitAndClose(heldOf(state, job.id), false) : undefined;
+      if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
     },
 
     async cleanup(job) {
       const state = paneStateOf(job);
+      // Parked (issue #501): its pane closed then, and its id may name another job's pane by now. Only the reap runs.
+      if (state && job.parked) return reap(herdrOn(state), heldOf(state, job.id));
       const open = state ? await exitAndClose(heldOf(state, job.id)) : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
       const said = reaped.get(job.id);

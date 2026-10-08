@@ -113,7 +113,7 @@ describe('parking a running job', () => {
     await a.waitForStatus(sleeper.id, 'running');
     const r = await park(a, token, sleeper.id);
     expect(r.status).toBe(409);
-    expect(JSON.stringify(r.body)).toContain('no agent session');
+    expect(JSON.stringify(r.body)).toContain('cannot park');
     const waiting = await a.pull({ op: 'echo', message: 'x' });
     expect((await park(a, token, waiting.id)).status).toBe(409);
     expect((await requeue(a, token, sleeper.id)).status).toBe(409);
@@ -183,7 +183,7 @@ describe('parking a job on a question', () => {
     expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'cancelled');
     await waitFor(() => herdr.reaps.length === 2, { what: 'the cancel reap' });
-    expect(herdr.reaps[1]).toEqual({ jobId: job.id, scratch: `/tmp/.hopper-scratch/${job.id}` });
+    expect(herdr.reaps[1]).toEqual({ jobId: job.id, scratch: expect.stringMatching(new RegExp(`/\\.hopper-scratch/${job.id}$`)) });
     expect((await a.questionsOf(job.id))[0]!.status).toBe('cancelled');
   });
 });

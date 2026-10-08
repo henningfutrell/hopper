@@ -249,7 +249,7 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    left alone and not taken again until it is assigned to you again, or you run it again.
 3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
    `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
-   `hopper:low` set the priority; `hopper:backburner` parks an issue.
+   `hopper:low` set the priority; `hopper:backburner` keeps an issue out.
    A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
    an open pull request for you to review and merge, set the source's `completion` to
    `pull-request` in the Plugins view; `hopper:complete-at-pr` or `hopper:complete-at-merge` on an
