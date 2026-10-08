@@ -13,8 +13,10 @@ export type FailureClass = typeof FAILURE_CLASSES[number];
 /**
  * What became of a decision. `retried`, `redirected`, `released`: its job ran again (`nextJobId`). `held`: it
  * waits on its problem. `surfaced`: it waits on a person. `not_retried`: running it again was refused (`note`).
+ * `superseded` (issue #517): a newer job of its item exists (`nextJobId`) — a person's Run again, or anything
+ * else — so nothing is left to do for this one.
  */
-export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried'] as const;
+export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded'] as const;
 export type FailureOutcome = typeof FAILURE_OUTCOMES[number];
 
 /** A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job. */
@@ -241,9 +243,18 @@ export interface FailureProfile {
   byExecutor: ProfileCount[];
 }
 
+/** How many failed jobs are left (issue #517): both zero, every failure is processed and none needs a person. */
+export interface FailureCounts {
+  /** Failed jobs the assessor has not assessed yet. */
+  unassessed: number;
+  /** Open hand-offs: Needs a person. */
+  needsPerson: number;
+}
+
 /** GET /api/failures. */
 export interface FailuresView {
   now: string;
+  counts: FailureCounts;
   settings: FailureSettings;
   causes: KnownCause[];
   /** Needs a person (issue #516): every open hand-off, oldest first, then those closed in the last day. */

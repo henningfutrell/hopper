@@ -27,6 +27,7 @@ export function createFailureRepository(c: StoreContext): FailureRepository {
       if (filter?.since !== undefined) { conds.push('at >= ?'); args.push(filter.since); }
       if (filter?.signature !== undefined) { conds.push('signature = ?'); args.push(filter.signature); }
       if (filter?.problemId !== undefined) { conds.push("body::jsonb->>'problemId' = ?"); args.push(filter.problemId); }
+      if (filter?.outcome?.length) { conds.push(`body::jsonb->>'outcome' IN (${filter.outcome.map(() => '?').join(',')})`); args.push(...filter.outcome); }
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       args.push(filter?.limit ?? 1000);
       return many(`SELECT body FROM failures ${where} ORDER BY at DESC, seq DESC LIMIT ?`, ...args);

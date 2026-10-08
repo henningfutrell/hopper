@@ -7,6 +7,7 @@ export const DECISION_TONE: Record<FailureDecision, 'warn' | 'bad' | 'busy' | 'q
 
 const OUTCOME_LABEL: Record<NonNullable<FailureRecordView['outcome']>, string> = {
   retried: 'ran again', redirected: 'ran again elsewhere', released: 'released', held: 'waits on its problem', surfaced: 'waits on a person', not_retried: 'not run again',
+  superseded: 'its item ran again',
 };
 
 /** What became of the decision, in a few words; a pending run again says when. */
@@ -37,3 +38,13 @@ export function handoffEndText(h: HandoffView): string {
 
 /** A count as `n thing(s)`. */
 export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/** What is left to process (issue #517), in words: nothing, or how many are not assessed and need a person. */
+export function countsText(c: FailuresView['counts']): string {
+  if (c.unassessed === 0 && c.needsPerson === 0) return 'Every failed job is assessed, and none needs a person.';
+  const parts = [
+    ...(c.unassessed ? [`${plural(c.unassessed, 'failed job')} not assessed yet`] : []),
+    ...(c.needsPerson ? [`${plural(c.needsPerson, 'failed job')} ${c.needsPerson === 1 ? 'needs' : 'need'} a person`] : []),
+  ];
+  return `${parts.join(' · ')}.`;
+}
