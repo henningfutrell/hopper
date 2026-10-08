@@ -18,6 +18,7 @@ import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
+import { raisedByBackfill } from './migration-raised-by.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -208,6 +209,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // A subscription from before keeps `secret_env` until one is stored. Columns only: the build before runs on it.
   `ALTER TABLE webhooks ADD COLUMN secret_sealed TEXT;
    ALTER TABLE webhooks ADD COLUMN secret_changed_at TEXT`,
+  // 20: a question gets its raising machine where it can be known: its asked lane, its job's resumeOn, its job's pin (issue #485).
+  raisedByBackfill,
 ];
 
 /** A user schema's version once migrated. */

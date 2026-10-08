@@ -13,6 +13,8 @@ const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
+// Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
+const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
 
 const divergence = strict({
   jobId: z.string(), advice: adviceAction,
@@ -45,7 +47,7 @@ export const EVENT_SCHEMAS = {
     // Additive (issue #381): the jobs left queued for want of a lane, with the lane cap that binds.
     waits: z.array(waitPlan).optional(),
   }),
-  'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string() }),
+  'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string(), raisedBy }),
   // v2: `target` is the stage entered (an instance name or `human`), no longer opus | fable | human.
   'question.escalated': strict({
     questionId: z.string(), target: stage, reason: z.string(), text: z.string(), jobId: z.string(),
@@ -53,23 +55,24 @@ export const EVENT_SCHEMAS = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
     // Additive (issue #376): the question is a dialog the agent denies by itself at this time.
     lapsesAt: z.string().optional(),
+    raisedBy,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(),
+    lapsesAt: z.string().optional(), raisedBy,
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
-  'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional() }),
+  'question.answered': strict({ questionId: z.string(), by: stage, answer: z.string(), via: z.literal('pane').optional(), raisedBy }),
   // `answer` is the close text typed into the job in place of an answer.
-  'question.closed': strict({ questionId: z.string(), answer: z.string() }),
+  'question.closed': strict({ questionId: z.string(), answer: z.string(), raisedBy }),
   // Nothing is typed into the job; a job still waiting on it is cancelled (job.cancelled, reason `question dismissed`).
-  'question.dismissed': strict({ questionId: z.string() }),
-  'question.expired': strict({ questionId: z.string(), after_ms: z.number() }),
+  'question.dismissed': strict({ questionId: z.string(), raisedBy }),
+  'question.expired': strict({ questionId: z.string(), after_ms: z.number(), raisedBy }),
   // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
-  'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string() }),
+  'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string(), raisedBy }),
   // Self-update (issue #44): commits are full shas; `ref` is the branch of the channel.
   'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),

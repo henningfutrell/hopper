@@ -1,0 +1,31 @@
+// The Grok Bot routine's question body (issue #485): the machine, its name and the lane are the
+// question's own snapshot — where it was raised — not where its job is now. A question with no
+// snapshot sends nulls rather than the job's current machine.
+import { describe, expect, it } from 'vitest';
+import type { Job, Question } from '../../src/domain/types.ts';
+import { questionPayload } from '../../src/plugins/notifier/grokbot-routine/payload.ts';
+
+const question = (extra: Partial<Question> = {}): Question => ({
+  id: 'q1', jobId: 'j1', text: 'Which branch?', recentOutput: '', detectedBy: 'marker', status: 'open', tier: 'human',
+  attempts: [], notifyCount: 1, createdAt: '2026-10-08T10:00:00.000Z', updatedAt: '2026-10-08T10:00:00.000Z', ...extra,
+});
+
+// The job moved on after asking: it runs on another machine's lane now, and resumes elsewhere.
+const moved = { id: 'j1', status: 'running', laneId: 'study/lane-3', resumeOn: 'study', priority: 50, spec: { executor: 'test', payload: {}, machineId: 'study' } } as unknown as Job;
+
+const payload = (q: Question) => questionPayload({ question: q, job: moved, answerUrl: undefined, at: 'x', now: new Date('2026-10-08T10:01:00.000Z'), offered: false });
+
+describe('Grok Bot routine: the question body names the raising machine (issue #485)', () => {
+  it('the question\'s snapshot, not the job\'s current machine, and the machine name', () => {
+    const body = payload(question({ raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' } }));
+    expect(body).toMatchObject({ machineId: 'desk', machineName: 'Desk tower', laneId: 'desk/lane-1' });
+  });
+
+  it('a snapshot with no name or lane: null for those', () => {
+    expect(payload(question({ raisedBy: { machineId: 'desk' } }))).toMatchObject({ machineId: 'desk', machineName: null, laneId: null });
+  });
+
+  it('no snapshot: nulls, never the job\'s current machine', () => {
+    expect(payload(question())).toMatchObject({ machineId: null, machineName: null, laneId: null });
+  });
+});

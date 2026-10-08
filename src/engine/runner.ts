@@ -156,7 +156,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();
-    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason);
+    const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason, machine);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
     else await cleanup(job.id);
   }

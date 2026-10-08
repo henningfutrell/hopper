@@ -15,6 +15,24 @@
     "via": {
       "type": "string",
       "const": "pane"
+    },
+    "raisedBy": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "laneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

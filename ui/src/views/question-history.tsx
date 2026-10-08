@@ -1,10 +1,11 @@
 // The question history (issue #151): every handled question — answered, closed, dismissed, expired or
 // cancelled — as a compact list, newest first, each row opening to its question, the answer and the
-// job. In Settings, beside the question gates; the Questions view holds the open questions only.
+// job, each naming the machine that raised it (issue #485). In Settings, beside the question gates; the Questions view holds the open questions only.
 import { ChevronRight, History } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { JobTitle } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
+import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge, type Tone } from '@/components/status';
 import { clock } from '@/model/format';
 import type { Question, QuestionStatus } from '@/model/wire';
@@ -25,6 +26,7 @@ function HandledRow({ q }: { q: Question }) {
         <span className="num shrink-0 text-xs text-muted-foreground">{clock(q.updatedAt)}</span>
         <StatusBadge status={status} tone={OUTCOME[status]} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate">{firstLine(q.text)}</span>
+        <RaisedOn raisedBy={q.raisedBy} className="max-w-[40%] shrink-0 text-xs text-muted-foreground" />
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 px-4 pb-3 pl-9">
         {job && <JobTitle job={job} />}
@@ -37,7 +39,7 @@ function HandledRow({ q }: { q: Question }) {
         {q.status === 'expired' && <div className="text-xs text-bad">expired unanswered: the job failed</div>}
         {q.status === 'lapsed' && <div className="text-xs text-warn">lapsed: nobody answered in time, so Claude Code denied it by itself and the job went on</div>}
         {q.status === 'cancelled' && <div className="text-xs text-muted-foreground">cancelled with its job</div>}
-        <div className="num text-[11px] text-muted-foreground">asked {clock(q.createdAt)} · {q.attempts.length} attempt{q.attempts.length === 1 ? '' : 's'}</div>
+        <div className="num text-[11px] text-muted-foreground">asked {clock(q.createdAt)} <RaisedOn raisedBy={q.raisedBy} className="align-bottom" /> · {q.attempts.length} attempt{q.attempts.length === 1 ? '' : 's'}</div>
       </CollapsibleContent>
     </Collapsible>
   );

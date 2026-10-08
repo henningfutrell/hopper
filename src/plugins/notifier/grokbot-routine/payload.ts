@@ -1,22 +1,13 @@
 // The Grok Bot routine's JSON bodies (design.md "Grok Bot routine webhook"). A question's body carries
 // what the job already knows (issue #378), so the receiver can route and rank it without calling back
-// into the hopper: the machine and lane, the priority, the issue's labels, repo and number, what
+// into the hopper: the machine (its id and name) and lane that raised it (issue #485: the question's own
+// snapshot, not where its job is now), the priority, the issue's labels, repo and number, what
 // detected the question, and how long it has been open.
 import type { DomainEvent, Job, Question } from '../../sdk.ts';
 
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
   source: 'hopper', kind, at, jobId: jobId ?? null, issueTitle: job?.source?.title ?? null, issueUrl: job?.source?.url ?? null,
 });
-
-/** The job's machine: where it runs, else where it must resume, else where it is pinned. */
-function machineOf(job: Job | undefined): string | null {
-  if (!job) return null;
-  if (job.laneId) {
-    const i = job.laneId.lastIndexOf('/lane-');
-    if (i > 0) return job.laneId.slice(0, i);
-  }
-  return job.resumeOn ?? job.spec.machineId ?? null;
-}
 
 export interface QuestionBody {
   question: Question;
@@ -31,10 +22,11 @@ export interface QuestionBody {
 /** A question that reached the human. */
 export function questionPayload(b: QuestionBody): Record<string, unknown> {
   const { question: q, job } = b;
+  const raised = q.raisedBy;
   return {
     ...base('question.escalated', b.at, job, q.jobId),
     question: q.text, questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
-    machineId: machineOf(job), laneId: job?.laneId ?? null, priority: job?.priority ?? null,
+    machineId: raised?.machineId ?? null, machineName: raised?.name ?? null, laneId: raised?.laneId ?? null, priority: job?.priority ?? null,
     labels: job?.source?.labels ?? null, repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null,
     detectedBy: q.detectedBy, askedAt: q.createdAt, escalatedAt: q.escalatedToHumanAt ?? null,
     openSeconds: Math.max(0, Math.floor((b.now.getTime() - Date.parse(q.createdAt)) / 1000)),

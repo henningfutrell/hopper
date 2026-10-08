@@ -100,6 +100,11 @@ export function renderEventsMarkdown(): string {
     '```',
     '',
     'Schema: `docs/schemas/envelope.v1.json`. Payloads are strict: unknown keys are rejected.',
+    '',
+    'Every `question.*` event names the **raising machine** — the machine the question was asked on — as the',
+    '`machineId` subject (and `laneId`, where the lane is known) and as `raisedBy` (`machineId`, `name`, `laneId`)',
+    'in its data: a snapshot taken when the question was asked, so it stays right after the job moves or the',
+    'machine is renamed or removed. Absent on a question asked before it was recorded, with nothing to fill it from.',
   ];
   for (const t of EVENT_TYPES) {
     const v = EVENT_SCHEMA_VERSIONS[t];

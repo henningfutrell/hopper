@@ -3,7 +3,7 @@
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
 import type { AnswerRequest, ConfigRecords, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
-import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt, type RaisedBy } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
@@ -30,7 +30,7 @@ export function createMemoryStore(): MemoryStore {
       },
     },
     questions: {
-      create(input: { jobId: string; text: string; recentOutput: string; detectedBy: string; tier: string }): Question {
+      create(input: { jobId: string; text: string; recentOutput: string; detectedBy: string; tier: string; raisedBy?: RaisedBy }): Question {
         const q: Question = {
           id: `q${++qn}`, ...input, status: 'open', attempts: [], notifyCount: 0,
           createdAt: now(), updatedAt: now(),
@@ -101,8 +101,8 @@ export interface Rig {
   dismissed: Array<{ q: Question; depth: number }>;
   /** Calls the levels received, in order. */
   asked: Array<{ level: string; req: AnswerRequest }>;
-  /** Create a question the way the engine does: at the service's first stage. */
-  question(text?: string): Question;
+  /** Create a question the way the engine does: at the service's first stage, raised on `raisedBy` when given. */
+  question(text?: string, raisedBy?: RaisedBy): Question;
   eventsOf(type: string): DomainEvent[];
   /** Swap the live levels (a plugins config reload). */
   setLevels(levels: EscalationLevel[]): void;
@@ -157,8 +157,8 @@ export function rig(o: RigOptions = {}): Rig {
   const job = mem.addJob('build the thing', 'ship it');
   return {
     mem, svc, answered, expired, dismissed, asked,
-    question: (text = 'Which database?') =>
-      mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage() }),
+    question: (text = 'Which database?', raisedBy?: RaisedBy) =>
+      mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage(), ...(raisedBy ? { raisedBy } : {}) }),
     eventsOf: (type) => mem.events.filter((e) => e.type === type),
     setLevels: (l) => { levels = l; },
   };
