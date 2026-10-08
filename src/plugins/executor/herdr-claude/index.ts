@@ -21,6 +21,7 @@ export interface HerdrClaudeOptions {
   args: string[];
   cwd: string;
   trustWorkdir: boolean;
+  jobWorktrees: boolean;
   pollMs: number;
   idleNudgeMs: number;
 }
@@ -50,6 +51,10 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       cwd: z.string().min(1).default(JOBS_DIR)
         .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
+      // Issue #379: jobs at one work tree share it; a git repository's top gets each job a worktree of its own.
+      jobWorktrees: z.boolean().default(true).meta({
+        description: 'job worktrees: when a job\'s work tree is the top of a git repository, the job runs in its own git worktree of it, made in its scratch dir from the freshly fetched default branch; the reap removes it when the job ends unless it holds uncommitted or unpushed work. Off: jobs at one work tree share it',
+      }),
       pollMs: z.number().int().positive().default(1000),
       idleNudgeMs: z.number().int().positive().default(20000),
     }),
@@ -97,7 +102,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
         clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
-        pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
+        jobWorktrees: o.jobWorktrees, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
       });
     },
   };

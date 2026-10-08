@@ -6,6 +6,7 @@ import type { HerdrClient } from './client.ts';
 import type { Sleep } from './monitor.ts';
 import { tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
+import { JOB_WORKTREE_MARK, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
 import { SCRATCH_DIR, isBypassDialog, isTrustDialog } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
@@ -17,6 +18,8 @@ const SCRATCH_READY = 'hopper-scratch-ready';
 /** What it prints instead when the shell cannot enter the work tree or make the scratch dir (issue #323). */
 const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
 const SCRATCH_WAIT_MS = 1000;
+/** How long the job worktree command may take: it fetches first (issue #379). */
+const JOB_WORKTREE_WAIT_MS = 120000;
 /** Startup dialogs answered at most: folder trust and the bypass permissions warning, with room to spare. */
 const MAX_STARTUP_DIALOGS = 4;
 
@@ -56,6 +59,8 @@ export interface PaneState {
   paneId: string;
   agentName: string;
   cwd: string;
+  /** The job's own git worktree of `cwd`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
+  jobWorktree?: string;
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
@@ -86,6 +91,8 @@ export interface StartDeps {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted: its warning about that is accepted at startup. */
   yolo: boolean;
+  /** A work tree that is the top of a git repository gets each job its own worktree of it (issue #379). */
+  jobWorktrees: boolean;
 }
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
@@ -142,7 +149,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
     if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
     if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
       const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-      const dialog = d.trustWorkdir && isTrustDialog(screen, s.cwd) ? `trusted workdir ${s.cwd}`
+      const dir = s.jobWorktree ?? s.cwd;
+      const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
         : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
       if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
       // Both dialogs open on their refusing option; the next one down accepts.
@@ -183,12 +191,40 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
 }
 
 /**
- * Start Claude in the pane. Resolves null when Claude is ready for the prompt (or the signal
- * fired — the caller checks), else the failure to report; the caller closes the pane.
+ * Make the job its own git worktree of the work tree, when that is the top of a git repository, and move
+ * the pane's shell into it (issue #379): `s` then names it, saved, and it is reported as the job's work
+ * tree. A work tree that is no repository's top is used as it is. Git refusing fails the job with what
+ * it said. The scratch command has run, so the shell is at its prompt: the command is typed once.
+ */
+async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+  const path = jobWorktreeOf(s.cwd, ctx.job.id);
+  await d.herdr.runInPane(s.paneId, makeJobWorktreeCommand(s.cwd, path));
+  const seen = await d.herdr.waitOutput(s.paneId, JOB_WORKTREE_MARK, JOB_WORKTREE_WAIT_MS);
+  const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
+  const outcome = seen ? jobWorktreeOutcome(screen) : undefined;
+  if (outcome === 'none') return null;
+  if (outcome !== 'made') {
+    return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
+      : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
+  }
+  s.jobWorktree = path;
+  ctx.saveState({ ...s });
+  ctx.workTree(path);
+  return null;
+}
+
+/**
+ * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
+ * when Claude is ready for the prompt (or the signal fired — the caller checks), else the failure to
+ * report; the caller closes the pane.
  */
 export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
+  if (d.jobWorktrees) {
+    const unentered = await enterJobWorktree(d, ctx, s);
+    if (unentered || ctx.signal.aborted) return unentered;
+  }
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
   let started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });

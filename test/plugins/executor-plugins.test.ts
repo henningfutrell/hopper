@@ -1,7 +1,7 @@
 // Phase 5 slice 3: the built-in executor plugins (herdr-claude, test) — options, detection (cheap:
 // `which` only, never a model call, never a GUI), create — and the command-bearing mark on every
 // option that names a program, its arguments, a working directory or an interpreter.
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import anthropicApi from '../../src/plugins/escalation-level/anthropic-api/index.ts';
 import claudeCli from '../../src/plugins/escalation-level/claude-cli/index.ts';
@@ -94,7 +94,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: '~/hopper-jobs', trustWorkdir: true, pollMs: 1000, idleNudgeMs: 20000,
+      cwd: '~/hopper-jobs', trustWorkdir: true, jobWorktrees: true, pollMs: 1000, idleNudgeMs: 20000,
     });
   });
 
@@ -150,6 +150,24 @@ describe('herdr-claude', () => {
       progress() {}, saveState() {}, workTree() {},
     });
     expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
+  });
+
+  // Issue #379: each job its own git worktree of a git repository work tree, on by default; off, jobs share the work tree.
+  it.each([
+    [{}, true],
+    [{ jobWorktrees: false }, false],
+  ])('makes each job its own worktree of a git repository work tree, on by default (%j)', async (raw, made) => {
+    const cwd = temp();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], repositories: [cwd] });
+    const seamed = herdrClaudePlugin(herdr);
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
+    const trees: string[] = [];
+    await ex.run({
+      job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
+      progress() {}, saveState() {}, workTree(path) { trees.push(path); },
+    });
+    expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-scratch/abcdef12-0000/${basename(cwd)}` : cwd);
   });
 });
 

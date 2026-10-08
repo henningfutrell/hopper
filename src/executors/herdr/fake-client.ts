@@ -43,6 +43,10 @@ export interface FakeHerdrOptions {
   ignoresCtrlC?: boolean;
   /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
   unusableDirs?: string[];
+  /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
+  repositories?: string[];
+  /** Git refuses to make a job worktree. */
+  worktreeFails?: boolean;
   /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
   shellNotReadyStarts?: number;
   /**
@@ -317,6 +321,13 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       // The reap at job end (reap.ts): what it kept, then its last line.
       if (command.startsWith('env -u HOPPER_JOB_ID sh -c ')) {
         p.lines.push(`$ ${command}`, ...(o.reapKeeps ?? []).map((d) => `hopper-kept ${d}`), 'hopper-reaped', '$ ');
+        return;
+      }
+      // A job worktree command (issue #379): `cd 'work tree' && if …`, its outcome two printf words.
+      const worktree = /^cd '([^']*)' && if .*printf 'hopper-job-%s-%s\\n' worktree/.exec(command);
+      if (worktree) {
+        const outcome = !(o.repositories ?? []).includes(worktree[1]!) ? 'none' : o.worktreeFails ? 'unmade' : 'made';
+        p.lines.push(`$ ${command}`, ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`, '$ ');
         return;
       }
       // `[mkdir -p 'dir' && ]cd 'dir' && … && printf 'a%s\n' b || printf 'a%s\n' c`: c when the shell

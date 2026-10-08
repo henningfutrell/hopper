@@ -578,6 +578,29 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   It prints `hopper-reaped` last (`pane wait-output`, up to 10000 ms, three tries). What it kept is
   never removed silently: `cleanup` answers it (`Executor.cleanup` → `Reaped`), and the engine
   records `job.work_kept { paths }` on the job. `HOPPER_KEEP_PANES` skips the reap with the close.
+- **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
+  running at once in one repository stepped on each other — branches, the index lock, uncommitted
+  files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
+  each agent to make its own worktree was followed by some and not others. With the herdr-claude
+  option `jobWorktrees` (default on), after the scratch command the pane's shell runs
+  `makeJobWorktreeCommand` (`src/executors/herdr/job-worktree.ts`): when the work tree is the top of a
+  git repository (`git rev-parse --show-toplevel` is the shell's `pwd -P`; a directory inside a
+  repository, such as a home kept in git, is not), it fetches (`GIT_TERMINAL_PROMPT=0`, a failure
+  ignored), runs `git worktree prune`, makes the **job worktree**
+  `<work tree>/.hopper-scratch/<job id>/<work tree's name>` with `git worktree add --detach` at
+  `refs/remotes/origin/HEAD`, else the current branch's upstream, else `HEAD`, enters it, and prints
+  `hopper-job-worktree-made` (waited for up to 120000 ms, for the fetch). A worktree an earlier run of
+  the job left is entered as it is. Claude starts there; the pane state keeps the work tree as `cwd`
+  (the reap's scratch dir follows from it) and the job worktree as `jobWorktree`; the job reports the
+  job worktree (`job.workTree`, so the lane shows it), the trust dialog naming it is accepted, and the
+  footer adds the fixed `[hopper job worktree]` line after the work-tree line: work there, it is the
+  job's alone, the work tree is shared and left as it is. Not a repository's top:
+  `hopper-job-worktree-none`, and the job runs in its work tree as before. Git refusing:
+  `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
+  ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
+  remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
+  kept and recorded as `job.work_kept`. Print-mode agent executors and the command executor make no
+  job worktree: jobs there that share a work tree share it.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.

@@ -41,6 +41,8 @@ export interface HerdrClaudeExecutorOptions {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted (issue #267): its warning is accepted at startup. Default false. */
   yolo?: boolean;
+  /** Each job its own git worktree of a work tree that is a git repository's top, in its scratch dir (issue #379). Default false. */
+  jobWorktrees?: boolean;
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; each further one in a row waits twice as long. */
   idleNudgeMs: number;
@@ -120,6 +122,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false,
+    jobWorktrees: o.jobWorktrees ?? false,
   });
 
   /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
@@ -291,7 +294,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           return failed;
         }
         if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id))}`, FOOTER_ANCHOR);
+        return send(ctx, state, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), state.jobWorktree)}`, FOOTER_ANCHOR);
       });
     },
 
@@ -329,7 +332,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const saved = paneStateOf(ctx.job);
       const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
       // A job started before an install that reported work trees has none on it yet: the one its pane opened in.
-      const tree = saved ? { cwd: saved.cwd } : workTreeOn(ctx.machine, p.cwd);
+      const tree = saved ? { cwd: saved.jobWorktree ?? saved.cwd } : workTreeOn(ctx.machine, p.cwd);
       if ('cwd' in tree) ctx.workTree(tree.cwd);
       return onLane(ctx, () => saved && heldOf(saved, ctx.job.id), async () => {
         const state = await liveTurn(ctx.job);
