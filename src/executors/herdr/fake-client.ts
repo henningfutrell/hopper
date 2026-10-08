@@ -101,6 +101,8 @@ export interface FakeHerdrClient extends HerdrClient {
   killAgent(name: string): void;
   /** The next call of `method` rejects with a HerdrError of this code. */
   failNext(method: keyof HerdrClient, code: string): void;
+  /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
+  setUnreachable(on: boolean): void;
   screen(paneId: string): string;
 }
 
@@ -145,7 +147,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const width = o.width ?? 100;
   const panes = new Map<string, Pane>();
   const failures = new Map<string, string>();
-  let n = 0;
+  /** setUnreachable: every call rejects. */
+  let n = 0, unreachable = false;
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;
@@ -155,6 +158,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
     fake.calls.push({ method, args });
+    if (unreachable) throw new HerdrError('client', 'client is not dialled in');
     const code = failures.get(method);
     if (code) {
       failures.delete(method);
@@ -212,6 +216,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       settle(p, 'working');
     },
     failNext(method, code) { failures.set(method, code); },
+    setUnreachable(on) { unreachable = on; },
     screen: (id) => {
       const p = panes.get(id);
       const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];

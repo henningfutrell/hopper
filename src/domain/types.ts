@@ -1,5 +1,7 @@
 // The hopper domain vocabulary. Every name here is defined in docs/glossary.md;
 // change the glossary in the same commit as any rename.
+import type { CleanupDue } from './cleanup.ts';
+import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
@@ -112,6 +114,12 @@ export interface Job {
   /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
   dismissedAt?: string;
   /**
+   * Set while the job's cleanup is deferred (issue #371): it ended, but its executor could not reach the
+   * job's machine to release what it holds there (its pane, its Claude), so that may still run. Tried
+   * again on every tick until it goes through; meanwhile a waiting job of the same item is held.
+   */
+  cleanupDeferred?: { at: string; error: string };
+  /**
    * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
    * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,
    * which replaces the old one (never a shallow merge of nested maps).
@@ -212,6 +220,8 @@ export interface DecisionInputs {
   unavailableExecutors: ExecutorUnavailable[];
   /** The queue sorter's order of the waiting jobs (step 6). Absent on Decisions stored before issue #18: today's rule. */
   queueOrder?: QueueOrder;
+  /** Ended jobs whose cleanup is running or deferred (issue #371): a waiting job of the same item is held. Absent on Decisions stored before it. */
+  cleanupDue?: CleanupDue[];
   policy: DeciderPolicy;
 }
 
@@ -270,35 +280,7 @@ export interface Decision {
 }
 
 // ---- Events ------------------------------------------------------------------------
-// Wire type is the dotted form; the glossary carries the domain name (JobQueued, ...).
-
-export const EVENT_TYPES = [
-  'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
-  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized', 'job.respecified',
-  'lane.opened', 'lane.closed', 'decision.made',
-  'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
-  'update.available', 'update.started', 'update.applied', 'update.failed', 'plugin.installed', 'plugin.removed',
-  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
-  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept',
-  'source.stalled', 'connected_account.expired',
-] as const;
-export type EventType = typeof EVENT_TYPES[number];
-
-/**
- * Payload schema version per event type (docs/schemas/<type>.v<N>.json). Additive field →
- * same version; removed/renamed/retyped field → bump. The store stamps it on append.
- */
-export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
-  'job.queued': 1, 'job.prioritized': 3, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
-  'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
-  'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'job.respecified': 1, 'lane.opened': 1, 'lane.closed': 1,
-  'decision.made': 3, 'question.asked': 1, 'question.escalated': 2, 'question.escalated_to_human': 1,
-  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1, 'question.lapsed': 1,
-  'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1, 'plugin.installed': 1, 'plugin.removed': 1,
-  'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
-  'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1,
-  'source.stalled': 1, 'connected_account.expired': 1,
-};
+export * from './event-types.ts';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */
@@ -448,6 +430,7 @@ export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
+export type { CleanupDue } from './cleanup.ts';
 export * from './plugins.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------

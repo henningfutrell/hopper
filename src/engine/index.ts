@@ -4,7 +4,7 @@ import type { SourceHost } from '../domain/ports.ts';
 import type { EventType } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { createClassifier } from './classifier.ts';
-import { createCleanup } from './cleanup.ts';
+import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
 import { decisionStep } from './decision-step.ts';
@@ -24,11 +24,12 @@ const SHUTDOWN_WAIT_MS = 5000;
 
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
- * a respecified job may be pinned to another machine. */
+ * a respecified job may be pinned to another machine; a deferred cleanup that went through
+ * frees a waiting job of its item (issue #371). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
-  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
+  'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {
@@ -50,7 +51,7 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen());
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due());
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
@@ -62,10 +63,11 @@ export function createEngine(o: EngineOptions): Engine {
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
   };
-  const cleanup = createCleanup(c);
+  const cleanups = createCleanups(c);
+  const cleanup = cleanups.run;
   const runner = createRunner(c, cleanup);
   const classifier = createClassifier(c);
-  const commands = createCommands(c, runner, cleanup);
+  const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
 
   return {
@@ -78,6 +80,8 @@ export function createEngine(o: EngineOptions): Engine {
     async start() {
       const recovered = await recover(c);
       for (const jobId of recovered.toClean) void cleanup(jobId);
+      // Deferred before this start (issue #371): tried again now, and on every tick.
+      cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
       for (const claim of recovered.awaiting) runner.reattachWhenReachable(claim);
       unsubscribe = store.events.subscribe((event) => {
@@ -93,6 +97,7 @@ export function createEngine(o: EngineOptions): Engine {
       timer = setInterval(() => {
         classifier.sweep();
         void paneAnswers.sweep();
+        cleanups.retry();
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

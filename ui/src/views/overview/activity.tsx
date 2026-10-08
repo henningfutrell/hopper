@@ -43,6 +43,7 @@ export function AttentionPanel() {
     ...(health?.fallback ? [{ key: noticeKey.router(health), tone: 'warn' as const, label: 'router', text: `${health.router} is not answering: pass-through advice` }] : []),
     ...sources.filter((s) => s.state === 'error').map((s): Alert => ({ key: noticeKey.source(s), tone: 'bad', label: 'source', text: `${s.name}: ${s.lastError ?? 'error'}`, href: '#sources', ...(s.lastSyncAt ? { at: s.lastSyncAt } : {}) })),
     ...machines.filter((m) => m.disk?.low).map((m): Alert => ({ key: noticeKey.disk(m.id), tone: 'warn', label: 'disk', text: `${m.label || m.id}: ${diskText(m.disk)}`, href: '#machines' })),
+    ...ended.filter((j) => j.cleanupDeferred).map((j): Alert => ({ key: noticeKey.paneOpen(j.id), tone: 'warn', label: 'pane open', text: `${nameOf(j.id)} — its pane may still be open: the hopper could not reach its machine (${j.cleanupDeferred!.error})`, at: j.cleanupDeferred!.at })),
     ...ended.filter((j) => j.status === 'failed').slice(0, 5).map((j): Alert => ({ key: noticeKey.failed(j.id), tone: 'bad', label: 'failed', text: `${nameOf(j.id)} — ${j.error ?? ''}`, ...(j.finishedAt ? { at: j.finishedAt } : {}) })),
   ];
   const alerts = all.filter((a) => !dismissed.includes(a.key));

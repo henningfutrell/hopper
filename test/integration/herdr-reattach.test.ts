@@ -201,6 +201,64 @@ describe('herdr-claude job across a daemon restart', () => {
     expect((await second.job(job.id)).status).toBe('cancelled');
   });
 
+  // Issue #371: the job's machine is not reached within the reconnect grace (issue #368), so the job fails,
+  // but its pane and Claude live on there.
+  it('a pane the restart could not reach stays due for cleanup; a rerun of its item is held until it is closed', async () => {
+    freshDb();
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG, { output: ['● Done.', '  HOPPER_DONE'] }] }));
+    const { job, paneId, agentName } = await runThenStop(herdr);
+    link.down = true;
+
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
+    const failed = await second.waitForStatus(job.id, 'failed', 8000);
+    expect(failed.error).toBe('machine local did not reconnect within 0.5 s after the daemon restart');
+    const deferred = await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
+    expect(deferred.error).toContain('not dialled in');
+    expect((await second.events('types=job.cleanup_deferred')).filter((e) => e.jobId === job.id)).toHaveLength(1);
+
+    const token = await second.login();
+    await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
+    const rerun = (await second.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).body;
+    const held = await waitFor(async () => { const j = await second.job(rerun.id); return j.status === 'held' ? j : undefined; }, { what: 'the rerun held' });
+    expect(held.holdReason).toContain(job.id);
+    expect(herdr.agentStarts).toHaveLength(1); // the rerun never ran beside the live pane
+
+    // The machine comes back: the pane is closed at the next try, then the rerun runs.
+    link.down = false;
+    await waitFor(() => herdr.closed.includes(paneId), { what: 'the old pane closed' });
+    expect(await herdr.getAgent(agentName)).toBeNull();
+    await second.waitForStatus(rerun.id, 'finished', 8000);
+    expect((await second.job(job.id)).cleanupDeferred).toBeUndefined();
+    expect((await second.events('types=job.cleaned_up')).filter((e) => e.jobId === job.id)).toHaveLength(1);
+    // Never re-deferred once closed.
+    expect((await second.events('types=job.cleanup_deferred')).filter((e) => e.jobId === job.id)).toHaveLength(1);
+  });
+
+  it('Mark closed ends a deferred cleanup by hand: it is no longer tried, and the held rerun is admitted', async () => {
+    freshDb();
+    const { herdr, link } = reachable(createFakeHerdrClient({ session: 'jh-test', turns: [LONG] }));
+    const { job, paneId } = await runThenStop(herdr);
+    link.down = true;
+    const second = await boot(herdr, 4, { HOPPER_RECONNECT_GRACE_MS: '500' });
+    await waitFor(async () => (await second.job(job.id)).cleanupDeferred, { what: 'the cleanup deferred' });
+    const token = await second.login();
+    await waitFor(async () => (await second.job(job.id)).sourceState?.sync?.finalReported === true, { what: 'the failure reported' });
+    const rerun = (await second.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token })).body;
+    await waitFor(async () => (await second.job(rerun.id)).status === 'held', { what: 'the rerun held' });
+
+    const marked = await waitFor(async () => { const r = await second.ui<Job>(`/ui/api/jobs/${job.id}/cleaned-up`, {}, { token }); return r.status === 200 ? r : undefined; }, { what: 'Mark closed accepted' });
+    expect(marked.body.cleanupDeferred).toBeUndefined();
+    expect((await second.events('types=job.cleaned_up')).find((e) => e.jobId === job.id)?.data).toMatchObject({ by: 'user' });
+    expect((await second.ui(`/ui/api/jobs/${job.id}/cleaned-up`, {}, { token })).status).toBe(409);
+    expect((await second.ui(`/ui/api/jobs/${rerun.id}/cleaned-up`, {}, { token })).status).toBe(409);
+
+    // No longer held: it is admitted at once (and here fails, its machine still unreached).
+    await waitFor(async () => !['queued', 'held'].includes((await second.job(rerun.id)).status), { what: 'the rerun admitted' });
+    link.down = false;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(herdr.closed).not.toContain(paneId); // never tried again once marked
+  });
+
   it('a claimed herdr-claude job (nothing ran yet) is requeued and runs', async () => {
     freshDb();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });

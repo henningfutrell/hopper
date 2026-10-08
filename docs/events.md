@@ -764,6 +764,35 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 }
 ```
 
+## `job.cleanup_deferred`
+
+Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its cleanup could not reach its machine (`error`), so its pane and agent may still run there. Recorded once per deferral; the cleanup is tried again on every tick, and a waiting job of the same item is held until it goes through.
+
+| field | type | required |
+|---|---|---|
+| `error` | string | yes |
+
+```json
+{
+  "error": "herdr: client is not dialled in"
+}
+```
+
+## `job.cleaned_up`
+
+Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went through: the job's pane is closed and its work reaped. `deferredAt` is when it was deferred. `by: "user"`: the user marked it cleaned up (they closed the pane by hand, or its machine is gone for good), and it is no longer tried. Recorded only for a deferred cleanup.
+
+| field | type | required |
+|---|---|---|
+| `deferredAt` | string | yes |
+| `by` | `user` | no |
+
+```json
+{
+  "deferredAt": "2026-10-07T21:31:00.000Z"
+}
+```
+
 ## `source.stalled`
 
 Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in error since `since` for longer than the stall threshold (30 minutes): nothing new is pulled from it. Recorded once per run of failures; `error` is its last error. The notifiers send it.

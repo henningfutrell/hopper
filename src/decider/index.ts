@@ -1,5 +1,5 @@
 import type { Decision, DecisionInputs, Divergence, Lane } from '../domain/types.ts';
-import { assign, effectivePriority, nativeHold, order, pinOf } from './assign.ts';
+import { assign, cleanupHold, effectivePriority, nativeHold, order, pinOf } from './assign.ts';
 import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { planGoneLanes, planLanes } from './lanes.ts';
@@ -55,7 +55,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
-    const native = nativeHold(job, machines, inputs.unavailableExecutors);
+    const native = nativeHold(job, machines, inputs.unavailableExecutors) ?? cleanupHold(job, inputs.cleanupDue ?? []);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({
