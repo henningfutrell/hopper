@@ -17,7 +17,6 @@ import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
-import { webhooksView } from '../webhooks.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { mintJoinCode } from '../../machines/join-code.ts';
@@ -25,6 +24,7 @@ import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody, rejectBody } from './job-bodies.ts';
+import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
 
 export interface UiRouteOptions {
@@ -85,15 +85,6 @@ export const realmsEditBody = z.discriminatedUnion('action', [
   // Two admin tiers (issue #242): any admin makes an identity admin; only a super admin makes one super admin or hands it over.
   z.strictObject({ action: z.literal('admin'), who: personRef, ...realmsVersion }),
   z.strictObject({ action: z.literal('super-admin'), who: personRef, transfer: z.boolean().optional(), ...realmsVersion }),
-]);
-// The content (url, events) is checked in the editor, so the UI shows one set of messages; here only
-// the shape. No secret (issue #56), no secretFile, no new name; secretEnv only on add, and only a
-// WEBHOOK_SECRET_* variable (checked in the editor).
-const webhookFields = { name: z.string().min(1) };
-export const webhooksEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('add'), ...webhookFields, url: z.string(), events: z.array(z.string()), secretEnv: z.string(), active: z.boolean().optional() }),
-  z.strictObject({ action: z.literal('edit'), ...webhookFields, url: z.string().optional(), events: z.array(z.string()).optional(), active: z.boolean().optional() }),
-  z.strictObject({ action: z.literal('remove'), ...webhookFields }),
 ]);
 const machineName = z.string().trim().min(1).max(64);
 const machineLanes = z.number().int().min(1, 'lanes must be at least 1');
@@ -283,14 +274,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.view;
   });
 
-  // Issue #18: one webhook subscription added, edited or removed (a row, issue #78). Answers the new GET /api/webhooks
-  // view. No secret passes either way (issue #56): the runtime holds them.
-  app.post('/ui/api/webhooks', admin, async (req) => {
-    const t = o.tenant(req);
-    const r = t.webhooksEditor.edit(parseWith(webhooksEditBody, req.body));
-    if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
-    return webhooksView(t.store, t.secretProblem);
-  });
+  registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

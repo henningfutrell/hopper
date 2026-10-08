@@ -53,7 +53,7 @@ const feed = (): NotifierEvents & { listeners: ((e: DomainEvent) => void)[] } =>
   return {
     listeners,
     subscribe(l) { listeners.push(l); return () => { listeners.splice(listeners.indexOf(l), 1); }; },
-    job: () => undefined,
+    job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '',
   };
 };
 
@@ -92,7 +92,7 @@ describe('the notifier role', () => {
     expect(host.report().notifiers.instances).toEqual([{
       instance: { name: 'grok-bot', plugin: 'grokbot-routine' },
       detection: { status: 'needs-setup', reason: expect.stringContaining('GROKBOT_WEBHOOK_URL'), command: expect.stringContaining('GROKBOT_WEBHOOK_KEY') },
-      active: 'grokbot-routine',
+      active: 'grokbot-routine', actions: ['test', 'send-open'],
     }]);
   });
 
@@ -208,7 +208,7 @@ describe('grokbot-routine detection: its environment variables only, never the G
     expect(host.report().notifiers.instances[0]).toEqual({
       instance: { name: 'grok-bot', plugin: 'grokbot-routine', options: {} },
       detection: { status: 'needs-setup', reason: 'no Grok Bot routine configured: GROKBOT_WEBHOOK_KEY not set', command: expect.stringContaining('GROKBOT_WEBHOOK_KEY') },
-      active: 'grokbot-routine',
+      active: 'grokbot-routine', actions: ['test', 'send-open'],
     });
   });
 

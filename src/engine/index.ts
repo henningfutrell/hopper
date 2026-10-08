@@ -27,7 +27,7 @@ const SHUTDOWN_WAIT_MS = 5000;
  * a respecified job may be pinned to another machine. */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
-  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
 ]);
 

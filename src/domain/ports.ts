@@ -3,7 +3,7 @@
 
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
-  PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
+  NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
 } from './types.ts';
@@ -53,6 +53,8 @@ export interface ExecutionQuestion {
   recentOutput: string;
   /** How it was detected: "marker" | "blocked" | "idle". */
   detectedBy: string;
+  /** A dialog with a countdown (issue #376): when the agent denies it by itself, unless answered first. */
+  lapsesAt?: string;
 }
 
 export type ExecutionOutcome =
@@ -61,8 +63,11 @@ export type ExecutionOutcome =
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion };
 
-/** What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with. */
-export interface PaneAnswer { answer?: string; executorState: Record<string, unknown> }
+/**
+ * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
+ * `lapsed`: nobody answered; the agent denied its dialog by itself when the countdown ran out (issue #376).
+ */
+export interface PaneAnswer { answer?: string; lapsed?: true; executorState: Record<string, unknown> }
 
 /**
  * Runs one job on one lane. `name` matches JobSpec.executor: "test" (built in) and
@@ -136,19 +141,34 @@ export interface UsageSource {
   stop?(): void;
 }
 
-/** What a notifier is given at start: the event log's live feed, and the job an event names. */
+/**
+ * What a notifier is given at start: the event log's live feed, the job and question an event names,
+ * and the questions open at the human now with where each is answered (issue #378).
+ */
 export interface NotifierEvents {
   /** Called after each append (listeners must not re-enter synchronously: defer the work). Returns the unsubscribe. */
   subscribe(listener: (event: DomainEvent) => void): () => void;
   job(id: JobId): Job | undefined;
+  question(id: string): Question | undefined;
+  /** The questions open at the human stage, oldest first. */
+  waitingOnHuman(): Question[];
+  /** Where the human answers a question. */
+  answerUrl(questionId: string): string;
 }
 
-/** The notifier role: tells something outside about events. Started once, stopped at shutdown. */
+/**
+ * The notifier role: tells something outside about events. Started once, stopped at shutdown.
+ * `test` and `sendOpen` (issue #378) are optional: what the UI's notifier actions call.
+ */
 export interface Notifier {
   readonly name: string;
   start(events: NotifierEvents): void;
   /** Unsubscribes and settles in-flight work. */
   stop(): Promise<void>;
+  /** Send one marked test payload now, one attempt; the receiver's answer. */
+  test?(): Promise<NotifierActionResult>;
+  /** Send every question open at the human now, once each per call. */
+  sendOpen?(): Promise<NotifierActionResult>;
 }
 
 /** The router role: advise on one job. Never throws (a failure is advice with `source: fallback`). */
@@ -197,6 +217,8 @@ export interface PluginsView {
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole ordered list; applied before it resolves. */
   editRouting(e: RoutingEdit): Promise<RoutingEditOutcome>;
+  /** POST /ui/api/notifiers (issue #378): a running notifier's action, by instance name. */
+  notifierAction(name: string, action: NotifierAction): Promise<NotifierActionOutcome>;
 }
 
 /** The plugin store (design.md "Plugin store"): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -282,6 +304,11 @@ export interface WebhookDispatcher {
   stop(): Promise<void>;
   /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
   onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
+  /**
+   * POST /ui/api/webhooks/test (issue #378): one signed `webhook.test` event to the subscription now,
+   * one attempt, no delivery stored and nothing appended; undefined for no such subscription.
+   */
+  test(name: string): Promise<NotifierActionResult | undefined>;
 }
 
 export type AnswerByHumanResult =
@@ -314,6 +341,13 @@ export interface QuestionService {
    * Undefined when the question is not open.
    */
   answeredInPane(questionId: string, answer: string): Question | undefined;
+  /**
+   * Nobody answered: the agent denied the question's dialog by itself when its countdown ran out (issue
+   * #376). Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers, status
+   * `lapsed`, `question.lapsed`; no answer, nobody answered it, no onAnswered. Undefined when the question
+   * is not open or has no countdown.
+   */
+  lapsedInPane(questionId: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */

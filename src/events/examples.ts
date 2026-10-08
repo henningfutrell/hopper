@@ -31,6 +31,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'question.closed': { questionId: 'q1', answer: 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.' },
   'question.dismissed': { questionId: 'q1' },
   'question.expired': { questionId: 'q1', after_ms: 1000 },
+  'question.lapsed': { questionId: 'q1', lapsesAt: '2026-10-07T21:43:59.000Z' },
   'update.available': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'main', changes: 3 },
   'update.started': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'main' },
   'update.applied': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'main' },

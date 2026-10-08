@@ -8,6 +8,7 @@ const ALL: Record<EventType, true> = {
   'job.requeued': true, 'job.reattached': true, 'job.reprioritized': true, 'job.respecified': true, 'lane.opened': true, 'lane.closed': true,
   'decision.made': true, 'question.asked': true, 'question.escalated': true, 'question.escalated_to_human': true,
   'question.answered': true, 'question.closed': true, 'question.dismissed': true, 'question.expired': true,
+  'question.lapsed': true,
   'update.available': true, 'update.started': true, 'update.applied': true, 'update.failed': true,
   'plugin.installed': true, 'plugin.removed': true,
   'job.accepted': true, 'job.rejected': true, 'queue.ordered': true, 'queue.gate_changed': true,
@@ -23,5 +24,5 @@ export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 /** The types the lane spans and question waits read (the lane timeline, the Running card); an operator-led claim starts a span too. */
 export const HISTORY_TYPES: EventType[] = [
   'job.started', 'job.reattached', 'job.claimed_by_operator', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued',
-  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
 ];

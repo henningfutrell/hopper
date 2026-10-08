@@ -31,7 +31,7 @@ afterEach(async () => {
 async function start(gh: FakeGitHub, plugins: Record<string, unknown> = {}, secrets: Record<string, string | undefined> = {}): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, secrets, seams: { github: gh, grokbotBaseMs: 20 }, plugins: { jobSources: [], usageSources: [], notifiers: [], ...plugins } });
+  t = await startTestApp({ dbPath: db.dbPath, secrets, seams: { github: gh, grokbot: { baseMs: 20 } }, plugins: { jobSources: [], usageSources: [], notifiers: [], ...plugins } });
   connectGitHub(t, [REPO]);
   return { a: t, token: await t.login() };
 }

@@ -133,6 +133,7 @@ export interface JobSourceRef {
   author?: string;
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
+  labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
 }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
@@ -283,7 +284,7 @@ export const EVENT_TYPES = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
   'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized', 'job.respecified',
   'lane.opened', 'lane.closed', 'decision.made',
-  'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'update.available', 'update.started', 'update.applied', 'update.failed', 'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
   'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept',
@@ -300,7 +301,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'job.respecified': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 3, 'question.asked': 1, 'question.escalated': 2, 'question.escalated_to_human': 1,
-  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
+  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1, 'question.lapsed': 1,
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1, 'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
   'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1,
@@ -362,9 +363,10 @@ export interface WebhookDelivery {
 // ---- Questions ---------------------------------------------------------------------
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
+/** `lapsed`: nobody answered a dialog before its countdown ran out; the agent denied it by itself and went on (issue #376). */
 /** `closed`: the owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
 /** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
-export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'cancelled';
+export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'cancelled';
 
 /** Who made an attempt: an escalation level, or the human. */
 export type AttemptRole = 'level' | 'human';
@@ -411,11 +413,12 @@ export interface Question {
   /** Whose answer was typed: the level instance that answered, or `human` (also for a closed question). */
   answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
-  escalatedToHumanAt?: string;
-  lastNotifiedAt?: string;
+  escalatedToHumanAt?: string; lastNotifiedAt?: string;
   notifyCount: number;
   /** Human tier: when the question expires and the job fails. */
   expiresAt?: string;
+  /** A dialog with a countdown (issue #376): the agent denies it by itself then, unless answered first; it is `lapsed`. */
+  lapsesAt?: string;
   /** When the owner first saw it in the UI (POST /ui/api/questions/:id/seen). Unseen open questions at the human stage are the nav badge. */
   seenAt?: string;
   createdAt: string;
@@ -451,10 +454,9 @@ export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
-export type * from './plugins.ts';
+export * from './plugins.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 

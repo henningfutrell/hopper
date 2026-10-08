@@ -230,3 +230,39 @@ describe('POST /ui/api/webhooks — the guard', () => {
     expect(stored(a)).toEqual(BEFORE);
   });
 });
+
+// Issue #378: a test event checks the URL and the secret without waiting for a real event.
+describe('POST /ui/api/webhooks/test — Send test event', () => {
+  it('posts one signed test event to the subscription and answers the HTTP result; no delivery is stored', async () => {
+    const r = await startReceiver();
+    receivers.push(r);
+    const { a, token } = await start([{ name: 'hook', url: r.url, events: ['job.finished'], secretEnv: 'WEBHOOK_SECRET_GROK' }]);
+    const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, status: 200 });
+    expect(r.received).toHaveLength(1);
+    const got = r.received[0]!;
+    expect(got.headers['x-hopper-event']).toBe('webhook.test');
+    expect(got.headers['x-hopper-signature']).toBe(signatureOf('s-grok', got));
+    expect(JSON.parse(got.body)).toMatchObject({ type: 'webhook.test', data: { test: true, subscription: 'hook' } });
+    expect(a.user().store.webhooks.listDeliveries({ limit: 10 })).toEqual([]);
+  });
+
+  it('a receiver refusing it: ok false with its status', async () => {
+    const r = await startReceiver(401);
+    receivers.push(r);
+    const { a, token } = await start([{ name: 'hook', url: r.url, events: ['*'], secretEnv: 'WEBHOOK_SECRET_GROK' }]);
+    expect((await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token })).body).toMatchObject({ ok: false, status: 401 });
+  });
+
+  it('its secret unset: nothing sent, the answer says why; no such name: 404; no session: 403', async () => {
+    const r = await startReceiver();
+    receivers.push(r);
+    const { a, token } = await start([{ name: 'hook', url: r.url, events: ['*'], secretEnv: 'WEBHOOK_SECRET_NONE' }]);
+    const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
+    expect(res.body).toMatchObject({ ok: false, detail: 'WEBHOOK_SECRET_NONE is not set' });
+    expect(r.received).toHaveLength(0);
+    expect((await a.ui('/ui/api/webhooks/test', { name: 'nope' }, { token })).status).toBe(404);
+    expect((await a.ui('/ui/api/webhooks/test', { name: 'hook' })).status).toBe(403);
+  });
+});

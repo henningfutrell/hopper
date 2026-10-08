@@ -8,6 +8,7 @@ export const jobSourceRef = strict({
   source: z.string(), kind: z.string(), key: z.string(),
   url: z.string().optional(), title: z.string().optional(), repo: z.string().optional(),
   number: z.number().int().optional(), author: z.string().optional(), assignee: z.string().optional(),
+  labels: z.array(z.string()).optional(),
 });
 
 export const jobSpec = strict({
