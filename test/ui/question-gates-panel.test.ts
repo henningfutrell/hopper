@@ -232,3 +232,26 @@ describe('question gates panel', () => {
     expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'claude-fable-0', machine: 'box' }, version: 'p1' });
   });
 });
+
+// Issue #444: the one level editor offers nothing the server refuses. A level with no machine picked
+// cannot save its options until one is (the server refuses them without one, issue #174).
+describe('a level with no machine', () => {
+  it('Save waits until a machine is picked', async () => {
+    await boot();
+    const form = panel()!.querySelector('[data-slot="instance-form"][data-instance="level-2"]')!;
+    const model = form.querySelector<HTMLSelectElement>('select[name="model"]')!;
+    await act(async () => {
+      model.value = 'sonnet';
+      model.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const save = [...form.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save level-2')!;
+    expect(save.disabled).toBe(true);
+    expect(form.textContent).toContain('pick a machine to save');
+    const machine = form.querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    await act(async () => {
+      machine.value = 'box';
+      machine.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(save.disabled).toBe(false);
+  });
+});
