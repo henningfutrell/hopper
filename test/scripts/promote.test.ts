@@ -36,7 +36,11 @@ function imageRun(conclusion: string): void {
 }
 
 function promote(...args: string[]) {
-  return spawnSync('bash', [SCRIPT, ...args], { cwd: work, encoding: 'utf8', env: { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } });
+  return promoteIn(work, ...args);
+}
+
+function promoteIn(cwd: string, ...args: string[]) {
+  return spawnSync('bash', [SCRIPT, ...args], { cwd, encoding: 'utf8', env: { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } });
 }
 
 beforeEach(() => {
@@ -85,6 +89,15 @@ describe('promote.sh', () => {
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('not on beta');
     expect(head('stable')).not.toBe(c);
+  });
+
+  it('says a commit only dev has is not on beta, also from a clone that has not fetched it yet', () => {
+    const stale = join(dir, 'stale');
+    git(dir, 'clone', '-q', origin, stale);
+    const c = onDev('second');
+    const r = promoteIn(stale, 'stable', c);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('not on beta');
   });
 
   it('refuses a commit whose image did not build on the branch below', () => {
