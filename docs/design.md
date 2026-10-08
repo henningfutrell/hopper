@@ -7969,6 +7969,8 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   only where `canPark` / `canRequeue` (`ui/src/model/board.ts`) say the daemon takes them, and only for a role
   that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
+- **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
+  ended`); the resumed session meets its tool again and reports a new one.
 - **Settings.** None of its own: who may park is the operator role, as for cancel, and roles apply live. No
   reminder or limit for parked jobs.
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
