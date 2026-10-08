@@ -178,3 +178,27 @@ describe('Grok Bot routine: test event, open questions, payload (issue #378)', (
     expect(hit.headers.authorization).toBe('Bearer later');
   });
 });
+
+// A user's secrets carry the user's secret prefix (issue #158): the routine's variables of a user added
+// later are HOPPER_USER_<ID>_GROKBOT_WEBHOOK_URL and _KEY. What the notifier says is missing must name
+// those, or the owner sets a variable the hopper never reads.
+describe('Grok Bot routine of a user with a secret prefix', () => {
+  it('needs-setup and the test event name the prefixed variables; the prefixed variables are the ones read', async () => {
+    const r = await receiver();
+    const { a, secrets } = await start();
+    const u = await a.addUser('Second Person');
+    const prefix = `HOPPER_USER_${u.id.toUpperCase()}_`;
+    setHook(secrets, r.url);
+    const before = a.user(u.id).plugins.report().notifiers.instances[0]!;
+    expect(before.detection.status).toBe('needs-setup');
+    expect(before.detection.reason).toContain(`${prefix}GROKBOT_WEBHOOK_URL`);
+    expect(before.detection.command).toContain(`${prefix}GROKBOT_WEBHOOK_KEY_FILE`);
+    const refused = await a.user(u.id).plugins.notifierAction('grok-bot', 'test');
+    expect(refused).toMatchObject({ ok: true, result: { ok: false } });
+    expect(refused.ok && refused.result.detail).toContain(`${prefix}GROKBOT_WEBHOOK_URL`);
+    expect(r.hits).toHaveLength(0);
+    setHook(secrets, r.url, 'theirs', { url: `${prefix}GROKBOT_WEBHOOK_URL`, key: `${prefix}GROKBOT_WEBHOOK_KEY` });
+    expect(await a.user(u.id).plugins.notifierAction('grok-bot', 'test')).toMatchObject({ ok: true, result: { ok: true, status: 200 } });
+    expect(r.hits[0]!.headers.authorization).toBe('Bearer theirs');
+  });
+});
