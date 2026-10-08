@@ -1,20 +1,22 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it.
-import { Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
+import { Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingOwner, useAwaitingSort, useLoginsBadge } from '@/store/selectors';
+import { openProblems } from '@/model/failures';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'queue', 'questions', 'logins', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', 'questions', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   queue: { label: 'Queue', icon: ListOrdered },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   logins: { label: 'Logins', icon: KeyRound },
+  failures: { label: 'Failures', icon: OctagonAlert },
   decisions: { label: 'Decisions', icon: Scale },
   events: { label: 'Events', icon: ListTree },
   sources: { label: 'Sources', icon: Inbox },
@@ -35,10 +37,12 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const sorting = useAwaitingSort();
   const logins = useLoginsBadge();
+  const problems = useHopper((s) => openProblems(s.failures));
   const badge: Partial<Record<View, { n: number; cls: string; title?: string }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     questions: { n: questions, cls: 'bg-question text-background' },
     logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}` },
+    failures: { n: problems, cls: 'bg-bad text-background', title: `${problems} open ${problems === 1 ? 'problem' : 'problems'}` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   return (

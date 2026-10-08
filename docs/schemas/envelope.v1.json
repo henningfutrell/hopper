@@ -75,6 +75,9 @@
         "auth.expired",
         "auth.cancelled",
         "auth.failed",
+        "job.assessed",
+        "failure.grouped",
+        "failure.resolved",
         "jev.mode_changed",
         "router.mode_changed"
       ]

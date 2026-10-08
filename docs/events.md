@@ -717,11 +717,11 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry.
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry.
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` | yes |
+| `by` | `user` \| `assessor` | yes |
 
 ```json
 {
@@ -1047,5 +1047,91 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
   "kind": "device_code",
   "tool": "gh",
   "reason": "the job ended: timed out"
+}
+```
+
+## `job.assessed`
+
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job.
+
+| field | type | required |
+|---|---|---|
+| `recordId` | string | yes |
+| `signature` | string | yes |
+| `class` | `transient` \| `shared` \| `job` | yes |
+| `decision` | `retry` \| `hold` \| `redirect` \| `person` | yes |
+| `reasons` | string[] | yes |
+| `summary` | string | yes |
+| `attempt` | integer | yes |
+| `auto` | boolean | yes |
+| `causeId` | string | no |
+| `problemId` | string | no |
+| `retryAt` | string | no |
+
+```json
+{
+  "recordId": "f1",
+  "signature": "3f9c2a1b7d4e",
+  "class": "shared",
+  "decision": "redirect",
+  "reasons": [
+    "known cause: Disk full",
+    "redirected: the job may run on another machine than desk"
+  ],
+  "summary": "Redirected: Disk full on desk. Ran 1 time on desk. Failed: write: ENOSPC: no space left on device.",
+  "attempt": 1,
+  "auto": true,
+  "causeId": "disk-full",
+  "problemId": "p1"
+}
+```
+
+## `failure.grouped`
+
+Version 1 (`docs/schemas/failure.grouped.v1.json`). A failed job was grouped into a problem (issue #509): one shared cause, shown once with the jobs it hit. `opened: true` for the job that opened it. `general: true`: no known cause, flagged because the same signature failed enough items within the grouping window. While it is open, a new job its `scope` covers (a machine, an executor on it, or every machine) is held — or placed on another machine — with the reason `held by problem: <title>`. `affected`: its jobs so far.
+
+| field | type | required |
+|---|---|---|
+| `problemId` | string | yes |
+| `signature` | string | yes |
+| `title` | string | yes |
+| `opened` | boolean | yes |
+| `general` | boolean | yes |
+| `decision` | `hold` \| `redirect` | yes |
+| `scope` | object | yes |
+| `affected` | integer | yes |
+
+```json
+{
+  "problemId": "p1",
+  "signature": "3f9c2a1b7d4e",
+  "title": "Disk full on desk",
+  "opened": true,
+  "general": false,
+  "decision": "redirect",
+  "scope": {
+    "machineId": "desk"
+  },
+  "affected": 1
+}
+```
+
+## `failure.resolved`
+
+Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it.
+
+| field | type | required |
+|---|---|---|
+| `problemId` | string | yes |
+| `title` | string | yes |
+| `by` | `user` \| `check` | yes |
+| `released` | integer | yes |
+
+```json
+{
+  "problemId": "p1",
+  "title": "Disk full on desk",
+  "by": "check",
+  "released": 2
 }
 ```

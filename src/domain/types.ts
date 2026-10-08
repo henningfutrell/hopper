@@ -6,6 +6,7 @@ import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
+import type { JobAssessment, ProblemBlock } from './failures.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -121,6 +122,10 @@ export interface Job {
    * again on every tick until it goes through; meanwhile a waiting job of the same item is held.
    */
   cleanupDeferred?: { at: string; error: string };
+  /** The output tail its executor gave when it failed (issue #509), codes hidden; the assessor's evidence. */
+  errorTail?: string;
+  /** The failure assessor's judgement of this failed job (issue #509): its decision, summary and reasons. */
+  assessment?: JobAssessment;
   /**
    * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
    * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,
@@ -228,6 +233,8 @@ export interface DecisionInputs {
   queueOrder?: QueueOrder;
   /** Ended jobs whose cleanup is running or deferred (issue #371): a waiting job of the same item is held. Absent on Decisions stored before it. */
   cleanupDue?: CleanupDue[];
+  /** Open problems that hold or redirect jobs (issue #509). Absent on Decisions stored before it. */
+  problems?: ProblemBlock[];
   policy: DeciderPolicy;
 }
 
@@ -472,6 +479,7 @@ export type { GateActor, PreSort, PreSortReject, QueueGate, QueueGateMode } from
 // ---- Logins (issue #476): src/domain/logins.ts (re-exported here) ----------------------
 
 export * from './logins.ts';
+export * from './failures.ts';
 export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------

@@ -210,12 +210,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    rerun(jobId, item, source) {
+    rerun(jobId, item, source, by = 'user') {
       return store.tx(() => {
         if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
         const job = ingest(item, source) ?? store.jobs.getBySourceKey(item.key)!;
-        store.events.append({ type: 'job.rerun', jobId, data: { by: 'user' } });
+        store.events.append({ type: 'job.rerun', jobId, data: { by } });
         return job;
       });
     },

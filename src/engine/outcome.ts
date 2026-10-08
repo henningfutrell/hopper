@@ -11,8 +11,10 @@ export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: st
 
 const TERMINAL: Recorded = { kind: 'terminal' };
 
-function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string): Recorded {
-  c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: at, pendingAnswer: undefined });
+const TAIL_CHARS = 2000;
+
+function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string): Recorded {
+  c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: at, pendingAnswer: undefined, ...(tail ? { errorTail: tail.slice(-TAIL_CHARS) } : {}) });
   c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error } });
   return TERMINAL;
 }
@@ -63,7 +65,7 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined });
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });
     } else if (outcome.kind === 'failed') {
-      fail(c, job, laneId, outcome.error, at);
+      fail(c, job, laneId, outcome.error, at, outcome.tail);
     } else {
       recorded = ask(c, job, lane, laneId, machine, outcome.question, at);
     }

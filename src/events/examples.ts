@@ -61,5 +61,11 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'auth.expired': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z' },
   'auth.cancelled': { loginId: 'l1', kind: 'device_code', tool: 'gh', by: 'user' },
   'auth.failed': { loginId: 'l1', kind: 'device_code', tool: 'gh', reason: 'the job ended: timed out' },
+  'job.assessed': {
+    recordId: 'f1', signature: '3f9c2a1b7d4e', class: 'shared', decision: 'redirect', reasons: ['known cause: Disk full', 'redirected: the job may run on another machine than desk'],
+    summary: 'Redirected: Disk full on desk. Ran 1 time on desk. Failed: write: ENOSPC: no space left on device.', attempt: 1, auto: true, causeId: 'disk-full', problemId: 'p1',
+  },
+  'failure.grouped': { problemId: 'p1', signature: '3f9c2a1b7d4e', title: 'Disk full on desk', opened: true, general: false, decision: 'redirect', scope: { machineId: 'desk' }, affected: 1 },
+  'failure.resolved': { problemId: 'p1', title: 'Disk full on desk', by: 'check', released: 2 },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

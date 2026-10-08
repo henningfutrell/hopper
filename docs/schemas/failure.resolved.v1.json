@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "problemId": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "user",
+        "check"
+      ]
+    },
+    "released": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "problemId",
+    "title",
+    "by",
+    "released"
+  ],
+  "additionalProperties": false
+}

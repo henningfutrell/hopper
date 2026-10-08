@@ -84,7 +84,8 @@ export interface ExecutionQuestion {
 
 export type ExecutionOutcome =
   | { kind: 'finished'; result: unknown }
-  | { kind: 'failed'; error: string }
+  /** `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. */
+  | { kind: 'failed'; error: string; tail?: string }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion };
 
@@ -589,9 +590,9 @@ export interface SourceHost {
    * Its source gave this ended job's item back (issues #313, #354): the new job for `item`, created as
    * `ingest` does (routing rules, the queue gate) with `rerunOf` the ended job, and job.rerun on the
    * ended job, in one tx. The ended job stays as it ended. A newer job of the key that already exists
-   * is answered instead of a second one.
+   * is answered instead of a second one. `by`: who asked, the user (the default) or the failure assessor (issue #509).
    */
-  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): Job;
+  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy): Job;
 }
 
 /**
@@ -607,7 +608,7 @@ export interface SourceRegistry {
    * (`JobSource.rerun`) and the new job is queued at once; it answers the new job. The ended job is kept.
    * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
-  rerun(jobId: JobId): Promise<RerunResult>;
+  rerun(jobId: JobId, by?: RerunBy): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
@@ -618,6 +619,9 @@ export interface SourceRegistry {
 export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }
   | { ok: false; reason: 'not_found' | 'conflict'; message: string };
+
+/** Who asks for an ended job's item to run again: the user, or the failure assessor (issue #509). */
+export type RerunBy = 'user' | 'assessor';
 
 export type RerunResult =
   | { ok: true; job: Job }

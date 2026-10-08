@@ -5,7 +5,7 @@ import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
-  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
+  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureRecord, FailureSettings, NamedCause, Problem,
 } from './types.ts';
 import type { ConnectedAccountProvider } from './types.ts';
 
@@ -113,6 +113,36 @@ export interface LoginRepository {
   update(id: string, patch: Partial<Omit<Login, 'id' | 'createdAt'>>): Login;
 }
 
+/** The failure records (issue #509): one per assessed failed job. */
+export interface FailureRepository {
+  create(input: Omit<FailureRecord, 'id'>): FailureRecord;
+  get(id: string): FailureRecord | undefined;
+  /** The job's newest record. */
+  forJob(jobId: JobId): FailureRecord | undefined;
+  /** Newest first: since a time, of a signature, of a problem; at most `limit` (default 1000). */
+  list(filter?: { since?: string; signature?: string; problemId?: string; limit?: number }): FailureRecord[];
+  /** The records whose pending run is due at `at`, the earliest first. */
+  due(at: string): FailureRecord[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<FailureRecord, 'id' | 'jobId'>>): FailureRecord;
+  /** Delete the records older than `before` with no pending run; how many. */
+  prune(before: string): number;
+}
+
+/** The problems (issue #509): shared causes, one per signature while open. */
+export interface ProblemRepository {
+  create(input: Omit<Problem, 'id'>): Problem;
+  get(id: string): Problem | undefined;
+  /** The open problem of a signature. */
+  open(signature: string): Problem | undefined;
+  /** Newest first; at most `limit` (default 200). */
+  list(filter?: { status?: Problem['status']; since?: string; limit?: number }): Problem[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<Problem, 'id'>>): Problem;
+  /** Delete the problems resolved before `before`; how many. */
+  prune(before: string): number;
+}
+
 /** A user's settings (in the user schema). */
 export interface UserSettingsRepository {
   /** The user's queue gate (issue #159); absent: never set. */
@@ -144,6 +174,12 @@ export interface UserSettingsRepository {
   /** How long before a login's code runs out the Logins view warns, in seconds (issue #477); absent: never chosen. */
   getLoginWarnSec(): number | undefined;
   setLoginWarnSec(seconds: number): void;
+  /** The failure assessor's settings (issue #509); absent: never set. */
+  getFailureSettings(): FailureSettings | undefined;
+  setFailureSettings(settings: FailureSettings): void;
+  /** The causes a person named for signatures (issue #509). */
+  getNamedCauses(): NamedCause[];
+  setNamedCauses(causes: readonly NamedCause[]): void;
 }
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */
@@ -369,6 +405,8 @@ export interface UserStore {
   webhooks: WebhookRepository;
   questions: QuestionRepository;
   logins: LoginRepository;
+  failures: FailureRepository;
+  problems: ProblemRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

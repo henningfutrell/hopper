@@ -11,7 +11,7 @@ import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { LoginSettings, LoginsRead, LoginView, SessionUser, SessionView } from '@/model/wire';
+import type { FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, SessionUser, SessionView } from '@/model/wire';
 import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Question, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
@@ -48,6 +48,8 @@ export interface HopperState {
   logins: LoginView[];
   /** The logins settings, as GET /api/logins answered them; null until read. */
   loginSettings: LoginSettings | null;
+  /** GET /api/failures (issue #509): problems, assessed failures, the profile, the settings; null until read. */
+  failures: FailuresView | null;
   /** Server time less the browser's when the logins were read: countdowns run on server time. */
   serverOffsetMs: number;
   /** Newest first, every type: the live log. */
@@ -77,7 +79,7 @@ export interface HopperState {
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, machines: [],
-  decisions: [], questions: [], handled: [], logins: [], loginSettings: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
+  decisions: [], questions: [], handled: [], logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   usageRecorded: 0,
 }));
@@ -136,6 +138,30 @@ export async function saveLoginSettings(body: Partial<LoginSettings>): Promise<v
     toast.error((e as Error).message);
   }
 }
+/** GET /api/failures (issue #509). An answer without its parts is refused, never read as none. */
+export async function refreshFailures() {
+  const r = await get<FailuresView>('/api/failures');
+  if (!Array.isArray(r.problems) || !Array.isArray(r.recent) || !r.settings || !r.profile) throw new Error('GET /api/failures: the answer holds no failures');
+  set({ failures: r });
+}
+/** A Failures action (issue #509): the daemon's answer, then the failures read again. Failures toast, as `act`. */
+export async function failureAct(path: string, body: unknown, done: string): Promise<boolean> {
+  const r = await actFor(path, body, done);
+  refreshFailures().catch(() => {});
+  return r.ok;
+}
+/** POST /ui/api/failures/settings (admin). Failures toast; a rejected session drops to the landing page. */
+export async function saveFailureSettings(body: Partial<FailureSettings>): Promise<void> {
+  try {
+    const settings = await post<FailureSettings>('/ui/api/failures/settings', body);
+    const f = state().failures;
+    if (f) set({ failures: { ...f, settings } });
+    toast.success('Failures settings saved');
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
+    toast.error((e as Error).message);
+  }
+}
 /** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen). The nav badge does not read it. Quiet: no toast. */
 export async function markSeen(ids: string[]) {
   for (const id of ids) {
@@ -181,6 +207,9 @@ function debounced(fn: () => Promise<void>, ms = 150) {
 export const refreshLiveSoon = debounced(refreshLive);
 const refreshQuestionsSoon = debounced(refreshQuestions);
 const refreshLoginsSoon = debounced(refreshLogins);
+const refreshFailuresSoon = debounced(refreshFailures);
+/** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'job.rerun', 'job.failed', 'job.dismissed']);
 
 export async function checkSession() {
   try {
@@ -281,6 +310,7 @@ export function onDomainEvent(e: DomainEvent) {
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type.startsWith('auth.')) refreshLoginsSoon();
+  if (FAILURE_EVENTS.has(e.type)) refreshFailuresSoon();
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
@@ -322,6 +352,7 @@ export async function load(): Promise<boolean> {
   refreshUpdate().catch(() => {});
   // Apart, so the server's time is read close to its answer; until it is read the Logins view says so.
   refreshLogins().catch(() => {});
+  refreshFailures().catch(() => {});
   return true;
 }
 export const setLoadError = (loadError: string) => set({ loadError });

@@ -1,5 +1,6 @@
 // Waiting (queue order), the jobs on a question, the operator-led jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
+import { AssessmentLine } from '@/components/assessment';
 import { Archive, Check, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
@@ -70,6 +71,7 @@ export function LockedRows({ heading = true }: { heading?: boolean }) {
           <span className="ml-auto" title={job.finishedAt}>failed {ago(job.finishedAt ?? job.updatedAt, now)}</span>
         </div>
         {job.error && <div className="line-clamp-2 pl-5.5 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+        <AssessmentLine job={job} className="pl-5.5" />
         <CleanupDeferredFlag job={job} className="pl-5.5" />
       </div>
     ))}
@@ -172,6 +174,7 @@ export function EndedPanel() {
             {job.startedAt && <span>took {between(job.startedAt, job.finishedAt)}</span>}
           </div>
           {job.error && <div className="line-clamp-2 text-xs text-bad/90" title={job.error}>{job.error}</div>}
+          <AssessmentLine job={job} />
           <CleanupDeferredFlag job={job} />
         </div>
       )) : <Empty>nothing ended in 24 h</Empty>}

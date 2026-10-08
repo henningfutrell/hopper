@@ -27,11 +27,12 @@ const SHUTDOWN_WAIT_MS = 5000;
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
  * a respecified job may be pinned to another machine; a deferred cleanup that went through
- * frees a waiting job of its item (issue #371). */
+ * frees a waiting job of its item (issue #371); a problem grouped or resolved holds or frees jobs (issue #509). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
+  'failure.grouped', 'failure.resolved',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHandlers {
@@ -44,6 +45,8 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
   stop(): Promise<void>;
+  /** Ask for a Decision: something it reads changed outside the engine (the failure settings, issue #509). Coalesces. */
+  trigger(reason: string): void;
   /** The connection renewed its token (issue #441): every job in flight has its credential files rewritten on its machine. */
   renewCredentials(): Promise<void>;
 }
@@ -63,7 +66,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials,
+    questions: o.questions, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials, problems: o.problems,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -113,6 +116,7 @@ export function createEngine(o: EngineOptions): Engine {
       classifier.sweep();
       c.trigger('startup');
     },
+    trigger: (reason) => { if (!stopping) c.trigger(reason); },
     renewCredentials: () => (stopping ? Promise.resolve() : renewCredentials(c, (line) => console.warn(line))),
     async stop() {
       stopping = true;

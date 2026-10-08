@@ -5,7 +5,8 @@
     "by": {
       "type": "string",
       "enum": [
-        "user"
+        "user",
+        "assessor"
       ]
     }
   },

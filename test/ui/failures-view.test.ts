@@ -187,7 +187,7 @@ describe('the Failures view', () => {
   });
 
   it('a failed job shows its assessment where its error shows', async () => {
-    await boot('#overview', { failures: view() });
+    await boot('#queue', { failures: view() });
     const a = document.querySelector('[data-job-id="j1"] [data-assessment]');
     expect(a?.textContent).toContain('Held: Disk full on desk');
   });

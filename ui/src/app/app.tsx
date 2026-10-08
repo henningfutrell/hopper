@@ -10,6 +10,7 @@ import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHo
 import { connect } from '@/store/stream';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
+import { Failures } from '@/views/failures';
 import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
 import { Overview } from '@/views/overview';
@@ -24,7 +25,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, questions: Questions, logins: Logins, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  overview: Overview, queue: Queue, questions: Questions, logins: Logins, failures: Failures, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
 };
 
 function Loading() {

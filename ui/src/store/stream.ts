@@ -3,7 +3,7 @@
 import { readToken } from '@/lib/api';
 import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
-import { onDelivery, onDomainEvent, onSource, onUsageRecorded, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
+import { onDelivery, onDomainEvent, onSource, onUsageRecorded, refreshFailures, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
 
 export function connect(): () => void {
   const after = useHopper.getState().events[0]?.seq ?? 0;
@@ -15,6 +15,7 @@ export function connect(): () => void {
     refreshLive().catch(() => {});
     refreshQuestions().catch(() => {});
     refreshLogins().catch(() => {});
+    refreshFailures().catch(() => {});
     refreshUpdate().catch(() => {});
   };
   es.onerror = () => setConn('reconnecting');
