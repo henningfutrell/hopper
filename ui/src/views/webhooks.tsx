@@ -1,9 +1,11 @@
 // Webhook subscriptions and their deliveries, live. The subscriptions are kept in the database
 // (issue #78); a UI session edits them through POST /ui/api/webhooks (issue #18): add, edit (url,
-// events, active), remove. The hopper keeps no secret (issue #56): a subscription names the WEBHOOK_SECRET_* variable
-// the runtime gives its secret in, and the card says whether the runtime gives it. Send test event
+// events, active), remove. The signing secret is the hopper's own (issue #451): typed in when adding, or
+// made by the hopper; kept encrypted and write-only. The card says only that one is set and when it
+// changed, and offers Replace (type a new one) and Rotate (the hopper makes one). A secret the hopper made
+// is shown once, here, to copy to the receiver; it is never put in the app's store. Send test event
 // (issue #378) posts one signed `webhook.test` and shows the receiver's answer.
-import { KeyRound, Pencil, Plus, Send, Trash2, Webhook } from 'lucide-react';
+import { Copy, KeyRound, Pencil, Plus, RefreshCw, Send, Trash2, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -16,20 +18,25 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
 import { clock } from '@/model/format';
-import { EVENT_CHOICES, lastDelivery, secretEnvFor, toggleEvent } from '@/model/webhooks';
+import { EVENT_CHOICES, lastDelivery, secretOf, toggleEvent } from '@/model/webhooks';
 import type { WebhooksEdit, WebhookView, WebhooksView } from '@/model/wire';
 import { refreshWebhooks, setWebhooks, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 type Send = (edit: WebhooksEdit, done: string) => Promise<WebhooksView | null>;
 
-function useSend(): { send: Send; busy: boolean } {
+/** A secret the hopper made, with the subscription it signs: shown once. */
+interface Made { name: string; secret: string }
+
+function useSend(onMade: (m: Made) => void): { send: Send; busy: boolean } {
   const [busy, setBusy] = useState(false);
   const send: Send = async (edit, done) => {
     setBusy(true);
     try {
-      const view = await post<WebhooksView>('/ui/api/webhooks', edit);
+      const { generatedSecret, ...view } = await post<WebhooksView>('/ui/api/webhooks', edit);
+      // The made secret never reaches the app's store: only the one-time box below holds it.
       setWebhooks(view);
+      if (generatedSecret !== undefined) onMade({ name: edit.name, secret: generatedSecret });
       toast.success(done);
       return view;
     } catch (e) {
@@ -65,9 +72,21 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium text-muted-foreground">{children}</div>;
 }
 
-interface FormValues { name: string; url: string; events: string[]; active: boolean; secretEnv: string }
+/** A signing secret typed in: what the hopper takes (src/webhooks/edit.ts). Left empty, the hopper makes one. */
+const SECRET_PATTERN = '[\\x21-\\x7e]{32,4096}';
+const SECRET_HELP = 'at least 32 characters, no spaces. Kept encrypted; never shown again';
 
-/** The add form and the edit form: url, events, active. `name` and the secret's variable only when adding. */
+/** A write-only secret input: never filled in from the hopper, never remembered by the browser. */
+function SecretInput({ value, onChange, required }: { value: string; onChange: (v: string) => void; required?: boolean }) {
+  return (
+    <Input className="h-9 font-mono text-sm" type="password" value={value} required={required} pattern={SECRET_PATTERN}
+      autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
+interface FormValues { name: string; url: string; events: string[]; active: boolean; secret: string }
+
+/** The add form and the edit form: url, events, active. `name` and the signing secret only when adding. */
 function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
   initial: FormValues;
   adding: boolean; busy: boolean;
@@ -75,10 +94,7 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
   onCancel: () => void;
 }) {
   const [v, setV] = useState(initial);
-  // The variable follows the name until it is edited.
-  const [ownEnv, setOwnEnv] = useState(false);
-  const secretEnv = ownEnv ? v.secretEnv : secretEnvFor(v.name);
-  const submit = (e: React.FormEvent) => { e.preventDefault(); onSubmit({ ...v, name: v.name.trim(), url: v.url.trim(), secretEnv: secretEnv.trim() }); };
+  const submit = (e: React.FormEvent) => { e.preventDefault(); onSubmit({ ...v, name: v.name.trim(), url: v.url.trim() }); };
   return (
     <form onSubmit={submit} className="space-y-3">
       {adding && (
@@ -87,9 +103,8 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
             onChange={(e) => setV({ ...v, name: e.target.value })} /></label>
       )}
       {adding && (
-        <label className="block space-y-1"><Label>Secret variable — set it in the hopper's runtime (or a mounted file named by {secretEnv}_FILE); hopper keeps no secret</Label>
-          <Input className="h-9 font-mono text-sm" value={secretEnv} required pattern="WEBHOOK_SECRET_[A-Z0-9_]+" autoCapitalize="characters" autoCorrect="off" spellCheck={false}
-            onChange={(e) => { setOwnEnv(true); setV({ ...v, secretEnv: e.target.value }); }} /></label>
+        <label className="block space-y-1"><Label>Signing secret — leave empty and the hopper makes one, shown once to copy to the receiver; or type the receiver's: {SECRET_HELP}</Label>
+          <SecretInput value={v.secret} onChange={(secret) => setV({ ...v, secret })} /></label>
       )}
       <label className="block space-y-1"><Label>URL (http or https)</Label>
         <Input className="h-9 font-mono text-sm" type="url" inputMode="url" value={v.url} required autoCapitalize="off" autoCorrect="off" spellCheck={false}
@@ -104,11 +119,60 @@ function SubscriptionForm({ initial, adding, busy, onSubmit, onCancel }: {
   );
 }
 
+/** What the card says about the signing secret: set and when, or the runtime variable one from before reads; never the secret. */
+function SecretLine({ sub }: { sub: WebhookView }) {
+  const s = secretOf(sub);
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 text-xs ${s.problem ? 'text-bad' : 'text-muted-foreground'}`}>
+      <KeyRound className="size-3.5" />
+      {s.kind === 'stored' && <>secret set · changed {clock(s.changedAt)}</>}
+      {s.kind === 'runtime' && <>secret from runtime variable <code className="font-mono">{s.variable}</code>: replace to store it in hopper</>}
+      {s.kind === 'none' && <>no secret set: replace or rotate it</>}
+      {s.problem && <span className="break-words">· {s.problem}: nothing is sent until it is fixed</span>}
+    </div>
+  );
+}
+
+/** Replace: a new secret typed in, write-only. */
+function ReplaceForm({ name, busy, send, onDone }: { name: string; busy: boolean; send: Send; onDone: () => void }) {
+  const [secret, setSecret] = useState('');
+  return (
+    <form className="space-y-2" onSubmit={async (e) => {
+      e.preventDefault();
+      if (await send({ action: 'replace', name, secret }, `${name}: secret replaced; deliveries sign with it from the next one`)) onDone();
+    }}>
+      <label className="block space-y-1"><Label>New signing secret — the receiver's: {SECRET_HELP}</Label>
+        <SecretInput value={secret} required onChange={setSecret} /></label>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" size="sm" disabled={busy || !secret}>Replace secret</Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
+      </div>
+    </form>
+  );
+}
+
+/** A secret the hopper made, shown this once: copy it to the receiver. Dismissed, it is gone from the page. */
+function MadeSecret({ made, onDone }: { made: Made; onDone: () => void }) {
+  const copy = () => navigator.clipboard?.writeText(made.secret).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked: select and copy it'));
+  return (
+    <div role="alert" className="space-y-2 rounded-lg border border-warn p-3">
+      <div className="text-sm font-medium">New signing secret for <span className="font-mono">{made.name}</span></div>
+      <div className="text-xs text-muted-foreground">Shown once. Copy it to the receiver now: the hopper keeps it encrypted and never shows it again.</div>
+      <code className="block font-mono text-xs break-all select-all">{made.secret}</code>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => void copy()}><Copy />Copy</Button>
+        <Button size="sm" onClick={onDone}>Done</Button>
+      </div>
+    </div>
+  );
+}
+
 function SubscriptionCard({ sub, authed, send, busy }: {
   sub: WebhookView; authed: boolean; send: Send; busy: boolean;
 }) {
   const deliveries = useHopper((s) => s.deliveries);
   const [editing, setEditing] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const last = lastDelivery(deliveries, sub.id);
   const can = authed && !busy;
   return (
@@ -120,17 +184,15 @@ function SubscriptionCard({ sub, authed, send, busy }: {
           onCheckedChange={(active) => void send({ action: 'edit', name: sub.name, active }, `${sub.name}: ${active ? 'active' : 'paused'}`)} />
       </div>
       {editing ? (
-        <SubscriptionForm adding={false} busy={busy} initial={{ name: sub.name, url: sub.url, events: sub.events, active: sub.active, secretEnv: sub.secretEnv }} onCancel={() => setEditing(false)}
+        <SubscriptionForm adding={false} busy={busy} initial={{ name: sub.name, url: sub.url, events: sub.events, active: sub.active, secret: '' }} onCancel={() => setEditing(false)}
           onSubmit={async ({ url, events, active }) => {
             if (await send({ action: 'edit', name: sub.name, url, events, active }, `${sub.name}: saved`)) setEditing(false);
           }} />
       ) : (
         <>
           <div className="font-mono text-xs break-all text-foreground/80">{sub.url}</div>
-          <div className={`flex flex-wrap items-center gap-1.5 text-xs ${sub.secretProblem ? 'text-bad' : 'text-muted-foreground'}`}>
-            <KeyRound className="size-3.5" />secret from <code className="font-mono">{sub.secretEnv}</code>
-            {sub.secretProblem && <span className="break-words">· {sub.secretProblem}: deliveries wait until the runtime gives it</span>}
-          </div>
+          <SecretLine sub={sub} />
+          {replacing && <ReplaceForm name={sub.name} busy={busy} send={send} onDone={() => setReplacing(false)} />}
           <div className="flex flex-wrap gap-1">{sub.events.map((e) => <span key={e} className="rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-[11px]">{e}</span>)}</div>
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
             {last ? (
@@ -141,9 +203,14 @@ function SubscriptionCard({ sub, authed, send, busy }: {
           {authed && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button size="sm" variant="outline" disabled={!can} onClick={() => setEditing(true)}><Pencil />Edit</Button>
+              <Button size="sm" variant="outline" disabled={!can || replacing} onClick={() => setReplacing(true)}><KeyRound />Replace secret</Button>
+              <Confirm title={`Rotate the secret of ${sub.name}?`} action="Rotate" onConfirm={() => void send({ action: 'rotate', name: sub.name }, `${sub.name}: secret rotated; copy it to the receiver`)}
+                description="The hopper makes a new signing secret, shows it once, and signs with it from the next delivery. The receiver refuses deliveries until it has the new one.">
+                <Button size="sm" variant="outline" disabled={!can}><RefreshCw />Rotate secret</Button>
+              </Confirm>
               <SendAction label="Send test event" icon={Send} path="/ui/api/webhooks/test" body={{ name: sub.name }} disabled={!can} />
               <Confirm title={`Remove ${sub.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: sub.name }, `${sub.name}: removed`)}
-                description="The subscription is deleted and its pending deliveries fail.">
+                description="The subscription and its signing secret are deleted, and its pending deliveries fail.">
                 <Button size="sm" variant="destructive" disabled={!can}><Trash2 />Remove</Button>
               </Confirm>
             </div>
@@ -158,7 +225,8 @@ export function Webhooks() {
   const subs = useHopper((s) => s.subscriptions);
   const deliveries = useHopper((s) => s.deliveries);
   const authed = useCanAdmin();
-  const { send, busy } = useSend();
+  const [made, setMade] = useState<Made | null>(null);
+  const { send, busy } = useSend(setMade);
   const [adding, setAdding] = useState(false);
   const byId = new Map(subs.map((s) => [s.id, s]));
   // Another session may have changed them since load: read them afresh.
@@ -167,11 +235,12 @@ export function Webhooks() {
     <div className="space-y-3">
       <Panel title="Subscriptions" icon={Webhook} count={subs.length || ''} bodyClassName="space-y-3"
         action={authed && !adding && <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus />Add subscription</Button>}>
+        {made && <MadeSecret made={made} onDone={() => setMade(null)} />}
         {adding && (
           <div className="rounded-lg border border-dashed p-3">
-            <SubscriptionForm adding busy={busy} initial={{ name: '', url: '', events: [], active: true, secretEnv: '' }} onCancel={() => setAdding(false)}
-              onSubmit={async (v) => {
-                if (await send({ action: 'add', ...v }, `${v.name}: added; set ${v.secretEnv} in the runtime`)) setAdding(false);
+            <SubscriptionForm adding busy={busy} initial={{ name: '', url: '', events: [], active: true, secret: '' }} onCancel={() => setAdding(false)}
+              onSubmit={async ({ secret, ...v }) => {
+                if (await send({ action: 'add', ...v, ...(secret ? { secret } : {}) }, `${v.name}: added`)) setAdding(false);
               }} />
           </div>
         )}

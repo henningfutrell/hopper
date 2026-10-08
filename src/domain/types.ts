@@ -321,8 +321,13 @@ export interface WebhookSubscription {
   url: string;
   /** Event types to deliver; ['*'] = all. */
   events: string[];
-  /** The variable the runtime gives the HMAC-SHA256 key in (design.md "Secrets"): a name, never the secret. */
-  secretEnv: string;
+  /**
+   * Only a subscription from before issue #451 with no stored secret: the runtime variable that gives its
+   * HMAC-SHA256 key (design.md "Secrets"), a name, never the secret. Gone once a secret is stored.
+   */
+  secretEnv?: string;
+  /** When its stored signing secret last changed (issue #451); the secret itself is never part of a subscription. */
+  secretChangedAt?: string;
   active: boolean;
   createdAt: string;
 }

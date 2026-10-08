@@ -40,7 +40,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356) | http, decider |
-| `src/webhooks/` | signing, dispatcher, retry/backoff, the secret of a subscription from the runtime (`dispatcher.ts`), the UI edit of the subscriptions (`edit.ts`, rows in the store) | engine, http, decider |
+| `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/reap`, `/survey`, `/credential`, `/work-tree` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") | engine, http, store, plugins, decider |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY` | everything |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -357,9 +357,11 @@ subscription marks its pending/retrying deliveries `failed`.
 2xx within 5 s = delivered. Otherwise attempt `n` schedules the next at
 `now + min(base * 2^(n-1), 300 s)`, `base` = 1 s (configurable for tests); after 6 attempts
 the delivery is `failed`. Due deliveries are swept every 500 ms and on enqueue; pending
-deliveries survive a restart. The secret comes from the runtime: the variable the subscription's
-`secretEnv` names (or the mounted file `<secretEnv>_FILE` names), read at each delivery ("Secrets").
-None given: nothing is sent, and the delivery retries naming the variable.
+deliveries survive a restart. The secret is the subscription's stored signing secret, opened at each
+delivery, so a replaced or rotated one signs from the next ("Webhook signing secrets", issue #451); for a
+subscription from before with none stored, the runtime variable its `secretEnv` names (or the mounted file
+`<secretEnv>_FILE` names). None, or one that cannot be opened: nothing is sent, and the delivery retries
+saying why.
 
 ## Construction contract
 
@@ -1326,7 +1328,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
-| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (naming a `WEBHOOK_SECRET_*` variable), edit (url, events, active), remove one; answers `GET /api/webhooks`, never a secret (issues #18, #56) (issue #18, "Webhook subscriptions in the UI") |
+| POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (with a `secret` typed in, or none: the hopper makes one), edit (url, events, active), replace (`secret`), rotate, remove one; answers `GET /api/webhooks`, never a secret but one the hopper made, once (`generatedSecret`); `cache-control: no-store` (issues #18, #451) ("Webhook signing secrets") |
 | POST | `/ui/api/webhooks/test` | `{ name }` | Send test event (issue #378): one signed `webhook.test` event to the subscription, one attempt; answers `{ ok, status?, detail }`. No delivery row, nothing appended |
 | POST | `/ui/api/notifiers` | `{ action: test \| send-open, name }` | a running notifier's action (issue #378): a marked test payload, or every question open at the human now; answers `{ ok, status?, detail, sent?, failed? }` ("Grok Bot routine webhook") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
@@ -4272,7 +4274,8 @@ Owner request: webhook subscriptions can be changed in the UI. Settles 6b.
   `must be an event type or "*"`); 404: no such name; 409: stale `version`, `add` of a name already
   there, an unparseable or invalid webhooks.yaml (never edited from the UI — fix it by hand).
 - **`name`** is the reconcile key and never changes from the UI; renaming is remove + add.
-- **Secrets (issue #56, "Secrets").** The hopper makes, keeps and hands out no secret. An entry names
+- **Secrets (issue #56, "Secrets"; superseded by issue #451, "Webhook signing secrets": the signing
+  secret is the hopper's own, typed in or made in the UI, sealed in the database).** The hopper makes, keeps and hands out no secret. An entry names
   the variable the runtime gives its secret in (`secretEnv`); the operator sets the secret there (a
   variable, or a mounted file `<secretEnv>_FILE`) and gives it to the subscriber, and rotates it
   there — read at each delivery, so a rotated file applies at once; a changed variable at the next
@@ -5764,17 +5767,23 @@ default (unset: none).
 
 ### Secrets
 
-**Every secret comes from the runtime (owner direction, issue #56).** The hopper's runtime can never
-be guaranteed, so it is given every secret as an environment variable or a mounted secret file, and
-any secret source can feed it: a container's or orchestrator's secrets, a secrets manager, a service
-manager's credentials. A secret named `NAME` is the variable `NAME`, or the file the variable
-`NAME_FILE` names (`src/secrets/runtime.ts`, `runtimeSecrets`) — the `_FILE` convention container
-images use. Both set: refused, naming both (never a silent choice). The file is read at each use, its
-one trailing newline dropped, so a mounted secret the runtime rotates applies at once; an unreadable
-one is refused, naming the variable. The hopper does not store a secret itself — not in the database,
-not in its own files — with one exception: a **connected account**'s token ("Connected accounts", issue
-#214), which no runtime holds: the provider grants it to the hopper's app when the person signs in or
-connects, so it is kept in that user's schema.
+**Two kinds of secret (issue #451, refining issue #56).**
+
+- **Credentials the hopper is given** for an outside service (a database password, an API key, a
+  GitHub App's private key): they come from the runtime. The hopper's runtime can never be
+  guaranteed, so it is given each one as an environment variable or a mounted secret file, and any
+  secret source can feed it: a container's or orchestrator's secrets, a secrets manager, a service
+  manager's credentials.
+- **Secrets the hopper owns**: ones it makes or that are made for it (a webhook signing secret), and
+  ones only it holds (a connected account's tokens). They are kept in the database **sealed** under
+  the runtime's **token key**, `HOPPER_TOKEN_KEY` ("Sealed in the database" below). A realm's own
+  secrets are kept in the database too (issue #216), in clear for now: sealing them is carried work.
+
+A runtime secret named `NAME` is the variable `NAME`, or the file the variable `NAME_FILE` names
+(`src/secrets/runtime.ts`, `runtimeSecrets`) — the `_FILE` convention container images use. Both set:
+refused, naming both (never a silent choice). The file is read at each use, its one trailing newline
+dropped, so a mounted secret the runtime rotates applies at once; an unreadable one is refused,
+naming the variable.
 
 Parts ask through `PluginContext.env(name)` / `DetectionKit.env(name)` (both `runtimeSecrets`;
 `AppSeams.env` in tests). The variable is named by a command-bearing option, so a UI session cannot
@@ -5787,7 +5796,7 @@ redirect a credential:
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | gate-router | `TYPESAFE_API_KEY` (Jev, through TypeSafe) | `typesafeKeyFile` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
-| webhook subscription | `secretEnv`, always (from the UI: `WEBHOOK_SECRET_*` only) | inline `secret` (sealed), `secretFile` |
+| webhook subscription | none since issue #451: the signing secret is the hopper's own, sealed in the database. A subscription from before keeps its `secretEnv` until a secret is stored for it | `secretEnv` (`WEBHOOK_SECRET_*`), inline `secret` (sealed), `secretFile` |
 | realm (sign-in config) | none since issue #216: `clientSecret` (oidc, github, gateway) and `bindPassword` (ldap) are stored with the realm, set in the UI or by `HOPPER_SIGN_IN_REALM_<NAME>_*` (each also `_FILE`); a SAML `idpCert` is public and inline | `clientSecretEnv`, `bindPasswordEnv` (taken into the database once), `clientSecretFile`, `idpCertFile` |
 
 The App's bot is `<slug>[bot]`, its page `https://github.com/apps/<slug>`. `create-github-app.sh`
@@ -5798,31 +5807,66 @@ no `_FILE` form. A job's `GH_TOKEN` is not a runtime secret: the hopper hands it
 token (issue #214; the only GitHub credential of a job since issue #359). The github-gh source and its
 `appKeyEnv` are removed (issue #359).
 
-**What the hopper keeps is no secret** (issue #56 replaces issue #53's sealing), but for the realms' own (issue #216):
+**What the hopper keeps:**
 
 | kept | how |
 |------|-----|
-| a webhook subscription | its `secretEnv`, a variable's name — in the `webhooks` table (`secret_env`, migration 11, which dropped the sealed `secret` column; the only place since migration 14, issue #78) |
+| a webhook subscription's signing secret | sealed (below), in the user schema's `webhooks` (`secret_sealed`, with `secret_changed_at`; tenant migration 19, issue #451). Typed in or made by the hopper; write-only ("Webhook signing secrets") |
+| a webhook subscription from before issue #451 | its `secretEnv`, a variable's name (`secret_env`), read from the runtime under the user's secret prefix until a secret is stored for it, then cleared |
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
-| **the exception (issue #216)**: a realm's own secrets | in clear, in the config record `sign-in` — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment") |
-| a connected account's token | **the second exception (issue #214)**: the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under the runtime's `HOPPER_TOKEN_KEY` since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route ("Sign in with GitHub, and work through that connection") |
+| a realm's own secrets | in clear, in the config record `sign-in` (issue #216) — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment"). Never answered by a route |
+| a connected account's token | the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under `HOPPER_TOKEN_KEY` by the token box since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route |
 
-`HOPPER_SECRET_KEY`, the secret box (`src/secrets/box.ts`) and the UI's rotate-secret are gone:
-with no secret to keep there is nothing to seal. (The connected account's tokens are the one thing sealed
-again, under `HOPPER_TOKEN_KEY`, issue #441: the token box is theirs alone.) A leftover `HOPPER_SECRET_KEY` is a leftover
-variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` — sealed or
-clear, from before — was refused at load, and is left out by migration 14 (issue #78) for the same
-reason: the rows stay as the daemon last ran them. The one
-install there was had no subscription when this landed.
+#### Sealed in the database
+
+`src/secrets/sealer.ts` (issue #451). The **token key** `HOPPER_TOKEN_KEY` (32 bytes, 64 hex digits or
+base64; also `_FILE`) is the master key. It never reaches the database: the compose install makes it in
+its `secrets` volume, `install.sh` writes one into `daemon.env`. Each value is sealed so:
+
+- **its own key**: HKDF-SHA256 of the master key, a fresh 32-byte random salt, and the context (where the
+  value is kept: `webhook:<subscription id>/signing-secret`). The master key is the pepper, the salt is
+  per value; no two values share a key, and the master key is never used to encrypt directly;
+- **AES-256-GCM** under that key, with a fresh 12-byte random nonce;
+- **bound to its place**: the context is in the key derivation and in the authenticated data, so a
+  sealed value copied to another row or another kind of secret does not open. The subscription id, not
+  the user, so a fold of one user into another (issue #265) keeps it;
+- **padded** to a block of 64 bytes (its length first), so the stored length does not show the secret's;
+- **marked with the key id**: 16 hex digits of HMAC-SHA256(master key, a fixed label), a fingerprint
+  that does not give the key.
+
+`hs1.<key id>.<salt>.<nonce>.<ciphertext ‖ tag>`, base64url. A value that does not open throws
+`SecretUnreadable` — no key, another key (naming the key id it was sealed under), altered, or moved — and
+is never read as "no secret". The derived key and the plaintext buffers are zeroed after use (a
+JavaScript string cannot be).
+
+**Key rotation.** Give the new key as `HOPPER_TOKEN_KEY` and the old one as `HOPPER_TOKEN_KEY_PREVIOUS`
+(one per line, or comma- or space-separated; also `_FILE`) and restart: each user's runtime seals every
+webhook secret an older key sealed again under the new one (`resealAll`, logged as a count), keeping when
+it last changed. Once the log says so, drop the old key. A previous key only opens. (The token box's
+`sealed:v1:` has no key id: rotating the token key asks to connect GitHub again, as issue #441 says.)
+
+**No key, a wrong key.** A token key that is no key stops the daemon (fails closed). None: the daemon
+starts and says at start that webhook signing secrets cannot be stored or opened; adding a subscription
+or storing a secret answers 503 naming `HOPPER_TOKEN_KEY`; a subscription with a stored secret sends
+nothing, and its card, its test event and its deliveries say the stored secret cannot be opened.
+
+`HOPPER_SECRET_KEY` and the secret box of issue #55 stay gone: a leftover `HOPPER_SECRET_KEY` is a
+leftover variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` —
+sealed or clear, from before — was refused at load, and is left out by migration 14 (issue #78).
 
 **systemd credentials.** `LoadCredential=<name>:<path>` (or `LoadCredentialEncrypted=`) in a drop-in
 for `hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
 `daemon.env`.
 
-**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets, and a job on the
-hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file). The
-database and its backups hold no secret but the realms' own (issue #216); the database URL is the one credential that opens it.
+**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets and the token key, and a
+job on the hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file).
+The database and its backups hold no usable secret but the realms' own (issue #216): the sealed ones need
+the token key, which is kept beside the database, never in it. The compose install keeps it in the same
+volume as the database password, readable only by the hopper's user; a host that holds both volumes holds
+both. Keep the token key with the database's backups but not in them: a database restored without it
+asks for every webhook secret again (Replace or Rotate) and for GitHub to be connected again. A secret is
+in the daemon's memory while it signs or is sealed.
 
 ### Login codes
 
@@ -7651,3 +7695,46 @@ one that cannot be made, the home), `test/adapters/machine-usage.test.ts` (this 
 `test/integration/attached-machines.test.ts` (held with why through the real composition root, then run
 once the probe finds it usable), `test/routing/rules.test.ts`, `test/ui/machines.test.ts`,
 `test/ui/routing.test.ts`, `test/sources/config.test.ts`.
+
+## Webhook signing secrets (issue #451, 2026-10-08)
+
+Owner request: a webhook subscription's signing secret is made by the hopper's operator for the hopper,
+so the hopper stores and manages it, instead of the form naming a runtime variable. Held to current
+practice for secrets at rest: a key per value (salted), a master key outside the database (the pepper),
+authenticated encryption bound to the value's place, and a key id for rotation.
+
+- **Entered in the UI.** `add` takes `secret` (typed in: 32 to 4096 printable ASCII characters, no
+  spaces) or none, and then the hopper makes one (32 random bytes, 64 hex digits). `add` no longer takes
+  `secretEnv`, from the UI or anywhere: no route names a variable for a subscription.
+- **Encrypted at rest** under the token key ("Sealed in the database"): the subscription id is the
+  context. Stored in `webhooks.secret_sealed` with `secret_changed_at` (tenant migration 19). Never in
+  clear, never logged (an audit line names the subscription and how it changed: typed in, made by the
+  hopper, replaced, rotated), never in an event, never answered.
+- **Write-only.** `GET /api/webhooks` and every answer carry `secretChangedAt` only. The actions are
+  `replace` (`{ action, name, secret }`) and `rotate` (`{ action, name }`: the hopper makes one).
+  A secret the hopper made is answered once, as `generatedSecret`, in the answer to the edit that made
+  it; the UI shows it in a box to copy and never puts it in its store. Every answer of the route is
+  `cache-control: no-store`. `remove` deletes the row, and the sealed secret with it.
+- **Applies without a restart.** The dispatcher opens the stored secret at each delivery (and each test
+  event), so a new, replaced or rotated secret signs from the next one (issue #356).
+- **Subscriptions from before (M1).** A row with `secret_env` and no stored secret keeps reading that
+  variable under the user's secret prefix, exactly as before; its card says "secret from runtime variable
+  X: replace to store it in hopper". Storing a secret (replace or rotate) clears `secret_env`: it is no
+  longer read, and the variable can be removed from the runtime. Nothing is imported from the runtime on
+  its own (M2 not taken): the operator decides when each moves.
+- **The key.** The token key of issue #441, not a second one: one runtime value to keep, which the
+  compose install and `install.sh` already make. Its derivations are separated by context, so the
+  connected account's tokens and the webhook secrets never share a key. Rotation, missing and wrong keys:
+  "Sealed in the database".
+- **Messages.** `secretProblem` (on `GET /api/webhooks`), a test event's `detail` and a delivery's
+  `lastError` say: a runtime variable not set (`WEBHOOK_SECRET_X is not set`), no secret set (`replace
+  or rotate it`), or the stored secret cannot be opened (no key: `HOPPER_TOKEN_KEY is not set`; another
+  key: the key id it was sealed under; altered or moved).
+- **One key for every user.** Each user's secrets are in their own schema; the per-user secret prefix is
+  no longer needed for a stored secret (it stays for a subscription from before).
+
+Carried, not in this change (the issue's audit, rows 2–10): the Grok Bot routine's URL and key, the
+anthropic-api and TypeSafe API keys, the GitHub App's private key, the realms' secrets (sealed and
+write-only), client machine keys, the hopper's ssh and link keys, and moving the connected account's
+tokens onto the sealer (a key id, so its key can rotate; and never kept in clear without a key).
+

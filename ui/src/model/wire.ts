@@ -41,10 +41,12 @@ export interface Health {
   uptimeS: number;
 }
 
-/** A subscription as GET /api/webhooks shows it: the variable its secret is in, and why the runtime gives none (if so). Never a secret. */
+/** A subscription as GET /api/webhooks shows it: when its secret changed (or the variable one from before reads), and why it cannot sign (if so). Never a secret. */
 export type WebhookView = WebhookSubscription & { secretProblem?: string };
 
 /** GET /api/webhooks, and the answer to POST /ui/api/webhooks. */
 export interface WebhooksView {
   subscriptions: WebhookView[];
+  /** Only in the answer to the edit that made it (add with no secret typed in, rotate; issue #451): shown once. */
+  generatedSecret?: string;
 }

@@ -34,7 +34,7 @@ export interface TenantParts {
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccounts;
   webhooksEditor: WebhooksEditor;
-  /** Why the user's runtime gives no secret for a webhook subscription's variable. */
+  /** Why a webhook subscription has no secret to sign with (issue #451); never the secret. */
   secretProblem: SecretProblem;
   /** The user's machines that dial in (issue #308). */
   machineLink: UserMachineLink;

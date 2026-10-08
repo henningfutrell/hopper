@@ -3,26 +3,14 @@ import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { sign } from './signer.ts';
 
-/**
- * A subscription's secret from the runtime (design.md "Secrets", issue #56): the subscription names
- * the variable, read at each delivery. Throws, naming the variable, when the runtime gives none.
- */
-export function subscriptionSecret(secret: (name: string) => string | undefined, secretEnv: string): string {
-  const value = secret(secretEnv);
-  if (!value) throw new Error(`${secretEnv || 'its secret variable'} is not set`);
-  return value;
-}
-
-/** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
-export function secretProblem(secret: (name: string) => string | undefined, secretEnv: string): string | undefined {
-  try { subscriptionSecret(secret, secretEnv); return undefined; } catch (e) { return (e as Error).message; }
-}
-
 export interface WebhookDispatcherOptions {
   store: UserStore;
   clock: Clock;
-  /** The runtime's secrets (src/secrets/runtime.ts): a subscription's secret, by the variable it names, read at each delivery. */
-  secret: (name: string) => string | undefined;
+  /**
+   * The secret a delivery to the subscription is signed with, read at each one (src/webhooks/secrets.ts,
+   * issue #451): a replaced or rotated secret signs from the next. Throws with why there is none.
+   */
+  secretOf: (sub: WebhookSubscription) => string;
   baseMs: number;
   timeoutMs?: number;
   maxAttempts?: number;
@@ -70,7 +58,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     const body = JSON.stringify(event);
     const timestamp = String(Math.floor(clock.now().getTime() / 1000));
     try {
-      const signature = sign(subscriptionSecret(o.secret, sub.secretEnv), timestamp, body);
+      const signature = sign(o.secretOf(sub), timestamp, body);
       const res = await fetch(sub.url, {
         method: 'POST',
         headers: {
@@ -154,8 +142,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     async test(name) {
       const sub = store.webhooks.list().find((s) => s.name === name);
       if (!sub) return undefined;
-      const problem = secretProblem(o.secret, sub.secretEnv);
-      if (problem) return { ok: false, detail: problem };
+      try { o.secretOf(sub); } catch (e) { return { ok: false, detail: (e as Error).message }; }
       // Shaped like a delivered event, so a receiver's parser takes it; never appended to the event log.
       const at = clock.now().toISOString();
       const id = `test-${randomUUID()}`;
