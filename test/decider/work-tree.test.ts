@@ -30,7 +30,8 @@ describe('machines whose work tree is not usable', () => {
     const machines = [machine({ id: 'box', maxLanes: 2, workTreeProblem: BROKEN }), machine({ id: 'host', maxLanes: 1 })];
     const d = decide(inputs({ machines, lanes: [busy(1, 'r', { machineId: 'host' })], running: [job('r', { status: 'running' })], waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold[0]).toMatchObject({ jobId: 'a', reason: expect.stringContaining('all lanes busy') });
+    expect(d.hold).toEqual([]);
+    expect(d.wait[0]).toMatchObject({ jobId: 'a', reason: expect.stringContaining("machine host's lane cap is 1") });
   });
 
   it('jobs already running there keep their lanes', () => {
