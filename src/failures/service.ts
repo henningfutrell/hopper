@@ -1,10 +1,12 @@
 // The failure assessor (issue #509, design.md "Failure assessment"): every failed job is assessed once, from its
-// `job.failed`; a failed job a restart left unassessed is assessed at start. A record, the job's assessment, the
-// events, and the problem a shared cause is grouped into are written in one transaction. The runs again it decides
+// `job.failed`; one left unassessed — a restart's, or a build's before the assessor — at start and by the sweep,
+// whatever its age (issue #517). A record, the job's assessment, the events, and the problem a shared cause is
+// grouped into are written in one transaction. The runs again it decides
 // — a retry after its backoff, a redirect now, a held job released — are pending on the record, made by the sweep
-// through the sync loop's Run again, so they outlive a restart. The sweep also runs each open problem's check and
-// prunes past the retention. A failed job automatic handling ended for is handed off to a person (issue #516,
-// `handoffs.ts`) in the same transaction as the record that ended it.
+// through the sync loop's Run again, so they outlive a restart. The sweep also marks superseded a failure whose item
+// ran again since (issue #517), runs each open problem's check and prunes past the retention. A failed job automatic
+// handling ended for is handed off to a person (issue #516, `handoffs.ts`) in the same transaction as the record that
+// ended it.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   DEFAULT_FAILURE_SETTINGS, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
@@ -12,9 +14,10 @@ import {
 } from '../domain/types.ts';
 import { assess, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
+import { evidenceOf, machineOf } from './evidence.ts';
 import { createHandoffs } from './handoffs.ts';
 import { signatureOf } from './signature.ts';
-import { recordRetry, releasable, viewOf } from './view.ts';
+import { newerOf, recordRetry, releasable, viewOf } from './view.ts';
 
 export interface FailuresOptions {
   store: UserStore;
@@ -61,20 +64,11 @@ export interface Failures {
 
 const DAY_MS = 86_400_000;
 const PRUNE_EVERY_MS = 3_600_000;
-const UNASSESSED_WITHIN_MS = DAY_MS;
 const SOON_MS = 1000;
+const JUST_FAILED_MS = 60_000;
 const SOURCE_DOWN_MS = 30_000;
 const DONE: Record<PendingRun, FailureOutcome> = { retry: 'retried', redirect: 'redirected', release: 'released' };
 const CHECK_OF = new Map(BUILTIN_CAUSES.filter((c) => c.check).map((c) => [c.id, c.check!]));
-
-/** The machine a job ran on: its lane's, else the one it resumes on or is pinned to. */
-function machineOf(job: Job): string | undefined {
-  const lane = job.laneId;
-  const at = lane?.lastIndexOf('/lane-') ?? -1;
-  return lane && at > 0 ? lane.slice(0, at) : job.resumeOn ?? job.spec.machineId;
-}
-
-const textOf = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
 export function createFailures(o: FailuresOptions): Failures {
   const { store, clock } = o;
@@ -114,7 +108,8 @@ export function createFailures(o: FailuresOptions): Failures {
   const openFor = (signature: string, machineId: string | undefined): Problem | undefined =>
     store.problems.list({ status: 'open' }).find((p) => p.signature === signature && (p.scope.machineId === undefined || p.scope.machineId === machineId));
 
-  function assessJob(jobId: string): void {
+  /** Assess one failed job, once; `kick`: then sweep, for a run again due now (the backlog is assessed inside one). */
+  function assessJob(jobId: string, kick = true): void {
     if (stopped) return;
     let grouped = false;
     store.tx(() => {
@@ -132,6 +127,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const open = openFor(signature, machineId);
       const a = assess({
         error, signature, cause, attempt, recent, settings: s,
+        newer: newerOf(store, job), failedAgoMs: Math.max(0, at.getTime() - Date.parse(job.finishedAt ?? job.updatedAt)),
         job: { executor: job.spec.executor, pinned: job.spec.machineId !== undefined, ...(machineId ? { machineId } : {}) },
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
@@ -150,16 +146,11 @@ export function createFailures(o: FailuresOptions): Failures {
       const record = store.failures.create({
         jobId: job.id, at: at.toISOString(), signature, normalised, cls: a.cls, decision: a.decision, reasons: a.reasons, summary: a.summary, auto: a.auto,
         ...(cause ? { causeId: cause.id, causeName: cause.name } : {}),
-        evidence: {
-          error, executor: job.spec.executor, attempt, sameSignature: recent.length,
-          ...(job.errorTail ? { tail: job.errorTail } : {}), ...(job.progressMessage ? { lastProgress: job.progressMessage } : {}),
-          ...(machineId ? { machineId } : {}), ...(textOf(job.spec.payload.model) ? { model: textOf(job.spec.payload.model)! } : {}),
-          ...(job.source?.repo ? { repo: job.source.repo } : {}), ...(job.source ? { source: job.source.source } : {}),
-          ...(ranMs !== undefined ? { ranMs } : {}),
-        },
+        evidence: evidenceOf(job, { error, attempt, sameSignature: recent.length, ...(machineId ? { machineId } : {}), ...(ranMs !== undefined ? { ranMs } : {}) }),
         ...(problem ? { problemId: problem.id } : {}),
         ...(a.decision === 'retry' && a.auto ? { retryAt: pendingAt } : {}),
-        ...(acts ? { pending: a.decision as PendingRun, pendingAt } : { outcome: problem ? 'held' as const : 'surfaced' as const, outcomeAt: at.toISOString() }),
+        ...(a.superseded ? { outcome: 'superseded' as const, outcomeAt: at.toISOString(), nextJobId: a.superseded }
+          : acts ? { pending: a.decision as PendingRun, pendingAt } : { outcome: problem ? 'held' as const : 'surfaced' as const, outcomeAt: at.toISOString() }),
       });
       handoffs.afterRecord(record);
       store.jobs.update(job.id, {
@@ -184,7 +175,18 @@ export function createFailures(o: FailuresOptions): Failures {
       }
     });
     if (grouped) o.trigger('failure.grouped');
-    if (!stopped) void sweep();
+    if (kick && !stopped) void sweep();
+  }
+
+  /**
+   * Assess every failed job not assessed yet, whatever its age: a restart's, or an older build's backlog. The sweep
+   * leaves a job that failed within `leaveMs` to its own `job.failed`, which comes once its end is handled.
+   */
+  function assessBacklog(leaveMs = 0): void {
+    const before = now().getTime() - leaveMs;
+    for (const job of store.jobs.list({ status: ['failed'], unassessed: true })) {
+      if (Date.parse(job.finishedAt ?? job.updatedAt) <= before) assessJob(job.id, false);
+    }
   }
 
   /** Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. */
@@ -232,6 +234,8 @@ export function createFailures(o: FailuresOptions): Failures {
   function sweep(): Promise<void> {
     sweeping ??= (async () => {
       try {
+        assessBacklog(JUST_FAILED_MS);
+        if (!stopped) handoffs.supersede();
         for (const r of store.failures.due(now().toISOString())) {
           if (stopped) return;
           await runPending(r);
@@ -272,11 +276,8 @@ export function createFailures(o: FailuresOptions): Failures {
 
   return {
     start() {
-      // Failed jobs a restart left unassessed (it stopped between the failure and the assessment).
-      const since = now().getTime() - UNASSESSED_WITHIN_MS;
-      for (const job of store.jobs.list({ status: ['failed'], limit: 500 })) {
-        if (!job.assessment && Date.parse(job.finishedAt ?? job.updatedAt) >= since) assessJob(job.id);
-      }
+      // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog.
+      assessBacklog();
       handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;

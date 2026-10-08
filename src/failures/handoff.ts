@@ -2,8 +2,8 @@
 // for it — and why.
 import type { FailureOutcome, FailureRecord, HandoffReason } from '../domain/types.ts';
 
-/** The outcomes that ran the job's item again. */
-export const RAN_AGAIN: readonly FailureOutcome[] = ['retried', 'redirected', 'released'];
+/** The outcomes that ran the job's item again: by the assessor, a person, or anything else (`superseded`, issue #517). */
+export const RAN_AGAIN: readonly FailureOutcome[] = ['retried', 'redirected', 'released', 'superseded'];
 
 /**
  * Why the record's job is handed off to a person, if it is: its retries used up or a job-specific failure (a
