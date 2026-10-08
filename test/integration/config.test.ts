@@ -28,6 +28,11 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(loadConfig({ ...DB, HOPPER_SECRET_KEY: 'k' }).leftoverEnv).toEqual({ HOPPER_SECRET_KEY: 'k' });
   });
 
+  it('HOPPER_TOKEN_KEY and its _FILE are read, never a leftover: the GitHub connection\'s tokens are sealed under it (issue #441)', () => {
+    expect(loadConfig({ ...DB, HOPPER_TOKEN_KEY: 'k' }).leftoverEnv).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key' }).leftoverEnv).toEqual({});
+  });
+
   it('HOPPER_DB is no longer read: it is a leftover variable', () => {
     expect(loadConfig({ ...DB, HOPPER_DB: '/x.db' }).leftoverEnv).toEqual({ HOPPER_DB: '/x.db' });
   });
