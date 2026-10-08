@@ -9,6 +9,7 @@ import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
 import { createLaneRepository } from './lanes.ts';
+import { createLoginRepository } from './logins.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
 import { migrateTenant } from './tenant-migrations.ts';
@@ -42,6 +43,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     events,
     webhooks: createWebhookRepository(ctx),
     questions: createQuestionRepository(ctx),
+    logins: createLoginRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

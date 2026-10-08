@@ -63,7 +63,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials,
+    questions: o.questions, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -107,6 +107,7 @@ export function createEngine(o: EngineOptions): Engine {
         classifier.sweep();
         void paneAnswers.sweep();
         cleanups.retry();
+        o.logins.sweep();
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

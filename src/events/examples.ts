@@ -56,5 +56,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'source.claim_released': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/7', by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' },
   'source.intake_migrated': { source: 'github-account', changes: [{ key: 'https://github.com/octocat/hello/issues/7', change: 'not assigned to you: assign it to you to take it' }] },
   'source.issues_assigned': { source: 'github-account', keys: ['https://github.com/octocat/hello/issues/7'], assignee: 'octocat' },
+  'auth.pending': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z', run: 'herdr-claude' },
+  'auth.completed': { loginId: 'l1', kind: 'device_code', tool: 'gh' },
+  'auth.expired': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z' },
+  'auth.cancelled': { loginId: 'l1', kind: 'device_code', tool: 'gh', by: 'user' },
+  'auth.failed': { loginId: 'l1', kind: 'device_code', tool: 'gh', reason: 'the job ended: timed out' },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

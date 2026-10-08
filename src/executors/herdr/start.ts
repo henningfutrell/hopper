@@ -81,6 +81,8 @@ export interface PaneState {
   parkedSeq?: number;
   /** The parked turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
   lapsesAt?: string;
+  /** The login the turn waits on (issue #476): Claude going on by itself completes it. */
+  login?: { id: string; tool: string };
 }
 
 /** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */

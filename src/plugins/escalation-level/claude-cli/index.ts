@@ -91,14 +91,15 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
         const t = ctx.client(id);
         return t ? answerOnClient(id, t, req, signal) : { error: `machine ${id}: client ${id} is not dialled in` };
       }
-      if (!m!.ssh) return claudePrint(run, REPLY, buildLevelPrompt(req), signal);
+      const logins = req.logins ? { logins: req.logins } : {};
+      if (!m!.ssh) return claudePrint({ ...run, ...logins }, REPLY, buildLevelPrompt(req), signal);
       mkdirSync(sshControlDir, { recursive: true, mode: 0o700 });
       const wrap = (argv: string[]) => commandOn(m!, ['sh', '-c', ON_MACHINE, 'sh', ...argv], {
         sshBin: o.sshBin, sshControlDir, sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }),
         dockerHost: () => { throw new Error('no docker'); },
       });
       try {
-        return await claudePrint({ ...run, wrap }, REPLY, buildLevelPrompt(req), signal);
+        return await claudePrint({ ...run, ...logins, wrap }, REPLY, buildLevelPrompt(req), signal);
       } catch (e) {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
       }

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "loginId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "device_code"
+      ]
+    },
+    "tool": {
+      "type": "string",
+      "minLength": 1
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "user"
+      ]
+    }
+  },
+  "required": [
+    "loginId",
+    "kind",
+    "tool",
+    "by"
+  ],
+  "additionalProperties": false
+}

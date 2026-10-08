@@ -15,6 +15,7 @@ import { jobRoutes } from './jobs.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
+import { loginRoutes } from './logins.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { sourceRoutes } from './sources.ts';
@@ -82,6 +83,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRoutes(app, tenant);
   stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port });
   questionRoutes(app, tenant);
+  loginRoutes(app, { ...tenant, sessions, clock: o.clock });
   questionGatesRoutes(app, tenant);
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);

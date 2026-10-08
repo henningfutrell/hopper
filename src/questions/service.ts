@@ -5,6 +5,7 @@
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
 import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
+import type { Logins } from '../logins/index.ts';
 import type { Question, QuestionAttempt } from '../domain/types.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
@@ -28,6 +29,8 @@ export interface QuestionServiceOptions {
   onExpired: (q: Question) => void;
   /** Synchronous, called inside the tx that marks the question dismissed. */
   onDismissed: (q: Question) => void;
+  /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
+  logins?: Logins;
 }
 
 export const HUMAN = 'human';
@@ -173,7 +176,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     }
   }
 
-  function requestFor(q: Question, number: number, of: number): { req: AnswerRequest; rulesNote: string } {
+  function requestFor(q: Question, number: number, of: number, level: string): { req: AnswerRequest; rulesNote: string } {
     const rules = readRules(o.config);
     const job = store.jobs.get(q.jobId);
     const jobMachine = job?.resumeOn ?? job?.spec.machineId;
@@ -186,6 +189,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         previous: q.attempts,
         level: { number, of },
         ...(jobMachine ? { jobMachine } : {}),
+        // A login the level's run waits on (issue #476) names the question and the level, never the job: it waits on the answer.
+        ...(o.logins ? { logins: o.logins.forRun({ questionId: q.id, run: level }, () => !stopped) } : {}),
       },
       rulesNote: rules.missing ? ' (no rules yet)' : '',
     };
@@ -202,7 +207,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       return q && q.status === 'open' ? enter(q, level.name, reason) : undefined;
     });
     if (!entered) return undefined;
-    const { req, rulesNote } = requestFor(entered, number, of);
+    const { req, rulesNote } = requestFor(entered, number, of, level.name);
     const startedAt = iso();
     const replied = await call(id, (signal) => level.answer(req, signal));
     if (stopped) return undefined;

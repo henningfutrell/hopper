@@ -14,6 +14,7 @@ import type { SignIn } from '../auth/index.ts';
 import type { ConnectedAccounts, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { Identity, UiRole, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
+import type { Logins } from '../logins/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, sessionToken } from './host-guard.ts';
@@ -27,6 +28,8 @@ export interface TenantParts {
   store: UserStore;
   engine: Engine;
   questions: QuestionService;
+  /** The logins a job or run waits on (issue #476). */
+  logins: Logins;
   /** Every job source's status (/api/sources, SSE source.updated). */
   registry: SourceRegistry;
   plugins: PluginsView;

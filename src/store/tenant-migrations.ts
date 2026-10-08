@@ -211,6 +211,18 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
    ALTER TABLE webhooks ADD COLUMN secret_changed_at TEXT`,
   // 20: a question gets its raising machine where it can be known: its asked lane, its job's resumeOn, its job's pin (issue #485).
   raisedByBackfill,
+  // 21: logins (issue #476): what the hopper keeps of a login a job or run waits on; never its URL or code.
+  `CREATE TABLE logins (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT,
+    question_id TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX logins_status ON logins (status);
+  CREATE INDEX logins_job ON logins (job_id)`,
 ];
 
 /** A user schema's version once migrated. */

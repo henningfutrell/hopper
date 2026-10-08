@@ -54,6 +54,11 @@ const WHEN: Record<EventType, string> = {
   'source.claim_released': 'A `hopper:claimed` label (and its `hopper:held-by:<id>` holder label) was removed from an item no job here holds (issue #440). `by: "hopper"`: the claim was this user\'s own, its job gone — the item is taken again; `by: "migration"`: the intake migration released a claim written before claims named their holder, which no user of this hopper has a job for; `by: "user"`: released from Sources. `reason` says which.',
   'source.intake_migrated': 'A job source was moved to the current intake rules, once (issue #440). `changes` lists every item it changed or found needing the user: claims it released, and labelled issues not assigned to the user. Sources shows the same list.',
   'source.issues_assigned': 'The user assigned these labelled items (`keys`) to their connected account from Sources (issue #440): the next sync takes them. `assignee` is the account.',
+  'auth.pending': 'A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level\'s run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`.',
+  'auth.completed': 'The machine went on after the login: the tool proceeded (or ended), and the job works again.',
+  'auth.expired': 'The login\'s code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then fails with the reason (the default) or holds for a new code.',
+  'auth.cancelled': 'The user cancelled the login. A herdr job is told to stop waiting for it and to go on without it, or to fail.',
+  'auth.failed': 'What waited on the login ended first (`reason`: the job ended, the run ended with an error).',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 

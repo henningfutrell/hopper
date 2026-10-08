@@ -6,7 +6,9 @@ import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
 import type { UiRole } from '../domain/types.ts';
 import { jobsQuery } from './jobs.ts';
+import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
+import { loginSettingsBody } from './ui/logins.ts';
 import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
@@ -19,7 +21,7 @@ import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody,
 import { deliveriesQuery } from './webhooks.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Logins' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -77,6 +79,11 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/questions/:id/close', tag: 'Questions', summary: 'Close an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/dismiss', tag: 'Questions', summary: 'Dismiss an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/seen', tag: 'Questions', summary: 'Mark a question seen', role: 'operator', returns: 'the `Question`', errors: [404] },
+  { method: 'get', path: '/api/logins', tag: 'Logins', summary: 'List logins', description: 'The logins jobs and escalation runs wait on (a CLI showing a device code), newest first, with the server\'s time (`now`) for their countdowns and the logins settings. `status` `open`: pending or expired. A login\'s `verificationUrl` and `userCode` are answered only to a UI session of the user (the `' + SESSION_HEADER + '` header), while it is open and while the daemon holds them (`codeKept`; a restart drops them): never to an API token, never to a loopback read without a session.', query: loginsQuery, returns: '`{ now, settings: LoginSettings, logins: LoginView[] }`' },
+  { method: 'get', path: '/api/logins/:id', tag: 'Logins', summary: 'One login', description: 'As in `GET /api/logins`, its URL and code to a UI session of the user only.', returns: '`LoginView`', errors: [404] },
+  { method: 'post', path: '/ui/api/logins/:id/cancel', tag: 'Logins', summary: 'Cancel a login', description: 'The login ends `cancelled` (`auth.cancelled`) and its code is dropped. A herdr job waiting on it is told to stop waiting and go on without it, or to fail. 409: it ended, or what waited on it is no longer running.', role: 'operator', returns: 'the `Login`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/logins/:id/new-code', tag: 'Logins', summary: 'Ask for a new code', description: 'A herdr job waiting on the login is told to start it again and report the new code; the same login takes it (`auth.pending` again, `renewed: true`). Also on an expired login, while its job waits (logins setting `onExpiry: hold`). 409: it ended, what waited on it is no longer running, or its run cannot ask its tool again (a print-mode run).', role: 'operator', returns: 'the `Login`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/logins/settings', tag: 'Logins', summary: 'Set what a job does when its login expires', description: '`onExpiry` `fail` (the default): the job fails, its reason the expiry. `hold`: the job keeps waiting for a new code until its own timeout. Applies to the next expiry, without a restart.', role: 'admin', body: loginSettingsBody, returns: '`LoginSettings`' },
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'every machine (name, connection, options), the executors, the machine defaults, the detected ssh targets and which of them are this machine, the hopper\'s own public ssh key, why this machine cannot be added (in a container), the plugins config version' },
@@ -130,6 +137,7 @@ const TAGS: Record<Tag, string> = {
   State: 'What the hopper is doing: health, the queue, decisions, the router.',
   Jobs: 'Jobs and the job sources they are pulled from.',
   Questions: 'Questions a running job asks, and the gates they pass.',
+  Logins: 'Logins a job or run waits on (a CLI showing a device code): never a question.',
   'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
@@ -165,7 +173,7 @@ const openApiPath = (path: string): string => path.replace(/:([A-Za-z]+)/g, '{$1
 
 function parameters(op: Operation): unknown[] {
   const out: unknown[] = [];
-  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : 'decision'));
+  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : op.tag === 'Logins' ? 'login' : 'decision'));
   if (op.path.includes(':name')) out.push(name);
   if (op.query) {
     const s = schemaOf(op.query) as { properties?: Record<string, Record<string, unknown>>; required?: string[] };

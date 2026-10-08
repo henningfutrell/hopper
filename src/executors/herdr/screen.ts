@@ -24,13 +24,19 @@ export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 
-export type Marker = 'done' | 'question' | 'failed';
+export type Marker = 'done' | 'question' | 'failed' | 'auth';
+
+/** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
+export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval'] as const;
+export type AuthFields = Partial<Record<typeof AUTH_FIELDS[number], string>>;
 
 export interface TurnView {
   /** The last marker after the anchor, or null. */
   lastMarker: Marker | null;
   /** For `failed`: text after the marker on its line, or the next line. */
   failedReason?: string;
+  /** For `auth`: the login's fields, as the job wrote them. */
+  auth?: AuthFields;
   /** The assistant message holding the last marker (marker removed), else the last message. */
   assistantText: string;
   /** Last non-empty, non-marker output line after the anchor, gutter stripped. Drives progress. */
@@ -69,8 +75,31 @@ function markerOf(line: string): Marker | null {
   const s = normaliseMarkerLine(line);
   if (s === 'HOPPER_DONE') return 'done';
   if (s === 'HOPPER_QUESTION') return 'question';
+  if (s === 'HOPPER_AUTH_PENDING') return 'auth';
   if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;
+}
+
+/** One field line of a login: `tool: gh`, `- URL: https://…` (a list mark, emphasis and the name's case aside). */
+function authField(line: string): [typeof AUTH_FIELDS[number], string] | undefined {
+  const m = /^[-*•\s]*`?([A-Za-z_]+)`?\s*:\s*`?(.*?)`?\s*$/.exec(normaliseMarkerLine(line));
+  const key = m?.[1]!.toLowerCase() as typeof AUTH_FIELDS[number] | undefined;
+  return key && AUTH_FIELDS.includes(key) && m![2] ? [key, m![2]] : undefined;
+}
+
+/**
+ * The login after an auth marker at `index` (issue #476): its fields, when nothing but them follows it. A turn
+ * that goes on after it — the job went on once the login completed — holds no login any more.
+ */
+function authAt(lines: string[], index: number): AuthFields | undefined {
+  const fields: AuthFields = {};
+  for (const l of lines.slice(index + 1)) {
+    if (stripGutter(l) === '') continue;
+    const f = authField(l);
+    if (!f) return undefined;
+    fields[f[0]] = f[1];
+  }
+  return fields;
 }
 
 /** True if `line` sits in a user echo block: a ❯ line and its continuation, no assistant line between. */
@@ -205,16 +234,24 @@ export function readTurn(text: string, anchor: string): TurnView {
   const lines = turnLines(all, at);
   let markerIndex = -1;
   lines.forEach((l, i) => { if (markerOf(l)) markerIndex = i; });
+  const marker = markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null;
+  const auth = marker === 'auth' ? authAt(lines, markerIndex) : undefined;
+  // A login's lines carry its code: never activity, never the agent's words (issue #476).
+  const authLines = new Set<number>();
+  lines.forEach((l, i) => { if (markerOf(l) === 'auth') for (let k = i + 1; k < lines.length && (authField(lines[k]!) || stripGutter(lines[k]!) === ''); k++) authLines.add(k); });
+  const shown = lines.filter((_, i) => !authLines.has(i));
   // A bare "…" is where the CLI truncated a long command: not activity.
-  const nonEmpty = lines.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '' && l !== '…');
+  const nonEmpty = shown.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '' && l !== '…');
+  const lastAt = marker === 'auth' && !auth ? -1 : markerIndex;
   const view: TurnView = {
-    lastMarker: markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null,
-    assistantText: lines.length ? blockText(lines, markerIndex >= 0 ? markerIndex : lines.length - 1) : '',
+    lastMarker: lastAt >= 0 ? marker : null,
+    assistantText: shown.length ? blockText(shown, lastAt >= 0 ? markerIndex - [...authLines].filter((k) => k < markerIndex).length : shown.length - 1) : '',
     lastLine: nonEmpty.at(-1) ?? '',
     outputLines: lines.length,
     anchorFound: at >= 0,
   };
   if (view.lastMarker === 'failed') view.failedReason = failedReason(lines, markerIndex);
+  if (view.lastMarker === 'auth') view.auth = auth;
   return view;
 }
 

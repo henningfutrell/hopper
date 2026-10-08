@@ -19,6 +19,7 @@ const ALL: Record<EventType, true> = {
   'job.work_kept': true, 'job.work_removed': true, 'job.cleanup_deferred': true, 'job.cleaned_up': true,
   'source.stalled': true, 'connected_account.expired': true, 'ui_session.ended': true,
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
+  'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

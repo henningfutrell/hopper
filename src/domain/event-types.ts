@@ -10,6 +10,7 @@ export const EVENT_TYPES = [
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
   'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept', 'job.work_removed', 'job.cleanup_deferred', 'job.cleaned_up',
   'source.stalled', 'connected_account.expired', 'ui_session.ended', 'source.claim_released', 'source.intake_migrated', 'source.issues_assigned',
+  'auth.pending', 'auth.completed', 'auth.expired', 'auth.cancelled', 'auth.failed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -28,4 +29,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1, 'job.work_removed': 1, 'job.cleanup_deferred': 1, 'job.cleaned_up': 1,
   'source.stalled': 1, 'connected_account.expired': 1, 'ui_session.ended': 1,
   'source.claim_released': 1, 'source.intake_migrated': 1, 'source.issues_assigned': 1,
+  'auth.pending': 1, 'auth.completed': 1, 'auth.expired': 1, 'auth.cancelled': 1, 'auth.failed': 1,
 };

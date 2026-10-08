@@ -18,6 +18,8 @@ import { jobScratchOf, scratchDirOf } from './herdr/start.ts';
 import { localShell, sshShell } from './machine-shell.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
+import { hideCodes } from '../logins/recognise.ts';
+import { watchRunOutput } from '../logins/run-output.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
@@ -112,17 +114,25 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
       ctx.progress(0, `${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
-      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv);
+      // A device code the agent's tools print goes to the logins while the turn waits on it (issue #476).
+      const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(0, line));
+      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv, login.feed).then((ran) => {
+        login.end(ran === 'aborted' || ran === 'timeout' ? { ok: false, reason: ran === 'aborted' ? 'aborted' : 'timed out' } : ran.exitCode === 0 ? { ok: true } : { ok: false, reason: `exited ${ran.exitCode}` });
+        return ran;
+      });
       if (r === 'aborted') return { kind: 'failed', error: 'aborted' };
       if (r === 'timeout') return { kind: 'failed', error: `${label} on ${where} timed out after ${p.timeoutMs} ms` };
+      // What the turn printed goes on as an error, a question or progress: never with a device code (issue #476).
+      const seen = `${r.stdout}\n${r.stderr}`;
+      const hidden = (text: string): string => hideCodes(text, seen, login.codes());
       const answer = dialect.read(r.stdout);
       if (r.exitCode !== 0) {
         const said = 'error' in answer ? answer.error : r.stderr.trim() || r.stdout.trim();
-        return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${tail(said)}` };
+        return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${hidden(tail(said))}` };
       }
-      if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${tail(answer.error)}` };
-      if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${tail(answer.unreadable)}` };
-      const out = outcomeOf(answer.text, where, answer.session);
+      if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${hidden(tail(answer.error))}` };
+      if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${hidden(tail(answer.unreadable))}` };
+      const out = outcomeOf(hidden(answer.text), where, answer.session);
       if ('statusNote' in out) {
         // A status note opens no question (issue #163): the agent is nudged in the same session.
         ctx.progress(0, out.statusNote);
