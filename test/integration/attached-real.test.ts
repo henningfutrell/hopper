@@ -51,7 +51,7 @@ describe.skipIf(!TARGET)('a real job on an attached machine (opt-in)', () => {
   it('runs there and finishes with that machine\'s hostname', async () => {
     const hostname = ssh('hostname').trim();
     const job = await a.pull({}, {
-      executor: 'herdr-claude', cwd: '/tmp',
+      executor: 'herdr-claude',
       prompt: 'Run the shell command `hostname` and reply with exactly its output, nothing else.',
     });
     const done = await waitFor(async () => {

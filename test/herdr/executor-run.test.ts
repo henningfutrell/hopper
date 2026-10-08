@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
 import { STATUS_NOTE_NUDGE, protocolFooter } from '../../src/executors/herdr/index.ts';
-import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
+import { CWD, JOB_ID, LANE, LOCAL, contextFor, jobWith, setup, until } from './support.ts';
 
 /** The job's own scratch dir (issue #401): the reap removes it when the job ends. */
 const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
@@ -73,7 +73,7 @@ describe('herdr-claude executor: run', () => {
   it('prepares the scratch dir in the pane before Claude starts, inside the work tree the shell enters, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${CWD}' && cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
@@ -96,8 +96,8 @@ describe('herdr-claude executor: run', () => {
 
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
-    await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
+    await executor.run(contextFor(jobWith({ prompt: 'go' }), LANE, { ...LOCAL, workTree: "/w/it's here" }).ctx);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here' && cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {

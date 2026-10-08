@@ -125,11 +125,10 @@ describe('herdr over a client target', () => {
 
 // Issue #361: the hopper makes a client target's work tree through its client, when it probes it.
 describe('a client target\'s work tree', () => {
-  it('made under the client\'s home; one that cannot be made says why; the home itself is refused', async () => {
+  it('made where it names; one that cannot be made says why; the client\'s home itself is refused', async () => {
     await serve();
     const t = client!.transport(TOKEN);
-    process.env.HOME = dir;
-    expect(await clientWorkTree(t, '~/trees/a')).toEqual({});
+    expect(await clientWorkTree(t, join(dir, 'trees', 'a'))).toEqual({});
     expect(existsSync(join(dir, 'trees', 'a'))).toBe(true);
     expect((await clientWorkTree(t, '/proc/hopper-no-such/tree')).workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
     expect(await clientWorkTree(t, '~')).toEqual({ workTreeProblem: 'its work tree ~ is its home or above it: a job runs only in a directory below the home' });

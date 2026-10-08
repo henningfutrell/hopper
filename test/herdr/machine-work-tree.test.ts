@@ -7,10 +7,11 @@ import type { FakeTurn } from '../../src/executors/herdr/index.ts';
 import { LAPTOP, contextFor, jobWith, setup } from './support.ts';
 
 const DONE: FakeTurn = { output: ['● Done.', '  HOPPER_DONE'] };
-const FAR = { ...LAPTOP, home: '/home/far' };
+const { workTree: _none, ...BARE } = LAPTOP;
+const FAR = { ...BARE, home: '/home/far' };
 
 const run = async (payload: Record<string, unknown>, machine: typeof FAR & { workTree?: string }, extra: Parameters<typeof jobWith>[1] = {}) => {
-  const { remotes, executor } = setup({}, { remote: { laptop: { turns: [DONE] } } });
+  const { remotes, executor } = setup({}, { jobWorktrees: true, remote: { laptop: { turns: [DONE] } } });
   const { ctx, workTrees } = contextFor(jobWith({ prompt: 'go', ...payload }, extra), 'laptop/lane-1', machine);
   const out = await executor.run(ctx);
   const runs = remotes.get('laptop')!.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]));
@@ -39,28 +40,28 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     const elsewhere = { spec: { executor: 'herdr-claude', machineId: 'other', payload: { prompt: 'go', cwd: '/home/owner/work' } } };
     expect((await run({ cwd: '/home/owner/work' }, { ...FAR, workTree: '/srv/trees' }, elsewhere)).workTrees).toEqual(['/srv/trees']);
     // A job pinned nowhere that carries a path (queued before) runs in the machine's work tree too.
-    expect((await run({ cwd: '/home/owner/work' }, FAR)).workTrees).toEqual(['/home/far/hopper-jobs']);
+    const nowhere = { spec: { executor: 'herdr-claude', machineId: undefined, payload: { prompt: 'go', cwd: '/home/owner/work' } } };
+    expect((await run({ cwd: '/home/owner/work' }, FAR, nowhere)).workTrees).toEqual(['/home/far/hopper-jobs']);
   });
 
-  it('the work tree is made when missing, wherever it is', async () => {
+  it('the machine\'s work tree is made when missing, wherever it is', async () => {
     const r = await run({}, { ...FAR, workTree: '/srv/trees' });
-    expect(r.runs.at(-1)).toMatch(/^mkdir -p '\/srv\/trees' && cd '\/srv\/trees' && /);
+    expect(r.runs.find((c) => c.includes('hopper-scratch'))).toMatch(/^mkdir -p '\/srv\/trees' && cd '\/srv\/trees' && /);
   });
 
-  it('a job from a repository: its checkout is fetched, or cloned, in the work tree before Claude starts', async () => {
+  it('a job from a repository: the job worktree command names it, to fetch or clone it in a work tree that is no repository, and Claude starts in its worktree', async () => {
     const fromRepo = { source: { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' } };
     const r = await run({}, { ...FAR, workTree: '/srv/trees' }, fromRepo);
     expect(r.out).toMatchObject({ kind: 'finished' });
-    const command = r.runs.at(-1)!;
-    expect(command).toMatch(/^mkdir -p '\/srv\/trees' && cd '\/srv\/trees' && sh -c '.*' hopper-checkout 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' && mkdir -p /);
+    const command = r.runs.find((c) => c.includes('hopper-worktree'))!;
+    expect(command).toMatch(/^cd '\/srv\/trees' && \{ o=\$\(sh -c '.*' hopper-worktree '[^']*' '\/srv\/trees\/\.hopper-scratch\/[^/']+\/app' 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' '1'/s);
     // The token stays in the pane's environment: the command names the variable, never a value.
     expect(command).toContain('$GH_TOKEN');
-    expect(command).toContain('clone');
-    expect(command).toContain('fetch');
+    expect(r.workTrees.at(-1)).toMatch(/^\/srv\/trees\/\.hopper-scratch\/[^/]+\/app$/);
   });
 
-  it('a job with no repository makes the work tree and its scratch dir only', async () => {
+  it('a job with no repository names none to the job worktree command', async () => {
     const r = await run({}, { ...FAR, workTree: '/srv/trees' });
-    expect(r.runs.at(-1)).not.toContain('hopper-checkout');
+    expect(r.runs.filter((c) => c.includes('hopper-worktree')).every((c) => / '' '' '1'/.test(c))).toBe(true);
   });
 });

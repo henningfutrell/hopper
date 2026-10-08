@@ -23,7 +23,7 @@ function github(extra: Record<string, unknown> = {}) {
   return [{
     name: 'github', plugin: 'github-account', options: {
       enabled: true, pollSeconds: 3600, executor: 'scripted',
-      defaultCwd: '/tmp', ...extra,
+      ...extra,
     },
   }];
 }

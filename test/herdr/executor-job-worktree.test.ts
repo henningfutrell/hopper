@@ -1,7 +1,7 @@
 // Each job its own git worktree (issue #379): the herdr-claude executor's side, over the fake herdr.
 // What the commands do to a real repository is test/herdr/job-worktree.test.ts.
 import { describe, expect, it } from 'vitest';
-import { jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
+import { checkoutWorktreeOf, jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
 import { CWD, JOB_ID, contextFor, jobWith, setup, until } from './support.ts';
 
 const DONE = { output: ['● Done.', '  HOPPER_DONE'] };
@@ -20,7 +20,7 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD] }, { jobWorktrees: true });
     const { ctx, saved, workTrees } = contextFor(jobWith({ prompt: 'go' }));
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
-    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_TREE));
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID));
     const order = herdr.calls.map((c) => c.method === 'runInPane' ? `run:${String(c.args[1]).includes('worktree add') ? 'worktree' : 'other'}` : c.method);
     expect(order.indexOf('run:worktree')).toBeLessThan(order.indexOf('startAgent'));
     expect(saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: JOB_TREE });
@@ -43,11 +43,34 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     expect(progress.map((p) => p.message)).toContain(`trusted workdir ${JOB_TREE}`);
   });
 
+  // Issue #361: a work tree that is no repository gets the job's repository, and the job a worktree of that checkout.
+  it('a job from a repository, its work tree no repository: a worktree of the repository\'s checkout in the work tree, named in the prompt', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] }, { jobWorktrees: true });
+    const source = { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' };
+    const { ctx, saved, workTrees } = contextFor(jobWith({ prompt: 'go' }, { source }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID, { repo: 'acme/app' }));
+    const tree = checkoutWorktreeOf(CWD, JOB_ID, 'acme/app');
+    expect(saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: tree, checkout: `${CWD}/app` });
+    expect(workTrees.at(-1)).toBe(tree);
+    expect(herdr.prompts[0]!.text).toContain(`[hopper job worktree] Work in ${tree}: a git worktree of ${CWD}/app made for this job alone`);
+  });
+
+  it('job worktrees off, a job from a repository: the checkout is made, and the job runs in the work tree', async () => {
+    const { herdr, executor } = setup({ turns: [DONE] });
+    const source = { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' };
+    const { ctx, saved, workTrees } = contextFor(jobWith({ prompt: 'go' }, { source }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID, { repo: 'acme/app', worktrees: false }));
+    expect(saved.at(-1)).not.toHaveProperty('jobWorktree');
+    expect(workTrees).toEqual([CWD]);
+  });
+
   it('a work tree that is not the top of a git repository: the job runs in it, as without job worktrees', async () => {
     const { herdr, executor } = setup({ turns: [DONE] }, { jobWorktrees: true });
     const { ctx, saved, workTrees } = contextFor(jobWith({ prompt: 'go' }));
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
-    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_TREE));
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID));
     expect(saved.at(-1)).toMatchObject({ cwd: CWD });
     expect(saved.at(-1)).not.toHaveProperty('jobWorktree');
     expect(workTrees).toEqual([CWD]);

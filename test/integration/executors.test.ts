@@ -122,13 +122,13 @@ describe('GET /api/plugins: the executor role', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose JSON
     const marked = (id: string) => Object.entries((byId.get(id) as any).options.properties as Record<string, { commandBearing?: boolean }>)
       .filter(([, s]) => s.commandBearing === true).map(([k]) => k).sort();
-    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd', 'yolo']);
+    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'yolo']);
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin', 'sshBin']);
     expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
     expect(marked('gate-router')).toEqual(['jevPath', 'python']);
-    expect(marked('github-account')).toEqual(['defaultCwd', 'repoPaths']);
-    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);
+    expect(marked('github-account')).toEqual([]);
+    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'privateKeyEnv', 'slug']);
     expect(marked('local')).toEqual(['workTree']);
   });
 
