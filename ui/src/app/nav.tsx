@@ -5,7 +5,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
-import { useAwaitingSort, useUnseenForOwner } from '@/store/selectors';
+import { useAwaitingOwner, useAwaitingSort } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'questions', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -30,7 +30,7 @@ const readSection = (): string => window.location.hash.slice(1).split('/')[1] ??
 export const useSection = (): string => useSyncExternalStore(subscribe, readSection);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
-  const questions = useUnseenForOwner();
+  const questions = useAwaitingOwner();
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const sorting = useAwaitingSort();
   const badge: Partial<Record<View, { n: number; cls: string; title?: string }>> = {

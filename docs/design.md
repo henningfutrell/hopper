@@ -1078,10 +1078,16 @@ go on; Dismiss ends it. The card marks a job that has moved on (`job moved on: <
 
 **Seen** (`POST /ui/api/questions/:id/seen`; issue #37): `seenAt` set once on the question, kept
 after; any status. The Questions view posts it for every open question at the human stage without
-`seenAt` while it is shown with a UI session. The nav badge counts open questions at the human stage
-without `seenAt`, so it clears once they are seen, answered, closed or dismissed. No event: seen
-changes no job and nothing outside the UI reads it. Only human-stage questions are marked, so a
-question seen while still with an escalation level badges when it reaches the owner.
+`seenAt` while it is shown with a UI session. No event: seen changes no job, and nothing outside the
+UI reads it; it is kept as part of the question's record. Seen does not touch the nav badge (issue #499).
+
+**Nav badges count what is pending, not what is unseen** (issue #499, reversing the badge part of #37 and
+#42). The Questions badge counts the open questions at the human stage, seen or not: it stays across
+views and reloads while one is open, and clears only when every one is answered, closed, dismissed or
+expired. A question still with an escalation level does not count: it does not wait on the owner yet.
+The count follows the live stream: every `question.*` event refreshes the open questions. Opening the
+Questions view changes nothing in the count. Any other badge for something pending (the Logins badge,
+issue #477) follows the same rule: it counts what is pending and clears only when none is.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -1359,7 +1365,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/questions/:id/answer` | `{ answer }` | `QuestionService.answerByHuman` (404/409). Idempotent per question (issue #459): the owner's same answer again returns the question with no second effect; another answer is 409 |
 | POST | `/ui/api/questions/:id/close` | `{}` | `QuestionService.closeByHuman` (404/409): close without answering ("Questions" → Close) |
 | POST | `/ui/api/questions/:id/dismiss` | `{}` | `QuestionService.dismissByHuman` (404/409): drop the question; a job still waiting on it is cancelled ("Questions" → Dismiss) |
-| POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; clears the nav badge |
+| POST | `/ui/api/questions/:id/seen` | `{}` | `QuestionService.markSeen` (404): `seenAt` once; the nav badge does not read it |
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (with a `secret` typed in, or none: the hopper makes one), edit (url, events, active), replace (`secret`), rotate, remove one; answers `GET /api/webhooks`, never a secret but one the hopper made, once (`generatedSecret`); `cache-control: no-store` (issues #18, #451) ("Webhook signing secrets") |
@@ -4122,7 +4128,8 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   running job with no start in the log gets its span from `startedAt`. A span that ended on a question
   is followed by a *question wait* on the same lane, until the question is answered, closed, dismissed or
   expired; the job store wins there too (a wait of a job no longer waiting ends with the job). The nav's questions badge
-  counts `awaitsOwner` (`ui/src/model/questions.ts`), the same test the Questions view marks seen by.
+  counts `awaitsOwner` (`ui/src/model/questions.ts`): open, at the human stage, seen or not (issue #499). The
+  Questions view marks seen by `unseenByOwner`, the same test plus no `seenAt`.
 - **Realtime.** One SSE connection; each domain event updates the log and chart history at once
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
   every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
