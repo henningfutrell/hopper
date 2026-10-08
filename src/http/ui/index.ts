@@ -24,6 +24,7 @@ import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody, rejectBody } from './job-bodies.ts';
+import { registerSourceIntakeRoutes } from './source-intake.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
 
@@ -288,6 +289,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
+  registerSourceIntakeRoutes(app, { operator, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

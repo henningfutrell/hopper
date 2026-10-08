@@ -53,5 +53,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'source.stalled': { source: 'github-account', kind: 'github-account', error: 'GitHub is down', since: '2026-10-07T20:14:00.000Z' },
   'connected_account.expired': { provider: 'github', account: 'octocat', reason: 'GitHub refused the refresh token (bad_refresh_token)' },
   'ui_session.ended': { reason: 'expired-idle', realm: 'corp' },
+  'source.claim_released': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/7', by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' },
+  'source.intake_migrated': { source: 'github-account', changes: [{ key: 'https://github.com/octocat/hello/issues/7', change: 'not assigned to you: assign it to you to take it' }] },
+  'source.issues_assigned': { source: 'github-account', keys: ['https://github.com/octocat/hello/issues/7'], assignee: 'octocat' },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

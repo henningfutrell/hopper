@@ -2,7 +2,7 @@
 // exported. Stored events are never rewritten (design.md "Persisted-state migrations"); each
 // entry is exactly the schema that version was written against.
 import { z } from 'zod';
-import { advice, adviceAction, holdPlan, jobStatus, lanePlan, startPlan } from './parts.ts';
+import { advice, adviceAction, holdPlan, jobStatus, legacyLanePlan as lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
 const jevMode = z.enum(['shadow', 'active']);

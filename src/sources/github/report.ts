@@ -1,6 +1,6 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
 // labels; it posts no comment at all (owner decision, 2026-10-04: a finished issue needs no
-// comment): claimed → `hopper:claimed`; finished → `hopper:done` — only a job whose work reached
+// comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished → `hopper:done` — only a job whose work reached
 // its completion is finished (completion.ts, issues #171, #187), and the merge of its pull request
 // closes the issue, never the hopper (with completion `pull-request` the issue stays open until a
 // person merges); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
@@ -17,13 +17,16 @@ import type { SourceReport } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
-import { HOPPER_LABELS, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED } from './labels.ts';
+import { HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { claimLabels } from './discover.ts';
 import type { GitHubIssue } from './api.ts';
 
 export interface ReportContext {
   api: GitHubApi;
   /** Repos whose hopper labels were ensured by this process. */
   labelledRepos: Set<string>;
+  /** This user's claim holder id (issue #440); absent: claims carry no holder label. */
+  holder?: string;
 }
 
 type State = Record<string, unknown>;
@@ -37,12 +40,13 @@ function issueOf(job: Job): { repo: string; number: number } {
 async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
   if (ctx.labelledRepos.has(repo)) return;
   for (const l of HOPPER_LABELS) await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
+  if (ctx.holder) await ctx.api.ensureLabel(repo, holderLabel(ctx.holder), HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION);
   ctx.labelledRepos.add(repo);
 }
 
-/** End of a job on its issue: drop `hopper:claimed`, add the outcome label. */
+/** End of a job on its issue: drop `hopper:claimed` and its holder label, add the outcome label. */
 async function settle(ctx: ReportContext, repo: string, number: number, add: string[]): Promise<void> {
-  await ctx.api.removeLabels(repo, number, [LABEL_CLAIMED]);
+  await ctx.api.removeLabels(repo, number, claimLabels(ctx.holder));
   if (add.length) {
     await ensureLabels(ctx, repo);
     await ctx.api.addLabels(repo, number, add);
@@ -55,7 +59,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
   switch (r.kind) {
     case 'claimed':
       await ensureLabels(ctx, repo);
-      await ctx.api.addLabels(repo, number, [LABEL_CLAIMED]);
+      await ctx.api.addLabels(repo, number, claimLabels(ctx.holder));
       return state;
     case 'finished':
       await settle(ctx, repo, number, [LABEL_DONE]);
@@ -88,7 +92,7 @@ export async function takeBack(ctx: ReportContext, label: string, job: Job): Pro
     const { repo, number } = issueOf(job);
     const issue = await ctx.api.getIssue(repo, number);
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
-    await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_CLAIMED]);
+    await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, ...claimLabels(ctx.holder)]);
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
