@@ -90,6 +90,7 @@ export const EVENT_SCHEMAS = {
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
+  'job.work_removed': strict({ paths: z.array(z.string()).min(1) }),
   // Assignment drift (issue #387): the started job's item is no longer, or again, assigned to the account it was taken for.
   'job.unassigned': strict({ assignee: z.string() }),
   'job.reassigned': strict({ assignee: z.string() }),

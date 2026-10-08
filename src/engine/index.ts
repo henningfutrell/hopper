@@ -15,6 +15,7 @@ import { recover } from './recovery.ts';
 import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
+import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -47,6 +48,7 @@ export function createEngine(o: EngineOptions): Engine {
   const { store } = o;
   let stopping = false;
   let timer: NodeJS.Timeout | undefined;
+  let sweepTimer: NodeJS.Timeout | undefined;
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
@@ -67,6 +69,7 @@ export function createEngine(o: EngineOptions): Engine {
   const classifier = createClassifier(c);
   const commands = createCommands(c, runner, cleanup);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
+  const sweep = createSweep(c);
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -77,7 +80,10 @@ export function createEngine(o: EngineOptions): Engine {
     ...createAnswerHandlers(c, cleanup),
     async start() {
       const recovered = await recover(c);
-      for (const jobId of recovered.toClean) void cleanup(jobId);
+      // The reap of each job recovery ended, then the sweep of every machine (issue #410): what a hopper
+      // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
+      void Promise.all(recovered.toClean.map((jobId) => cleanup(jobId))).then(() => sweep.run(true));
+      sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       for (const claim of recovered.reattach) runner.reattach(claim);
       unsubscribe = store.events.subscribe((event) => {
         // Never decide inside append: schedule.
@@ -101,6 +107,7 @@ export function createEngine(o: EngineOptions): Engine {
       stopping = true;
       serial.close();
       if (timer) clearInterval(timer);
+      if (sweepTimer) clearInterval(sweepTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
       // In-flight classifications are not awaited: they write nothing once stopping.

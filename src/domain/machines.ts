@@ -21,6 +21,8 @@ interface AttachedBase {
   workTree?: string;
   /** When its disk is low (issue #410); absent fields take the defaults. Never on a container target. */
   diskLow?: DiskThresholds;
+  /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. */
+  sweep?: SweepSettings;
 }
 
 export interface SshMachine extends AttachedBase {
@@ -145,3 +147,9 @@ export type DiskReading = NonNullable<MachineSnapshot['disk']>;
 
 /** A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%. */
 export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
+
+/**
+ * How the sweep treats a machine (issue #410): it is swept every `everyMinutes` (absent, 10), and an ended
+ * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24).
+ */
+export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number }

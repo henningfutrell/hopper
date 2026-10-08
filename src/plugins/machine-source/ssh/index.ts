@@ -6,7 +6,7 @@
 import type { SshMachine } from '../../../domain/types.ts';
 import { HOST_KEY } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { attachedBase, attachedShape, diskLowShape, reach, workTreeOption, type AttachedOptions } from '../attached.ts';
+import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, type AttachedOptions } from '../attached.ts';
 
 export interface SshOptions extends AttachedOptions { ssh: string; herdr: boolean; session: string; hostKey?: string }
 
@@ -24,6 +24,7 @@ const ssh: PluginDefinition<'machine-source', SshOptions> = {
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
     ...diskLowShape(z),
+    ...sweepShape(z),
     herdr: z.boolean().default(true)
       .meta({ commandBearing: true, description: 'it runs herdr; false: probed over ssh alone, and herdr-claude does not run there' }),
     session: z.string().min(1).refine((s) => s !== 'default', 'must not be the default herdr session').default('hopper')

@@ -22,6 +22,8 @@ export interface EngineOptions {
   routing: RoutingView;
   policy: DeciderPolicy;
   tickMs: number;
+  /** How often the engine looks for a machine whose sweep is due (issue #410). Default a minute. */
+  sweepCheckMs?: number;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
   /** At most this many questions per job; the next one fails it (design.md B6). */
@@ -35,7 +37,7 @@ export interface EngineOptions {
 }
 
 /** What the engine's modules share. */
-export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs'>> {
+export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' | 'tickMs' | 'sweepCheckMs'>> {
   fakeUsage?: SettableUsageSource;
   /** Ask for a Decision; coalesces with one already running. */
   trigger(reason: string): void;

@@ -4,12 +4,16 @@
 // `session`, when given, is the herdr session its jobs run in, which the hopper starts when it is not
 // running (issue #260); absent, the herdr-claude instance's own. `workTree`: its jobs' default work tree (issue #324).
 // `diskLowBelowGiB` / `diskLowBelowPercent`: when its disk is low and it takes no new job (issue #410).
+// `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { diskLowOf, diskLowShape, workTreeOption } from '../attached.ts';
+import { diskLowOf, diskLowShape, sweepOf, sweepShape, workTreeOption } from '../attached.ts';
 
-export interface LocalOptions { lanes: number; executors?: string[]; session?: string; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number }
+export interface LocalOptions {
+  lanes: number; executors?: string[]; session?: string; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  reapEveryMinutes?: number; scratchMaxAgeHours?: number;
+}
 
 /** Starts this machine's herdr session when it is not running; rejects with the reason. */
 export type StartSession = (session: string, userEnv: Readonly<Record<string, string>>) => Promise<unknown>;
@@ -29,10 +33,11 @@ export function localPlugin(start: StartSession = startHerdrSession): PluginDefi
         .meta({ description: 'the herdr session jobs here run in, started by the hopper; absent: the herdr-claude instance\'s own' }),
       workTree: workTreeOption(z),
       ...diskLowShape(z),
+      ...sweepShape(z),
     }),
     async detect() { return { status: 'available' }; },
     create: (ctx, o) => createLocalMachineSource({
-      id: ctx.instanceName, maxLanes: o.lanes, ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), diskLow: () => diskLowOf(o),
+      id: ctx.instanceName, maxLanes: o.lanes, ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), diskLow: () => diskLowOf(o), sweep: () => sweepOf(o),
       executors: o.executors ? () => ctx.executors().filter((x) => o.executors!.includes(x)) : ctx.executors,
       ...(o.session ? {
         session: o.session,

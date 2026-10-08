@@ -4,7 +4,7 @@
 // reaches it through the machine-source context's `target`, never on its own.
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
-import type { DiskThresholds } from '../../domain/machines.ts';
+import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
 /**
@@ -34,6 +34,25 @@ export const diskLowOf = (o: { diskLowBelowGiB?: number; diskLowBelowPercent?: n
     ...(o.diskLowBelowPercent !== undefined ? { belowPercent: o.diskLowBelowPercent } : {}),
   });
 
+/**
+ * How the sweep treats a machine (issue #410): how often it is swept for what ended jobs left, and how old an
+ * ended job's scratch dir gets before the sweep reaps it. Plain options, read at every sweep. Not on a
+ * container target, which runs no job that leaves any.
+ */
+export const sweepShape = (z: typeof Z) => ({
+  reapEveryMinutes: z.number().int().min(1).optional()
+    .meta({ description: 'the sweep: every this many minutes (default 10), what jobs that are no longer live left here is stopped, and their old scratch dirs removed' }),
+  scratchMaxAgeHours: z.number().positive().optional()
+    .meta({ description: 'the sweep removes an ended job\'s scratch dir here once it is this many hours old (default 24); work not pushed is never removed' }),
+});
+
+/** The sweep settings the options set; undefined when neither is. */
+export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number }): SweepSettings | undefined =>
+  (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined ? undefined : {
+    ...(o.reapEveryMinutes !== undefined ? { everyMinutes: o.reapEveryMinutes } : {}),
+    ...(o.scratchMaxAgeHours !== undefined ? { scratchMaxAgeHours: o.scratchMaxAgeHours } : {}),
+  });
+
 /** The options every attached machine has; `executors` defaults to what its connection runs. */
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
   return {
@@ -43,14 +62,18 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
   };
 }
 
-export interface AttachedOptions { label?: string; lanes: number; executors: string[]; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number }
+export interface AttachedOptions {
+  label?: string; lanes: number; executors: string[]; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  reapEveryMinutes?: number; scratchMaxAgeHours?: number;
+}
 
 /** The plain fields of an attached machine named `name`. */
 export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
+  const sweep = sweepOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, executors: [...o.executors], ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
-    ...(diskLow ? { diskLow } : {}),
+    ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };
 
