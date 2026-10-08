@@ -483,7 +483,7 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { BranchChannel, InstallInfo, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
+export type { BranchChannel, InstallInfo, InstallKind, UpdateApply, UpdateChannel, UpdateRelease, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
 export { BRANCH_CHANNELS, isBranchChannel, UPDATE_CHANNELS } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
