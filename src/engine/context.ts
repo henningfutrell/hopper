@@ -26,6 +26,8 @@ export interface EngineOptions {
   questions: QuestionService;
   /** At most this many questions per job; the next one fails it (design.md B6). */
   maxQuestions: number;
+  /** After a restart, how long a running job whose machine does not answer yet stays running before it fails (issue #368). */
+  reconnectGraceMs: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
   /** Why a job that ended done is not complete, asked of its source (JobSource.notComplete, issues #171, #187). */

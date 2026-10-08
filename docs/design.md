@@ -829,6 +829,14 @@ so a running job's pane and Claude outlive a restart.
   `executor.cleanup(job)`, job `failed` `interrupted by daemon restart`, `job.failed`. Not
   re-run: a second run repeats real side effects. A non-idempotent executor without
   `reattach` always takes this path.
+- Same job, its machine **not answering yet** (issue #368: `canReattach` rejects — a client target
+  not dialled in, an ssh target not replying; recovery runs before either can) → in the tx the job
+  stays `running` with its `laneId` and its lane is kept, as a reattached one, but no event yet.
+  After it the runner asks `canReattach` again every second, the job held by the runner as any
+  run is (cancel and shutdown abort the wait): alive → `job.reattached { reason: "daemon restart" }`
+  and reattach as above; gone → failed `interrupted by daemon restart`; still no answer after the
+  **reconnect grace** (`HOPPER_RECONNECT_GRACE_MS`, default 120 s) → failed `machine <id> did not
+  reconnect within <n> s after the daemon restart`. Either failure frees the lane and cleans up.
 - `claimed` jobs, any executor → requeued (`job.requeued { from: claimed }`), `executorState`
   and `pendingAnswer` kept, nothing closed. The claim → `running` write happens before the
   executor is called, so a claimed job never ran: a fresh claim has no pane; a resume claim's
@@ -2529,6 +2537,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` |

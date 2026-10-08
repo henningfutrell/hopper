@@ -1,6 +1,7 @@
 // Restart recovery (design.md "Recovery at startup"). A running job of a non-idempotent executor
 // whose external work is still alive is reattached on its lane; one whose work is gone fails and
-// is cleaned up, never re-run. Claimed jobs (nothing ran) and idempotent jobs return to the queue
+// is cleaned up, never re-run; one whose machine does not answer yet stays running on its lane
+// while the runner asks again, up to the reconnect grace (issue #368). Claimed jobs (nothing ran) and idempotent jobs return to the queue
 // (a pending answer is kept). waiting_answer jobs follow their question. Every other lane closes.
 import type { Job, Question } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -11,25 +12,34 @@ export interface Recovered {
   toClean: string[];
   /** Running jobs whose executors the caller must reattach, after the commit. */
   reattach: Claim[];
+  /** Running jobs whose machine did not answer: the caller reattaches each once it does (Runner.reattachWhenReachable). */
+  awaiting: Claim[];
 }
 
-/** The running jobs whose executor can reattach them: probed before the transaction (herdr calls). */
-async function reattachable(c: EngineContext): Promise<Claim[]> {
+/** The running jobs whose executor can reattach them, or cannot tell yet: probed before the transaction (herdr calls). */
+async function reattachable(c: EngineContext): Promise<{ reattach: Claim[]; awaiting: Claim[] }> {
   const lanes = c.store.lanes.list();
-  const claims: Claim[] = [];
+  const reattach: Claim[] = [];
+  const awaiting: Claim[] = [];
   for (const job of c.store.jobs.list({ status: ['running'] })) {
     const executor = c.executors.get(job.spec.executor);
     const lane = lanes.find((l) => l.id === job.laneId && l.jobId === job.id);
-    if (!lane || executor?.idempotent !== false || !executor.reattach) continue;
-    if (await executor.canReattach?.(job).catch(() => false)) claims.push({ jobId: job.id, laneId: lane.id });
+    if (!lane || executor?.idempotent !== false || !executor.reattach || !executor.canReattach) continue;
+    const claim = { jobId: job.id, laneId: lane.id };
+    try {
+      if (await executor.canReattach(job)) reattach.push(claim);
+    } catch (e) {
+      console.warn(`job ${job.id}: machine ${lane.machineId} does not answer yet (${e instanceof Error ? e.message : String(e)}); waiting up to ${c.reconnectGraceMs / 1000} s`);
+      awaiting.push(claim);
+    }
   }
-  return claims;
+  return { reattach, awaiting };
 }
 
 export async function recover(c: EngineContext): Promise<Recovered> {
   const { store } = c;
-  const reattach = await reattachable(c);
-  const kept = new Set(reattach.map((r) => r.laneId));
+  const { reattach, awaiting } = await reattachable(c);
+  const kept = new Set([...reattach, ...awaiting].map((r) => r.laneId));
   const toClean: string[] = [];
   const fail = (job: Job, error: string): void => {
     store.jobs.update(job.id, { status: 'failed', error, finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined });
@@ -51,7 +61,7 @@ export async function recover(c: EngineContext): Promise<Recovered> {
     for (const r of reattach) {
       store.events.append({ type: 'job.reattached', jobId: r.jobId, laneId: r.laneId, data: { reason: 'daemon restart' } });
     }
-    const reattached = new Set(reattach.map((r) => r.jobId));
+    const reattached = new Set([...reattach, ...awaiting].map((r) => r.jobId));
     for (const job of store.jobs.list({ status: ['claimed', 'running'] })) {
       if (reattached.has(job.id)) continue;
       // A claimed job's executor never started (claim → running happens before it runs): requeue.
@@ -67,5 +77,5 @@ export async function recover(c: EngineContext): Promise<Recovered> {
       store.events.append({ type: 'lane.closed', laneId: lane.id, machineId: lane.machineId, data: { reason: 'daemon restart' } });
     }
   });
-  return { toClean, reattach };
+  return { toClean, reattach, awaiting };
 }
