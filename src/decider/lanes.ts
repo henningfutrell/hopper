@@ -1,5 +1,5 @@
-import type { Lane, LanePlan, StartPlan } from '../domain/types.ts';
-import type { MachineState } from './assign.ts';
+import type { HoldPlan, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
+import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
 
 /** Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. */
 export function planLanes(
@@ -46,4 +46,32 @@ export function planGoneLanes(machineId: string, lanes: Lane[]): LanePlan {
   const drain = mine.filter((l) => l.state === 'busy').map((l) => l.id).sort();
   const reason = `${machineId}: no longer configured; close ${close.length}, drain ${drain.length}`;
   return { machineId, current: mine.length, target: 0, open: 0, close, drain, reason };
+}
+
+const jobs = (n: number): string => `${n} job${n === 1 ? '' : 's'}`;
+
+/**
+ * Why a machine leaves lanes unused after this Decision (issue #440), or undefined when it uses them all. The
+ * machine's own state comes first (it cannot take work), then its lane cap (usage pacing, reserved lanes),
+ * then the queue (jobs that cannot run here, held jobs, none waiting).
+ */
+export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: readonly WaitPlan[]): string | undefined {
+  const m = s.machine;
+  if (m.maxLanes === 0) return 'no lanes: the machine\'s lane count is 0';
+  const used = s.occupied + s.assigned;
+  if (used >= m.maxLanes) return undefined;
+  if (!m.online) return 'machine offline';
+  if (homeless(m)) return 'its home is not known yet: no job is placed there';
+  if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;
+  if (wait.length > 0 && s.unpinned >= unpinnedCap(s) && (m.reservedLanes ?? 0) > 0) {
+    const kept = m.reservedLanes!;
+    return `reserved: ${kept} lane${kept === 1 ? '' : 's'} kept for jobs pinned to this machine`;
+  }
+  if (wait.length > 0) return 'no waiting job can run here (its executor, its pin, or an executor\'s lane cap)';
+  if (hold.length > 0) {
+    const first = hold[0]!.reason;
+    return `every waiting job is held: ${first} (${jobs(hold.length)}${hold.some((h) => h.reason !== first) ? ', for several reasons' : ''})`;
+  }
+  return 'no job waiting';
 }

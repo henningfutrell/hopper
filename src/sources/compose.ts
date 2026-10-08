@@ -11,6 +11,7 @@ import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
 import type { Rejection } from './github/discover.ts';
+import type { IntakeContext } from '../domain/intake.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
@@ -42,6 +43,8 @@ export interface GitHubSourceDeps {
   api?: GitHubApi;
   /** The user's connected accounts (issue #214). */
   accounts?: ConnectedAccountTokens;
+  /** Claim holders, the intake migration and intake events for this source (issue #440). */
+  intake?: IntakeContext | undefined;
 }
 
 /**
@@ -58,7 +61,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const api: GitHubApi = o.api ?? real!;
   return createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
-    ...(o.rejections ? { rejections: o.rejections } : {}), api, assignee,
+    ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), api, assignee,
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
@@ -93,6 +96,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
         source: createGitHubSource({
           name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
+          ...(o.intake ? { intake: o.intake } : {}),
         }),
       };
     }
@@ -126,6 +130,11 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(notConnected(provider), false));
+    },
+    intake: () => current()?.intake?.() ?? [],
+    intakeAction(action) {
+      const s = current();
+      return s?.intakeAction ? s.intakeAction(action) : Promise.reject(new SourceError(notConnected(provider), false));
     },
     // The job acts as the account's user, with the hopper's app marked on what it does. gh reads the token
     // from its config dir, which the hopper keeps current on the job's machine (issue #441); GH_TOKEN, fixed

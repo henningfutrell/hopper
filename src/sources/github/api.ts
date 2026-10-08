@@ -67,12 +67,21 @@ export interface GitHubApi {
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
   /** When the issue was last assigned to `login` (its newest `assigned` event), or undefined when never (issue #387). */
   assignedAt(repo: string, number: number, login: string): Promise<string | undefined>;
+  /** Add assignees to an issue (Assign to me in Sources, issue #440): the user's own act, never the hopper's. */
+  addAssignees(repo: string, number: number, logins: string[]): Promise<void>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */
   reopenIssue(repo: string, number: number): Promise<void>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */
   openClosingPullRequests(repo: string, number: number): Promise<OpenPullRequest[]>;
+
+  /**
+   * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one
+   * listing, not a search; issue #440). Only to suggest repos outside the job repositories, never intake.
+   * Absent on the App adapter: an installation token has no user.
+   */
+  listAssignedIssues?(label: string): Promise<GitHubIssue[]>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 

@@ -82,13 +82,16 @@ describe('GitHub source discover', () => {
     expect(gh.calls).toEqual([]);
   });
 
-  it('a claimed issue with no local job is skipped and shown in status; one with a job is returned', async () => {
+  it('a claimed issue with no local job and no holder is skipped with its reason; one with a job is returned', async () => {
     const { gh, source } = setup({}, { knownKeys: (keys) => new Set(keys.filter((k) => k.endsWith('/1'))) });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
     const items = await source.discover();
     expect(items.map((i) => i.number)).toEqual([1]);
-    expect(source.describe().skippedClaimedWithoutJob).toEqual([`https://github.com/${REPO}/issues/2`]);
+    expect(source.intake?.().map((o) => [o.key, o.reason, o.action])).toEqual([
+      [`https://github.com/${REPO}/issues/1`, undefined, undefined],
+      [`https://github.com/${REPO}/issues/2`, 'claimed by another hopper (no holder recorded)', 'release'],
+    ]);
   });
 
   it('a claimed issue whose job may be re-run is returned, with its comments loaded for the new job', async () => {
@@ -98,7 +101,7 @@ describe('GitHub source discover', () => {
     gh.addComment(REPO, issue.number, 'owner', 'try again');
     const [item] = await source.discover();
     expect(item!.prompt).toContain('try again');
-    expect(source.describe().skippedClaimedWithoutJob ?? []).toEqual([]);
+    expect(source.intake?.()[0]?.reason).toBeUndefined();
   });
 
   it('a claimed issue with a live job does not have its comments loaded', async () => {
@@ -112,7 +115,7 @@ describe('GitHub source discover', () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
     expect(await source.discover()).toEqual([]);
-    expect(source.describe().skippedClaimedWithoutJob).toEqual([`https://github.com/${REPO}/issues/1`]);
+    expect(source.intake?.()[0]?.reason).toBe('claimed: whether a job here holds it is not known');
   });
 
   it.each([[''], ['  \n\t ']])('an empty issue body (%j) is an invalid item, still offered so it is claimed then failed', async (body) => {

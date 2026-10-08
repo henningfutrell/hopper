@@ -14,6 +14,7 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, Source
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
 import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
+import type { IntakeOutcome } from '../domain/intake.ts';
 import { createRerun } from './rerun.ts';
 
 export { REMOVED } from './sync-slots.ts';
@@ -290,8 +291,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
+    // Every item the source listed, taken (with its job) or not (with its reason) — issue #440. None while paused.
+    const intake = paused === undefined ? slot.source.intake?.() : undefined;
     st.detail = {
       ...slot.source.describe(),
+      ...(intake ? { intake: intake.map((x): IntakeOutcome => (x.reason === undefined ? withJob(x) : x)) } : {}),
       ...(paused !== undefined ? { paused } : {}),
       permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
       reportRetries: slot.retrying.size,
@@ -323,6 +327,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
+  const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = store.jobs.getBySourceKey(x.key); return job ? { ...x, jobId: job.id } : x; };
+
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 
   const rerunning = createRerun({
@@ -335,6 +341,14 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     rerun: rerunning.rerun,
+    async intakeAction(name, action) {
+      const slot = slots.get(name);
+      if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };
+      if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
+      const result = await slot.source.intakeAction(action);
+      await runSync(slot);
+      return { ok: true, result };
+    },
     start() {
       if (running) return;
       running = true;

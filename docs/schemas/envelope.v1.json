@@ -67,6 +67,9 @@
         "source.stalled",
         "connected_account.expired",
         "ui_session.ended",
+        "source.claim_released",
+        "source.intake_migrated",
+        "source.issues_assigned",
         "jev.mode_changed",
         "router.mode_changed"
       ]

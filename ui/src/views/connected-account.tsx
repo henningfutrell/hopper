@@ -86,7 +86,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
                 <div className="text-warn">The app is not installed on any account you can see: it reaches no repository yet.</div>
                 {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
               </div>}
-          {source && <SourceSync s={source} />}
+          {source && <SourceSync s={source} addRepository={(repo) => send({ action: 'choose', repositories: [...s.jobRepositories.filter((r) => r !== repo), repo] })} />}
           {signedInWith
             ? <>
               <div className="text-muted-foreground">To stop taking jobs from {name} and stay signed in, switch off its job source in <a className="underline" href="#settings/plugins">Settings → Plugins</a>.</div>

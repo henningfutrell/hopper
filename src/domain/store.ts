@@ -1,6 +1,7 @@
 // The store's ports (design.md "Database", "Users: one hopper, separate users"): the repositories, a
 // user's store and the instance store. Re-exported from ports.ts.
 
+import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
   Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
@@ -114,6 +115,11 @@ export interface UserSettingsRepository {
   /** How many days usage samples are kept (issue #385); absent: never chosen. */
   getHistoryRetentionDays(): number | undefined;
   setHistoryRetentionDays(days: number): void;
+  /** The user's claim holder id (issue #440): made, random, the first time it is asked, then kept. */
+  claimHolder(): string;
+  /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */
+  getIntakeMigration(source: string): IntakeMigration | undefined;
+  setIntakeMigration(source: string, migration: IntakeMigration): void;
 }
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */

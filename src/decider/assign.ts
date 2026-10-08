@@ -52,7 +52,7 @@ export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low 
 
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
-const NO_NEW_JOB = 'no new job is claimed there';
+export const NO_NEW_JOB = 'no new job is claimed there';
 
 /**
  * Step 5: a hold that applies regardless of the router, or undefined. An unavailable executor
@@ -86,7 +86,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
  * Issue #365: an ssh or client target whose probe has not found its home yet. `~` in a work tree cannot
  * resolve there, so no job is placed on it until it has; this machine's and a container target's need none.
  */
-const homeless = (m: MachineSnapshot): boolean => (m.ssh !== undefined || m.client !== undefined) && m.home === undefined;
+export const homeless = (m: MachineSnapshot): boolean => (m.ssh !== undefined || m.client !== undefined) && m.home === undefined;
 
 /**
  * Issue #371: an ended job of the same item whose cleanup has not gone through may still run in its pane;
@@ -144,7 +144,7 @@ function roomFor(s: MachineState, executor: string): number {
 }
 
 /** The most lanes jobs not pinned to it may hold: its lane cap less its reserved lanes (issue #372). */
-const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
+export const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
 
 /** Room for `job` there: a job not pinned to it also stays out of its reserved lanes. */
 function roomForJob(s: MachineState, job: Job): number {
