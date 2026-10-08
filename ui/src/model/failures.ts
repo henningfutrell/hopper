@@ -1,6 +1,6 @@
 // The Failures view's model (issue #509), pure: how a decision and an outcome read, their tone, which actions
 // show — only what the daemon says it takes now (`actions`) and the session's role allows — and the nav badge.
-import type { Allowed, FailureDecision, FailureRecordView, FailuresView } from './wire';
+import type { Allowed, FailureDecision, FailureRecordView, FailuresView, HandoffReason, HandoffView } from './wire';
 
 export const DECISION_LABEL: Record<FailureDecision, string> = { retry: 'retry', hold: 'held', redirect: 'redirected', person: 'needs a person' };
 export const DECISION_TONE: Record<FailureDecision, 'warn' | 'bad' | 'busy' | 'question'> = { retry: 'busy', hold: 'warn', redirect: 'warn', person: 'question' };
@@ -21,6 +21,19 @@ export const offered = (a: Allowed | undefined, canAct: boolean): boolean => can
 
 /** The nav badge: open problems. */
 export const openProblems = (f: FailuresView | null): number => f?.problems.filter((p) => p.status === 'open').length ?? 0;
+
+/** Needs a person (issue #516): the open hand-offs. Still open means still counted. */
+export const openHandoffs = (f: FailuresView | null): number => f?.handoffs.filter((h) => h.status === 'open').length ?? 0;
+
+/** Why a job was handed off to a person, in a few words. */
+export const HANDOFF_REASON_LABEL: Record<HandoffReason, string> = {
+  retry_limit: 'retries used up', person: 'job-specific', auto_off: 'automatic action off', not_retried: 'run again refused', dismissed: 'dismissed from the queue',
+};
+
+/** How a closed hand-off ended. */
+export function handoffEndText(h: HandoffView): string {
+  return h.end === 'run_again' ? 'ran again' : h.end === 'finished' ? 'its job finished' : 'cleared';
+}
 
 /** A count as `n thing(s)`. */
 export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

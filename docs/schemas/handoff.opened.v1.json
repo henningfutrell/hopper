@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "handoffId": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "retry_limit",
+        "person",
+        "auto_off",
+        "not_retried",
+        "dismissed"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "notify": {
+      "type": "boolean"
+    },
+    "recordId": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "retry",
+        "hold",
+        "redirect",
+        "person"
+      ]
+    },
+    "class": {
+      "type": "string",
+      "enum": [
+        "transient",
+        "shared",
+        "job"
+      ]
+    }
+  },
+  "required": [
+    "handoffId",
+    "reason",
+    "summary",
+    "notify"
+  ],
+  "additionalProperties": false
+}

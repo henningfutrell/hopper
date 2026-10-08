@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "handoffId": {
+      "type": "string"
+    },
+    "end": {
+      "type": "string",
+      "enum": [
+        "run_again",
+        "cleared",
+        "finished"
+      ]
+    },
+    "nextJobId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "handoffId",
+    "end"
+  ],
+  "additionalProperties": false
+}

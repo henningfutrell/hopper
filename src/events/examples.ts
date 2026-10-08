@@ -69,5 +69,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'failure.grouped': { problemId: 'p1', signature: '3f9c2a1b7d4e', title: 'Disk full on desk', opened: true, general: false, decision: 'redirect', scope: { machineId: 'desk' }, affected: 1 },
   'failure.resolved': { problemId: 'p1', title: 'Disk full on desk', by: 'check', released: 2 },
+  'handoff.opened': {
+    handoffId: 'h1', reason: 'retry_limit', summary: 'Needs a person. Ran 4 times on desk, the last for 2 min. Failed: read ECONNRESET.', notify: true,
+    recordId: 'f1', decision: 'person', class: 'transient',
+  },
+  'handoff.closed': { handoffId: 'h1', end: 'run_again', nextJobId: 'j2' },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

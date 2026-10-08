@@ -29,8 +29,13 @@ const record = (over: Record<string, unknown> = {}) => ({
   reasons: ['known cause: Disk full'], summary: 'Held: Disk full on desk', auto: true, evidence, problemId: 'p1', outcome: 'held',
   actions: { retry: { ok: false, why: 'it waits on its problem' } }, ...over,
 });
+const handoff = (over: Record<string, unknown> = {}) => ({
+  id: 'h1', jobId: 'j9', recordId: 'f2', status: 'open', reason: 'person', openedAt: at(-30), decision: 'person', class: 'job',
+  summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', reasons: ['no known cause matches', 'not seen on other jobs: it needs a person'], error: 'HOPPER_FAILED tests fail',
+  actions: { runAgain: { ok: true }, clear: { ok: true } }, ...over,
+});
 const view = (over: Record<string, unknown> = {}) => ({
-  now: at(0), settings, causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
+  now: at(0), settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
   problems: [problem()], recent: [record(), record({ id: 'f2', jobId: 'j9', cls: 'job', decision: 'person', outcome: 'surfaced', problemId: undefined, summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', actions: { retry: { ok: true } } })],
   profile: {
     days: [{ day: '2026-10-07', count: 1 }, { day: '2026-10-08', count: 3 }],
@@ -102,6 +107,8 @@ async function settle() {
 
 const buttonsIn = (el: Element | null) => [...(el?.querySelectorAll('button') ?? [])].map((b) => b.textContent ?? '');
 const problemCard = () => document.querySelector('[data-problem="p1"]');
+const handoffRow = (id = 'h1') => document.querySelector(`[data-handoff="${id}"]`);
+const navBadge = () => document.querySelector('a[href="#failures"] [data-slot="nav-badge"]')?.textContent;
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
@@ -190,5 +197,48 @@ describe('the Failures view', () => {
     await boot('#queue', { failures: view() });
     const a = document.querySelector('[data-job-id="j1"] [data-assessment]');
     expect(a?.textContent).toContain('Held: Disk full on desk');
+  });
+
+  it('Needs a person: each open hand-off with its reason and summary, its own count; the nav badge counts it too', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', jobId: 'j8', reason: 'retry_limit' })] }) });
+    const section = document.querySelector('[data-section="needs-a-person"]')!;
+    expect(section).not.toBeNull();
+    expect(section.querySelector('[data-slot="handoff-count"]')?.textContent).toBe('2');
+    expect(handoffRow()!.textContent).toContain('Needs a person. Ran 1 time on desk. Failed: tests fail.');
+    expect(handoffRow('h2')!.textContent).toContain('retries used up');
+    // One open problem and two open hand-offs.
+    expect(navBadge()).toBe('3');
+  });
+
+  it('offers only what the daemon takes: a refused action is hidden; a viewer is offered none', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', actions: { runAgain: { ok: false, why: 'a newer job of its item exists' }, clear: { ok: true } } })] }) });
+    expect(buttonsIn(handoffRow())).toEqual(expect.arrayContaining(['Run again', 'Clear']));
+    expect(buttonsIn(handoffRow('h2'))).not.toContain('Run again');
+    expect(buttonsIn(handoffRow('h2'))).toContain('Clear');
+    await act(async () => root?.unmount());
+    await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'viewer' });
+    expect(buttonsIn(handoffRow())).not.toContain('Run again');
+    expect(buttonsIn(handoffRow())).not.toContain('Clear');
+  });
+
+  it('Run again and Clear go to the daemon; once cleared, it leaves the badge', async () => {
+    const d: Daemon = { failures: view({ problems: [], handoffs: [handoff()] }) };
+    await boot('#failures', d);
+    expect(navBadge()).toBe('1');
+    const click = async (text: string) => {
+      const b = [...(handoffRow()?.querySelectorAll('button') ?? [])].find((x) => x.textContent === text) as HTMLButtonElement;
+      await act(async () => { b.click(); });
+      await settle();
+    };
+    await click('Run again');
+    expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/run-again');
+    await click('Clear');
+    expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/clear');
+    d.failures = view({ problems: [], handoffs: [handoff({ status: 'closed', end: 'cleared', closedAt: at(1), actions: { runAgain: { ok: false, why: 'already closed' }, clear: { ok: false, why: 'already closed' } } })] });
+    await act(async () => { FakeEventSource.last!.send({ seq: 2, schemaVersion: 1, id: 'e2', type: 'handoff.closed', at: at(1), jobId: 'j9', data: {} }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await settle();
+    expect(navBadge()).toBeUndefined();
+    expect(buttonsIn(handoffRow())).not.toContain('Clear');
   });
 });

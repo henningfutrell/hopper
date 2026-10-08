@@ -3,14 +3,16 @@
 // events, and the problem a shared cause is grouped into are written in one transaction. The runs again it decides
 // — a retry after its backoff, a redirect now, a held job released — are pending on the record, made by the sweep
 // through the sync loop's Run again, so they outlive a restart. The sweep also runs each open problem's check and
-// prunes past the retention.
+// prunes past the retention. A failed job automatic handling ended for is handed off to a person (issue #516,
+// `handoffs.ts`) in the same transaction as the record that ended it.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   DEFAULT_FAILURE_SETTINGS, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
-  type NamedCause, type PendingRun, type Problem, type ProblemBlock,
+  type Handoff, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
+import { createHandoffs } from './handoffs.ts';
 import { signatureOf } from './signature.ts';
 import { recordRetry, releasable, viewOf } from './view.ts';
 
@@ -19,6 +21,8 @@ export interface FailuresOptions {
   clock: Clock;
   /** Run an ended job's item again: the sync loop's Run again. */
   rerun(jobId: string, by: RerunBy): Promise<RerunResult>;
+  /** Dismiss a failed job's locked entry (issue #355): a cleared hand-off leaves the queue too. Throws when it is not one. */
+  dismiss(jobId: string): void;
   /** The machines now: a problem's check reads them. */
   machines(): Promise<MachineSnapshot[]>;
   /** Ask for a Decision: a problem opened or resolved changes what may start. */
@@ -47,6 +51,10 @@ export interface Failures {
   release(problemId: string): FailureAction<Problem>;
   /** A person runs a surfaced failure's job again. */
   retry(recordId: string): Promise<FailureAction<Job>>;
+  /** A person runs a hand-off's job again (issue #516): past its retry limit, past its problem's hold. */
+  runAgain(handoffId: string): Promise<FailureAction<Job>>;
+  /** A person clears a hand-off: acknowledged, no more work; its locked entry leaves the queue. */
+  clear(handoffId: string): FailureAction<Handoff>;
   nameCause(cause: NamedCause): KnownCause;
   forgetCause(signature: string): boolean;
 }
@@ -77,6 +85,7 @@ export function createFailures(o: FailuresOptions): Failures {
   let prunedAt = 0;
   const now = () => clock.now();
   const settings = (): FailureSettings => ({ ...DEFAULT_FAILURE_SETTINGS, ...store.settings.getFailureSettings() });
+  const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
 
   /** Its run in its chain of retries: 1, plus each earlier job of its item that a retry ran again. */
   function attemptOf(job: Job): number {
@@ -152,6 +161,7 @@ export function createFailures(o: FailuresOptions): Failures {
         ...(a.decision === 'retry' && a.auto ? { retryAt: pendingAt } : {}),
         ...(acts ? { pending: a.decision as PendingRun, pendingAt } : { outcome: problem ? 'held' as const : 'surfaced' as const, outcomeAt: at.toISOString() }),
       });
+      handoffs.afterRecord(record);
       store.jobs.update(job.id, {
         assessment: {
           recordId: record.id, at: record.at, class: a.cls, decision: a.decision, summary: a.summary, reasons: a.reasons,
@@ -191,7 +201,7 @@ export function createFailures(o: FailuresOptions): Failures {
       }
       const later = result.reason === 'source' ? SOURCE_DOWN_MS : /not reported|not running/.test(result.message) ? SOON_MS : undefined;
       if (later !== undefined) store.failures.update(r.id, { pendingAt: new Date(at.getTime() + later).toISOString(), note: result.message });
-      else store.failures.update(r.id, { pending: undefined, pendingAt: undefined, outcome: 'not_retried', outcomeAt: at.toISOString(), note: result.message });
+      else handoffs.afterRecord(store.failures.update(r.id, { pending: undefined, pendingAt: undefined, outcome: 'not_retried', outcomeAt: at.toISOString(), note: result.message }));
     });
   }
 
@@ -214,8 +224,9 @@ export function createFailures(o: FailuresOptions): Failures {
     const at = now().getTime();
     if (at - prunedAt < PRUNE_EVERY_MS) return;
     prunedAt = at;
-    const before = new Date(at - settings().retentionDays * DAY_MS).toISOString();
-    store.tx(() => { store.failures.prune(before); store.problems.prune(before); });
+    const s = settings();
+    const before = new Date(at - s.retentionDays * DAY_MS).toISOString();
+    store.tx(() => { store.failures.prune(before); store.problems.prune(before); handoffs.prune(new Date(at - s.handoffRetentionDays * DAY_MS).toISOString()); });
   }
 
   function sweep(): Promise<void> {
@@ -266,8 +277,11 @@ export function createFailures(o: FailuresOptions): Failures {
       for (const job of store.jobs.list({ status: ['failed'], limit: 500 })) {
         if (!job.assessment && Date.parse(job.finishedAt ?? job.updatedAt) >= since) assessJob(job.id);
       }
+      handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
+        if (stopped) return;
         if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => assessJob(id)); }
+        handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);
       void sweep();
@@ -313,6 +327,8 @@ export function createFailures(o: FailuresOptions): Failures {
       store.failures.update(r.id, { outcome: 'retried', outcomeAt: now().toISOString(), nextJobId: result.job.id, note: 'run again by a person' });
       return { ok: true, value: result.job };
     },
+    runAgain: (handoffId) => handoffs.runAgain(handoffId),
+    clear: (handoffId) => handoffs.clear(handoffId),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);
       return namedCause(cause);

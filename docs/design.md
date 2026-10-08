@@ -47,7 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) — and what the Failures view reads, with each action's refusal (`view.ts`). Its records and problems through the `FailureRepository` and `ProblemRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -8059,7 +8059,7 @@ backoff, the grouping threshold and window, `auto.retry` / `auto.hold` / `auto.r
 decision is recorded and waits for a person), `retentionDays` (default 90: records and resolved problems older
 are deleted, a pending one never). Read at each assessment and sweep: no restart. Named causes: `failureCauses`.
 
-**Failures view** (its own nav entry, after Logins; the badge counts open problems): open problems with their
+**Failures view** (its own nav entry, after Logins; the badge counts open problems and open hand-offs, "Needs a person"): open problems with their
 jobs, the held ones, Resolve and Release held; the recent assessed failures with their decision, summary and
 Retry; the profile and the known causes (an admin names a signature, or forgets one); the settings. `GET
 /api/failures` gives each problem and failure its `actions`, `{ ok }` or `{ ok: false, why }`, and the routes
@@ -8070,6 +8070,46 @@ under its error in the Queue and the Overview.
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
+
+## Needs a person (issue #516, 2026-10-08)
+
+A failed job the assessor handed to a person showed among the recent failures, which a window of 50 hides, and as a
+locked entry, which a dismiss hides: either way it could fall out of sight while nothing was still trying. A
+**hand-off** (`src/failures/handoffs.ts`, the `handoffs` table, tenant migration 23) is the durable place for it: it
+stays open until a person acts.
+
+**It opens** in the transaction that ends automatic handling (`handoffReason`, `handoff.ts`, pure): the assessor's
+record surfaced to a person (`person`; `retry_limit` when a transient cause used its retries), its decision's
+automatic action off (`auto_off`: a recommended retry, or a hold with automatic hold off), or a run again the
+assessor decided refused (`not_retried`). A dismissed locked entry with no hand-off, no pending run, not run again
+and not held by its problem opens one (`dismissed`). At start, records left waiting with no hand-off (a restart
+between the two, or a store from the build before) whose job is still failed, not dismissed and the newest of its
+item are handed off. One per job at a time; the record keeps `handoffId`, so it is never handed off twice. It keeps
+its assessment's summary, reasons and error, so it outlives the record's retention.
+
+**It closes** when its item runs again — a new job whose `rerunOf` is its job, from Needs a person, the Queue, the
+failure's Retry or the source (`run_again`) —, when a person clears it (`cleared`: acknowledged, no more work; its
+locked entry is dismissed), or when its job ends finished (`finished`: its issue closed as complete). Run again from
+Needs a person runs the item again past the retry limit and past its problem's hold (Release / Retry with override:
+one action), and marks the record `retried`.
+
+**It never goes by itself.** The prune deletes closed hand-offs older than `handoffRetentionDays` (default 30) and
+never an open one; the failure records' prune does not touch them.
+
+**Events.** `handoff.opened` (reason, summary, `notify`) and `handoff.closed` (end, `nextJobId`). `notify` is the
+setting `handoffNotify` (default on); off, the event is still recorded and streamed, but no webhook delivers it — the
+dispatcher delivers no event whose data says `notify: false`.
+
+**Failures view.** Needs a person first, its own count, then the open problems: each hand-off with its reason, the
+assessment summary (its reasons and error behind Assessment), Run again and Clear — offered only when
+`GET /api/failures` `handoffs[].actions` says the daemon takes it; `POST /ui/api/failures/handoffs/:id/run-again`
+and `/clear` (operator) refuse with the same reasons. The Failures nav badge counts open problems plus open
+hand-offs, read again on each `handoff.*` event: still open means still counted.
+
+Open decisions taken (issue #516): the name is *Needs a person*, a section of the Failures view, not a nav entry of its
+own, and the domain word is *hand-off* (*dead letter* stays a not-term, as for the locked entry); the locked entry
+stays in the Queue beside its hand-off (Clear dismisses it); entering notifies by a setting, default on. No setting
+moves the badge: the Failures entry carries it.
 
 ## Parked jobs (issue #501, 2026-10-08)
 
