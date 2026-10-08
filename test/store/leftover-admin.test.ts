@@ -31,7 +31,7 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
     executors: [{ name: 'test', plugin: 'test' }],
   }, admin.config.version('plugins'));
   admin.settings.setQueueGate({ mode: 'review', autoAcceptPerHour: null });
-  admin.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/admin', events: ['job.*'], secretEnv: 'S', active: true });
+  admin.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/admin', events: ['job.*'], active: true });
   admin.close();
 
   const octoUser = instance.users.add('octo');
@@ -46,8 +46,8 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
     jobSources: [{ name: 'github-account', plugin: 'github-account', options: {} }],
   }, octo.config.version('plugins'));
   octo.settings.setQueueGate({ mode: 'auto-accept', autoAcceptPerHour: 5 });
-  octo.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/octo', events: ['job.*'], secretEnv: 'S', active: true });
-  const octoHook = octo.webhooks.add({ name: 'octo-hook', url: 'http://127.0.0.1:1/octo-2', events: ['job.*'], secretEnv: 'S', active: true })!;
+  octo.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/octo', events: ['job.*'], active: true });
+  const octoHook = octo.webhooks.add({ name: 'octo-hook', url: 'http://127.0.0.1:1/octo-2', events: ['job.*'], active: true })!;
   const delivery = octo.webhooks.createDelivery(octoHook.id, octoEvent);
   octo.connectedAccounts.put({ provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
   octo.close();
