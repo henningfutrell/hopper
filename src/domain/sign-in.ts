@@ -37,8 +37,8 @@ export const MAX_SESSION_HOURS = 8760;
  * the gateway's token for it was refused, or its issuer stayed out of reach past the grace period; the sign-in
  * config changed under it (its realm gone or off, or no rule grants it a role); or it logged out.
  */
-export type SessionEndReason = 'expired-idle' | 'expired-absolute' | 'refresh-refused' | 'provider-unreachable' | 'realm-changed' | 'logout';
-export const SESSION_END_REASONS: readonly SessionEndReason[] = ['expired-idle', 'expired-absolute', 'refresh-refused', 'provider-unreachable', 'realm-changed', 'logout'];
+export type SessionEndReason = 'expired-idle' | 'expired-absolute' | 'refresh-refused' | 'provider-unreachable' | 'realm-changed' | 'connection-ended' | 'logout';
+export const SESSION_END_REASONS: readonly SessionEndReason[] = ['expired-idle', 'expired-absolute', 'refresh-refused', 'provider-unreachable', 'realm-changed', 'connection-ended', 'logout'];
 
 /** Who signed in, as every realm reports it. */
 export interface Identity {

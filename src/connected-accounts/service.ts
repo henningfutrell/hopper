@@ -272,6 +272,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       return withInstallations(status(provider));
     },
     account: (provider) => { const c = current(provider); return c && !('unreadable' in c) && !c.ended ? c.account.account : undefined; },
+    expired: (provider) => { const c = current(provider); return c !== undefined && !('unreadable' in c) && c.ended !== undefined; },
     ended: (provider) => { const c = current(provider); return !c ? undefined : 'unreadable' in c ? c.unreadable : c.ended ? expired(provider) : undefined; },
     renew: (provider, refused) => renewer.renew(provider, refused),
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),

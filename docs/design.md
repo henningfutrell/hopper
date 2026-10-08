@@ -6983,8 +6983,9 @@ keeps the files it has until the next renewal reaches it. A machine whose connec
 executor with no machine shell) runs the job with `env` — `GH_TOKEN` as at its start — and says so in its
 progress. The reap removes the credentials dir whatever else it keeps.
 
-**Hopper sessions are not bound to the token.** A token expiring, renewing or failing to renew never ends a
-hopper UI session; its lifetime is #439's.
+**Hopper sessions are not bound to the token** while the connection lives: a token renewing or failing to
+renew for a reason that may pass never ends a hopper UI session; its lifetime is #439's. A connection that
+**ends** ends the sessions signed in with GitHub (issue #513, "A GitHub sign-in ends with its connection").
 
 **Verification:** `test/connected-accounts/rotation.test.ts` (real Postgres, two connections to one user
 schema as two processes, the real renewal over HTTP to the fake GitHub, a fake clock: renewed by the
@@ -8042,3 +8043,44 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   reminder or limit for parked jobs.
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
+
+## A GitHub sign-in ends with its connection (issue #513, 2026-10-08)
+
+Owner request: when the connected GitHub account ended ("GitHub sign-in expired: connect again"), the person
+stayed signed in to the hopper: Sources paused, the header asked to connect again, and the rest of the UI stayed
+live. The person looked signed in while what they signed in for — reading their `hopper` issues and acting on
+GitHub — was gone. The connection ending must end the hopper sessions that depended on it; signing in with GitHub
+again restores both; no "still signed in, only reconnect GitHub" path for someone whose sign-in that connection was.
+
+**As built** (`src/http/ui/sessions.ts`, `src/http/index.ts`; `ConnectedAccounts.expired`):
+- **A session signed in with GitHub** — its realm is a `github` realm — **ends when its user's GitHub connection
+  has ended** (`expired`: GitHub refused the refresh token itself with no newer pair stored, or the token is past
+  its expiry with nothing to renew it; "Keeping the connection"). It is checked where every expiry is, on lookup
+  (`live`): the request that names it, its renewal, and the sweep of the stored sessions — so it ends after a
+  restart too, and each gets its event even when no request names it. A renewal trouble or a token the runtime
+  cannot open (`failed`) ends nothing: neither is an end of the connection.
+- **Reason `connection-ended`**: logged (`hopper: UI session ended (connection-ended): …`) and recorded as
+  `ui_session.ended { reason: 'connection-ended', realm }` in the user's events, beside `connected_account.expired`.
+- **The UI goes to sign-in at once.** The header's **GitHub sign-in expired: connect again** shows only to
+  someone signed in another way; signed in with GitHub, an ended connection on the source makes the page ask
+  `GET /ui/api/session` at once (`recheckSession`), which the daemon answers signed out, and the page goes to
+  sign-in with the realm, keeping the page it was on (#439's `reauth`). The Sources panel offers no **Connect
+  GitHub again** to a GitHub sign-in. Signing in with GitHub again adopts the new grant (`ConnectedAccounts.adopt`,
+  which replaces the ended record): a session and a live connection in one step, then the page it was on.
+
+**Open decisions, taken without asking** (the issue's D1, D2):
+- **D1 — only sessions signed in with GitHub.** A person signed in at the edge (OIDC, SAML, a gateway, the login
+  code) whose GitHub was connected from Sources keeps their session; their GitHub sign-in was never their hopper
+  sign-in, so the header and the Sources panel keep asking them to connect again. Ending theirs too would sign
+  someone out because of an integration, which the edge realm (the authority for their sign-in) did not ask for.
+- **D2 — every GitHub session of that user, not only the browser that last used it.** All of them signed in
+  through the connection that ended; the hopper does not record which browser used the connection last, and a
+  second browser left signed in would be the same half-working state the issue removes.
+
+**Verification:** `test/http/ui-sessions.test.ts` (every GitHub session of the user ends, as `connection-ended`,
+on lookup and on renewal; a session of that user signed in another way stays; a live connection and another
+user's session stay), `test/integration/connection-ended-session.test.ts` (the real daemon and a fake GitHub on
+loopback: two browsers signed in with GitHub, GitHub revokes the grant, both sessions read signed out, a change
+is refused, two `ui_session.ended` events; signing in with GitHub again gives a session and a connected account;
+a token refused while its refresh token works is renewed and ends no session), `test/ui/sources-view.test.ts`
+(signed in with GitHub, an ended connection goes to sign-in at once, with no reconnect offered and the page kept).

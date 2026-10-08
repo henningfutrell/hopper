@@ -1,10 +1,12 @@
 // The top bar: version (opens the version and update panel, on every screen), connection,
 // router health, uptime, the API reference, who you are at every width (issue #167: the user the session
 // acts for with its role), logout, and a device link for another browser. Shown only signed in (issue #213).
-// A GitHub connection that ended asks to connect again here, on every screen (issue #441). Pending logins are
+// A GitHub connection that ended asks to connect again here, on every screen (issue #441) — unless the person signed in
+// with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477).
 // On a phone the wordmark and the API reference give way, so the version badge with its channel and who you are fit (issue #497).
 import { BookOpen, KeyRound, LogOut, Moon, Sun } from 'lucide-react';
+import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { Button } from '@/components/ui/button';
@@ -12,9 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { connectionEnded } from '@/model/sources';
-import { logout, useHopper } from '@/store';
+import { logout, recheckSession, useHopper } from '@/store';
 import { cn } from '@/lib/utils';
-import { useCanAdmin, useLoginsBadge } from '@/store/selectors';
+import { useCanAdmin, useLoginsBadge, useSignedInWith } from '@/store/selectors';
 import { DeviceLink } from './device-link';
 import { UpdateButton } from './update';
 
@@ -26,6 +28,9 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const canAdmin = useCanAdmin();
   const theme = useTheme();
   const ended = useHopper((s) => connectionEnded(s.sources));
+  const signedInWithGitHub = useSignedInWith('github');
+  // Signed in with GitHub, the session ended with the connection (issue #513): no reconnect here, straight to sign-in.
+  useEffect(() => { if (ended && signedInWithGitHub) void recheckSession(); }, [ended, signedInWithGitHub]);
   const logins = useLoginsBadge();
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
@@ -37,7 +42,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
         </div>
         <UpdateButton version={health?.version} />
         <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
-          {ended && (
+          {ended && !signedInWithGitHub && (
             <a data-connection-ended href="#sources" title={ended}
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub sign-in expired: connect again</a>
           )}

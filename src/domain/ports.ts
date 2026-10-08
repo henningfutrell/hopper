@@ -687,6 +687,8 @@ export interface ConnectedAccounts {
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Whether the account's sign-in ended (issue #513): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
+  expired(provider: ConnectedAccountProvider): boolean;
   /** Forget the account and its token; its job repositories stay chosen. */
   disconnect(provider: ConnectedAccountProvider): ConnectedAccountStatus;
   /** Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. */

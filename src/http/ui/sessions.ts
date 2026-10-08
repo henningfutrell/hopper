@@ -7,8 +7,9 @@
 // idle timeout without one, or at its maximum however much it is used. The lengths are read at each lookup, so
 // a change in Settings → Sign-in applies to the sessions there are. A session a gateway realm made renews only
 // while the token the gateway forwards still checks out for the same person: the gateway stays the authority.
-// An issuer out of reach does not end it until GATEWAY_GRACE_MS after the last good check. Every end is
-// reported to `ended` with its reason.
+// An issuer out of reach does not end it until GATEWAY_GRACE_MS after the last good check. A session signed in
+// with GitHub ends when its user's GitHub connection does (issue #513): that connection is what they signed in
+// for. Every end is reported to `ended` with its reason.
 import { createHash } from 'node:crypto';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, UiSessionRepository, UiSessionRow } from '../../domain/ports.ts';
@@ -66,6 +67,8 @@ export function createUiSessions(o: {
   /** The sign-in config as it applies now (the session lengths, which realms are gateways) and the gateway check. */
   signIn: Pick<SignIn, 'config' | 'checkGateway'>;
   ended?: (s: EndedSession) => void;
+  /** Whether the user's GitHub connection ended (issue #513): their sessions signed in with GitHub end with it. */
+  connectionEnded?: (userId: string) => boolean;
   /** A request carried a token no stored session has (ended earlier, a database reset, another hopper's): once per token. */
   unknown?: () => void;
 }): UiSessions {
@@ -73,17 +76,18 @@ export function createUiSessions(o: {
   const lengths = (): SessionLengths => o.signIn.config().sessions;
   const renewEvery = (): number => Math.min(RENEW_EVERY_MS, lengths().idleHours * HOUR / 10);
   const isGateway = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'gateway');
+  const isGitHub = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'github');
   const end = (r: UiSessionRow, reason: SessionEndReason): void => {
     o.repo.drop(r.tokenHash);
     o.ended?.({ userId: r.userId, identity: r.identity, reason });
   };
-  /** The row, unless it has expired: then it ends. */
+  /** The row, unless it has expired or, signed in with GitHub, its user's GitHub connection ended: then it ends. */
   const live = (r: UiSessionRow | undefined): UiSessionRow | undefined => {
     if (!r) return undefined;
     const e = endOf(r, lengths());
-    if (now() < e.at) return r;
-    end(r, e.reason);
-    return undefined;
+    if (now() >= e.at) { end(r, e.reason); return undefined; }
+    if (isGitHub(r.identity.realm) && o.connectionEnded?.(r.userId) === true) { end(r, 'connection-ended'); return undefined; }
+    return r;
   };
   const unknownSeen = new Set<string>();
   const unknownToken = (hash: string): void => {

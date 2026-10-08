@@ -72,6 +72,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
       console.warn(`hopper: UI session ended (${reason}): ${identity.realm} ${identityName(identity)} as user ${userId}`);
       o.tenants.user(userId)?.store.events.append({ type: 'ui_session.ended', data: { reason, realm: identity.realm } });
     },
+    // Signed in with GitHub, the session ends with the user's GitHub connection (issue #513).
+    connectionEnded: (userId) => o.tenants.user(userId)?.connectedAccounts.expired('github') === true,
     unknown: () => console.warn('hopper: a request carried a UI session token this hopper holds no session for: it ended before, the database was reset, or it is another hopper\'s; the UI signs in again'),
   });
   // The sign-in config may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
