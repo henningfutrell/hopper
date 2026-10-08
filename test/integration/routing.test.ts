@@ -1,6 +1,7 @@
 // Issue #18: routing rules through the real daemon. Applied at intake, when a source item becomes
 // a job: the first matching rule sets the job's machine pin, executor and/or priority, and the job
-// records it (`spec.routedBy`). A rule change applies to new jobs only. Edited from the UI with
+// records it (`spec.routedBy`). A rule change applies to new jobs, and to a waiting job on the next sync
+// of its source (issue #375; respec.test.ts). Edited from the UI with
 // POST /ui/api/routing (whole list, validated, the `routing` section only, 409 stale).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job, RoutingReport } from '../../src/domain/types.ts';
@@ -109,7 +110,7 @@ describe('GET /api/routing and POST /ui/api/routing', () => {
     expect(r.version).toBe((await a.api('GET', '/api/plugins')).body.config.version);
   });
 
-  it('writes the whole list into the routing section only; other sections stay; new jobs only', async () => {
+  it('writes the whole list into the routing section only; other sections stay; a waiting job takes it on the next sync', async () => {
     const a = await boot({}, undefined, FILE);
     const token = await a.login();
     a.setUsage(100);
@@ -123,8 +124,7 @@ describe('GET /api/routing and POST /ui/api/routing', () => {
     expect(readConfig(a.dbPath, 'plugins')).toEqual({ ...FILE, routing: rules });
     const after = await a.pull({ op: 'echo' }, { title: 'new job' });
     expect(after.priority).toBe(80);
-    expect((await a.job(before.id)).priority).toBe(50);
-    expect((await a.job(before.id)).spec.routedBy).toBeUndefined();
+    expect((await a.job(before.id)).priority).toBe(80);
     a.setUsage(0);
   });
 

@@ -69,7 +69,7 @@ function options(raw: Record<string, unknown> = {}): Opts {
 }
 
 function router(o: Partial<Opts> = {}) {
-  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, userEnv: {}, scratchDir: dataDir, instanceName: 'jev', env: (n: string) => process.env[n] };
+  const ctx = { clock: fixedClock, logger: { info() {}, warn() {} }, dataDir, userEnv: {}, secretName: (n: string) => n, scratchDir: dataDir, instanceName: 'jev', env: (n: string) => process.env[n] };
   return gateRouter.create(ctx, options({ jevPath: CHECKOUT, ...o }));
 }
 

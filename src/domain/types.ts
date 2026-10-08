@@ -54,9 +54,12 @@ export interface JobSpec {
   machineId?: MachineId;
   /** Free metadata for the router (grok-bot-jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
-  /** The routing rule that set this job's machine, executor or priority at intake (issue #18). */
+  /** The routing rule that set this job's machine, executor, priority or work tree (issue #18), at intake or a later sync (issue #375). */
   routedBy?: RoutedBy;
 }
+
+/** What a job's source and routing rules give its spec (issue #375); `cwd`, `defaultCwd`, `model`: the payload's. */
+export interface SpecFromConfig { executor: string; model?: string; cwd?: string; defaultCwd?: string; machineId?: MachineId; rule?: string }
 
 export interface Job {
   id: JobId;
@@ -99,6 +102,8 @@ export interface Job {
   pendingAnswer?: string;
   /** Machine a resuming job must return to (its pane lives there). */
   resumeOn?: MachineId;
+  /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
+  fromConfig?: SpecFromConfig;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */
   source?: JobSourceRef;
   /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
@@ -277,11 +282,10 @@ export interface Decision {
 
 export const EVENT_TYPES = [
   'job.queued', 'job.prioritized', 'job.held', 'job.approved', 'job.claimed', 'job.started',
-  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized',
+  'job.progressed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.reattached', 'job.reprioritized', 'job.respecified',
   'lane.opened', 'lane.closed', 'decision.made',
-  'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
-  'update.available', 'update.started', 'update.applied', 'update.failed',
-  'plugin.installed', 'plugin.removed',
+  'question.asked', 'question.escalated', 'question.escalated_to_human', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
+  'update.available', 'update.started', 'update.applied', 'update.failed', 'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
   'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept',
   'source.stalled', 'connected_account.expired',
@@ -295,11 +299,10 @@ export type EventType = typeof EVENT_TYPES[number];
 export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.queued': 1, 'job.prioritized': 3, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
   'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
-  'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'lane.opened': 1, 'lane.closed': 1,
+  'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'job.respecified': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 3, 'question.asked': 1, 'question.escalated': 2, 'question.escalated_to_human': 1,
-  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1,
-  'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
-  'plugin.installed': 1, 'plugin.removed': 1,
+  'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1, 'question.lapsed': 1,
+  'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1, 'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
   'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1,
   'source.stalled': 1, 'connected_account.expired': 1,
@@ -360,9 +363,10 @@ export interface WebhookDelivery {
 // ---- Questions ---------------------------------------------------------------------
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
+/** `lapsed`: nobody answered a dialog before its countdown ran out; the agent denied it by itself and went on (issue #376). */
 /** `closed`: the owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
 /** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
-export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'cancelled';
+export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'cancelled';
 
 /** Who made an attempt: an escalation level, or the human. */
 export type AttemptRole = 'level' | 'human';
@@ -409,11 +413,12 @@ export interface Question {
   /** Whose answer was typed: the level instance that answered, or `human` (also for a closed question). */
   answeredBy?: string;
   /** Human tier: when it was first and last notified, and how often. */
-  escalatedToHumanAt?: string;
-  lastNotifiedAt?: string;
+  escalatedToHumanAt?: string; lastNotifiedAt?: string;
   notifyCount: number;
   /** Human tier: when the question expires and the job fails. */
   expiresAt?: string;
+  /** A dialog with a countdown (issue #376): the agent denies it by itself then, unless answered first; it is `lapsed`. */
+  lapsesAt?: string;
   /** When the owner first saw it in the UI (POST /ui/api/questions/:id/seen). Unseen open questions at the human stage are the nav badge. */
   seenAt?: string;
   createdAt: string;

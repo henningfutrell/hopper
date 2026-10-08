@@ -128,7 +128,7 @@ an idle tick every 2 s would bury the decision log. Every recorded Decision emit
 ## The engine
 
 - **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events
-  `job.queued`, `job.prioritized`, `job.reprioritized`, `job.approved`, `job.finished`,
+  `job.queued`, `job.prioritized`, `job.reprioritized`, `job.respecified`, `job.approved`, `job.finished`,
   `job.failed`, `job.cancelled`, `question.asked`, `question.answered`,
   `question.expired`, and the queue gate's `job.accepted`, `job.rejected`, `queue.ordered`, `queue.gate_changed` (`TRIGGERS`, `src/engine/index.ts`). Decisions are serialized; triggers
   arriving mid-decision coalesce into one follow-up, which keeps the first waiting trigger's name
@@ -378,6 +378,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.requeued` | `{ from, reason: "daemon restart" }` |
 | `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
+| `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -516,7 +517,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
   tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
   cannot move them. (cursor-agent and the other print agents keep the shared `<cwd>/.hopper-scratch`;
-  they have no reap.)
+  they have no reap.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
+  Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
+  the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
   `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
@@ -854,6 +857,16 @@ line each — time, outcome, first line of the question — that opens to the qu
 and who gave it, and the job. The history is local to the hopper's SQLite file: no route sends it
 anywhere, and the hopper writes nothing of a question to GitHub (it writes only labels).
 
+**Lapsed** (issue #376). Claude Code may deny a dialog by itself when its countdown runs out ("Claude
+Code will automatically deny this request in 1:59, …"; `autoDenyMs` in `screen.ts`). The monitor reads
+the countdown when the job parks: the question gets `lapsesAt`, the pane state too, the human stage's
+`question.escalated`/`question.escalated_to_human` carry it, and the UI shows it on the open question.
+When the job's work runs again (below) with nothing typed, at or after `lapsesAt` (less 5 s: the
+countdown is read in whole seconds, up to a poll late), nobody answered: one tx, question `lapsed`,
+`question.lapsed { questionId, lapsesAt }`, no `question.answered`, any stage aborted, and the job
+reattached as below with `reason: "the dialog lapsed"`. A key pressed in the pane before the countdown
+ends is still the owner's answer.
+
 **Answered in the pane.** The owner may type the answer straight into a parked pane instead of
 the UI. On every engine tick, `src/engine/pane-answers.ts` asks the executor of each
 `waiting_answer` job `answeredInPane(job)` (port method; herdr-claude implements it; the decider
@@ -1120,8 +1133,9 @@ source every `pollSeconds`:
    `ingest(item)` — spec `{ executor: item.executor, payload: { prompt, cwd, model?, env },
    priority, goal: title, submittedBy: "<source>:<author>", kind: "coding" }`; `item.invalid`
    or a payload the executor rejects → job created and failed in one tx (`job.queued` +
-   `job.failed`); for items that already have a job: `host.reprioritize(jobId,
-   item.priority, item.priorityReason)` (re-sort; applies only to queued/held),
+   `job.failed`); for items that already have a job: `host.refresh(jobId, item, source)`
+   (re-sort and respecify; applies only to queued/held — see **Waiting jobs take the config as
+   it is now** below),
    `source: JobSourceRef`, with `payload.prompt = item.prompt`, `payload.env = item.env` —
    then `report({kind:'claimed'})`, merge the returned patch into
    `sourceState`. A key whose newest job is not re-runnable → skip (the host's `ingest` guard).
@@ -1146,6 +1160,25 @@ source every `pollSeconds`:
    once when the source is ok again; a source in error longer than the **stall threshold**
    (`STALL_AFTER_MS`, 30 min) records `source.stalled { source, kind, error, since }` once per run of
    failures, which the notifiers send.
+
+**Waiting jobs take the config as it is now** (issue #375). Each sync offers every item that already
+has a waiting (`queued`/`held`) job to `host.refresh(jobId, item, source)`, one tx that re-reads the
+job (`src/engine/source-host.ts`):
+
+- **Priority:** the routing rule's, else the item's, as now; a change → `job.reprioritized`. A job
+  that ran before (requeued) is re-sorted too.
+- **Spec, only while the job has never started** (`attempts` 0, no pending answer): routing is run
+  again and the parts the source and routing rules give the spec — executor, model, work tree,
+  default work tree, machine pin, routing rule (`SpecFromConfig`) — are worked out again. The job
+  keeps what they gave it last as `fromConfig` (absent on a job from before: its spec as it is). A
+  part whose value on the job differs from `fromConfig` was changed by hand and is kept; the others
+  take the new value. When the config's answer changed, the spec is replaced
+  (`JobRepository.respecify`), `fromConfig` updated and `job.respecified { from, to }` recorded; a
+  Decision follows, since the pin may have moved. A new spec its executor rejects is not applied
+  (logged); the job keeps the old one.
+- **A started job keeps its spec.** A job waiting on an answer resumes in the pane, agent session
+  and work tree it ran in, so neither its machine nor its work tree can change under it. To run it on
+  the new config, cancel it and run it again.
 
 **Re-run.** A source key may have many jobs; `jobs.source_key` is an index, not unique, and
 `getBySourceKey` returns the **newest** (`created_at`, then `seq`, descending). An item whose
@@ -1879,11 +1912,12 @@ question reaches the owner (questions never go onto the issue), and when intake 
   `account`, `reason`). Never `job.finished` or `job.failed`.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
   `GROKBOT_WEBHOOK_KEY`) name two runtime secrets ("Secrets"): the variable, or the mounted file the
-  variable `<name>_FILE` names. Read at each use, so a file written or changed later applies without a
-  restart. Only the `_FILE` variables must be there at start; `compose.yaml` sets both by default to
-  files in the hopper's home volume (`~/.config/hopper/grokbot-webhook-url` and `-key`), so the routine is
-  set up, or its key rotated, by writing those files into the running container. A file named but not
-  there yet, or either value unset: needs-setup, and nothing is sent. (Before issue #378 this section
+  variable `<name>_FILE` names, both with the user's **secret prefix** (`HOPPER_USER_<ID>_` for every user
+  signed in with GitHub; empty only for the default admin account), so a user's routine is
+  `HOPPER_USER_<ID>_GROKBOT_WEBHOOK_URL` and `_KEY`. Read at each use: once the `_FILE` variables are in
+  the runtime, the files can be written, or the key rotated, without a restart. Detection, its command
+  and the test event name the variables as the runtime reads them (`PluginContext.secretName`). Missing
+  or a named file not there yet: needs-setup, and nothing is sent. (Before issue #378 this section
   described an `envFile` option the plugin never had.)
 - Open questions (issue #378): a question escalated while the routine is not configured is not lost.
   The notifier checks every 5 s; when the routine **becomes** configured it sends each question open at
@@ -4455,7 +4489,10 @@ routing:
   author and title come from `SourceItem`. The job records `spec.routedBy { rule, set }` (additive
   in `job.queued`, still v1), and the UI shows it on the job. A source re-sort does not change a
   priority that a rule set.
-- **New jobs only.** A rule change does not touch jobs already created. The UI copy says so.
+- **New jobs, and waiting jobs that have not started** (issue #375). A rule change reaches a
+  queued or held job that has never started on the next sync of its source, as the source's own
+  options do (**Waiting jobs take the config as it is now**, "Job sources"). A started job keeps how
+  it was routed. The UI copy says so.
 - **Targets.** If a rule names a machine or executor that is not configured, a save returns 400.
   If the target disappears later, intake skips the rule with a warning and tries the next one.
   Intake never fails on a rule. `GET /api/routing` lists those rules under `skipped`.
@@ -6716,7 +6753,8 @@ running jobs' panes (issue #350), so a restart is no way to apply a setting.
   is synced at once. A changed one (same name, new instance — its `defaultCwd`, `repoPaths`,
   `completion`, authors, …) takes over the slot: its counts and its jobs are kept, and from its next sync
   it pulls, checks and reports through the new instance. Options read at intake (`defaultCwd`,
-  `repoPaths`, priority) apply to the next job; a job already queued keeps what it was given. Completion
+  `repoPaths`, `model`, priority) apply to the next job, and to a waiting job that has not started on
+  the next sync (issue #375). Completion
   is judged when a job ends, so a running job is judged by the source as it is then. A removed source
   pulls nothing more: it stays, paused as `removed from the plugins config`, checks and reports its own
   jobs until each has ended and its end is reported, then goes. No job is cancelled or failed for it.

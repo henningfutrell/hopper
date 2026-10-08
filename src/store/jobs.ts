@@ -7,6 +7,13 @@ export function createJobRepository(c: StoreContext): JobRepository {
     const r = c.db.get('SELECT body FROM jobs WHERE id = ?', id);
     return r ? parse<Job>(r.body) : undefined;
   };
+  const write = (id: string, change: (cur: Job) => Job): Job => {
+    const cur = get(id);
+    if (!cur) throw new Error(`job not found: ${id}`);
+    const next: Job = { ...change(cur), updatedAt: c.clock.now().toISOString() };
+    c.db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', next.status, JSON.stringify(next), id);
+    return next;
+  };
   return {
     create(spec, priority, source) {
       const at = c.clock.now().toISOString();
@@ -27,11 +34,10 @@ export function createJobRepository(c: StoreContext): JobRepository {
       return c.db.all(`SELECT body FROM jobs ${where} ORDER BY created_at DESC, seq DESC ${limit}`, ...args).map((r) => parse<Job>(r.body));
     },
     update(id, patch) {
-      const cur = get(id);
-      if (!cur) throw new Error(`job not found: ${id}`);
-      const next: Job = { ...applyPatch<Job>(cur, patch), updatedAt: c.clock.now().toISOString() };
-      c.db.run('UPDATE jobs SET status = ?, body = ? WHERE id = ?', next.status, JSON.stringify(next), id);
-      return next;
+      return write(id, (cur) => applyPatch<Job>(cur, patch));
+    },
+    respecify(id, spec) {
+      return write(id, (cur) => ({ ...cur, spec }));
     },
   };
 }

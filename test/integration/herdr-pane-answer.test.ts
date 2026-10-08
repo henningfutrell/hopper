@@ -105,3 +105,52 @@ describe('a question answered by typing into the pane', () => {
     await a.waitForStatus(job.id, 'finished', 8000);
   });
 });
+
+// Issue #376: Claude Code denies some dialogs by itself when their countdown runs out. Claude goes on, but
+// nobody answered: the question lapsed, it was never answered by the human.
+describe('a dialog Claude Code denies by itself', () => {
+  const dialog = (countdown: string) => ({
+    output: ['● Bash(rm -rf scratch)'],
+    dialog: [' Bash command', '   rm -rf scratch', ` ⚠ Claude Code will automatically deny this request in ${countdown}, to avoid blocking progress on an unattended session`, ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No'],
+    end: 'blocked' as const,
+  });
+
+  it('the question lapses, not answered by the human; the human was told when it would; the job goes on', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [dialog('0:01'), DONE] });
+    const a = await start(herdr);
+    const job = await a.pull({}, item);
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect(q.lapsesAt).toEqual(expect.any(String));
+    const toHuman = (await ofJob(a, job.id)).find((e) => e.type === 'question.escalated_to_human')!;
+    expect(toHuman.data).toMatchObject({ lapsesAt: q.lapsesAt });
+    const { agentName } = (await a.job(job.id)).executorState as { agentName: string };
+    await new Promise((r) => setTimeout(r, Math.max(0, Date.parse(q.lapsesAt!) - Date.now())));
+
+    herdr.lapseDialog(agentName);
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    const [after] = await a.questionsOf(job.id);
+    expect(after).toMatchObject({ id: q.id, status: 'lapsed' });
+    expect(after!.answeredBy).toBeUndefined();
+    expect(after!.answer).toBeUndefined();
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'question.answered')).toBeUndefined();
+    expect(events.find((e) => e.type === 'question.lapsed')!.data).toEqual({ questionId: q.id, lapsesAt: q.lapsesAt });
+    expect(events.find((e) => e.type === 'job.reattached')!.data).toEqual({ reason: 'the dialog lapsed' });
+    expect(herdr.prompts).toHaveLength(1);
+  });
+
+  it('an option picked in the pane before the countdown runs out is the human\'s answer', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [dialog('1:59'), DONE] });
+    const a = await start(herdr);
+    const job = await a.pull({}, item);
+    await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    const { paneId } = (await a.job(job.id)).executorState as { paneId: string };
+
+    await herdr.sendText(paneId, '1');
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    const [after] = await a.questionsOf(job.id);
+    expect(after).toMatchObject({ status: 'answered', answeredBy: 'human', answer: '(answered in the pane)' });
+  });
+});

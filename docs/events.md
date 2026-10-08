@@ -241,6 +241,31 @@ Version 1 (`docs/schemas/job.reprioritized.v1.json`). A source re-sorted a waiti
 }
 ```
 
+## `job.respecified`
+
+Version 1 (`docs/schemas/job.respecified.v1.json`). A sync worked out a job that has not started from the config as it is now (issue #375), and its executor, model, work tree, default work tree, machine pin or routing rule changed. `from` and `to` are what the source and routing rules gave it; a part changed on the job by hand keeps the hand value, so the spec can differ from `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "executor": "herdr-claude",
+    "cwd": "~/code/app"
+  },
+  "to": {
+    "executor": "herdr-claude",
+    "model": "claude-opus-5-5",
+    "cwd": "~/code/app-win",
+    "machineId": "win-native",
+    "rule": "windows"
+  }
+}
+```
+
 ## `lane.opened`
 
 Version 1 (`docs/schemas/lane.opened.v1.json`). A Decision opened a lane.
@@ -360,6 +385,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 | `answerUrl` | string | no |
 | `notifyCount` | integer | no |
 | `renotify` | boolean | no |
+| `lapsesAt` | string | no |
 
 ```json
 {
@@ -388,6 +414,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `goal` | string | no |
 | `answerUrl` | string | yes |
 | `notifyCount` | integer | yes |
+| `lapsesAt` | string | no |
 
 ```json
 {
@@ -463,6 +490,22 @@ Version 1 (`docs/schemas/question.expired.v1.json`). The human stage timed out a
 {
   "questionId": "q1",
   "after_ms": 1000
+}
+```
+
+## `question.lapsed`
+
+Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in time: the agent denied it by itself when its countdown ran out (Claude Code's auto-deny), and the job went on (`job.reattached`, reason `the dialog lapsed`). `lapsesAt` is when the countdown ended. Not an answer: nothing is typed, and no stage answered; any escalation level call in flight is aborted.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `lapsesAt` | string | yes |
+
+```json
+{
+  "questionId": "q1",
+  "lapsesAt": "2026-10-07T21:43:59.000Z"
 }
 ```
 

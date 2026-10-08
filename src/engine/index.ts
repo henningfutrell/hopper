@@ -23,10 +23,11 @@ export type { MachineView, QueueView } from './queries.ts';
 const SHUTDOWN_WAIT_MS = 5000;
 
 /** Events that can change admission, so they wake the engine. A question frees a lane; an
- * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order. */
+ * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
+ * a respecified job may be pinned to another machine. */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
-  'job.queued', 'job.prioritized', 'job.reprioritized', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
-  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired',
+  'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
+  'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
 ]);
 
@@ -34,7 +35,7 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
   /** Registered executor names. */
   /** The runnable executors now: they follow the plugins config (issue #142). */
   readonly executorNames: string[];
-  /** What the sync loop may do to the hopper (ingest, cancel, answer, reprioritize, setSourceState). */
+  /** What the sync loop may do to the hopper (ingest, cancel, answer, refresh, setSourceState). */
   readonly sourceHost: SourceHost;
   /** Recover from a previous run (jobs — reattaching live ones —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;

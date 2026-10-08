@@ -9,18 +9,21 @@ import { createGrokBotNotifier, type Routine } from './notifier.ts';
 
 export interface GrokBotRoutineOptions { urlEnv: string; keyEnv: string }
 
-/** The routine from the runtime's values now, or why there is none. Never the key. */
-export function routineFrom(env: (name: string) => string | undefined, o: GrokBotRoutineOptions): Routine {
+/**
+ * The routine from the runtime's values now, or why there is none, naming the variables as the runtime
+ * reads them (`secretName`: with the user's secret prefix). Never the key.
+ */
+export function routineFrom(rt: { env(name: string): string | undefined; secretName(name: string): string }, o: GrokBotRoutineOptions): Routine {
   const values: string[] = [];
   const missing: string[] = [];
   for (const name of [o.urlEnv, o.keyEnv]) {
     let v: string | undefined;
     try {
-      v = env(name)?.trim();
+      v = rt.env(name)?.trim();
     } catch (e) {
       return { problem: e instanceof Error ? e.message : String(e) };
     }
-    if (v) values.push(v); else missing.push(name);
+    if (v) values.push(v); else missing.push(rt.secretName(name));
   }
   if (missing.length) return { problem: `no Grok Bot routine configured: ${missing.join(', ')} not set` };
   return { url: values[0]!, key: values[1]! };
@@ -40,14 +43,15 @@ export function grokbotRoutinePlugin(seam: { baseMs?: number; watchMs?: number }
         .meta({ commandBearing: true, description: 'runtime secret holding the routine bearer key: the variable, or the file <name>_FILE names' }),
     }),
     async detect(sys, o) {
-      const r = routineFrom((n) => sys.env(n), o);
+      const r = routineFrom(sys, o);
+      const [url, key] = [sys.secretName(o.urlEnv), sys.secretName(o.keyEnv)];
       if ('problem' in r) {
-        return { status: 'needs-setup', reason: r.problem, command: `give ${o.urlEnv} and ${o.keyEnv} in the runtime, or write the files ${o.urlEnv}_FILE and ${o.keyEnv}_FILE name (both from the routine's Webhook panel)` };
+        return { status: 'needs-setup', reason: r.problem, command: `give ${url} and ${key} in the runtime, or set ${url}_FILE and ${key}_FILE to files holding them, read at each use (both values from the routine's Webhook panel)` };
       }
-      return { status: 'available', detail: `${o.urlEnv}, ${o.keyEnv}` };
+      return { status: 'available', detail: `${url}, ${key}` };
     },
     create: (ctx, o) => createGrokBotNotifier({
-      name: ctx.instanceName, logger: ctx.logger, clock: ctx.clock, routine: () => routineFrom((n) => ctx.env(n), o),
+      name: ctx.instanceName, logger: ctx.logger, clock: ctx.clock, routine: () => routineFrom(ctx, o),
       ...(seam.baseMs ? { baseMs: seam.baseMs } : {}),
       ...(seam.watchMs ? { watchMs: seam.watchMs } : {}),
     }),

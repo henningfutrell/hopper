@@ -53,6 +53,8 @@ export interface ExecutionQuestion {
   recentOutput: string;
   /** How it was detected: "marker" | "blocked" | "idle". */
   detectedBy: string;
+  /** A dialog with a countdown (issue #376): when the agent denies it by itself, unless answered first. */
+  lapsesAt?: string;
 }
 
 export type ExecutionOutcome =
@@ -61,8 +63,11 @@ export type ExecutionOutcome =
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion };
 
-/** What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with. */
-export interface PaneAnswer { answer?: string; executorState: Record<string, unknown> }
+/**
+ * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
+ * `lapsed`: nobody answered; the agent denied its dialog by itself when the countdown ran out (issue #376).
+ */
+export interface PaneAnswer { answer?: string; lapsed?: true; executorState: Record<string, unknown> }
 
 /**
  * Runs one job on one lane. `name` matches JobSpec.executor: "test" (built in) and
@@ -336,6 +341,13 @@ export interface QuestionService {
    * Undefined when the question is not open.
    */
   answeredInPane(questionId: string, answer: string): Question | undefined;
+  /**
+   * Nobody answered: the agent denied the question's dialog by itself when its countdown ran out (issue
+   * #376). Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers, status
+   * `lapsed`, `question.lapsed`; no answer, nobody answered it, no onAnswered. Undefined when the question
+   * is not open or has no countdown.
+   */
+  lapsedInPane(questionId: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */
@@ -475,8 +487,13 @@ export interface SourceHost {
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
   cancel(jobId: JobId, reason: string): void;
-  /** Apply only if the job is queued/held and the priority differs; emits job.reprioritized. */
-  reprioritize(jobId: JobId, to: number, reason: string): boolean;
+  /**
+   * The item offered again for a waiting (queued/held) job (issue #375): its priority, from the item or a
+   * routing rule, as now (job.reprioritized); and, while it has not started, its spec's executor, model,
+   * work tree, default work tree and machine pin as its source and routing rules give them now, a part
+   * changed on the job by hand kept (job.respecified). True when anything changed.
+   */
+  refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
   /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
