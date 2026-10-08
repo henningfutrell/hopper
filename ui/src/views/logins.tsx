@@ -75,7 +75,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   );
   const name = machine ?? 'machine unknown';
   return (
-    <div data-login={l.id} data-phase={phase}>
+    <div data-login={l.id} data-phase={phase} className="min-w-0">
       <Panel title={`${l.tool} login`} icon={KeyRound} className={BORDER[phase]} bodyClassName="space-y-3"
         action={<span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
           <RaisedOn raisedBy={l.machineId ? { machineId: l.machineId, ...(machine ? { name: machine } : {}) } : undefined} />
@@ -134,7 +134,7 @@ export function Logins() {
   return (
     <div className="space-y-3">
       {cards.length
-        ? <div className="grid gap-3 xl:grid-cols-2">{cards.map((l) => <LoginCard key={l.id} l={l} now={now} settings={settings} />)}</div>
+        ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{cards.map((l) => <LoginCard key={l.id} l={l} now={now} settings={settings} />)}</div>
         : <Panel title="Logins" icon={KeyRound}><Empty>no pending logins</Empty></Panel>}
       {earlier.length > 0 && <LoginHistory logins={earlier} />}
       {canAdmin && <LoginSettingsPanel settings={settings} />}

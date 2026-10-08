@@ -53,7 +53,7 @@ export function DeviceCode({ provider, userCode, verificationUri, expiresAt, wai
         className={cn(buttonVariants({ size: 'lg' }), 'h-10 w-full max-w-xs gap-2')}>
         Open {provider}<ExternalLink />
       </a>
-      <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
+      <div className="-mt-2 text-[0.7rem] text-muted-foreground/80">or go to <span className="font-mono break-all text-muted-foreground">{verificationUri.replace(/^https?:\/\//, '')}</span></div>
       <div className="flex flex-col items-center gap-1 text-xs text-muted-foreground" aria-live="polite">
         <div className="flex items-center gap-2"><Loader2 className="size-3.5 shrink-0 animate-spin text-[#1ecad4] motion-reduce:animate-none" />{waiting}</div>
         {left && <div className="num text-[0.7rem] text-muted-foreground/80">The code expires in {left}</div>}
