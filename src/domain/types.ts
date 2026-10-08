@@ -15,8 +15,7 @@ export type JobStatus =
   | 'running'
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
-  | 'finished' | 'failed'
-  | 'cancelled'
+  | 'finished' | 'failed' | 'cancelled'
   | 'rejected'; // turned away at the queue gate: kept, never run
 
 /**
@@ -186,6 +185,8 @@ export interface MachineSnapshot {
   home?: string;
   /** A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is the hopper's (issue #70). */
   client?: { release?: string; current?: boolean };
+  /** The disk its home is on, as last read (issue #401). Absent: not read (a container target, a client older than this). */
+  disk?: { freeBytes: number; totalBytes: number; low: boolean };
 }
 
 /** Everything one Decision is made over. Recorded verbatim on the Decision. */
@@ -282,7 +283,7 @@ export const EVENT_TYPES = [
   'update.available', 'update.started', 'update.applied', 'update.failed',
   'plugin.installed', 'plugin.removed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator',
-  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned',
+  'job.rerun', 'job.dismissed', 'job.unassigned', 'job.reassigned', 'job.work_kept',
   'source.stalled', 'connected_account.expired',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -300,7 +301,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'update.available': 1, 'update.started': 1, 'update.applied': 1, 'update.failed': 1,
   'plugin.installed': 1, 'plugin.removed': 1,
   'job.accepted': 1, 'job.rejected': 1, 'queue.ordered': 1, 'queue.gate_changed': 1, 'job.claimed_by_operator': 1,
-  'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1,
+  'job.rerun': 1, 'job.dismissed': 1, 'job.unassigned': 1, 'job.reassigned': 1, 'job.work_kept': 1,
   'source.stalled': 1, 'connected_account.expired': 1,
 };
 

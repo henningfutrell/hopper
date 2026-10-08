@@ -3,7 +3,8 @@ import { homedir } from 'node:os';
 import { STATUS_NOTE_NUDGE, protocolFooter } from '../../src/executors/herdr/index.ts';
 import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
 
-const SCRATCH = `${CWD}/.hopper-scratch`;
+/** The job's own scratch dir (issue #401): the reap removes it when the job ends. */
+const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
 const DONE = { output: ['● Wrote hello.txt.', '  HOPPER_DONE'] };
 
 describe('herdr-claude executor: shape and validation', () => {
@@ -72,7 +73,7 @@ describe('herdr-claude executor: run', () => {
   it('prepares the scratch dir in the pane before Claude starts, inside the work tree the shell enters, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${SCRATCH}/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
@@ -96,7 +97,7 @@ describe('herdr-claude executor: run', () => {
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {
@@ -141,14 +142,14 @@ describe('herdr-claude executor: run', () => {
   it('every job prompt carries the job rules it starts with in place of the default (issue #172)', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run({ ...contextFor(jobWith({ prompt: 'Write hello.txt', cwd: CWD })).ctx, jobRules: 'Always write in French.' });
-    expect(herdr.prompts[0]!.text).toBe(`Write hello.txt\n\n${protocolFooter(CWD, 'Always write in French.')}`);
+    expect(herdr.prompts[0]!.text).toBe(`Write hello.txt\n\n${protocolFooter(CWD, 'Always write in French.', SCRATCH)}`);
     expect(herdr.prompts[0]!.text).not.toContain('[hopper publishing rule]');
   });
 
   it('sends the prompt exactly once, with the protocol footer', async () => {
     const { herdr, executor } = setup({ turns: [{ steps: ['● a', '● b', '● c'], ...DONE }] });
     await executor.run(contextFor(jobWith({ prompt: 'Write hello.txt' })).ctx);
-    expect(herdr.prompts).toEqual([{ name: 'jh-abcdef12', text: `Write hello.txt\n\n${protocolFooter(CWD)}` }]);
+    expect(herdr.prompts).toEqual([{ name: 'jh-abcdef12', text: `Write hello.txt\n\n${protocolFooter(CWD, undefined, SCRATCH)}` }]);
   });
 
   it('finishes on HOPPER_DONE with the final assistant text and the pane id', async () => {

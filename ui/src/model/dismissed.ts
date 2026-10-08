@@ -12,6 +12,8 @@ export const DISMISSED_CAP = 200;
 export const noticeKey = {
   question: (id: string) => `question:${id}`,
   failed: (jobId: string) => `failed:${jobId}`,
+  /** A machine's disk running low (issue #401): once per machine, so a dismissal survives the bytes moving. */
+  disk: (machineId: string) => `disk:${machineId}`,
   router: (h: Health) => `router:${h.router}`,
   source: (s: SourceStatus) => `source:${s.name}:${s.lastError ?? ''}`,
   update: (s: UpdateStatus) => `update:${s.state}:${s.state === 'error' ? s.reason ?? '' : s.target?.commit ?? s.apply?.target ?? ''}`,

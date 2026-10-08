@@ -24,11 +24,11 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
   return async (t, busy) => {
     if (!(await probeClient(t))) return { online: false };
     let running: string;
-    let home: { home?: string };
+    let home: { home?: string; disk?: MachineProbe['disk'] };
     try {
       const answer = await clientRunningRelease(t);
       running = answer.release;
-      home = answer.home ? { home: answer.home } : {};
+      home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}) };
     } catch (e) {
       say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): add it again with Add machine`, true);
       return { online: true, client: { current: false } };

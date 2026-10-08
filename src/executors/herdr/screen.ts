@@ -15,9 +15,9 @@ export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, 
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
  * its work tree, the protocol. The job rules are editable; the work tree and the protocol are not.
  */
-export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES): string {
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string): string {
   const rules = jobRules.trim();
-  return [...(rules ? [rules] : []), workTreeRule(cwd), ...PROTOCOL_LINES].join('\n');
+  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...PROTOCOL_LINES].join('\n');
 }
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
@@ -145,10 +145,22 @@ function turnLines(lines: string[], from: number): string[] {
   return out;
 }
 
-/** The ● block that contains line `index` (or ends before it), as text without gutter or markers. */
+/** A ● line that is a tool call, not the agent's words: "● Bash(make)", "● Read 2 files (ctrl+o to expand)". */
+const TOOL_CALL = /^\s*●\s*([\w.:-]+\(|.*\(ctrl\+o to expand\)\s*$)/;
+/** What a tool call shows under its own line: its output (⎿), wrapped or indented, and blank lines. */
+const TOOL_OUTPUT = /^(\s*⎿|\s{4,}\S|\s*$)/;
+
+/**
+ * The ● block that contains line `index` (or ends before it), as text without gutter or markers. A block
+ * that opens with a tool call is the agent's words after its output (issue #377): never the call.
+ */
 function blockText(lines: string[], index: number): string {
   let start = index;
   while (start > 0 && !ASSISTANT_START.test(lines[start]!)) start--;
+  if (TOOL_CALL.test(lines[start]!)) {
+    start++;
+    while (start <= index && TOOL_OUTPUT.test(lines[start]!)) start++;
+  }
   return lines.slice(start, index + 1)
     .filter((l) => markerOf(l) === null)
     .map(stripGutter)
@@ -246,6 +258,41 @@ export function dialogOption(text: string, answer: string): string | undefined {
   if (number !== undefined) return options.find((o) => o.n === number)?.n;
   const words = optionWords(answer);
   return options.find((o) => o.words === words)?.n;
+}
+
+/** The top of a dialog: its border. */
+const DIALOG_TOP = /^\s*(─{3,}|╭)/;
+/** Lines that are the dialog's frame or key hints, never its question: "╰───╯", "Esc to cancel · Tab to amend". */
+const DIALOG_FRAME = /^([╰╯─\s]+|Esc to \S.*)$/;
+const MAX_DIALOG_LINES = 40;
+
+/**
+ * The dialog Claude waits at, as its question (issue #377): its title, what it is about, its warnings,
+ * any countdown and its options, without the transcript above it. The dialog is the lines up to the
+ * last option the cursor (❯) is on, or the last line, and from the border or transcript line above
+ * them: a ● line is the agent's own words or the tool call and is kept, a ⎿ line is earlier output
+ * and is not. Gutter, box edges and the cursor are removed. Empty when the screen shows nothing.
+ */
+export function dialogText(text: string): string {
+  const lines = text.split('\n');
+  const kept = (l: string): boolean => l.trim() !== '' && (DIALOG_OPTION.test(l) || !isChrome(l)) && !DIALOG_FRAME.test(l.trim());
+  let at = -1;
+  for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (DIALOG_OPTION.exec(lines[i]!)?.[1]) at = i;
+  let end = lines.length;
+  for (let i = Math.max(at, 0); i < lines.length; i++) if (SEPARATOR.test(lines[i]!) && i > at) { end = i; break; }
+  if (at < 0) for (let i = end - 1; i >= 0 && at < 0; i--) if (kept(lines[i]!)) at = i;
+  if (at < 0) return '';
+  let from = at;
+  while (from > 0 && at - from < MAX_DIALOG_LINES) {
+    const l = lines[from - 1]!;
+    if (DIALOG_TOP.test(l) || /^\s*⎿/.test(l)) break;
+    from--;
+    if (ASSISTANT_START.test(l)) break;
+  }
+  return lines.slice(from, end).filter(kept)
+    .map((l) => l.replace(/^[\s●❯│┃]+/, '').replace(/[\s│┃]+$/, ''))
+    .filter((l) => l !== '')
+    .join('\n');
 }
 
 /**
