@@ -1329,7 +1329,7 @@ Every request (GET included) must carry `Host: 127.0.0.1:<port>` or `localhost:<
 LAN name with the port; anything else is 421 — DNS-rebinding guard. A LAN request reads `/api/`
 only with a UI session ("Reaching the UI across the LAN").
 
-SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delivery.updated`.
+SSE adds non-domain `event: source.updated` (`data: SourceStatus`), like `delivery.updated`, and `event: usage.recorded` (`data: { added }`, issue #502) when the usage history keeps new samples.
 
 ## UI session and mutations
 
@@ -7450,6 +7450,51 @@ prune, settings), `test/integration/usage-history.test.ts` (default 7 days per h
 a viewer saves their view and cannot set the retention, retention prunes at once, survives a restart,
 per-user privacy, instance totals with nothing named), `test/ui/usage-history.test.ts` (eight lines for
 four accounts, colour per account, dash per window, gaps, hover, legend, totals as lines).
+
+## Usage graph: one series per account, zoomable, live (issue #502, 2026-10-08)
+
+Owner request: one graph of usage over time for every account, combined across every machine, a week by
+default at a coarse step, zoomable down to hourly, live. Supersedes, in "Usage history" above, the line per
+source and machine, the step select and custom range, the `7d` per `1h` default, and the 60 s poll as the only refresh.
+
+**One line per account and usage window.** The store names each sample's account (`acct`): the identity it
+was read for; else the newest identity its source and machine named in the range (read before the source
+knew it); else the source's name (a source that never names its account stays its own line). Every reading
+of one account — whichever machine and claude-plan instance read it — makes one line per usage window and
+unit: per graph step the highest share of the limit used, not the sum, because two machines on one plan read
+the same quota. A gap is a stretch where no machine read the account (the spacing is over the account's
+merged samples); a reset is found per source and machine, then named once per account and minute.
+`UsageSeries` carries `account` and no `source` or `machineId`; the legend names `<account> · <window>`, never a
+machine. The instance totals sum per account too, so an account on two machines counts once.
+
+**Open points, decided in the job.** Windows: kept both, a solid session and dashed week line per account in
+one colour (informational dotted, hidden until shown), so a per-window throttle stays visible. Whose accounts:
+each user sees their own (privacy of #221/#241 unchanged); the admin's summed graph in Settings → Users stays.
+Grain: per day at the week. Controls: the range presets stay (the saved choice); the step select and the custom
+range are gone, replaced by zoom.
+
+**The graph step follows the stretch** (`graphStepFor`, `src/domain/usage-history.ts`): an hour up to 2 days, 6
+hours up to 4, a day up to 60, else a week. The query takes `range` or `from`/`to`, no `step`. The saved view is
+`{ range }`; the store still writes the step that range gets beside it, because the build before reads it ("A
+migration leaves a store the build before it still runs on"), and reads a record of the build before as its range.
+
+**Zoom** (UI only, per page view, never saved): buttons (×½, ×2 about the middle), a pinch, Ctrl/⌘ + scroll (a
+trackpad pinch; a plain scroll stays the page's), and a drag across a stretch (mouse or one finger; the graph is
+`touch-action: pan-y`, so a vertical swipe still scrolls). A pinch or a scroll draws its stretch at once and reads
+the history once it ends (`ui/src/hooks/use-graph-zoom.ts`). Limits (`zoomed`, `selected`, `ui/src/model/usage-history.ts`):
+at least 3 hours, never past now, never wider than the history retention. Reset returns to the saved range. Points
+sit at the middle of their step and the lines are clipped to the plot.
+
+**Live.** The recorder tells listeners how many samples a record kept; the SSE stream sends `usage.recorded`
+(`{ added }`, no id) to that user's stream, and both graphs read again on it. The 60 s poll stays for the
+admin's totals (other users' samples) and a dropped stream.
+
+**Verification:** `test/store/usage-history.test.ts` (two machines one series, the higher reading; a sample
+before the account was known; gaps only where no machine read; one reset across machines; gaps and resets the
+same at every step; totals count an account once; the saved view and the build before's record),
+`test/integration/usage-history.test.ts` (default a week per day; the step for each stretch; `usage.recorded` on
+the stream), `test/ui/usage-history.test.ts` (lines per account, the step for a range, zoom in to hourly and back
+to the week, the time under the pointer kept, limits, a drag; segments broken at every step).
 
 ## Intake by label and assignee; reject as the user's own record (issue #387, 2026-10-07)
 

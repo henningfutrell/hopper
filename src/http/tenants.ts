@@ -22,6 +22,7 @@ import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
+import type { UsageRecorder } from '../usage/history.ts';
 
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
@@ -41,6 +42,8 @@ export interface TenantParts {
   secretProblem: SecretProblem;
   /** The user's machines that dial in (issue #308). */
   machineLink: UserMachineLink;
+  /** The usage history's recorder: new usage samples (SSE usage.recorded, issue #502). */
+  usageHistory: Pick<UsageRecorder, 'onRecorded'>;
 }
 
 /** The users and their running parts. */
