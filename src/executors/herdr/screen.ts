@@ -312,6 +312,15 @@ export function isBypassDialog(text: string): boolean {
   return text.includes('running in Bypass Permissions mode') && text.includes('Yes, I accept');
 }
 
+/**
+ * Claude's dialog when a CLAUDE.md it loads imports files outside its cwd (issue #518): a job worktree lies inside
+ * the work tree, so the work tree's CLAUDE.md importing its AGENTS.md imports a file outside the job's cwd. Its
+ * title and the option that allows the imports; the refusing option comes first and has the cursor.
+ */
+export function isImportsDialog(text: string): boolean {
+  return text.includes('Allow external CLAUDE.md file imports?') && text.includes('Yes, allow external imports');
+}
+
 /** One option of a select dialog: "❯ 1. Yes", "  2. No, and tell Claude what to do differently (esc)". */
 const DIALOG_OPTION = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
 

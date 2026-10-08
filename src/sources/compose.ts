@@ -104,38 +104,40 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   };
   // `expired`: the sign-in ended (issue #441), so the UI asks to connect again on every screen. Not while its
   // tokens cannot be opened (issue #514): that asks for the key, never a new grant.
+  // Why nothing goes through the account: its sign-in ended (issue #518: never "not connected" then), or none is.
+  const why = () => accounts.ended(provider) ?? notConnected(provider);
   const unconnected = () => ({
     mode: 'account', repos: accounts.jobRepositories(provider), label: options.label,
-    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: accounts.ended(provider) ?? notConnected(provider) },
+    account: { service: provider, detail: { via: CONNECTED_VIA }, problem: why() },
     ...(accounts.expired(provider) ? { expired: true } : {}),
   });
   return {
     name: o.name,
     kind,
-    paused: () => (!current() ? accounts.ended(provider) ?? notConnected(provider) : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
+    paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
     discover: () => current()?.discover() ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {
       const s = current();
-      return s ? s.report(r) : Promise.reject(new SourceError(notConnected(provider), false));
+      return s ? s.report(r) : Promise.reject(new SourceError(why(), false));
     },
     notComplete(job) {
       const s = current();
-      return s?.notComplete ? s.notComplete(job) : Promise.reject(new Error(notConnected(provider)));
+      return s?.notComplete ? s.notComplete(job) : Promise.reject(new Error(why()));
     },
     closedAsComplete(job) {
       const s = current();
-      return s?.closedAsComplete ? s.closedAsComplete(job) : Promise.reject(new Error(notConnected(provider)));
+      return s?.closedAsComplete ? s.closedAsComplete(job) : Promise.reject(new Error(why()));
     },
     rerun(job) {
       const s = current();
-      return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(notConnected(provider), false));
+      return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));
     },
     intake: () => current()?.intake?.() ?? [],
     intakeAction(action) {
       const s = current();
-      return s?.intakeAction ? s.intakeAction(action) : Promise.reject(new SourceError(notConnected(provider), false));
+      return s?.intakeAction ? s.intakeAction(action) : Promise.reject(new SourceError(why(), false));
     },
     // The job acts as the account's user, with the hopper's app marked on what it does. gh reads the token
     // from its config dir, which the hopper keeps current on the job's machine (issue #441); GH_TOKEN, fixed

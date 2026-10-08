@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs on Claude start more reliably on computers whose shell is slow to start or whose project instructions pull in other files: the hopper types its setup again when the shell lost it, waits for the real result instead of giving up early, and allows the project's instruction imports in a trusted work folder. A GitHub connection that cannot renew now says so, and when it ends, while it still works, and an ended one says to connect again instead of saying GitHub is not connected.
 - You can now set where the hopper starts slowing down and where it stops starting work on the Usage page: drag the soft and hard lines on a graph of the last day's usage and see at once which band you are in and how many lanes each machine keeps, then save. It takes effect straight away, no restart.
 - The Failures page now looks at every failed job, old ones too, and says at the top how many are not looked at yet and how many need you. A job you already ran again no longer asks for you, and a machine that dropped its connection is now recognised: the job runs again or waits for the machine instead of asking you.
 - The update notice on a container install is now a single line: open How to update for the steps, shown for Podman or Docker — whichever you picked last.

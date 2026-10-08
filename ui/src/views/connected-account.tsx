@@ -17,7 +17,8 @@
 // reaches stays listed, to be cleared. Each installation says what GitHub granted the app there, and a link adds the app to
 // another account or organization — quiet, under the installations, never a nudge to install it again (issue #352).
 // A connection whose tokens the hopper cannot open (another token key) says to give the key back, and offers
-// only to forget it: connecting again would mint another GitHub grant toward GitHub's ten (issue #514).
+// only to forget it: connecting again would mint another GitHub grant toward GitHub's ten (issue #514). A connection
+// GitHub gave no refresh token says so while it works, with when it ends, and offers to connect again (issue #518).
 import { Link2, LogOut, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -74,6 +75,13 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           {signedInWith
             ? <div>Signed in with {name} as <span className="font-mono">{s.account}</span>. Signing out ends your hopper session.</div>
             : <div>Connected as <span className="font-mono">{s.account}</span>.</div>}
+          {s.unrenewable && <div data-unrenewable className="space-y-1">
+            <div className="break-words text-warn">
+              {s.unrenewable}. It ends {s.expiresAt ? new Date(s.expiresAt).toLocaleString() : 'when GitHub expires it'}; then no jobs come from {name} until it is connected again.
+              {signedInWith ? ` Sign out and sign in with ${name} again before then.` : ''}
+            </div>
+            {!signedInWith && <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `A new ${name} connection, whose token renews`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+          </div>}
           {s.renewal && <div data-renewal className="break-words text-warn">
             Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
           </div>}

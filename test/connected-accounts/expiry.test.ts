@@ -65,4 +65,30 @@ describe('an expired connected account', () => {
     expect(told).toEqual([]);
     expect(s.account('github')).toBe('octo-user');
   });
+
+  // Issue #518: after the sign-in ended, a run again and a report said "GitHub is not connected", which it was.
+  it('a run again or a report of an account whose sign-in ended says it expired, never that it is not connected', async () => {
+    const { s } = service(legacy);
+    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s },
+      { enabled: true } as never);
+    await expect(source.rerun!({} as never)).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
+    await expect(source.report({} as never)).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
+    await expect(source.intakeAction!({} as never)).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
+  });
+});
+
+describe('a connected account that cannot renew (issue #518)', () => {
+  it('says, while it lives, that it cannot renew and when it ends', async () => {
+    const { s } = service({ ...legacy, expiresAt: '2026-10-07T23:00:00.000Z' });
+    const [status] = await s.status();
+    expect(status).toMatchObject({ state: 'connected', expiresAt: '2026-10-07T23:00:00.000Z', unrenewable: expect.stringMatching(/no refresh token/) });
+  });
+
+  it('a token that renews, or never expires, says nothing of it', async () => {
+    for (const record of [{ ...legacy, expiresAt: '2026-10-07T23:00:00.000Z', refreshToken: 'ghr_1' }, { ...legacy, expiresAt: undefined }] as ConnectedAccount[]) {
+      const [status] = await service(record).s.status();
+      expect(status).toMatchObject({ state: 'connected' });
+      expect(status).not.toHaveProperty('unrenewable');
+    }
+  });
 });

@@ -40,5 +40,16 @@ export function bypassDialog(): string[] {
   ];
 }
 
+/** Claude Code's dialog when a CLAUDE.md it loads imports files outside the cwd (issue #518), as Claude Code 2.1.292 shows it: refusing option first. */
+export function importsDialog(file: string): string[] {
+  return [
+    '─'.repeat(40), ' Allow external CLAUDE.md file imports?', '',
+    " This project's CLAUDE.md or .claude/rules imports files outside the current working directory. Never allow this for third-party repositories.", '',
+    ' External imports:', `   ${file}`, '',
+    ' Important: Only use Claude Code with files you trust. Accessing untrusted files may pose security risks https://code.claude.com/docs/en/security', '',
+    ' ❯ No, disable external imports', '   Yes, allow external imports', '', ' Enter to confirm · Esc to cancel',
+  ];
+}
+
 /** Each Windows shell's prompt, and the error it answers the hopper's POSIX commands with, then the prompt again (issue #367). */
 export const WINDOWS_SHELLS = { powershell: ['PS C:\\Users\\dev> ', "The token '&&' is not a valid statement separator in this version."], cmd: ['C:\\Users\\dev>', 'The filename, directory name, or volume label syntax is incorrect.'] } as const;

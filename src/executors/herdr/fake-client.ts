@@ -2,12 +2,14 @@
 // engine's integration tests). Each prompt plays the next scripted turn: while working it
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
-import type { Survey } from '../../domain/ports.ts';
 import { HerdrError } from './client.ts';
 import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
-import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, trustDialog, wrap } from './fake-screens.ts';
+import type { FakeHerdrOptions } from './fake-options.ts';
+import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, importsDialog, trustDialog, wrap } from './fake-screens.ts';
+
+export type { FakeHerdrOptions };
 
 export interface FakeTurn {
   /** Lines appended while working, one per poll. */
@@ -33,66 +35,6 @@ export interface FakeTurn {
 
 export { CTRL_END };
 
-export interface FakeHerdrOptions {
-  turns?: FakeTurn[];
-  /** Startup blocks on the folder-trust dialog naming this path. */
-  trustDialogFor?: string;
-  /**
-   * Startup shows Claude's bypass permissions warning (after the trust dialog, when both): herdr's agent
-   * start answers `notReady` at it, or (`started`) reports Claude started while the warning is up.
-   */
-  bypassDialog?: 'not-ready' | 'started';
-  /** Startup blocks on some other screen. */
-  startupBlockedBy?: string[];
-  /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
-  shellDropsRuns?: number;
-  /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
-  reapKeeps?: string[];
-  /** The machine cannot be reached for the reap or the survey (issue #410): both reject. */
-  machineUnreachable?: boolean;
-  /** What the survey finds on the machine (issue #410). Default nothing. */
-  survey?: Survey;
-  /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
-  scopes?: boolean;
-  /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
-  ignoresCtrlC?: boolean;
-  /** Directories the pane's shell cannot enter on this machine: a `cd` into one fails, as for a path that is not there (issue #323). */
-  unusableDirs?: string[];
-  /** The pane's shell is a Windows shell, not a POSIX one (issue #367): it answers every command with its own error and prompt. */
-  windowsShell?: 'powershell' | 'cmd';
-  /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
-  repositories?: string[];
-  /** Git refuses to make a job worktree. */
-  worktreeFails?: boolean;
-  /** What sharing dependencies in a job worktree says (issue #410). Default `none`: no lockfile. */
-  deps?: 'linked' | 'installed' | 'own' | 'kept' | 'none' | 'failed';
-  /** The first N `startAgent` calls answer `paneBusy`, as herdr does for a pane spawned a moment ago. */
-  shellNotReadyStarts?: number;
-  /**
-   * The first N agent starts time out (issue #462, seen live with 16 lanes filling at once): Claude never
-   * comes up as herdr waits, and `agent start` fails `timeout`, "timed out waiting for agent startup", with
-   * `startupTimeoutScreen` on the pane.
-   */
-  startupTimeouts?: number;
-  /** What the pane shows when its agent start times out. */
-  startupTimeoutScreen?: string[];
-  /**
-   * The first N prompts never reach Claude (issue #278, seen live): herdr takes them, but Claude stays
-   * idle at an empty prompt, nothing echoed and its state never changes.
-   */
-  dropsPrompts?: number;
-  /**
-   * The first N prompts are pasted into Claude's input box but never submitted (seen live): the box
-   * shows "[Pasted text #1 +N lines]", Claude stays idle and its state never changes, until Enter.
-   */
-  promptsLeftInInput?: number;
-  /** The first N option picks at a dialog are lost: Claude stays at the dialog, its state unchanged. */
-  dropsDialogPicks?: number;
-  session?: string;
-  /** Column width the prompt echo is wrapped at. Default 100. */
-  width?: number;
-}
-
 interface Pane {
   id: string;
   lines: string[];
@@ -100,7 +42,11 @@ interface Pane {
   agent?: string;
   status: AgentStatus;
   seq: number;
-  mode: 'none' | 'trust' | 'bypass' | 'startup';
+  mode: 'none' | 'trust' | 'imports' | 'bypass' | 'startup';
+  /** Startup dialogs still to come once the one on screen is answered. */
+  dialogs?: ('trust' | 'imports' | 'bypass')[];
+  /** Lines the shell prints after `lag` more waits (FakeHerdrOptions.worktreeLag). */
+  pending?: { lines: string[]; lag: number };
   turn?: FakeTurn;
   step: number;
   ctrlC: number;
@@ -153,6 +99,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   let busyStarts = o.shellNotReadyStarts ?? 0;
   let timedOutStarts = o.startupTimeouts ?? 0;
   let droppedRuns = o.shellDropsRuns ?? 0;
+  let droppedWorktreeRuns = o.dropsWorktreeRuns ?? 0;
   let droppedPrompts = o.dropsPrompts ?? 0;
   let droppedPicks = o.dropsDialogPicks ?? 0;
   let leftInInput = o.promptsLeftInInput ?? 0;
@@ -176,6 +123,16 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const settle = (p: Pane, status: AgentStatus): void => { p.status = status; p.seq++; };
   /** The dialog on screen closes (picked, lapsed, dismissed): its lines go. */
   const closeDialog = (p: Pane): void => { if (p.dialogLines) p.lines.splice(-p.dialogLines); p.dialogLines = undefined; };
+  /** The next startup dialog on screen, Claude blocked at it. */
+  const showDialog = (p: Pane): void => {
+    const next = p.dialogs!.shift()!;
+    const lines = next === 'trust' ? trustDialog(o.trustDialogFor!) : next === 'imports' ? importsDialog(o.importsDialog!) : bypassDialog();
+    // The first is shown below what started Claude; each next one replaces the one answered.
+    if (p.mode === 'none') p.lines.push(...lines);
+    else p.lines = lines;
+    p.mode = next;
+    settle(p, 'blocked');
+  };
   const exit = (p: Pane): void => { p.agent = undefined; p.status = 'unknown'; p.lines.push('$ '); };
 
   /** Claude goes on with the next scripted turn. */
@@ -262,15 +219,16 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         settle(p, 'unknown');
         throw new HerdrError('timeout', 'timed out waiting for agent startup');
       }
-      if (o.trustDialogFor === undefined && o.bypassDialog) {
-        p.mode = 'bypass';
-        p.lines.push(...bypassDialog());
-        settle(p, 'blocked');
-        return o.bypassDialog === 'started' ? { ok: true } : { ok: false, notReady: true };
+      const dialogs = ([o.trustDialogFor !== undefined && 'trust', o.importsDialog !== undefined && 'imports', o.bypassDialog && 'bypass'] as const)
+        .filter((m): m is 'trust' | 'imports' | 'bypass' => m !== false && m !== undefined);
+      if (dialogs.length > 0) {
+        p.dialogs = dialogs;
+        showDialog(p);
+        return p.mode === 'bypass' && o.bypassDialog === 'started' ? { ok: true } : { ok: false, notReady: true };
       }
-      if (o.trustDialogFor !== undefined || o.startupBlockedBy) {
-        p.mode = o.trustDialogFor !== undefined ? 'trust' : 'startup';
-        p.lines.push(...(o.trustDialogFor !== undefined ? trustDialog(o.trustDialogFor) : o.startupBlockedBy!));
+      if (o.startupBlockedBy) {
+        p.mode = 'startup';
+        p.lines.push(...o.startupBlockedBy);
         settle(p, 'blocked');
         return { ok: false, notReady: true };
       }
@@ -319,15 +277,15 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         if (key !== 'ctrl+c') p.ctrlC = 0;
         if (key === 'enter' && p.input !== undefined && p.agent && p.status !== 'blocked') submit(p, p.input);
         else if (key === 'down') p.sawDown = true;
-        else if (key === 'enter' && p.mode === 'trust' && p.sawDown && o.bypassDialog) {
-          p.mode = 'bypass';
+        else if (key === 'enter' && (p.mode === 'trust' || p.mode === 'imports' || p.mode === 'bypass')) {
+          // Refusing the imports goes on without them; refusing trust or the warning quits Claude.
+          const goesOn = p.sawDown || p.mode === 'imports';
           p.sawDown = false;
-          p.lines = bypassDialog();
-          settle(p, 'blocked');
-        } else if (key === 'enter' && (p.mode === 'trust' || p.mode === 'bypass')) {
-          p.mode = 'none';
-          if (p.sawDown) { p.lines = ['✻ Welcome to Claude Code']; settle(p, 'idle'); } else exit(p);
-          p.sawDown = false;
+          if (goesOn && p.dialogs?.length) showDialog(p);
+          else {
+            p.mode = 'none';
+            if (goesOn) { p.lines = ['✻ Welcome to Claude Code']; settle(p, 'idle'); } else exit(p);
+          }
         } else if (key === 'esc' && p.agent && (p.status === 'blocked' || p.status === 'working')) {
           closeDialog(p);
           p.lines.push('  ⎿  Interrupted');
@@ -340,14 +298,22 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('runInPane', paneId, command);
       const p = livePane(paneId);
       if (droppedRuns-- > 0) return;
+      if (command.includes(' hopper-worktree ') && droppedWorktreeRuns-- > 0) return;
       if (o.windowsShell) { const [prompt, error] = WINDOWS_SHELLS[o.windowsShell]; p.lines.push(`${prompt}${command}`, error, '', prompt); return; }
       const said = shellSays(command, o, p.scoped === true);
       if (said.scoped) p.scoped = true;
+      if (o.worktreeLag && command.includes(' hopper-worktree ')) {
+        p.lines.push(`$ ${command}`, ...said.lines.slice(0, 1));
+        p.pending = { lines: [...said.lines.slice(1), '$ '], lag: o.worktreeLag };
+        return;
+      }
       p.lines.push(`$ ${command}`, ...said.lines, '$ ');
     },
     async waitOutput(paneId, text, timeoutMs) {
       record('waitOutput', paneId, text, timeoutMs);
-      livePane(paneId);
+      const p = livePane(paneId);
+      if (p.pending && --p.pending.lag <= 0) { p.lines.push(...p.pending.lines); p.pending = undefined; }
+      if (o.waitAnswersEarly) return o.waitAnswersEarly === 'matched';
       return fake.screen(paneId).includes(text);
     },
     async reap(jobId, scratch) {
