@@ -571,14 +571,18 @@ outside it (`/tmp` or anywhere else). Opening the pane there is not enough on it
 Code's scratchpad lives under `/tmp` by default and its system prompt sends temp files there,
 which is how a job drifted out of its tree. So the hopper directs it three ways:
 
-- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch/<job id>`,
-  the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
-  tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
-  cannot move them. (The print agents get the same scratch dir as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
+- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `/tmp/hopper-<job id>`, the
+  job's **temp link** to its **scratch dir** `<cwd>/.hopper-scratch/<job id>`: Claude's scratchpad and
+  every tool's temp files land inside the tree, in a directory that is the job's alone (issue #401), so
+  the reap can remove it. The payload cannot move them. Not the scratch dir's own path (issue #506): a
+  Unix socket path takes at most 108 bytes, tools bind sockets under `TMPDIR`, and Chromium's
+  `org.chromium.Chromium.XXXXXX/SingletonSocket` alone takes 45 — under a real work tree Chromium
+  aborted at startup in every job. `/tmp/hopper-` and a UUID job id take 48. (The print agents get the
+  same link as their `TMPDIR`, issue #410.) It also gets `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT=1` (issue #376): Claude
   Code would deny a dangerous-rm dialog by itself after two minutes, before the question can climb to
   the owner. A payload cannot turn the countdown back on.
 - **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
-  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
@@ -587,7 +591,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
 - **A work tree the machine cannot use fails the job at once** (issue #323). herdr opens a tab
   whose cwd does not exist in the user's home instead, silently (herdr 0.8.2), so `tab create` says
   nothing; the `cd` does. When the shell cannot enter the work tree or make the scratch dir, it
-  prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
+  or the temp link there is not the job's (another user's, or a directory), prints `hopper-scratch-unusable`; the executor reads the pane after each wait, and fails the job
   with what the shell said (`the work tree <cwd> is not usable on <machine>: …`), the pane closed,
   instead of retrying for 60000 ms.
 - **The pane's shell must be POSIX** (issue #367). Every command the hopper types into a pane (the
@@ -3392,8 +3396,8 @@ its environment. The last message's marker decides: `HOPPER_DONE` finished `{ ma
 (the agent's session id, under the name `cursor-agent` already stored), no marker a status note nudged in
 the same session at most three times in a row (issue #163). Not idempotent, nothing to reattach.
 
-Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the job's own scratch dir
-`<cwd>/.hopper-scratch/<job id>`, named in the footer; each turn runs in the job's scope
+Like a herdr-claude job (issue #410, "Work tree"): its `TMPDIR` is the temp link to the job's own scratch dir
+`<cwd>/.hopper-scratch/<job id>` (issue #506), the scratch dir named in the footer; each turn runs in the job's scope
 `hopper-job-<job id>` where the machine has a systemd user manager (`systemd-run --user --scope … --
 env … <agent> </dev/null`; the scope a turn before left is stopped first, since a print-mode turn never
 waits on background work); the job keeps `{ cwd, ssh? }` from its start; and when it ends its `cleanup`
@@ -6258,7 +6262,7 @@ supported; defaults must be configurable. Read as three changes; none breaks a d
 | `cwd` | `~` | the work tree of a job whose payload names none (command-bearing) |
 | `sshBin` | `ssh` | the ssh client, for ssh targets (command-bearing) |
 
-- **One turn is one print-mode run**: `sh -c 'mkdir -p <scratch> && printf "*\n" > <scratch>/.gitignore && cd <cwd> && exec env <payload env> TMPDIR=<scratch> HOPPER_JOB_ID=<id> <bin> -p --output-format json --workspace <cwd> <args> [--model m] [--resume <chat>] -- <text>'`,
+- **One turn is one print-mode run**: `sh -c 'mkdir -p <scratch> && printf "*\n" > <scratch>/.gitignore && ln -sfn <scratch> <temp link> && … && cd <cwd> && exec env <payload env> TMPDIR=<temp link> HOPPER_JOB_ID=<id> <bin> -p --output-format json --workspace <cwd> <args> [--model m] [--resume <chat>] -- <text>'`,
   through the machine's connection (`commandOn`: here, or POSIX-quoted over ssh with the hopper's key). The
   payload is herdr-claude's (`prompt`, `cwd`, `model`, `env`, `timeoutMs`; `cwd` resolved here and the same
   path there). The first turn's text is the prompt and `protocolFooter(cwd)`; a resumed turn's is the answer.
