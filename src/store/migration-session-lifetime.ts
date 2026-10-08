@@ -1,4 +1,4 @@
-// Migration 26 (issue #439): a UI session no longer carries a fixed expiry. It carries when it started, when a
+// Migration 27 (issue #439): a UI session no longer carries a fixed expiry. It carries when it started, when a
 // request last renewed it, when a gateway realm's token last checked out for it, and — for the operator CLI's
 // alone — an end of its own; the sign-in config's session lengths decide when it ends. A session live at the
 // migration stays signed in, counted from now: when it started was never stored. One already expired goes.

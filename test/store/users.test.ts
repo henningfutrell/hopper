@@ -173,7 +173,8 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     expect(next.seq).toBeGreaterThan(admin.events.since(0)[1]!.seq);
     // Migration 22 (issue #214): every hopper offers GitHub sign-in.
     expect(instance.config.read('sign-in')).toEqual({ version: 1, realms: [{ name: 'github', label: 'GitHub', type: 'github' }] });
-    expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'main', autoUpdate: true });
+    // Migration 26 (issue #423): the channel main is stable.
+    expect(instance.settings.getUpdateSettings()).toEqual({ channel: 'stable', autoUpdate: true });
     expect(instance.settings.getPluginInstalls()).toEqual([]);
     expect(instance.uiSessions.get('t1')?.userId).toBe('admin');
     expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('admin');

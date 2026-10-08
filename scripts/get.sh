@@ -4,7 +4,7 @@
 #   curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash
 #
 # The install page (site/install.html) serves this file as install.sh (.github/workflows/pages.yml);
-# the raw URL of scripts/get.sh on main works the same.
+# the raw URL of scripts/get.sh on stable works the same.
 #
 # Checks what the install needs, clones the hopper's source into $HOPPER_SRC (or updates the
 # clone already there), gives it a database, and runs that source's scripts/install.sh — which
@@ -16,7 +16,7 @@
 # with docker and a fresh password that install.sh writes into daemon.env.
 #
 #   HOPPER_SOURCE_REPO  the repository to install from (default: this one)
-#   HOPPER_SOURCE_REF   the branch to install and track (default: main)
+#   HOPPER_SOURCE_REF   the branch to install and track: dev, beta or stable, the update channels (default: stable)
 #   HOPPER_SRC          where the source clone lives (default: ~/.local/share/hopper/source)
 #   POSTGRES_PORT       the bundled Postgres's loopback port (default: 5433)
 #
@@ -30,7 +30,7 @@ set -euo pipefail
 
 main() {
   local repo="${HOPPER_SOURCE_REPO:-https://github.com/henningfutrell/hopper.git}"
-  local ref="${HOPPER_SOURCE_REF:-main}"
+  local ref="${HOPPER_SOURCE_REF:-stable}"
   local src="${HOPPER_SRC:-$HOME/.local/share/hopper/source}"
   local env_file="$HOME/.config/hopper/daemon.env"
   local old_env_file="$HOME/.config/job-hopper/daemon.env" old_src="$HOME/.local/share/job-hopper/source"

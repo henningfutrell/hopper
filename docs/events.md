@@ -511,7 +511,7 @@ Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in 
 
 ## `update.available`
 
-Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).
+Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).
 
 | field | type | required |
 |---|---|---|
@@ -524,7 +524,7 @@ Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer targe
 {
   "from": "a1b2c3d",
   "to": "e4f5a6b",
-  "ref": "main",
+  "ref": "stable",
   "changes": 3
 }
 ```
@@ -543,7 +543,7 @@ Version 1 (`docs/schemas/update.started.v1.json`). Applying an update began (UI,
 {
   "from": "a1b2c3d",
   "to": "e4f5a6b",
-  "ref": "main"
+  "ref": "stable"
 }
 ```
 
@@ -561,7 +561,7 @@ Version 1 (`docs/schemas/update.applied.v1.json`). The first boot on an applied 
 {
   "from": "a1b2c3d",
   "to": "e4f5a6b",
-  "ref": "main"
+  "ref": "stable"
 }
 ```
 

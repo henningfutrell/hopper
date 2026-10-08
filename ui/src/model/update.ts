@@ -3,12 +3,11 @@
 // bullets (issue #104): the words here never count commits.
 import type { UpdateStatus } from '../../../src/domain/types.ts';
 
-/** The update channels, least stable first, and what each one pulls (issue #282). */
+/** The update channels, least stable first, and what each one pulls (issues #282, #423). */
 export const CHANNELS: { channel: UpdateStatus['channel']; hint: string }[] = [
   { channel: 'dev', hint: 'Every change as soon as it is merged: newest first, and the first to break.' },
   { channel: 'beta', hint: 'Changes once they have run on dev: a preview of the next stable version.' },
-  { channel: 'main', hint: 'Changes once they have run on beta: the stable version.' },
-  { channel: 'release', hint: 'Release tags only.' },
+  { channel: 'stable', hint: 'Changes once they have run on beta: the stable version.' },
 ];
 
 export function headline(s: UpdateStatus): string {
@@ -16,7 +15,6 @@ export function headline(s: UpdateStatus): string {
     case 'available':
       // An image is replaced by pulling or rebuilding it, never in place (issue #409).
       if (s.installed?.kind === 'image') return 'Update available: pull or rebuild the image';
-      if (s.channel === 'release') return `Update available: release ${s.target?.ref}`;
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';
     case 'applying': return `Updating: ${s.apply?.detail ?? 'starting'}`;
