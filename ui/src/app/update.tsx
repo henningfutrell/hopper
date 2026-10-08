@@ -3,6 +3,7 @@
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 // A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag.
+// The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -15,7 +16,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { CHANNELS, headline, imageUpdate, showNotice } from '@/model/update';
+import { CHANNELS, channelBadge, headline, imageUpdate, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { updateAct, useHopper } from '@/store';
@@ -193,12 +194,18 @@ export function VersionDetails({ className }: { className?: string }) {
 /** The header's version, on every screen: a button that opens the version and update panel; a dot when an update is available. */
 export function UpdateButton({ version }: { version: string | undefined }) {
   const s = useHopper((st) => st.update);
+  // On a phone the channel stays visible; the commit, and the icon and version beside a channel, give way (issue #497).
+  const channel = s ? channelBadge(s) : undefined;
+  const label = channel ? `Version and updates: ${channel.label}` : 'Version and updates';
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <button type="button" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground" aria-label="Version and updates" title="Version and updates: what you run and what it brought">
-          <Info className="size-3" />{version}{s?.installed && <span className="hidden sm:inline">· {short(s.installed.commit)}</span>}
-          {s && showNotice(s) && <Dot tone={TONE[s.state]} pulse={s.state === 'applying'} />}
+        <button type="button" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground" aria-label={label} title={`${label}. What you run and what it brought`}>
+          <Info className={cn('size-3', channel?.tag && 'max-sm:hidden')} /><span className={cn(channel?.tag && 'max-sm:hidden')}>{version}</span>{s?.installed && <span className="hidden sm:inline">· {short(s.installed.commit)}</span>}
+          {channel?.tag && (
+            <span data-slot="badge-channel" data-mismatch={channel.mismatch} className={cn('rounded-sm px-1 whitespace-nowrap', channel.mismatch ? 'bg-warn/15 text-warn' : 'bg-muted text-foreground')}>{channel.tag}</span>
+          )}
+          {s && showNotice(s) && <span data-slot="update-dot" className="inline-flex"><Dot tone={TONE[s.state]} pulse={s.state === 'applying'} /></span>}
         </button>
       </SheetTrigger>
       <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
