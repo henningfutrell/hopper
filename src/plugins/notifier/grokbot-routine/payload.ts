@@ -39,6 +39,8 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
     detectedBy: q.detectedBy, askedAt: q.createdAt, escalatedAt: q.escalatedToHumanAt ?? null,
     openSeconds: Math.max(0, Math.floor((b.now.getTime() - Date.parse(q.createdAt)) / 1000)),
     offered: b.offered,
+    // Issue #376: a dialog the agent denies by itself at this time, unless it is answered first.
+    ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}),
   };
 }
 

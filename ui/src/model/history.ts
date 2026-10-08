@@ -94,11 +94,12 @@ function allSpans(events: DomainEvent[], jobs: ReadonlyMap<string, Job>): LaneSp
 }
 
 /** How a question wait ended, or `waiting` while the job still sits on its question. */
-export type WaitEnd = 'waiting' | 'answered' | 'closed' | 'dismissed' | 'expired';
+export type WaitEnd = 'waiting' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed';
 export interface QuestionWait { laneId: string; jobId: string; start: number; end: number | null; how: WaitEnd }
 
 const WAIT_ENDS: Partial<Record<DomainEvent['type'], WaitEnd>> = {
   'question.answered': 'answered', 'question.closed': 'closed', 'question.dismissed': 'dismissed', 'question.expired': 'expired',
+  'question.lapsed': 'lapsed',
   // Answered in the job's pane: it runs again. A dismissed question cancels the job; an expired one fails it.
   'job.started': 'answered', 'job.reattached': 'answered', 'job.cancelled': 'dismissed', 'job.failed': 'expired',
 };

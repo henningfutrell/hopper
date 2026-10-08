@@ -51,7 +51,7 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID } }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);

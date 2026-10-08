@@ -28,6 +28,7 @@ const WHEN: Record<EventType, string> = {
   'question.closed': 'The owner closed an open question without answering (UI Close). The job resumes with `answer`, the fixed close text, typed in; any escalation level call in flight is aborted.',
   'question.dismissed': 'The owner dismissed an open question (UI Dismiss): it needs no action any more. Nothing is typed into the job; a job still waiting on it is cancelled (`job.cancelled`, reason `question dismissed`); any escalation level call in flight is aborted.',
   'question.expired': 'The human stage timed out and the job fails.',
+  'question.lapsed': 'Nobody answered a dialog in time: the agent denied it by itself when its countdown ran out (Claude Code\'s auto-deny), and the job went on (`job.reattached`, reason `the dialog lapsed`). `lapsesAt` is when the countdown ended. Not an answer: nothing is typed, and no stage answered; any escalation level call in flight is aborted.',
   'update.available': 'A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch or the release tag; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).',
   'update.started': 'Applying an update began (UI, or auto-update): the target is built beside the running install. Running jobs keep running.',
   'update.applied': 'The first boot on an applied update: the install now runs `to`. Recovery reattached what was running.',

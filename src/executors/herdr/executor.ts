@@ -18,6 +18,11 @@ const UNBLOCK_POLLS = 10;
 const MAX_SENDS = 3;
 /** How long Claude has to exit before its pane closes; the reap is never typed into a Claude still up. */
 const EXIT_WAIT_MS = 5000;
+/**
+ * How early a dialog may count as lapsed (issue #376): its countdown is read when the job parks, in whole
+ * seconds and up to a poll after the dialog showed, so Claude Code's own deadline can come a little sooner.
+ */
+const LAPSE_SLACK_MS = 5000;
 /** Tries at the reap, each waited on this long: a shell can drop what is typed, and stopping processes takes seconds. */
 const REAP_TRIES = 3;
 const REAP_WAIT_MS = 10000;
@@ -181,7 +186,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked', text };
     // Saved before the prompt: a restart in between watches a turn never sent, which ends as a
     // lost send and is sent again, never as a lost job.
-    ctx.saveState({ ...s, turn, parkedSeq: undefined });
+    ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
     await herdr.prompt(s.agentName, text);
     return watch(ctx, s, p, turn, notes);
   }
@@ -197,7 +202,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs * 2 ** notes.count, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
-      parked: (seq) => ctx.saveState({ ...s, turn, parkedSeq: seq }),
+      parked: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
     });
     if ('lostSend' in result) {
       const herdr = herdrOn(s);
@@ -216,7 +221,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const agent = await herdr.getAgent(s.agentName);
       if (!agent) return { kind: 'failed', error: 'pane lost' };
       const next: TurnAnchor = { ...turn, seq: agent.stateChangeSeq };
-      ctx.saveState({ ...s, turn: next, parkedSeq: undefined });
+      ctx.saveState({ ...s, turn: next, parkedSeq: undefined, lapsesAt: undefined });
       await herdr.sendKeys(s.paneId, ['enter']);
       ctx.progress(0, "the prompt sat unsent in claude's input: submitted it");
       return watch(ctx, s, p, next, again);
@@ -309,7 +314,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
           ? dialogOption(await herdr.read(s.paneId, { source: 'visible', lines: 60 }), answer) : undefined;
         if (!option || !s.turn) return send(ctx, s, p, answer, lastLineOf(answer));
         const turn: TurnAnchor = { ...s.turn, seq: agent.stateChangeSeq, blockedAtSend: true };
-        ctx.saveState({ ...s, turn, parkedSeq: undefined });
+        ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
         await herdr.sendText(s.paneId, option);
         ctx.progress(0, `picked option ${option} of the dialog`);
         return watch(ctx, s, p, turn);
@@ -349,7 +354,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner.
         if (agent.status !== 'working' && typed === undefined) return null;
         const turn: TurnAnchor = { seq: parked, anchor: typed ? lastLineOf(typed) : s.turn.anchor, blockedAtSend: false };
-        const { parkedSeq: _drop, ...rest } = s;
+        const { parkedSeq: _drop, lapsesAt, ...rest } = s;
+        // Nothing typed, and the dialog's countdown has run out: Claude Code denied it by itself, nobody answered (issue #376).
+        const lapsed = typed === undefined && lapsesAt !== undefined && clock.now().getTime() >= Date.parse(lapsesAt) - LAPSE_SLACK_MS;
+        if (lapsed) return { lapsed: true, executorState: { ...rest, turn } };
         return { ...(typed ? { answer: typed } : {}), executorState: { ...rest, turn } };
       } catch {
         return null;
