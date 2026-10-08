@@ -50,7 +50,7 @@ describe('migration 21: owner → the default admin account', () => {
     admin.close();
     expect(instance.identities.userOf('dir', 'ada')).toBe('admin');
     expect(instance.identities.userOf('corp', 'sub-1')).toBe('bea');
-    expect(instance.uiSessions.find('t1', '2026-10-02T10:00:00.000Z')?.userId).toBe('admin');
+    expect(instance.uiSessions.get('t1')?.userId).toBe('admin');
     expect(instance.loginCodes.take('c1', '2026-10-02T10:00:00.000Z')).toBe('admin');
     instance.close();
     expect(schemas(url)).toEqual(['u_admin', 'u_bea']);

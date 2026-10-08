@@ -78,7 +78,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_WEBHOOK_BASE_MS: '20', HOPPER_LANE_IDLE_GRACE_MS: '100', HOPPER_RECONNECT_GRACE_MS: '3000', HOPPER_ANSWER_TIMEOUT_MS: '1000',
       HOPPER_HUMAN_RENOTIFY_MS: '10', HOPPER_HUMAN_TIMEOUT_MS: '20',
       HOPPER_RESUME_BOOST: '7', HOPPER_MAX_QUESTIONS: '1', HOPPER_KEEP_PANES: 'true', HOPPER_LOCAL_MACHINE: 'false',
-      HOPPER_UI_SESSION_HOURS: '1.5', HOPPER_PLUGIN_DIR: '/srv/p', HOPPER_PUBLIC_URL: 'https://Hopper.Example.com/',
+      HOPPER_PLUGIN_DIR: '/srv/p', HOPPER_PUBLIC_URL: 'https://Hopper.Example.com/',
       HOPPER_LAN_NAMES: ' Server , 192.0.2.29', HOPPER_LAN_PEERS: '192.0.2.0/24, 100.64.0.0/10',
       HOPPER_UPDATE_CHECK_MS: '0', HOPPER_RESTART: 'respawn',
       HOPPER_GITHUB_URL: 'https://github.example.com/', HOPPER_GITHUB_CLIENT_ID: 'gh-id', HOPPER_GITHUB_APP_SLUG: 'hopper-x',
@@ -87,7 +87,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
       softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, reconnectGraceMs: 3000, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
-      uiSessionHours: 1.5, pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
+      pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
       hopperApps: {
         github: { provider: 'github', url: 'https://github.example.com', apiUrl: 'https://github.example.com/api/v3', clientId: 'gh-id', slug: 'hopper-x' },
@@ -100,6 +100,12 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     const c = loadConfig({ ...DB, ...left });
     expect(c.leftoverEnv).toEqual(left);
     for (const k of ['rulesFile', 'webhooksFile', 'pluginsFile', 'authFile', 'pluginDir']) expect(c).not.toHaveProperty(k);
+  });
+
+  it('HOPPER_UI_SESSION_HOURS is no longer read (issue #439): session lengths are sign-in settings in the database', () => {
+    const c = loadConfig({ ...DB, HOPPER_UI_SESSION_HOURS: '12' });
+    expect(c.leftoverEnv).toEqual({ HOPPER_UI_SESSION_HOURS: '12' });
+    expect(c).not.toHaveProperty('uiSessionHours');
   });
 
   it('a public URL alone keeps the loopback bind (a reverse proxy on this host); with LAN peers it binds every interface', () => {
@@ -152,8 +158,6 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     ['HOPPER_MAX_QUESTIONS', '-1'],
     ['HOPPER_HUMAN_TIMEOUT_MS', '0'],
     ['HOPPER_ANSWER_TIMEOUT_MS', '0'],
-    ['HOPPER_UI_SESSION_HOURS', '0'],
-    ['HOPPER_UI_SESSION_HOURS', 'soon'],
   ])('fails loudly on %s=%s', (name, value) => {
     expect(() => loadConfig({ [name]: value })).toThrow(name);
   });
