@@ -44,6 +44,14 @@ describe('attached machine source', () => {
     expect((await src.list())[0]).toMatchObject({ workTree: '~/trees' });
   });
 
+  it('its snapshot carries the machine\'s reserved lanes (issue #372)', async () => {
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 4, reservedLanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
+      probe: async () => ({ online: true }),
+    });
+    expect((await src.list())[0]).toMatchObject({ maxLanes: 4, reservedLanes: 1 });
+  });
+
   it('is offline until the first probe answers, then online with its lanes, executors and ssh target', async () => {
     const h = harness([true]);
     expect(await h.src.list()).toEqual([{
