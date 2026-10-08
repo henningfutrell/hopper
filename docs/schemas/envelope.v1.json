@@ -56,6 +56,7 @@
         "job.claimed_by_operator",
         "job.rerun",
         "job.dismissed",
+        "job.work_kept",
         "source.stalled",
         "connected_account.expired",
         "jev.mode_changed",

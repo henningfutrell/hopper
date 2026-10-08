@@ -7,6 +7,8 @@
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
+import type { DiskReading } from '../domain/types.ts';
+import { diskOf } from '../machines/disk.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
 /** Reaching a client target. */
@@ -48,10 +50,13 @@ export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: numbe
 }
 
 /** The id of the client release the client target runs, and its home when it says (a client before issue #323 does not). */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; home?: string }> {
-  const { release, home } = await clientCall<{ release?: unknown; home?: unknown }>(t, '/release', {}, 15000);
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; home?: string; disk?: DiskReading }> {
+  const { release, home, disk } = await clientCall<{ release?: unknown; home?: unknown; disk?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
-  return { release, ...(typeof home === 'string' && home.startsWith('/') ? { home } : {}) };
+  // The disk its home is on (issue #401): a client older than this says none.
+  const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
+  const read = d && typeof d.freeBytes === 'number' && typeof d.totalBytes === 'number' ? { disk: diskOf(d.freeBytes, d.totalBytes) } : {};
+  return { release, ...(typeof home === 'string' && home.startsWith('/') ? { home } : {}), ...read };
 }
 
 /** Loads a client release onto the client target; it restarts to run it. */

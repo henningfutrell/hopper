@@ -72,7 +72,7 @@ systemctl --user enable podman-restart.service                        # once: st
 ```
 
 The container is not a machine: jobs run on attached machines ("Add machines"). Settings and secrets: a
-`.env` beside `compose.yaml` (`.env.example`). Upgrade: `podman compose pull && podman compose up -d`.
+`.env` beside `compose.yaml` (`.env.example`). Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
 The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.

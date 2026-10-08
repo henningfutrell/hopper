@@ -10,7 +10,8 @@
 # one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY (an anthropic-api escalation level), … (GitHub needs none: the GitHub account
 # you sign in with is the connection). HOPPER_PORT moves the UI port;
 # HOPPER_IMAGE runs another image (one built from a checkout: `podman build -t localhost/hopper .`,
-# HOPPER_IMAGE=localhost/hopper). Upgrade: `podman compose pull && podman compose up -d`.
+# HOPPER_IMAGE=localhost/hopper). Upgrade, removing the image it replaces:
+#   podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper
 name: hopper
 
 services:

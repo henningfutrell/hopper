@@ -214,6 +214,18 @@ export function clientReleaseText(client: MachineSnapshot['client']): string | n
   return client.current ? `${client.release} (the hopper's)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
 }
 
+const gb = (bytes: number): string => {
+  const n = bytes / 1e9;
+  return `${n >= 10 ? Math.round(n) : n.toFixed(1)} GB`;
+};
+
+/** A machine's disk (issue #401) as its card says it, with the warning when it runs low; null when it was not read. */
+export function diskText(disk: MachineSnapshot['disk']): string | null {
+  if (!disk) return null;
+  const text = `${gb(disk.freeBytes)} free of ${gb(disk.totalBytes)} (${Math.round((disk.freeBytes / disk.totalBytes) * 100)}%)`;
+  return disk.low ? `${text}: low, jobs may fail as it fills` : text;
+}
+
 /** The agents a sandbox box is offered with (issue #308): those an executor drives on a client target. */
 export const BOX_AGENTS = ['claude'] as const;
 export type BoxAgent = (typeof BOX_AGENTS)[number];

@@ -220,9 +220,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323).
           // One after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (home) => ({
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
-            home,
+            ...found,
           })))),
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or

@@ -105,12 +105,16 @@ export interface Executor {
    */
   answeredInPane?(job: Job): Promise<PaneAnswer | null>;
   /**
-   * Release whatever a job holds outside the process (close its pane). Called when a
-   * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it
-   * fails. Must not throw; idempotent.
+   * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
+   * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
+   * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it fails.
+   * Answers what the reap kept, when it ran. Must not throw; idempotent.
    */
-  cleanup?(job: Job): Promise<void>;
+  cleanup?(job: Job): Promise<Reaped | void>;
 }
+
+/** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
+export interface Reaped { kept: string[] }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
 

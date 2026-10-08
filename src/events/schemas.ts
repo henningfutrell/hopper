@@ -83,6 +83,7 @@ export const EVENT_SCHEMAS = {
   'job.rerun': strict({ by: z.enum(['user']) }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
+  'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
   'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),

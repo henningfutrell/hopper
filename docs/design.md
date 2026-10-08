@@ -511,11 +511,13 @@ outside it (`/tmp` or anywhere else). Opening the pane there is not enough on it
 Code's scratchpad lives under `/tmp` by default and its system prompt sends temp files there,
 which is how a job drifted out of its tree. So the hopper directs it three ways:
 
-- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch`,
+- **Environment.** The tab gets `CLAUDE_CODE_TMPDIR` and `TMPDIR` = `<cwd>/.hopper-scratch/<job id>`,
   the job's **scratch dir**: Claude's scratchpad and every tool's temp files land inside the
-  tree. The payload cannot move them.
-- **The scratch dir ignores itself.** Before `agent start`, the pane's own shell runs
-  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <scratch>/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
+  tree, in a directory that is the job's alone (issue #401), so the reap can remove it. The payload
+  cannot move them. (cursor-agent and the other print agents keep the shared `<cwd>/.hopper-scratch`;
+  they have no reap.)
+- **The scratch dirs ignore themselves.** Before `agent start`, the pane's own shell runs
+  `cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.hopper-scratch/.gitignore && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`) — in the pane, so on whichever machine the work tree is. A fresh shell drops what
   is typed before its prompt (seen live), so the executor waits up to 1000 ms for
   `hopper-scratch-ready` in the pane's output (`pane wait-output`) and runs the command again,
@@ -550,7 +552,28 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   per repository". This is direction plus refusal, not a sandbox: an agent can still write where
   its OS user can ("Sandboxing jobs: mechanisms compared").
 - **The prompt says so.** The footer's work-tree line names the cwd and the scratch dir, and
-  tells the job to ask rather than work in a tree outside it.
+  tells the job to ask rather than work in a tree outside it. It sends clones and git worktrees
+  made only for this job to the scratch dir, and says the reap below removes it.
+- **The reap** (issue #401, `src/executors/herdr/reap.ts`). A job left processes and copies
+  behind: dev servers and watchers started with `&` or `setsid` outlive the pane (herdr's close
+  hangs up only the pane's own session), and every job's clone and `npm install` stayed on disk. On
+  one machine that filled the home and left dozens of processes in deleted work trees. So when a
+  job's pane closes — every terminal outcome, a cancel, a timeout, a reclaim at restart — the
+  executor sends `esc`, `ctrl+c` twice, waits up to 5000 ms for Claude to exit (`agent get` finds no
+  agent; if Claude is still up, the reap is never typed into it and the pane only closes), and then
+  the pane's shell runs the reap, on whichever machine the job ran:
+  1. every process whose environment carries the job's `HOPPER_JOB_ID` (the tab sets it, and every
+     child inherits it) gets `SIGTERM`, then `SIGKILL` after 3 s; the pane's shell is spared, and the
+     reap runs with the variable unset so it never matches itself. Linux only (`/proc`); elsewhere
+     this step is skipped.
+  2. the job's scratch dir is removed — only a path that is `…/.hopper-scratch/<job id>` — unless a
+     repository in it (`.git`, outside `node_modules`) has uncommitted changes, or commits no remote
+     has (a worktree: its `HEAD`; a clone: `HEAD` and every branch). Then nothing is removed and each
+     such repository is printed; a pushed git worktree of a repository outside is removed through
+     `git worktree remove`, so its repository keeps no stale entry.
+  It prints `hopper-reaped` last (`pane wait-output`, up to 10000 ms, three tries). What it kept is
+  never removed silently: `cleanup` answers it (`Executor.cleanup` → `Reaped`), and the engine
+  records `job.work_kept { paths }` on the job. `HOPPER_KEEP_PANES` skips the reap with the close.
 
 Running or installing what a job built, and reading files elsewhere, stays allowed: the rule is
 about where the work is done, not what is touched.
@@ -2629,6 +2652,17 @@ drives that machine's herdr and records `ssh` and `session` in its pane state, s
 reattach and cleanup (which have only the job) reach the same herdr. Pane ids are per herdr server:
 held panes are keyed by machine and pane. An executor that cannot run elsewhere is simply not listed
 in the machine's `executors`.
+
+**A machine's disk** (issue #401, `src/machines/disk.ts`). Jobs filled one machine's home: clones, installs
+and test temp dirs piled up until nothing could be written. So every machine whose disk can be read
+carries it on its snapshot, `MachineSnapshot.disk` — `{ freeBytes, totalBytes, low }` for the filesystem
+its home is on, where the jobs directory and the scratch dirs live. This machine's is read with
+`statfs` at every list; an ssh target's in its probe (`df -Pk "$HOME"`, before the home it prints); a
+client target's by its client, in its `/release` answer (a client older than this says none). A container
+target has none. It is **low** below a tenth free or below 5 GiB free, whichever comes first. The
+Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
+Attention panel lists each machine running low, once per machine. Nothing is refused on a low disk:
+the reap ("Work tree") is what keeps it flat; this is the warning for what it cannot remove.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`
@@ -5183,7 +5217,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 **compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
-`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d`. Self-update
+`HOPPER_IMAGE=localhost/hopper`. Upgrade: `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
 still does not apply to a container.
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
@@ -5315,7 +5349,22 @@ rolled-back append can leave a gap in `seq`: seq only rises.
 
 **Tests and local development** run against Postgres too: `npm test` starts a throwaway container
 through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own
-schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead. A local
+schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead.
+
+**A test run leaves nothing behind** (issue #401), on a pass, a failure or a crash. The first
+globalSetup (`test/support/run.ts`) makes one run root, `jh-run-<pid>-*` in the tmpdir, and sets
+`TMPDIR` to it, so every worker and every process a test starts makes its temp dirs inside it (the
+throwaway HOME of `test/support/isolate.ts` too); it sets `HOPPER_TEST_RUN` to a fresh id, the run's
+marker, which every process of the run inherits. Its teardown kills every process whose environment
+(`/proc/<pid>/environ`, Linux only) carries the marker — SIGTERM, then SIGKILL — removes the run's
+containers and removes the run root. Setup and teardown both sweep what a dead run left
+(`test/support/sweep.ts`): run roots whose pid is dead, containers named `jh-<kind>-<pid>` (a test's
+container names end in its pid) and containers labelled `hopper.test-pid=<pid>` (the Postgres) whose
+pid is dead. A live pid's are never touched: they belong to a run still going. Older leftovers in the
+tmpdir (`jh-test-home-*`, …) are not swept by name; another suite may own them. A unix socket path is
+capped at 108 bytes, so a test that listens on a socket makes its dir in `/tmp`, not under the run root.
+
+A local
 hopper uses `deploy/compose.yaml`'s Postgres (optional: any Postgres it is given will do).
 
 ### Config documents

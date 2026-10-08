@@ -86,8 +86,9 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it
   starts every container whose restart policy is `always` or `unless-stopped`) and
   `sudo loginctl enable-linger "$USER"`, once.
-- **Upgrade:** `podman compose pull && podman compose up -d` (self-update does not apply to a
-  container). It recreates the hopper's container, so it ends the running jobs' panes: upgrade when none
+- **Upgrade:** `podman compose pull && podman compose up -d && podman image prune -f --filter label=org.opencontainers.image.title=hopper` (self-update does not apply to a
+  container). The prune removes the image the upgrade replaced, and only untagged hopper images, so
+  repeated upgrades do not pile up images. It recreates the hopper's container, so it ends the running jobs' panes: upgrade when none
   runs. A pinned build: `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:sha-<commit>` in `.env`.
 - **Remove:** `podman compose down` keeps the volumes; `down -v` deletes the database and the sign-ins.
 - **An image from a checkout:** `podman build -t localhost/hopper .`, then `HOPPER_IMAGE=localhost/hopper`
