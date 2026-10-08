@@ -164,3 +164,62 @@ describe('a build that does not know all of itself (issue #409)', () => {
     expect(details!.textContent).toMatch(/pull or rebuild the image/);
   });
 });
+
+describe('the release notes in Version and updates (issue #493)', () => {
+  const TARGET = 'beef123'.padEnd(40, '0');
+  const notes = (n: number, what: string) => Array.from({ length: n }, (_, i) => `${what} change ${i + 1}.`);
+  const pending = (o: Record<string, unknown> = {}) => ({ ...UPDATE, state: 'available', target: { commit: TARGET, ref: 'stable' }, whatsNew: notes(2, 'Update'), ...o });
+  const details = () => document.querySelector('[data-slot="version-details"]')!;
+  const section = (name: string) => details().querySelector(`[data-slot="${name}"]`);
+
+  it('names each list for what it is: the update brings the target commit, the installed one is already running', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending() });
+    expect(section('update-notes')?.querySelector('h3')?.textContent).toBe('Coming in the update · stable beef123');
+    expect(section('installed-notes')?.querySelector('h3')?.textContent).toBe('Already installed · stable c0ffee1');
+    expect(section('update-notes')?.textContent).toContain('Update change 1.');
+    expect(section('installed-notes')?.textContent).toContain('You can now do the newest thing.');
+    const both = [...details().querySelectorAll('[data-slot$="-notes"]')].map((e) => e.getAttribute('data-slot'));
+    expect(both).toEqual(['update-notes', 'installed-notes']);
+  });
+
+  it('no list scrolls in a box of its own', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending({ whatsNew: notes(40, 'Update') }) });
+    expect(details().querySelector('[class*="overflow-y-auto"], [class*="max-h-"]')).toBeNull();
+  });
+
+  it('a long list shows its first five and a Show all that opens the rest in place', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending({ whatsNew: notes(8, 'Update') }) });
+    const update = section('update-notes')!;
+    expect(update.querySelectorAll('li')).toHaveLength(5);
+    const more = [...update.querySelectorAll('button')].find((b) => b.textContent === 'Show all 8');
+    expect(more).toBeDefined();
+    await act(async () => more!.click());
+    expect(update.querySelectorAll('li')).toHaveLength(8);
+    expect([...update.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show fewer');
+  });
+
+  it('with no update pending there is no update list, and the installed one reads on its own', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    expect(section('update-notes')).toBeNull();
+    expect(section('installed-notes')?.querySelector('h3')?.textContent).toBe('In this version · stable c0ffee1');
+  });
+
+  it('the header sheet shows the same lists', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header', { update: pending() });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Version and updates"]')!.click());
+    const sheet = document.querySelector('[data-slot="version-details"]');
+    expect(sheet?.querySelector('[data-slot="update-notes"] h3')?.textContent).toBe('Coming in the update · stable beef123');
+    expect(sheet?.querySelector('[data-slot="installed-notes"] h3')?.textContent).toBe('Already installed · stable c0ffee1');
+  });
+
+  it("the update notice's What's new still opens the update's notes", async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: pending() });
+    const open = [...document.querySelectorAll('button')].find((b) => b.textContent === "What's new");
+    await act(async () => open!.click());
+    expect(document.querySelector('[data-update-notice]')?.textContent).toContain('Update change 2.');
+  });
+});

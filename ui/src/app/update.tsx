@@ -1,7 +1,7 @@
 // Self-update (issue #44): the notice when an update is available, applying or failed — with
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
-// details as Settings → Version, which links to Settings → Version history (issue #246). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
+// details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,11 +22,35 @@ import { useCanAdminInstance } from '@/store/selectors';
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
 const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
 
+/** How many notes a list shows before its Show all (issue #493). */
+const FIRST = 5;
+
+/** Release notes as a plain list that scrolls with the page: the first few, and a Show all that opens the rest in place (issue #493). */
 function WhatsNew({ lines }: { lines: string[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? lines : lines.slice(0, FIRST);
   return (
-    <ul className="max-h-64 list-disc space-y-1 overflow-y-auto pl-4 text-xs">
-      {lines.map((b) => <li key={b}>{b}</li>)}
-    </ul>
+    <div className="space-y-1">
+      <ul className="list-disc space-y-1 pl-4 text-xs break-words">
+        {shown.map((b) => <li key={b}>{b}</li>)}
+      </ul>
+      {lines.length > FIRST && (
+        <Button variant="link" size="xs" className="h-auto px-0 text-xs" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${lines.length}`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** One release-notes section of the version panel, its heading naming the commit it belongs to (issue #493). */
+function Notes({ slot, title, hint, lines, primary }: { slot: string; title: string; hint: string; lines: string[]; primary?: boolean }) {
+  return (
+    <section data-slot={slot} className={cn('space-y-1', primary ? 'rounded-lg border border-busy/40 bg-busy/5 p-3' : 'border-t pt-3 text-muted-foreground')}>
+      <h3 className={cn('text-xs font-medium', primary ? TEXT.busy : 'text-foreground')}>{title}</h3>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <WhatsNew lines={lines} />
+    </section>
   );
 }
 
@@ -76,6 +100,7 @@ export function VersionDetails({ className }: { className?: string }) {
   const [checking, setChecking] = useState(false);
   const check = async () => { setChecking(true); await updateAct({ action: 'check' }); setChecking(false); };
   if (!s) return <p className={cn('text-sm text-muted-foreground', className)}>Loading…</p>;
+  const pending = s.whatsNew.length > 0 && s.target !== undefined;
   return (
     <div data-slot="version-details" className={cn('space-y-4 text-sm', className)}>
       <p className={cn('text-xs', TEXT[TONE[s.state]])}>{headline(s)}</p>
@@ -114,8 +139,11 @@ export function VersionDetails({ className }: { className?: string }) {
           </div>
         </div>
       </div>
-      {s.whatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">What's new in the update</h3><WhatsNew lines={s.whatsNew} /></div>}
-      {s.installedWhatsNew.length > 0 && <div className="space-y-1 border-t pt-3"><h3 className="text-xs font-medium">In this version</h3><WhatsNew lines={s.installedWhatsNew} /></div>}
+      {pending && s.target && <Notes slot="update-notes" primary title={`Coming in the update · ${s.target.ref} ${short(s.target.commit)}`}
+        hint="Not installed yet: what updating would bring." lines={s.whatsNew} />}
+      {s.installedWhatsNew.length > 0 && <Notes slot="installed-notes" lines={s.installedWhatsNew}
+        title={`${pending ? 'Already installed' : 'In this version'} · ${s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : 'this build'}`}
+        hint={pending ? 'What the version you run now brought: you have these already.' : 'What the version you run now brought.'} />}
       <a href="#settings/version-history" className="block text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">Every version and what it brought: Settings → Version history</a>
       {!authed && <p className="text-xs text-muted-foreground">Read-only: only the hopper's admins can update or change these settings.</p>}
     </div>
