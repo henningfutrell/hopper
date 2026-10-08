@@ -64,6 +64,13 @@ services:
       # "Reaching the UI across the LAN"). `hopper` is the name other containers reach it by.
       HOPPER_LAN_NAMES: ${HOPPER_LAN_NAMES:-hopper}
       HOPPER_LAN_PEERS: ${HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # The Grok Bot routine's URL and key (docs/design.md "Grok Bot routine webhook"): files in the
+      # home volume, read at each use, so the routine is set up or its key rotated without recreating
+      # the container: `podman exec -i hopper-hopper-1 sh -c 'umask 077; mkdir -p ~/.config/hopper;
+      # cat > ~/.config/hopper/grokbot-webhook-url'` (then -key). To give the values as variables in
+      # .env instead, set these two to nothing there.
+      GROKBOT_WEBHOOK_URL_FILE: ${GROKBOT_WEBHOOK_URL_FILE-/home/node/.config/hopper/grokbot-webhook-url}
+      GROKBOT_WEBHOOK_KEY_FILE: ${GROKBOT_WEBHOOK_KEY_FILE-/home/node/.config/hopper/grokbot-webhook-key}
     volumes:
       - secrets:/run/hopper-secrets:ro
       # Its home: the claude sign-in.

@@ -5,7 +5,7 @@ import type {
   Question, QuestionAttempt, QuestionGatesView, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
-  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries,
+  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -13,7 +13,7 @@ export type {
   Question, QuestionAttempt, QuestionGatesView, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
-  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries,
+  InstanceUsageHistory, UsageGraphView, UsageHistory, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
 };
 
 export interface Queue {

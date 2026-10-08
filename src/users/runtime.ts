@@ -62,8 +62,8 @@ export interface UserSeams {
   fakeUsage?: SettableUsageSource;
   /** Run after the configured sources, polled every SEAM_SOURCE_POLL_MS. */
   sources?: JobSource[];
-  /** First retry delay of every grokbot-routine notifier instance; default 1000. */
-  grokbotBaseMs?: number;
+  /** Every grokbot-routine notifier instance's first retry delay (default 1000) and configured check (default 5000), in ms. */
+  grokbot?: { baseMs?: number; watchMs?: number };
   /** Replaces the configured router (the plugin host still loads, for /api/plugins). */
   router?: Router;
   /** Replace the configured escalation levels, lowest first; [] = none. The report stays the host's. */
@@ -151,7 +151,7 @@ function withSeams(seams: UserSeams) {
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
-    if (p.id === 'grokbot-routine' && seams.grokbotBaseMs) return grokbotRoutinePlugin({ baseMs: seams.grokbotBaseMs });
+    if (p.id === 'grokbot-routine' && seams.grokbot) return grokbotRoutinePlugin(seams.grokbot);
     return p;
   });
 }
@@ -161,7 +161,7 @@ function seamPlugins(router: Router, host: PluginsView): PluginsView {
   return {
     routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
     machinesConfig: host.machinesConfig, editMachines: host.editMachines, machineHostKey: host.machineHostKey, editMachineDefaults: host.editMachineDefaults,
-    routing: host.routing, editRouting: host.editRouting,
+    routing: host.routing, editRouting: host.editRouting, notifierAction: host.notifierAction,
   };
 }
 
@@ -340,7 +340,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
   const stopFailureLog = logFailures(store);
   dispatcher.start();
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id) });
+  // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => store.questions.list({ status: ['open'] }).filter((q) => q.tier === 'human').reverse(), answerUrl: o.answerUrl });
   const usageHistory = createUsageRecorder({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
     // Read at every prune: a retention set in the UI applies without a restart (issue #356).

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { sign } from './signer.ts';
@@ -64,11 +65,10 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     setImmediate(sweep);
   }
 
-  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent): Promise<void> {
+  /** One signed POST of `event` to the subscription: the receiver's status, and the error when it is not a 2xx. */
+  async function send(sub: WebhookSubscription, event: { type: string }, deliveryId: string): Promise<{ statusCode?: number; error?: string }> {
     const body = JSON.stringify(event);
     const timestamp = String(Math.floor(clock.now().getTime() / 1000));
-    let statusCode: number | undefined;
-    let error: string | undefined;
     try {
       const signature = sign(subscriptionSecret(o.secret, sub.secretEnv), timestamp, body);
       const res = await fetch(sub.url, {
@@ -76,19 +76,22 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
         headers: {
           'content-type': 'application/json',
           'x-hopper-event': event.type,
-          'x-hopper-delivery': d.id,
+          'x-hopper-delivery': deliveryId,
           'x-hopper-timestamp': timestamp,
           'x-hopper-signature': signature,
         },
         body,
         signal: AbortSignal.timeout(timeoutMs),
       });
-      statusCode = res.status;
       await res.body?.cancel();
-      if (!res.ok) error = `HTTP ${res.status}`;
+      return res.ok ? { statusCode: res.status } : { statusCode: res.status, error: `HTTP ${res.status}` };
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      return { error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent): Promise<void> {
+    const { statusCode, error } = await send(sub, event, d.id);
     const attempts = d.attempts + 1;
     if (error === undefined) {
       update(d.id, { status: 'delivered', attempts, lastStatusCode: statusCode, lastError: undefined, nextAttemptAt: undefined });
@@ -147,6 +150,18 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     onDeliveryUpdated(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    async test(name) {
+      const sub = store.webhooks.list().find((s) => s.name === name);
+      if (!sub) return undefined;
+      const problem = secretProblem(o.secret, sub.secretEnv);
+      if (problem) return { ok: false, detail: problem };
+      // Shaped like a delivered event, so a receiver's parser takes it; never appended to the event log.
+      const at = clock.now().toISOString();
+      const id = `test-${randomUUID()}`;
+      const event = { seq: 0, schemaVersion: 1, id, type: 'webhook.test', at, data: { test: true, subscription: sub.name } };
+      const r = await send(sub, event, id);
+      return { ok: r.error === undefined, ...(r.statusCode !== undefined ? { status: r.statusCode } : {}), detail: r.error ?? `HTTP ${r.statusCode}` };
     },
   };
 }

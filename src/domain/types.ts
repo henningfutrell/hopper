@@ -129,6 +129,7 @@ export interface JobSourceRef {
   author?: string;
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
+  labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
 }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
@@ -447,10 +448,9 @@ export { HERDR_SESSION, HOST_KEY } from './machines.ts';
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export { LIST_ROLES, ROLES, SELECTABLE_ROLES } from './plugins.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
-export type * from './plugins.ts';
+export * from './plugins.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 
