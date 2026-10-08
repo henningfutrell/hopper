@@ -1852,7 +1852,7 @@ containing the bot login. Hopper comments still carry the marker line.
 | `appError` (app file unreadable or key rejected) | yes | — |
 | `enabledSetting` (`auto`/`true`/`false`) | — | yes |
 | `paused` (reason, when paused) | yes | yes |
-| phase-3 fields (`authors`, `label`, `repos`, `projectErrors`, `repoErrors`, `checkErrors`, `permanentErrors`, `skippedClaimedWithoutJob`) | yes | yes |
+| phase-3 fields (`authors`, `label`, `repos`, `projectErrors`, `repoErrors`, `checkErrors`, `permanentErrors`; `skippedClaimedWithoutJob` until issue #440 replaced it with `intake`) | yes | yes |
 
 **Enablement.** `sources.yaml` gains `githubApp:` (same keys as `github:` minus `owners`,
 plus `appFile`). `github.enabled` becomes `auto | true | false`, default `auto`. `auto`
@@ -7143,7 +7143,7 @@ and no unassignment (D1 and D9 of `docs/assignment.md` are open). A shared label
 for every user and every hopper on the repo. Instead the source asks the host which items' newest job was
 rejected (`JobSourceContext.rejections`: when, and for which assignee) and skips such an issue until its
 newest `assigned` event for that login is later than the rejection (`GitHubApi.assignedAt`, one events
-read per rejected issue per sync); skipped issues are listed in the source status (`skippedRejected`).
+read per rejected issue per sync); such an issue shows `rejected by you: not taken until assigned to you again` in the source's intake outcomes (issue #440).
 **Run again** now takes a rejected job too: the issue is queued at once. A rejection recorded before this
 change (no assignee) leaves the issue to its `hopper:rejected` label, as before: removing it offers the
 issue again.
@@ -7281,3 +7281,50 @@ npm: four jobs at once, one install), `test/herdr/executor-job-worktree.test.ts`
 `test/engine/sweep.test.ts`, `test/integration/sweep-restart.test.ts` (a hopper stopped mid-job and
 started again: the job's leftover process stopped, a stranger's not), `test/decider/disk-low.test.ts`,
 `test/plugins/machine-targets.test.ts`.
+
+## Intake outcomes, claim holders and the intake migration (issue #440, 2026-10-08)
+
+Owner report: one job ran where a full queue was expected. Dispatch was not the cause: of 16 open labelled
+issues, 14 were on the backburner and one had a stale claim and no assignee — and intake said nothing about
+any of them. Owner decisions (2026-10-08): M1 (c), M2 holder label + own stale claims released + legacy
+claims released once by the migration + one-click release, M3 leave the labels and show the reason, M4 keep
+the job repositories and suggest the others, M5 nothing to do (tenant migration 16 already removed
+`authors`, so no trusted accounts can be seeded from it).
+
+**As built:**
+- **Intake outcomes.** `discoverIssues` gives every open labelled issue it lists one outcome (`IntakeOutcome`,
+  `src/domain/intake.ts`): taken, or one reason — `done, but the issue is still open`, `failed: …`,
+  `rejected: …`, `on the backburner`, `addressed to another hopper`, `not assigned to you` (action `assign`),
+  `claimed by another hopper` / `… (no holder recorded)` (action `release`), `claimed by another user of this
+  hopper`, `claimed with no job here (stale); releasing it failed: …`, `rejected by you: …`. The first
+  matching reason wins, in that order. `JobSource.intake()` answers them; the sync loop adds each taken
+  issue's `jobId` and puts the list in `SourceStatus.detail.intake` (none while paused). Sources lists them,
+  not-taken first, with **Assign to me**, **Assign all to me** and **Release claim**
+  (`POST /ui/api/sources/:name/intake { kind, keys }`, operator; only on items the last sync offered that
+  action for; the source syncs at once).
+- **Claim holders.** A claim adds `hopper:held-by:<id>` beside `hopper:claimed`; the end of the job, a
+  cancel, a rejection and Run again remove both. The id is the user's **claim holder** id: 12 random hex
+  characters made on first use (`UserSettingsRepository.claimHolder`), naming no person or machine. A claimed
+  issue with no local job: this user's own holder label → stale, released (`source.claim_released`,
+  `by: hopper`) and taken in the same sync; another holder → respected (or, when another user of this hopper
+  has a job for it — `UserRuntimeOptions.otherUsersKnow` — `claimed by another user of this hopper`, no
+  release offered). A new install has a new id, so its predecessor's claims read as another hopper's: the
+  user releases them in Sources.
+- **The intake migration.** Once per source (`intakeMigration:<source>` in the user's settings), on the first
+  sync that lists every repo of its scope: a claim with no holder label and no job in any user of this hopper
+  is released (`by: migration`); labelled issues not assigned to the user are listed. The record
+  (`detail.intakeMigration`) and `source.intake_migrated { changes }` say what it did; a second run is a
+  no-op, across restarts. Nothing to restart: it runs on the first sync of the updated daemon.
+- **Repos outside the job repositories.** A connected account's source lists `GET /issues?filter=assigned`
+  (one listing, not a search, at most every 10 minutes, `OUTSIDE_EVERY_MS`) and shows the repos outside its
+  job repositories with issues it would take there (`detail.outsideRepos`). Sources offers **Add to job
+  repositories** (the existing `choose`, admin). Never added by itself; the no-search rule of issue #321
+  stands for intake. The app source has no user to list for, so it shows none.
+- **Why a lane is idle.** Each Decision's lane plan carries `idle` when the machine leaves lanes unused
+  (`idleReason`, `src/decider/lanes.ts`): its lane count is 0, offline, home not known, disk low, usage pacing
+  (lane cap below its lanes), reserved lanes, waiting jobs that cannot run there, every waiting job held (the
+  queue gate is `awaiting acceptance`), or no job waiting. The Overview's idle lanes and empty lane slots show
+  it. A waiting job already said why (`holdReason`, `waitReason`). `decision.made` v3 gains the optional
+  field; v1 and v2 keep their old lane plan (`legacyLanePlan`).
+- **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
+  is the user's act from Sources, never the hopper's own.

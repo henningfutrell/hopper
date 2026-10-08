@@ -44,7 +44,7 @@ const LANE_MEANING = {
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
 
-function LaneCard({ row, machine }: { row: LaneRow; machine: string }) {
+function LaneCard({ row, machine, idle }: { row: LaneRow; machine: string; idle?: string | undefined }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
   // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job.
@@ -83,18 +83,32 @@ function LaneCard({ row, machine }: { row: LaneRow; machine: string }) {
           {job.progressMessage && <div className="truncate text-xs text-muted-foreground" title={job.progressMessage}>{job.progressMessage}</div>}
           <UnassignedFlag job={job} />
         </div>
-      ) : <div className="text-xs text-muted-foreground/70">{lane ? 'idle' : 'capacity, no lane open'}</div>}
+      ) : (
+        <div data-lane-idle className="text-xs text-muted-foreground/70" title={idle}>
+          {lane ? 'idle' : 'capacity, no lane open'}{idle && <> · <span className="text-muted-foreground">{idle}</span></>}
+        </div>
+      )}
     </div>
   );
+}
+
+/** Why each machine leaves lanes unused, from the latest Decision (issue #440). */
+function useIdleReasons(): Map<string, string> {
+  const latest = useHopper((s) => s.decisions[0]);
+  return new Map((latest?.lanes ?? []).flatMap((l) => (l.idle ? [[l.machineId, l.idle] as const] : [])));
 }
 
 export function LanesPanel() {
   const machines = useHopper((s) => s.machines);
   const { running } = useJobBoard();
+  const idle = useIdleReasons();
   const rows = laneRows(machines, running);
+  // A machine with no lane to show (its lane count is 0) still says why it runs nothing.
+  const laneless = machines.filter((m) => !rows.some((r) => r.machine.id === m.id) && idle.has(m.id));
   return (
     <Panel title="Lanes" icon={Layers} count={`${running.length} running`} list bodyClassName="grid grid-cols-1 gap-2">
-      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} />) : <Empty>no machines</Empty>}
+      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} idle={idle.get(r.machine.id)} />) : <Empty>no machines</Empty>}
+      {laneless.map((m) => <div key={m.id} data-lane-idle className="text-xs text-muted-foreground">{machineName(m.id, machines)}: {idle.get(m.id)}</div>)}
     </Panel>
   );
 }
