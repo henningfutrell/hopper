@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Your GitHub connection now keeps working for months instead of needing to be made again every day: the hopper renews it by itself in the background, also right after it was stopped for a while, and jobs that are already running keep their access to GitHub when it does. A short GitHub outage no longer ends the connection; if it really ends, the header and the Sources page say so and ask you to connect again. The connection's keys are now stored locked in the database.
 - Questions are answered by Claude again on a hopper where no machine was picked for answering them: the job's own machine answers, or the only one that can, or one you choose in Settings, and each question shows which machine answered it. When no machine can, Settings says so plainly and how to fix it, instead of every question silently going to you.
 - You stay signed in while you use the hopper: a session lasts 7 days without use and 30 days at most, both set in Settings → Sign-in. When a session does end, the hopper takes you straight to sign in again and back to the page you were on.
 - The update channels are now dev, beta and stable. A hopper that followed main or release now follows stable, with nothing to do.

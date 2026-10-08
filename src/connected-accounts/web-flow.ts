@@ -46,7 +46,7 @@ export function webFlow(app: HopperApp, clientSecret: string, redirectUri: strin
       // With the refresh token, which renews it (issue #358): GitHub answers its lifetime as refresh_token_expires_in.
       const refreshLife = tokens.refresh_token_expires_in;
       return {
-        accessToken: tokens.access_token, ...(ends ? { expiresAt: ends } : {}),
+        accessToken: tokens.access_token, grantedBy: 'web', ...(ends ? { expiresAt: ends } : {}),
         ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
         ...(typeof refreshLife === 'number' ? { refreshTokenExpiresAt: new Date(Date.now() + refreshLife * 1000) } : {}),
       };

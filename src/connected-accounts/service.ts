@@ -4,26 +4,32 @@
 // GitHub's device flow with the hopper's app — the UI shows the device code until the person approves it
 // at GitHub — then asks GitHub who the token belongs to, keeps the account in the user's store and links
 // it, so a later sign-in with it lands here. One device code at a time. The account's job source, and the
-// jobs it gives, ask here for the token. GitHub App user tokens expire after 8 hours: the token is renewed
-// with its refresh token an hour before it expires, and when GitHub refuses it (a 401), and the new pair is
-// kept (issue #358). When GitHub refuses the renewal too, or the token expired with nothing to renew it, the
-// sign-in has ended: the account reads as expired — never as connected — offers no login, its
-// source says to connect again — nothing reads GitHub in its place (issue #359) — and the owner is told once (`onExpired`). Which repositories its jobs may use is the user's choice (issue #321),
-// a setting that outlives a disconnect; none chosen, no job.
+// jobs it gives, ask here for the token. Which repositories its jobs may use is the user's choice (issue
+// #321), a setting that outlives a disconnect; none chosen, no job.
+//
+// GitHub App user tokens expire after 8 hours; the renewer (renewer.ts, issues #358, #441) keeps the token
+// renewed — ahead of expiry whether or not anything asks, at start, and on a 401 — atomically across
+// processes, and the tokens are sealed at rest (at-rest.ts). The sign-in ends only when GitHub refuses the
+// refresh token itself and no newer pair is stored, or the refresh token is past its own expiry: then the
+// account reads as expired — never as connected — offers no login, its source says to connect again —
+// nothing reads GitHub in its place (issue #359) — and the owner is told once (`onExpired`).
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
-import { deviceFlow, deviceFlowFailure, oauthError, type DeviceFlow, type Grant } from './device-flow.ts';
+import { runtimeSecrets } from '../secrets/runtime.ts';
+import { tokenBoxOf, type TokenBox } from '../secrets/token-box.ts';
+import { createAtRest, PROVIDER_NAME, recordOf } from './at-rest.ts';
+import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
-import type { Renewal } from './renewal.ts';
+import { renewal, type Renewal } from './renewal.ts';
+import { createRenewer, type Live } from './renewer.ts';
+import { CLIENT_SECRET_VARIABLE } from './web-flow.ts';
 
-export const PROVIDER_NAME: Record<ConnectedAccountProvider, string> = { github: 'GitHub' };
+export { PROVIDER_NAME };
+export { RENEW_AHEAD_MS, RENEW_EVERY_MS, RETRY_MS } from './renewer.ts';
 export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]} is not connected: Sources → Connect ${PROVIDER_NAME[provider]}`;
 /** What an account whose sign-in ended says, on its source and where its token is asked for (issue #358). */
 export const expired = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]}'s sign-in expired: Sources → Connect ${PROVIDER_NAME[provider]} again`;
-
-/** A token is renewed once this little of its life is left: a job given it then has an hour of it at least. */
-export const RENEW_AHEAD_MS = 60 * 60_000;
 
 interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
 
@@ -43,23 +49,44 @@ export interface ConnectedAccountsOptions {
   /** Called once an account is connected or disconnected: its job source syncs now rather than at its next poll. */
   onChange?(provider: ConnectedAccountProvider): void;
   /** Renews a token with its refresh token (renewal.ts), per provider. */
-  refresh(provider: ConnectedAccountProvider, refreshToken: string): Promise<Grant>;
+  refresh(provider: ConnectedAccountProvider, refreshToken: string, grantedBy: Grant['grantedBy']): Promise<Grant>;
   /** Called once when an account's sign-in ends (issue #358): the owner is told. */
   onExpired?(provider: ConnectedAccountProvider, account: string, reason: string): void;
+  /** Called after this process renewed an account's token (issue #441): running jobs are handed the new one. */
+  onRenewed?(provider: ConnectedAccountProvider): void;
+  /** Seals the tokens at rest (issue #441); absent: the runtime gives no HOPPER_TOKEN_KEY, and they are kept in clear. */
+  box?: TokenBox | undefined;
+  /** How often the renewer looks; default RENEW_EVERY_MS. */
+  renewEveryMs?: number;
 }
 
 export type { Renewal };
 
-export type ConnectedAccountsService = ConnectedAccounts & ConnectedAccountTokens & { stop(): void };
+/**
+ * What the runtime gives the connected accounts (issues #358, #441): the renewal, with the app's client
+ * secret when the runtime gives one — read at each renewal, so a rotated one counts — and the box that
+ * seals the tokens at rest, under the instance's HOPPER_TOKEN_KEY.
+ */
+export function fromRuntime(apps: HopperApps, env: Record<string, string | undefined>, logger: { warn(line: string): void }): Pick<ConnectedAccountsOptions, 'refresh' | 'box'> {
+  const clientSecret = (): string | undefined => { try { return runtimeSecrets(env)(CLIENT_SECRET_VARIABLE); } catch { return undefined; } };
+  return { refresh: (provider, refresh, grantedBy) => renewal(apps[provider], clientSecret)(refresh, grantedBy), box: tokenBoxOf(runtimeSecrets(env), logger) };
+}
+
+export type ConnectedAccountsService = ConnectedAccounts & ConnectedAccountTokens & {
+  /** Starts the renewer (issue #441): it looks at once, then every `renewEveryMs`. */
+  start(): void;
+  /** One look of the renewer; resolves once every renewal it started has settled. */
+  renewDue(): Promise<void>;
+  stop(): void;
+};
 
 export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedAccountsService {
   const flow = (p: ConnectedAccountProvider) => o.flows?.[p] ?? deviceFlow(o.apps[p]);
   const waiting = new Map<ConnectedAccountProvider, Waiting>();
   const failed = new Map<ConnectedAccountProvider, string>();
   const starting = new Map<ConnectedAccountProvider, Promise<ConnectedAccountStatus>>();
-  const renewing = new Map<ConnectedAccountProvider, Promise<string>>();
-  const now = () => o.clock.now().getTime();
-  const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= now();
+  const atRest = createAtRest(o.store, o.box);
+  const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= o.clock.now().getTime();
 
   /** Why the account's sign-in ended, or undefined while it lives: GitHub refused it, or it expired with nothing to renew it. */
   const endOf = (a: ConnectedAccount): string | undefined => {
@@ -69,37 +96,62 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     return past(a.refreshTokenExpiresAt) ? `${PROVIDER_NAME[a.provider]}'s refresh token expired at ${a.refreshTokenExpiresAt}` : undefined;
   };
 
-  /** Record that the sign-in ended, and tell the owner — once. */
-  const end = (a: ConnectedAccount, reason: string): void => {
-    if (o.store.connectedAccounts.get(a.provider)?.ended) return;
-    o.store.connectedAccounts.put({ ...a, ended: reason });
-    o.logger.warn(`hopper: ${PROVIDER_NAME[a.provider]} sign-in of ${a.account} expired: ${reason}`);
-    o.onExpired?.(a.provider, a.account, reason);
-    o.onChange?.(a.provider);
+  /** Record that the sign-in ended, and tell the owner — once. Answers the error to throw. */
+  const end = (stored: ConnectedAccount, reason: string): Error => {
+    const row = o.store.connectedAccounts.get(stored.provider);
+    if (row && !row.ended) {
+      o.store.connectedAccounts.put({ ...row, ended: reason });
+      renewer.clear(stored.provider);
+      o.logger.warn(`hopper: ${PROVIDER_NAME[stored.provider]} sign-in of ${stored.account} expired: ${reason}`);
+      o.onExpired?.(stored.provider, stored.account, reason);
+      o.onChange?.(stored.provider);
+    }
+    return new Error(expired(stored.provider));
   };
 
+  type Current = (Live & { ended?: string }) | { unreadable: string; stored: ConnectedAccount };
   /** The account, its sign-in ended recorded (and told) the first time it is seen to have. */
-  const current = (provider: ConnectedAccountProvider): { account: ConnectedAccount; ended?: string } | undefined => {
-    const a = o.store.connectedAccounts.get(provider);
-    if (!a) return undefined;
-    const ended = endOf(a);
-    if (ended && !a.ended) end(a, ended);
-    return ended ? { account: a, ended } : { account: a };
+  const current = (provider: ConnectedAccountProvider): Current | undefined => {
+    const r = atRest.read(provider);
+    if (!r || 'unreadable' in r) return r;
+    const ended = endOf(r.account);
+    if (ended && !r.account.ended) end(r.stored, ended);
+    return ended ? { ...r, ended } : r;
   };
+
+  /** The account while its sign-in lives, with its stored row; throws what to do when none is connected, it ended, or it cannot be read. */
+  const live = (provider: ConnectedAccountProvider): Live => {
+    const c = current(provider);
+    if (!c) throw new Error(notConnected(provider));
+    if ('unreadable' in c) throw new Error(c.unreadable);
+    if (c.ended) throw new Error(expired(provider));
+    return c;
+  };
+
+  const renewer = createRenewer({
+    store: o.store, atRest, clock: o.clock, logger: o.logger, refresh: o.refresh, live, end,
+    lookable: (p) => { const c = current(p); return !c || 'unreadable' in c || c.ended || waiting.has(p) ? undefined : c; },
+    ...(o.onRenewed ? { onRenewed: o.onRenewed } : {}),
+    ...(o.renewEveryMs ? { renewEveryMs: o.renewEveryMs } : {}),
+  });
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
     const base = { provider, via: CONNECTED_VIA } as const;
     const w = waiting.get(provider);
     if (w) return { ...base, state: 'waiting', userCode: w.userCode, verificationUri: w.verificationUri, expiresAt: w.expiresAt };
     const c = current(provider);
+    if (c && 'unreadable' in c) return { ...base, state: 'failed', error: c.unreadable };
     if (c?.ended) return { ...base, state: 'expired', account: c.account.account, connectedAt: c.account.connectedAt, error: c.ended };
     const a = c?.account;
     if (a) {
       const install = installUrl(o.apps[provider]);
+      const trouble = renewer.trouble(provider);
       return {
         ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, jobRepositories: o.store.settings.getJobRepositories(provider),
         configUrl: configUrl(o.apps[provider]),
         ...(install ? { installUrl: install } : {}),
+        ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}),
+        ...(trouble ? { renewal: trouble } : {}),
       };
     }
     const error = failed.get(provider);
@@ -118,15 +170,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     }
   };
 
-  const keep = (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string): ConnectedAccount => {
-    const record: ConnectedAccount = {
-      provider, account: who.account, subject: who.subject, accessToken: g.accessToken, connectedAt,
-      ...(g.expiresAt ? { expiresAt: g.expiresAt.toISOString() } : {}),
-      ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
-      ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),
-    };
-    o.store.connectedAccounts.put(record);
-    return record;
+  const keep = (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string): void => {
+    o.store.connectedAccounts.put(atRest.sealed(recordOf(provider, who, g, connectedAt)));
+    renewer.clear(provider);
   };
 
   /** Wait for the user in the background; the UI reads the outcome. */
@@ -175,59 +221,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     waiting.delete(provider);
   };
 
-  /** The account while its sign-in lives; throws what to do when none is connected or it ended. */
-  const live = (provider: ConnectedAccountProvider): ConnectedAccount => {
-    const c = current(provider);
-    if (!c) throw new Error(notConnected(provider));
-    if (c.ended) throw new Error(expired(provider));
-    return c.account;
-  };
-
-  /**
-   * Trade the refresh token for a new pair and keep it; one renewal at a time per provider. GitHub refusing it
-   * ends the sign-in. GitHub not answering ends nothing: the token still valid (and not `refused`) is answered,
-   * else the error, and the next ask renews again.
-   */
-  function renewNow(provider: ConnectedAccountProvider, refused?: string): Promise<string> {
-    let r = renewing.get(provider);
-    if (r) return r;
-    r = (async () => {
-      const a = live(provider);
-      if (refused !== undefined && a.accessToken !== refused) return a.accessToken; // already renewed
-      if (!a.refreshToken) {
-        end(a, `${PROVIDER_NAME[provider]} refused the token and there is no refresh token to renew it`);
-        throw new Error(expired(provider));
-      }
-      let g: Grant;
-      try {
-        g = await o.refresh(provider, a.refreshToken);
-      } catch (err) {
-        const code = oauthError(err);
-        if (code) {
-          end(o.store.connectedAccounts.get(provider) ?? a, `${PROVIDER_NAME[provider]} refused the refresh token (${code})`);
-          throw new Error(expired(provider), { cause: err });
-        }
-        if (refused === undefined && !past(a.expiresAt)) {
-          o.logger.warn(`hopper: renewing the ${PROVIDER_NAME[provider]} token failed, kept the current one: ${(err as Error).message}`);
-          return a.accessToken;
-        }
-        throw new Error(`${PROVIDER_NAME[provider]}: could not renew the token: ${(err as Error).message}`, { cause: err });
-      }
-      // The account may have been disconnected or connected again meanwhile: renew only the one asked about.
-      const still = o.store.connectedAccounts.get(provider);
-      if (still?.accessToken !== a.accessToken) return live(provider).accessToken;
-      keep(provider, a, g, a.connectedAt);
-      o.logger.info(`hopper: ${PROVIDER_NAME[provider]} token of ${a.account} renewed`);
-      return g.accessToken;
-    })().finally(() => renewing.delete(provider));
-    renewing.set(provider, r);
-    return r;
-  }
-
   async function token(provider: ConnectedAccountProvider): Promise<string> {
-    const a = live(provider);
-    const due = a.expiresAt !== undefined && Date.parse(a.expiresAt) - now() <= RENEW_AHEAD_MS;
-    return due && a.refreshToken ? renewNow(provider) : a.accessToken;
+    const { account: a } = live(provider);
+    return renewer.due(a) && a.refreshToken ? renewer.renew(provider) : a.accessToken;
   }
 
   return {
@@ -236,7 +232,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       stopWaiting(c.provider);
       failed.delete(c.provider);
       const g: Grant = {
-        accessToken: c.accessToken, ...(c.expiresAt ? { expiresAt: new Date(c.expiresAt) } : {}),
+        accessToken: c.accessToken, ...(c.grantedBy ? { grantedBy: c.grantedBy } : {}), ...(c.expiresAt ? { expiresAt: new Date(c.expiresAt) } : {}),
         ...(c.refreshToken ? { refreshToken: c.refreshToken } : {}),
         ...(c.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(c.refreshTokenExpiresAt) } : {}),
       };
@@ -261,6 +257,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     disconnect(provider) {
       stopWaiting(provider);
       failed.delete(provider);
+      renewer.clear(provider);
       if (o.store.connectedAccounts.delete(provider)) {
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} disconnected`);
         o.onChange?.(provider);
@@ -274,13 +271,16 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       o.onChange?.(provider);
       return withInstallations(status(provider));
     },
-    account: (provider) => { const c = current(provider); return c && !c.ended ? c.account.account : undefined; },
-    ended: (provider) => (current(provider)?.ended ? expired(provider) : undefined),
-    renew: (provider, refused) => renewNow(provider, refused),
+    account: (provider) => { const c = current(provider); return c && !('unreadable' in c) && !c.ended ? c.account.account : undefined; },
+    ended: (provider) => { const c = current(provider); return !c ? undefined : 'unreadable' in c ? c.unreadable : c.ended ? expired(provider) : undefined; },
+    renew: (provider, refused) => renewer.renew(provider, refused),
     jobRepositories: (provider) => o.store.settings.getJobRepositories(provider),
     token,
     endpoints: (provider) => ({ url: o.apps[provider].url, apiUrl: o.apps[provider].apiUrl }),
+    start: () => renewer.start(),
+    renewDue: () => renewer.renewDue(),
     stop() {
+      renewer.stop();
       for (const p of CONNECTED_ACCOUNT_PROVIDERS) stopWaiting(p);
     },
   };

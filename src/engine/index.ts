@@ -16,6 +16,7 @@ import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
+import { renewCredentials } from './credentials.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -43,6 +44,8 @@ export interface Engine extends Commands, QueueGateCommands, Queries, AnswerHand
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
   stop(): Promise<void>;
+  /** The connection renewed its token (issue #441): every job in flight has its credential files rewritten on its machine. */
+  renewCredentials(): Promise<void>;
 }
 
 export function createEngine(o: EngineOptions): Engine {
@@ -109,6 +112,7 @@ export function createEngine(o: EngineOptions): Engine {
       classifier.sweep();
       c.trigger('startup');
     },
+    renewCredentials: () => (stopping ? Promise.resolve() : renewCredentials(c, (line) => console.warn(line))),
     async stop() {
       stopping = true;
       serial.close();

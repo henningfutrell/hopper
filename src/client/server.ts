@@ -6,8 +6,8 @@
 // request's; `POST /release` answers `{release, home}`, the id of the release this process runs
 // (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
-// `POST /reap {jobId, scratch?}` and `POST /survey {roots}` run the fixed scripts below on this machine
-// (issue #410): the reap of an ended job and what the sweep asks, answered `{code, stdout, stderr}`;
+// `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
+// scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`.
@@ -20,6 +20,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
+import { credentialOf } from './credential.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
@@ -111,7 +112,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/reap', '/survey']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/reap', '/survey', '/credential']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -141,6 +142,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey') return script(path, body, answer);
+  if (path === '/credential') return credential(body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
@@ -161,14 +163,24 @@ async function script(path: '/reap' | '/survey', body: string, answer: (status: 
   answer(200, await runArgv(argv, SCRIPT_TIMEOUT_MS));
 }
 
-function runArgv(argv: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+/** A signed credential of a running job (issue #441): kept by the fixed script, its content on stdin. */
+async function credential(body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+  let call: ReturnType<typeof credentialOf>;
+  try { call = credentialOf(JSON.parse(body)); } catch { return answer(400, { error: 'body must be JSON' }); }
+  if (typeof call === 'string') return answer(400, { error: call });
+  answer(200, await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
+}
+
+function runArgv(argv: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return resolve({ code: 124, stdout, stderr: `timed out after ${timeoutMs} ms` });
       resolve({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message });
     });
+    child.stdin?.on('error', () => undefined); // a script that exits before reading answers its own exit code
+    child.stdin?.end(input ?? '');
   });
 }
 
@@ -296,6 +308,8 @@ const REAP_SCRIPT = [
   'fi;',
   // Only ever this job's own scratch dir: <work tree>/.hopper-scratch/<job id>.
   'case $s in */.hopper-scratch/"$id") ;; *) printf "%s\\n" hopper-reaped; exit 0;; esac;',
+  // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
+  'rm -rf "$s/credentials";',
   'repos() { find "$s" -name node_modules -prune -o -name .git -print -prune 2>/dev/null; };',
   // A worktree (.git a file) answers for its own HEAD; a clone for HEAD and every branch it has. A
   // node_modules link to the shared dependencies (issue #410) is no work of the job's.

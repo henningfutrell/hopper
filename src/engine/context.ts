@@ -1,5 +1,5 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
+  Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
 import type { DeciderPolicy, Job } from '../domain/types.ts';
 
@@ -34,8 +34,8 @@ export interface EngineOptions {
   keepPanes: boolean;
   /** Why a job that ended done is not complete, asked of its source (JobSource.notComplete, issues #171, #187). */
   notComplete: (job: Job) => Promise<string | undefined>;
-  /** The variables a job's processes run with, from its source's connection (JobSource.credentials, issue #214). */
-  credentials: (job: Job) => Promise<Record<string, string>>;
+  /** What a job's processes act with, from its source's connection (JobSource.credentials, issues #214, #441). */
+  credentials: (job: Job) => Promise<JobCredentials | undefined>;
 }
 
 /** What the engine's modules share. */
