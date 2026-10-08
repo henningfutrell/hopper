@@ -169,7 +169,7 @@ describe('renameBoot (the first boot of a job-hopper install\'s self-update)', (
     const url = installFromBefore(stores.url());
     const work = t.at('.cache', 'job-hopper');
     mkdirSync(join(work, 'update'), { recursive: true });
-    writeFileSync(join(work, 'update', 'pending.json'), JSON.stringify({ from: 'a', to: 'b'.repeat(40), ref: 'main' }));
+    writeFileSync(join(work, 'update', 'pending.json'), JSON.stringify({ from: 'a', to: 'b'.repeat(40), ref: 'stable' }));
     const env = { INVOCATION_ID: 'x', JOB_HOPPER_DATABASE_URL: url, JOB_HOPPER_WORK_DIR: work };
     return { ...t, url, work, env };
   }

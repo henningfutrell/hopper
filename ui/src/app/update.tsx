@@ -86,8 +86,6 @@ export function VersionDetails({ className }: { className?: string }) {
         <dd className="font-mono">{s.installed ? `${s.installed.branch} ${short(s.installed.commit)}` : '—'}</dd>
         {s.installed && <><dt className="text-muted-foreground">Installed on</dt><dd>{new Date(s.installed.installedAt).toLocaleString()}</dd></>}
         {s.target && <><dt className="text-muted-foreground">Newest</dt><dd className="font-mono">{s.target.ref} {short(s.target.commit)}</dd></>}
-        <dt className="text-muted-foreground">Release</dt>
-        <dd className="font-mono">{s.release ? `${s.release.tag}${s.release.newer ? ' (newer)' : ''}` : 'none yet'}</dd>
         <dt className="text-muted-foreground">Checked</dt>
         <dd>{s.checkedAt ? ago(s.checkedAt, now) : 'not yet'}</dd>
       </dl>
@@ -108,7 +106,7 @@ export function VersionDetails({ className }: { className?: string }) {
         </label>
         <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
           <span>Channel<span className="block text-muted-foreground">{CHANNELS.find((c) => c.channel === s.channel)?.hint}</span></span>
-          <div className="flex gap-1">
+          <div data-slot="update-channels" className="flex gap-1">
             {CHANNELS.map(({ channel: c, hint }) => (
               <Button key={c} size="xs" variant={s.channel === c ? 'secondary' : 'ghost'} disabled={!authed || s.channel === c} title={hint}
                 onClick={() => void updateAct({ action: 'settings', channel: c }, `Channel: ${c}`)}>{c}</Button>

@@ -9,17 +9,17 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, InstanceEvents, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
-import { isBranchChannel, type InstallInfo, type UpdateApply, type UpdateRelease, type UpdateSettings, type UpdateStatus, type VersionHistory } from '../domain/types.ts';
+import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
 import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 
 const exec = promisify(execFile);
-const DEFAULTS: UpdateSettings = { channel: 'main', autoUpdate: false };
+const DEFAULTS: UpdateSettings = { channel: 'stable', autoUpdate: false };
 
-/** With no channel chosen: the branch the install came from when it is a channel (issue #282), else `main`. */
+/** With no channel chosen: the branch the install came from when it is a channel (issue #282), else `stable` (issue #423). */
 const defaults = (installed: InstallInfo | undefined): UpdateSettings =>
-  installed && isBranchChannel(installed.branch) ? { ...DEFAULTS, channel: installed.branch } : DEFAULTS;
+  installed && isUpdateChannel(installed.branch) ? { ...DEFAULTS, channel: installed.branch } : DEFAULTS;
 const FIRST_CHECK_MS = 10_000;
 /** How often to check when the interval given is not positive: checking cannot be turned off (issue #177). */
 const DEFAULT_CHECK_MS = 60_000;
@@ -56,7 +56,6 @@ interface Checked {
   reason?: string;
   installed?: InstallInfo;
   target?: { commit: string; ref: string };
-  release?: UpdateRelease;
   whatsNew: string[];
   /** Commits in the target and not installed: the log line and `update.available`, never the UI. */
   commits?: number;
@@ -137,22 +136,14 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     } catch (e) {
       return { ...checked, state: 'error', reason: `fetch from ${info.repo} failed: ${messageOf(e)}`, installed: info, checkedAt: at };
     }
-    const newest = await mirror.newestRelease();
-    const release = newest && { ...newest, newer: !(await mirror.contains(info.commit, newest.commit)) };
-    const base = { installed: info, release, whatsNew: [], checkedAt: at };
+    const base = { installed: info, whatsNew: [], checkedAt: at };
     const { channel } = settings();
-    let target: Checked['target'];
-    if (channel === 'release') {
-      if (!newest) return { ...base, state: 'current', reason: 'no release yet (no v<major>.<minor>.<patch> tag)' };
-      target = { commit: newest.commit, ref: newest.tag };
-    } else {
-      const head = await mirror.branchHead(channel);
-      if (!head) return { ...base, state: 'error', reason: `branch ${channel} not found in ${info.repo}` };
-      target = { commit: head, ref: channel };
-    }
+    const head = await mirror.branchHead(channel);
+    if (!head) return { ...base, state: 'error', reason: `branch ${channel} not found in ${info.repo}` };
+    const target = { commit: head, ref: channel };
     // Installed from another channel's branch: that channel's head is the target even when the install
     // already contains it — a move to a more stable channel goes back to it (issue #282).
-    const switching = channel !== 'release' && isBranchChannel(info.branch) && info.branch !== channel;
+    const switching = isUpdateChannel(info.branch) && info.branch !== channel;
     if (target.commit === info.commit || (!switching && (await mirror.contains(info.commit, target.commit)))) return { ...base, state: 'current', target };
     const notes = async (commit: string) => bullets((await mirror.read(commit, WHATS_NEW_FILE)) ?? '');
     const whatsNew = newSince(await notes(info.commit), await notes(target.commit));
@@ -206,9 +197,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   }
 
   async function run(installed: InstallInfo, target: { commit: string; ref: string }): Promise<void> {
-    // On a branch channel the install now comes from its branch; a release keeps the branch it had.
-    const branch = isBranchChannel(target.ref) ? target.ref : installed.branch;
-    await build({ kind: 'install', repo: installed.repo, branch, commit: target.commit, installedAt: now() });
+    // The install now comes from the channel's branch.
+    await build({ kind: 'install', repo: installed.repo, branch: target.ref, commit: target.commit, installedAt: now() });
     for (;;) {
       const blockers = o.restartBlockers();
       if (blockers === 0) break;

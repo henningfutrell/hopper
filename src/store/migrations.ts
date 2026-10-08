@@ -158,6 +158,9 @@ const MIGRATIONS: readonly Migration[] = [
   `
   CREATE TABLE IF NOT EXISTS join_codes (code_hash TEXT PRIMARY KEY, expires_at TEXT NOT NULL, user_id TEXT NOT NULL);
   `,
+  // 26: the update channels are dev, beta and stable (issue #423). main and release, the two stable channels
+  // from before, are stable; dev and beta stay.
+  "UPDATE settings SET value = 'stable' WHERE key = 'updateChannel' AND value IN ('main', 'release');",
 ];
 
 /**

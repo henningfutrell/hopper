@@ -1,12 +1,13 @@
 # Publishes the GitHub Pages site (issue #382): `npm run build:site` builds site/ into site/dist with the
 # UI's own stylesheet and story (site/vite.config.ts), with scripts/get.sh beside it as install.sh, so
 # `curl -fsSL https://henningfutrell.github.io/hopper/install.sh | bash` installs, and compose.yaml, the
-# container install, which pulls the published image (issues #119, #125).
+# container install, which pulls the published image (issues #119, #125). Published from `stable` (issue
+# #423): the site, its install script and its compose.yaml are the stable version's.
 name: pages
 
 on:
   push:
-    branches: [main]
+    branches: [stable]
     paths:
       - site/**
       - ui/src/index.css
