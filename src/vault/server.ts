@@ -43,6 +43,8 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   }
 
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
+  // The container's health check: the server answers. Says nothing of the vault.
+  app.get('/health', async () => ({ ok: true }));
   app.post<{ Params: { op: string } }>(`${VAULT_OP_PATH}:op`, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const expected = secret(VAULT_KEY_VARIABLE) ?? '';
