@@ -15,7 +15,8 @@ import { askLine, PROTOCOL_LINES, withAsks } from '../../src/job-rules/index.ts'
 
 describe('the section types', () => {
   it('are declared once, in nav order, each with a label and the event types it emits', () => {
-    expect(SECTION_KINDS).toEqual(['questions', 'proposals', 'research', 'logins', 'failures']);
+    expect(SECTION_KINDS).toEqual(['questions', 'proposals', 'research', 'logins', 'failures', 'parked']);
+    expect(SECTIONS.parked.events).toEqual(['job.parked', 'job.unparked']);
     for (const kind of SECTION_KINDS) {
       const s = SECTIONS[kind];
       expect(s.kind).toBe(kind);

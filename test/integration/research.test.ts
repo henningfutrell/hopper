@@ -205,7 +205,7 @@ describe('the sections', () => {
     const job = await a.pull(research(), { labels: ['hopper:research'], priority: 80, priorityReason: 'label:hopper:high' });
     await waitForItem(a, 'research', job.id, forPerson);
     const { sections } = (await a.api<{ sections: { kind: string; label: string; open: number; waiting: number; high: number; events: string[] }[] }>('GET', '/api/sections')).body;
-    expect(sections.map((s) => s.kind)).toEqual(['questions', 'proposals', 'research', 'logins', 'failures']);
+    expect(sections.map((s) => s.kind)).toEqual(['questions', 'proposals', 'research', 'logins', 'failures', 'parked']);
     expect(sections.find((s) => s.kind === 'research')).toMatchObject({ label: 'Research', open: 1, waiting: 1, high: 1 });
     expect(sections.find((s) => s.kind === 'proposals')).toMatchObject({ label: 'Proposals', open: 0, waiting: 0, high: 0 });
     expect(sections.find((s) => s.kind === 'research')!.events).toContain('research.accepted');

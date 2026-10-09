@@ -188,6 +188,33 @@ describe('parking a job on a question', () => {
   });
 });
 
+describe('the Parked section (issue #565)', () => {
+  type Section = { kind: string; open: number; waiting: number; high: number; events: string[] };
+  const sectionsOf = async (a: TestApp) => (await a.api<{ sections: Section[] }>('GET', '/api/sections')).body.sections;
+  const one = (s: Section[], kind: string) => s.find((x) => x.kind === kind)!;
+
+  it('a parked job leaves the Questions count with its question and is counted in Parked; picked up, its open question comes back', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, { ...item, priority: 80, priorityReason: 'label:hopper:high' });
+    await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect(one(await sectionsOf(a), 'questions')).toMatchObject({ open: 1, waiting: 1, high: 1 });
+    expect(one(await sectionsOf(a), 'parked')).toMatchObject({ open: 0, waiting: 0, high: 0 });
+
+    await park(a, token, job.id);
+    await a.waitForStatus(job.id, 'parked');
+    const parked = await sectionsOf(a);
+    expect(parked.map((s) => s.kind)).toEqual(['questions', 'proposals', 'research', 'logins', 'failures', 'parked']);
+    expect(one(parked, 'questions')).toMatchObject({ open: 0, waiting: 0, high: 0 });
+    expect(one(parked, 'parked')).toMatchObject({ open: 1, waiting: 1, high: 1, events: ['job.parked', 'job.unparked'] });
+
+    expect((await requeue(a, token, job.id)).body.status).toBe('waiting_answer');
+    expect(one(await sectionsOf(a), 'questions')).toMatchObject({ open: 1, waiting: 1, high: 1 });
+    expect(one(await sectionsOf(a), 'parked')).toMatchObject({ open: 0, waiting: 0 });
+  });
+});
+
 describe('a job whose executor recorded no agent session (issue #530: started before #510)', () => {
   /** A job on a question, as one started before agent sessions were recorded: no `agentSession`. */
   async function onQuestionWithoutSession(herdr: FakeHerdrClient) {
