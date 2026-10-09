@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { join } from 'node:path';
 
 /** Every file of the hopper client, and nothing else. */
-export const CLIENT_FILES = ['credential.ts', 'dial.ts', 'join.ts', 'level.ts', 'link.ts', 'main.ts', 'release.ts', 'server.ts', 'signature.ts', 'work-tree.ts'] as const;
+export const CLIENT_FILES = ['credential.ts', 'dial.ts', 'discover.ts', 'join.ts', 'level.ts', 'link.ts', 'main.ts', 'release.ts', 'server.ts', 'signature.ts', 'work-tree.ts'] as const;
 
 export interface ClientRelease {
   /** 16 hex: the files' content. */

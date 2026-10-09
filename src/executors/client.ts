@@ -6,6 +6,7 @@
 // release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /level` an escalation
 // level's run (issue #482); `POST /reap` and `POST /survey`
 // its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
+import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
@@ -84,8 +85,8 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential', body: Record<string, unknown>): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, path, body, 60000);
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover', body: Record<string, unknown>): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : 60000);
 }
 
 /**

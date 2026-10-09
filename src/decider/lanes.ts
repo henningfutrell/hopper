@@ -69,6 +69,8 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (!m.online) return 'machine offline';
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  const gated = s.gate?.gated.find((g) => g.machineId === m.id);
+  if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;
   if (wait.length > 0 && s.unpinned >= unpinnedCap(s) && (m.reservedLanes ?? 0) > 0) {
     const kept = m.reservedLanes!;

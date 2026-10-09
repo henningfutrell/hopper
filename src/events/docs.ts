@@ -78,6 +78,12 @@ const WHEN: Record<EventType, string> = {
   'proposal.accepted': 'A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. Its job ends finished, with the decision as its result; the proposal stays linked to the job and its item.',
   'proposal.rejected': 'A person rejected a proposal (issue #537), with why (`notes`). Its job ends finished, with the decision as its result.',
   'proposal.cancelled': 'A proposal waiting on a decision was cancelled because its job ended or is gone (issue #537).',
+  'machine.discovered': 'A machine\'s discovery (issue #542) found something new: the first one, or tools, AWS identities, kubectl contexts or credential sources that came (`changes.added`) or went (`changes.removed`), or a level that moved (`changes.level`). `level`: its blast radius, rated with the rules then. Names only: never a secret.',
+  'machine.discovery_failed': 'A machine\'s discovery (issue #542) did not finish: `error` says why. The facts of the one before are kept, and so is its rating.',
+  'machine.radius_grew': 'A discovery raised a machine\'s blast radius (issue #542), `from` one level `to` a higher one. The machine is flagged on Machines until its level drops.',
+  'machine.actor_mismatch': 'An actor machine\'s rating (issue #542) is not the level declared for it: `expected` the declared level, `found` the one its discovery gave.',
+  'blast_radius.settings_changed': 'An admin saved the blast-radius settings (issue #542): `from` and `to` where the gate stands (`gateAt`), what passes it (`pass`), the rating rules (`rules`), the actor machines and how often each machine is discovered (`everyMinutes`).',
+  'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 

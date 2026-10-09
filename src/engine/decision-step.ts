@@ -3,6 +3,7 @@ import { decide } from '../decider/index.ts';
 import type { CleanupDue, Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
 import { nowIso, policyOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
+import type { BlastRadius } from './blast-radius.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
@@ -12,7 +13,7 @@ export interface Claim { jobId: string; laneId: LaneId }
 const WAITING = ['queued', 'held'] as const;
 const RUNNING = ['claimed', 'running'] as const;
 
-async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes): Promise<() => DecisionInputs> {
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius): Promise<() => DecisionInputs> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
@@ -30,6 +31,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       cleanupDue: cleanupDue(),
       problems: c.problems(),
       priorityLanes: priorityLanes.input(machines),
+      blastRadius: blastRadius.input(machines),
       policy: policyOf(c),
     };
   };
@@ -108,8 +110,8 @@ function freeStrandedLanes(c: EngineContext): void {
 }
 
 /** Returns the claims whose executors the caller must start, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes): Promise<Claim[]> {
-  const inputs = await gather(c, trigger, cleanupDue, priorityLanes);
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius): Promise<Claim[]> {
+  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
   autoAccept(c);

@@ -8,6 +8,7 @@ import type {
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
 } from './types.ts';
+import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { ExecutionProposal } from './escalation-ports.ts';
 export type * from './escalation-ports.ts';
@@ -193,6 +194,8 @@ export interface MachineShell {
    * `make`: the work tree may be made here (the jobs dir); else a work tree that is not there is refused.
    */
   keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
+  /** What the machine holds (issue #542): its tools, its access, its credential sources — names only. */
+  discover(): Promise<DiscoveryFacts>;
 }
 
 // ---- Inputs the decider is made over ---------------------------------------------------

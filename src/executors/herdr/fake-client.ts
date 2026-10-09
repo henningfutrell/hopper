@@ -316,6 +316,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (o.machineUnreachable) throw new Error('the machine cannot be reached');
       return o.survey ?? { scopes: [], processes: [], scratch: [] };
     },
+    async discover() {
+      record('discover');
+      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      return o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } };
+    },
     async keepCredential(jobId, dir, file, content, make) {
       record('keepCredential', jobId, dir, file);
       if (o.machineUnreachable) throw new Error('the machine cannot be reached');

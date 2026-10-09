@@ -89,5 +89,14 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     from: { highPriority: 75, count: 1, whenIdle: 'keep-free', windowDays: 14, minRuns: 5 },
     to: { highPriority: 75, count: 2, whenIdle: 'share', windowDays: 14, minRuns: 5 },
   },
+  'machine.discovered': { machineId: 'desk', level: 'high', changes: { first: false, added: ['aws prod-deploy', 'credential file kubeconfig'], removed: [], level: { from: 'medium', to: 'high' } } },
+  'machine.discovery_failed': { machineId: 'desk', error: 'the discovery on desk did not finish (exit 255): ssh: connect to host timed out' },
+  'machine.radius_grew': { machineId: 'desk', from: 'medium', to: 'high' },
+  'machine.actor_mismatch': { machineId: 'deploy-box', expected: 'high', found: 'medium' },
+  'blast_radius.settings_changed': {
+    from: { gateAt: 'high', pass: { labels: [], repos: [] }, rules: { prodPatterns: ['prod', 'production', 'prd'], prodAccounts: [], unconfirmed: 'write' }, actors: [], everyMinutes: 60 },
+    to: { gateAt: 'high', pass: { labels: ['hopper:actor'], repos: [] }, rules: { prodPatterns: ['prod', 'production', 'prd'], prodAccounts: [], unconfirmed: 'write' }, actors: [{ machineId: 'deploy-box', purpose: 'production deploys', expected: 'high' }], everyMinutes: 60 },
+  },
+  'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

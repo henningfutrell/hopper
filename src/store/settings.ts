@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ProposalSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ProposalSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -94,6 +94,26 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setPriorityLaneChoice(lanes) {
       write('priorityLaneChoice', JSON.stringify([...lanes]));
+    },
+    getBlastRadius() {
+      const text = read('blastRadius');
+      return text === undefined ? undefined : JSON.parse(text) as BlastRadiusSettings;
+    },
+    setBlastRadius(s) {
+      write('blastRadius', JSON.stringify({
+        gateAt: s.gateAt,
+        pass: { labels: s.pass.labels, repos: s.pass.repos, ...(s.pass.minPriority !== undefined ? { minPriority: s.pass.minPriority } : {}) },
+        rules: { prodPatterns: s.rules.prodPatterns, prodAccounts: s.rules.prodAccounts, unconfirmed: s.rules.unconfirmed },
+        actors: s.actors.map((a) => ({ machineId: a.machineId, purpose: a.purpose, expected: a.expected })),
+        everyMinutes: s.everyMinutes,
+      }));
+    },
+    getDiscovery(machineId) {
+      const text = read(`discovery:${machineId}`);
+      return text === undefined ? undefined : JSON.parse(text) as DiscoveryRecord;
+    },
+    setDiscovery(record) {
+      write(`discovery:${record.machineId}`, JSON.stringify(record));
     },
     claimHolder() {
       const kept = read('claimHolder');

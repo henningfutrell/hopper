@@ -16,6 +16,7 @@ export const EVENT_TYPES = [
   'usage.limits_changed', 'priority_lanes.changed', 'priority_lanes.settings_changed',
   'proposal.asked', 'proposal.submitted', 'proposal.escalated', 'proposal.escalated_to_human', 'proposal.reviewed',
   'proposal.revision_requested', 'proposal.accepted', 'proposal.rejected', 'proposal.cancelled',
+  'machine.discovered', 'machine.discovery_failed', 'machine.radius_grew', 'machine.actor_mismatch', 'blast_radius.settings_changed', 'job.gate_passed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -40,4 +41,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'usage.limits_changed': 1, 'priority_lanes.changed': 1, 'priority_lanes.settings_changed': 1,
   'proposal.asked': 1, 'proposal.submitted': 1, 'proposal.escalated': 1, 'proposal.escalated_to_human': 1, 'proposal.reviewed': 1,
   'proposal.revision_requested': 1, 'proposal.accepted': 1, 'proposal.rejected': 1, 'proposal.cancelled': 1,
+  'machine.discovered': 1, 'machine.discovery_failed': 1, 'machine.radius_grew': 1, 'machine.actor_mismatch': 1, 'blast_radius.settings_changed': 1, 'job.gate_passed': 1,
 };
