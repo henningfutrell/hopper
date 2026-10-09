@@ -105,6 +105,11 @@ export interface TurnAnchor {
   blockedAtSend: boolean;
   /** What was sent, to send again when it never reached Claude (issue #278). Absent in turns saved before. */
   text?: string;
+  /**
+   * Nothing of it reached Claude (issue #534): Claude stood at a dialog before `text` was sent, and the job asked the
+   * dialog as its question. `text` is sent once the dialog is answered.
+   */
+  unsent?: true;
 }
 
 export interface StartDeps {
@@ -187,15 +192,26 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
 }
 
 /**
+ * What the hopper answers to the startup dialog on `screen`, as the progress it reports, or undefined when it may not
+ * answer it: the folder trust of `dir` and the external imports (with `trustWorkdir`), the bypass warning (with yolo).
+ */
+export function startupAnswer(d: Pick<StartDeps, 'trustWorkdir' | 'yolo'>, screen: string, dir: string): string | undefined {
+  return d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
+    : d.trustWorkdir && isImportsDialog(screen) ? 'allowed the external CLAUDE.md imports of the trusted work tree'
+      : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
+}
+
+/**
  * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
  * folder-trust dialog naming the job's cwd and the external CLAUDE.md imports dialog (issue #518; both when
  * `trustWorkdir`: the work tree is trusted, the CLAUDE.md that imports is its own or above it), and the
- * bypass permissions warning (when yolo). Any other dialog Claude shows fails the job with the screen. A dialog is judged
+ * bypass permissions warning (when yolo). Any other dialog Claude shows, it is up all the same: the send finds it and asks it
+ * of a person (issue #534). A dialog is judged
  * once per state change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
  * ready, so anything but a dialog is; else herdr found it held at one. A screen that shows no dialog is not one
  * (issue #527): what stood on the pane before Claude drew — its launch line echoed (a Windows shell's
  * `-EncodedCommand`), a setup command — is looked at again until Claude is up, or the start times out, to be
- * tried again in a new pane. Null when ready (or aborted), else the failure.
+ * tried again in a new pane. Null when up (or aborted), else the failure or the start that timed out.
  */
 async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
   const until = d.clock.now().getTime() + SETTLE_TIMEOUT_MS;
@@ -208,10 +224,7 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
     if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
     if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
       const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-      const dir = s.jobWorktree ?? s.cwd;
-      const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
-        : d.trustWorkdir && isImportsDialog(screen) ? 'allowed the external CLAUDE.md imports of the trusted work tree'
-          : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
+      const dialog = startupAnswer(d, screen, s.jobWorktree ?? s.cwd);
       if (dialog && answered < MAX_STARTUP_DIALOGS) {
         // Each dialog opens on its refusing option; the next one down accepts.
         await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
@@ -220,7 +233,8 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
         answered++;
         continue;
       }
-      if (dialog || showsDialog(screen)) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
+      // Claude is up, at a dialog the hopper may not answer: the send asks it of a person (issue #534, before-send.ts).
+      if (dialog || showsDialog(screen)) return null;
     }
     await d.sleep(d.pollMs, ctx.signal);
   }

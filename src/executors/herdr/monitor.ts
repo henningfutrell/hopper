@@ -91,7 +91,8 @@ async function exitedError(w: TurnWatch): Promise<string> {
   }
 }
 
-async function blockedQuestion(w: TurnWatch, recent: string): Promise<ExecutionOutcome> {
+/** The dialog Claude waits at, as the job's question; `recent` is what led up to it. */
+export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'clock'>, recent: string): Promise<ExecutionOutcome & { kind: 'question' }> {
   const visible = await w.herdr.read(w.paneId, { source: 'visible', lines: 60 });
   // The question is the dialog itself (issue #377); what led up to it is the recent output.
   const text = dialogText(visible) || tail(visible, 30);
