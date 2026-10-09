@@ -269,7 +269,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const minorDecisions: MinorDecisions = createMinorDecisions({
     store, clock, logger, timeoutMs: JEV_TIMEOUT_MS,
     jev: seams.jev ?? createJev({
-      python: 'python3', timeoutMs: JEV_TIMEOUT_MS, secret,
+      python: 'python3', timeoutMs: JEV_TIMEOUT_MS, secret, secretName: (n) => `${user.secretPrefix}${n}`,
       env: { PATH: o.env.PATH, HOME: o.env.HOME, PYTHONPATH: o.env.PYTHONPATH },
     }),
   });
