@@ -48,7 +48,7 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
 export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. When a GitHub operation needs a login you lack (filing an issue, opening a pull request from your pushed branch, reading an issue or pull request, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how.';
 
 /** The protocol line on skills (issue #582): the catalog first, a skill loaded only when needed, a no taken as it is. */
-export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential for an outside service (a read-only link to a cluster or an AWS account, Render, and the like), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question and never write one to a file: when the hopper has none, it asks the user, and sh "$HOPPER_SKILL" NAME --wait ends when the user gives it. When the hopper says no, it says why: find another way.';
+export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, Render, and the like), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
