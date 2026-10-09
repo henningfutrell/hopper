@@ -3,8 +3,9 @@
 // its calls down it. Its routes:
 // `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
-// request's; `POST /release` answers `{release, home}`, the id of the release this process runs
-// (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
+// request's; `POST /release` answers `{release, loads, home}`, the id of the release this process runs
+// (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
+// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
@@ -126,7 +127,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome() });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
@@ -263,7 +264,7 @@ function diskOfHome(): { disk?: { freeBytes: number; totalBytes: number } } {
 // What runs on a job's machine when the job ends, and what the sweep asks of it: fixed POSIX sh scripts,
 // run through the machine's own connection (this machine, ssh, or a client target's `/reap` and
 // `/survey`), never typed into a pane where Claude may still be. They live here because a client target
-// runs them, and a client release is exactly its CLIENT_FILES.
+// runs them, and a client release is the files in the client's directory.
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;

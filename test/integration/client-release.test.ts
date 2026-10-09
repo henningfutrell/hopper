@@ -3,7 +3,7 @@
 // client target that runs another, down the client's own signed link. The client writes it whole into
 // its install dir and asks to be restarted (its unit restarts it). /api/machines says which release each
 // client target runs and whether it is the hopper's. The client joined with a join code (issue #308).
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -124,4 +124,48 @@ describe('a client out in the field before manifests updates itself (issue #545)
     expect(exits).toEqual([75, 75]);
     expect(readRelease(install)).toEqual(HOPPERS);
   }, 60000);
+});
+
+describe('the install line without a join code: a joined computer\'s client reinstalled (issue #545)', () => {
+  const SCRIPT = fileURLToPath(new URL('../../scripts/client-install.sh', import.meta.url));
+
+  /** A computer's home with the field client installed; joined when `joined`. No systemd on its PATH: only node and herdr. */
+  function computer(joined: boolean): { home: string; env: NodeJS.ProcessEnv } {
+    const home = mkdtempSync(join(tmpdir(), 'jh-reinstall-'));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    cpSync(FIELD, join(home, '.local', 'lib', 'hopper-client'), { recursive: true });
+    if (joined) { mkdirSync(join(home, '.config', 'hopper-client'), { recursive: true }); writeFileSync(join(home, '.config', 'hopper-client', 'link.json'), '{}'); }
+    const bin = join(home, 'bin');
+    mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'node'));
+    symlinkSync(HERDR, join(bin, 'herdr'));
+    return { home, env: { HOME: home, PATH: bin } };
+  }
+  const install = (env: NodeJS.ProcessEnv, line: string): Promise<{ code: number; out: string }> => new Promise((r) => {
+    execFile('/bin/sh', [SCRIPT, line], { env, encoding: 'utf8', timeout: 30000 }, (e, stdout, stderr) => r({ code: e ? Number((e as { code?: number }).code ?? 1) : 0, out: stdout + stderr }));
+  });
+
+  it('writes the hopper\'s release over the old one, joins nothing, and says to restart the client', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    t = await startTestApp({ dbPath: db.dbPath });
+    const { home, env } = computer(true);
+    const run = await install(env, t.url);
+    expect(run.code, run.out).toBe(0);
+    expect(readRelease(join(home, '.local', 'lib', 'hopper-client'))).toEqual(HOPPERS);
+    expect(run.out).toContain(`client release ${HOPPERS.id}`);
+    expect(run.out).not.toMatch(/joined/);
+    expect(run.out).toMatch(/restart/);
+  });
+
+  it('on a computer that never joined: refused, and says to use the line from Add machine', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    t = await startTestApp({ dbPath: db.dbPath });
+    const { home, env } = computer(false);
+    const run = await install(env, t.url);
+    expect(run.code).toBe(1);
+    expect(run.out).toMatch(/has not joined.*Add machine/);
+    expect(readRelease(join(home, '.local', 'lib', 'hopper-client')).id).not.toBe(HOPPERS.id);
+  });
 });

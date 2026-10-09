@@ -68,7 +68,9 @@ describe('every ClientError the transport can throw', () => {
     'client ${t.machine}: ${(e as Error).message}': 'its text',
     'client ${t.machine}: no release in its answer': 'its text',
     'client ${t.machine} refused the hopper (401): ${text.slice(0, 200)}': 'its text',
-    'client ${t.machine}: the answer on its link did not prove itself (no valid client signature)': 'its text',
+    'client ${t.machine} runs an older client release, which has no ${path}: the hopper loads its own release there once no job runs on it': 'its text',
+    'client ${t.machine}: the answer on its link did not prove itself: it carries no client signature': 'its text',
+    'client ${t.machine}: the answer on its link did not prove itself: its client signature is not this machine\'s link key\'s': 'its text',
     'client ${t.machine}: ${status} ${text.slice(0, 200)}': 'its text',
     'client ${t.machine}: answer is not JSON': 'its text',
   };
