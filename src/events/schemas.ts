@@ -4,11 +4,13 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
+const decisionPoint = z.enum(DECISION_POINTS);
+const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** A question stage: an escalation level's instance name, or `human`. */
@@ -222,6 +224,17 @@ export const EVENT_SCHEMAS = {
   'machine.actor_mismatch': strict({ machineId: z.string(), expected: radiusLevel, found: radiusLevel }),
   'blast_radius.settings_changed': strict({ from: blastRadiusSettings, to: blastRadiusSettings }),
   'job.gate_passed': strict({ reason: z.string().optional() }),
+  // Minor decisions (issue #550): Jev picked (or failed to), what was decided after it compared with its pick, a
+  // person's override of one, an admin's change to a decision point's settings.
+  'minor_decision.picked': strict({
+    pickId: z.string(), point: decisionPoint, by: z.literal('jev'), options: z.array(strict({ id: z.string(), label: z.string() })),
+    pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(),
+    mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1), applied: z.boolean(),
+    notApplied: z.enum(NOT_APPLIED).optional(), consequential: z.array(z.string()).optional(), questionId: z.string().optional(),
+  }),
+  'minor_decision.compared': strict({ pickId: z.string(), point: decisionPoint, pick: z.string(), actual: z.string(), agreed: z.boolean(), decidedBy: z.string() }),
+  'minor_decision.overridden': strict({ pickId: z.string(), point: decisionPoint, pick: z.string().optional(), actual: z.string() }),
+  'minor_decision.settings_changed': strict({ point: decisionPoint, from: decisionPointSettings, to: decisionPointSettings }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

@@ -19,6 +19,7 @@ export const EVENT_TYPES = [
   'research.asked', 'research.submitted', 'research.escalated', 'research.escalated_to_human', 'research.reviewed',
   'research.revision_requested', 'research.accepted', 'research.cancelled',
   'machine.discovered', 'machine.discovery_failed', 'machine.radius_grew', 'machine.actor_mismatch', 'blast_radius.settings_changed', 'job.gate_passed',
+  'minor_decision.picked', 'minor_decision.compared', 'minor_decision.overridden', 'minor_decision.settings_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -46,4 +47,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'research.asked': 1, 'research.submitted': 1, 'research.escalated': 1, 'research.escalated_to_human': 1, 'research.reviewed': 1,
   'research.revision_requested': 1, 'research.accepted': 1, 'research.cancelled': 1,
   'machine.discovered': 1, 'machine.discovery_failed': 1, 'machine.radius_grew': 1, 'machine.actor_mismatch': 1, 'blast_radius.settings_changed': 1, 'job.gate_passed': 1,
+  'minor_decision.picked': 1, 'minor_decision.compared': 1, 'minor_decision.overridden': 1, 'minor_decision.settings_changed': 1,
 };

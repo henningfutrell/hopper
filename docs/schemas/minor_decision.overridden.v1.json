@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pickId": {
+      "type": "string"
+    },
+    "point": {
+      "type": "string",
+      "enum": [
+        "question-answer",
+        "failure-assessment"
+      ]
+    },
+    "pick": {
+      "type": "string"
+    },
+    "actual": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "pickId",
+    "point",
+    "actual"
+  ],
+  "additionalProperties": false
+}

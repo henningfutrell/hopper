@@ -1,13 +1,14 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the question history, the job rules (issue #172), routing, plugins, webhooks, the users (issue #158) and
+// risk rules), the question history, the minor decisions (issue #550), the job rules (issue #172), routing, plugins, webhooks, the users (issue #158) and
 // sign-in (issue #185) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version.
-import { History, Info, KeyRound, ListChecks, Puzzle, Route, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
+import { History, Info, KeyRound, ListChecks, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
 import { JobRules } from '@/views/job-rules';
+import { MinorDecisions } from '@/views/minor-decisions';
 import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
@@ -17,13 +18,14 @@ import { Users } from '@/views/users';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'job-rules', 'routing', 'plugins', 'webhooks', 'users', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'minor-decisions', 'job-rules', 'routing', 'plugins', 'webhooks', 'users', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
   'version-history': { label: 'Version history', icon: ScrollText, view: VersionHistory },
   questions: { label: 'Question gates', icon: ShieldCheck, view: QuestionGates },
   history: { label: 'Question history', icon: History, view: QuestionHistory },
+  'minor-decisions': { label: 'Minor decisions', icon: Scale, view: MinorDecisions },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
   routing: { label: 'Routing', icon: Route, view: Routing },
   plugins: { label: 'Plugins', icon: Puzzle, view: Plugins },

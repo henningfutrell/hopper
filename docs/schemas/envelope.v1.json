@@ -108,6 +108,10 @@
         "machine.actor_mismatch",
         "blast_radius.settings_changed",
         "job.gate_passed",
+        "minor_decision.picked",
+        "minor_decision.compared",
+        "minor_decision.overridden",
+        "minor_decision.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

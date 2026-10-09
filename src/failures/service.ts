@@ -8,19 +8,23 @@
 // handling ended for is handed off to a person (issue #516, `handoffs.ts`) in the same transaction as the record that
 // ended it. Stale data clears itself (issue #529): the sweep, and the start, close the hand-offs nothing waits on any
 // more — a newer job of its item, its job finished or gone — and ask each open hand-off's source whether its item is
-// closed (`item-check.ts`).
+// closed (`item-check.ts`). A failure no known cause explains, which the rules hand to a person, is a minor decision
+// (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
+// is active and it is sure.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
+  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type Handoff, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
-import { assess, type RecentFailure } from './assess.ts';
+import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
+import { askJev, type JevCase } from './jev.ts';
+import { rerunRecordOf } from './rerun.ts';
 import { createHandoffs } from './handoffs.ts';
 import { createItemCheck } from './item-check.ts';
 import { signatureOf } from './signature.ts';
-import { highestFirst, newerOf, recordRetry, releasable, viewOf } from './view.ts';
+import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
 export interface FailuresOptions {
   store: UserStore;
@@ -38,6 +42,8 @@ export interface FailuresOptions {
   logger: { warn(line: string): void };
   /** How often the sweep runs. */
   sweepMs: number;
+  /** Jev first (issue #550), asked about a failure no known cause explains, and whether the blast-radius gate keeps a machine. Absent: the rules only. */
+  minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
 }
 
 export type FailureAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
@@ -74,7 +80,6 @@ const JUST_FAILED_MS = 60_000;
 const SOURCE_DOWN_MS = 30_000;
 const DONE: Record<PendingRun, FailureOutcome> = { retry: 'retried', redirect: 'redirected', release: 'released' };
 const CHECK_OF = new Map(BUILTIN_CAUSES.filter((c) => c.check).map((c) => [c.id, c.check!]));
-
 export function createFailures(o: FailuresOptions): Failures {
   const { store, clock } = o;
   let stopped = false;
@@ -118,6 +123,7 @@ export function createFailures(o: FailuresOptions): Failures {
   function assessJob(jobId: string, kick = true): void {
     if (stopped) return;
     let grouped = false;
+    let jevCase: JevCase | undefined;
     store.tx(() => {
       const job = store.jobs.get(jobId);
       if (!job || job.status !== 'failed' || job.assessment || store.failures.forJob(jobId)) return;
@@ -159,6 +165,9 @@ export function createFailures(o: FailuresOptions): Failures {
           : acts ? { pending: a.decision as PendingRun, pendingAt } : { outcome: problem ? 'held' as const : 'surfaced' as const, outcomeAt: at.toISOString() }),
       });
       handoffs.afterRecord(record);
+      if (!cause && a.decision === 'person' && !a.superseded && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
+        jevCase = { recordId: record.id, job, error, attempt, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) };
+      }
       store.jobs.update(job.id, {
         assessment: {
           recordId: record.id, at: record.at, class: a.cls, decision: a.decision, summary: a.summary, reasons: a.reasons,
@@ -182,8 +191,12 @@ export function createFailures(o: FailuresOptions): Failures {
       }
     });
     if (grouped) o.trigger('failure.grouped');
+    if (jevCase) void jevStep(jevCase);
     if (kick && !stopped) void sweep();
   }
+
+  const jevStep = (c: JevCase) => (o.minorDecisions ? askJev({ ...o.minorDecisions, live: () => !stopped, logger: o.logger, rerun: rerunRecord }, c) : Promise.resolve());
+  const rerunRecord = (recordId: string, by: RerunBy, note: string): Promise<FailureAction<Job>> => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, by, note);
 
   /**
    * Assess every failed job not assessed yet, whatever its age: a restart's, or an older build's backlog. The sweep
@@ -330,16 +343,7 @@ export function createFailures(o: FailuresOptions): Failures {
       if (done.ok) void sweep();
       return done;
     },
-    async retry(recordId) {
-      const r = store.failures.get(recordId);
-      if (!r) return { ok: false, reason: 'not_found', message: `failure ${recordId} not found` };
-      const allowed = recordRetry(store, r);
-      if (!allowed.ok) return { ok: false, reason: 'conflict', message: `failure ${recordId} cannot run again: ${allowed.why}` };
-      const result = await o.rerun(r.jobId, 'user');
-      if (!result.ok) return { ok: false, reason: result.reason === 'not_found' ? 'not_found' : 'conflict', message: result.message };
-      store.failures.update(r.id, { outcome: 'retried', outcomeAt: now().toISOString(), nextJobId: result.job.id, note: 'run again by a person' });
-      return { ok: true, value: result.job };
-    },
+    retry: (recordId) => rerunRecord(recordId, 'user', 'run again by a person'),
     runAgain: (handoffId) => handoffs.runAgain(handoffId),
     clear: (handoffId) => handoffs.clear(handoffId),
     nameCause(cause) {

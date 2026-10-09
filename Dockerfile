@@ -19,11 +19,15 @@ FROM node:26-bookworm-slim
 # What an upgrade prunes when this image is replaced (docs/deploy.md "Upgrade"); the published image carries it too.
 LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
-# shim; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's installer. No gh: GitHub
-# is read through the signed-in user's connected account (issue #359), and jobs run on attached machines.
+# shim; pip: typesafe-sdk below; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's
+# installer. No gh: GitHub is read through the signed-in user's connected account (issue #359), and jobs
+# run on attached machines.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip \
  && rm -rf /var/lib/apt/lists/*
+# typesafe-sdk: Jev through TypeSafe, for the minor decisions and the gate router's Jev gates. Used only once
+# TYPESAFE_API_KEY is given; without it nothing calls TypeSafe.
+RUN pip3 install --no-cache-dir --break-system-packages typesafe-sdk==0.7.4 && python3 -c 'import typesafe_sdk'
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
 # detects it before it runs jobs on attached machines.
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version

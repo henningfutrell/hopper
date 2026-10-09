@@ -6,7 +6,7 @@ import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { localPlugin } from '../plugins/machine-source/local/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
-import type { AttachedMachine, HostKeyOffer } from '../domain/types.ts';
+import type { AttachedMachine, HostKeyOffer, JevChooser } from '../domain/types.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
 import type { MachineProbe, ResolvedTarget } from '../machines/index.ts';
 import type { GitHubApi } from '../sources/index.ts';
@@ -31,6 +31,8 @@ export interface UserSeams {
   router?: Router;
   /** Replace the configured escalation levels, lowest first; [] = none. The report stays the host's. */
   levels?: EscalationLevel[];
+  /** Replaces Jev (TypeSafe through jev_pick.py) for the minor decisions (issue #550). */
+  jev?: JevChooser;
   /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;
   /** Replaces resolving a new ssh target when the UI adds a machine (issues #18, #59): its pinned host key once herdr is found there, or a rejection with the reason. */

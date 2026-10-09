@@ -16,6 +16,7 @@ import type { Identity, UiRole, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
 import type { Logins } from '../logins/index.ts';
+import type { MinorDecisions } from '../minor-decisions/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, sessionToken } from './host-guard.ts';
@@ -38,6 +39,8 @@ export interface TenantParts {
   logins: Logins;
   /** The failure assessor (issue #509). */
   failures: Failures;
+  /** Minor decisions through Jev first (issue #550). */
+  minorDecisions: MinorDecisions;
   /** Every job source's status (/api/sources, SSE source.updated). */
   registry: SourceRegistry;
   plugins: PluginsView;

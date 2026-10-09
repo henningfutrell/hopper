@@ -1858,3 +1858,116 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
   "reason": "held at the blast-radius gate: desk is rated high; only a job let through the gate runs there"
 }
 ```
+
+## `minor_decision.picked`
+
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked a minor decision (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`) and the decision went on as before. A question's pick names it (`questionId`).
+
+| field | type | required |
+|---|---|---|
+| `pickId` | string | yes |
+| `point` | `question-answer` \| `failure-assessment` | yes |
+| `by` | string | yes |
+| `options` | object[] | yes |
+| `pick` | string | no |
+| `confidence` | number | no |
+| `error` | string | no |
+| `mode` | `off` \| `shadow` \| `active` | yes |
+| `threshold` | number | yes |
+| `applied` | boolean | yes |
+| `notApplied` | `shadow` \| `below_threshold` \| `consequential` \| `no_pick` | no |
+| `consequential` | string[] | no |
+| `questionId` | string | no |
+
+```json
+{
+  "pickId": "p1",
+  "point": "question-answer",
+  "by": "jev",
+  "options": [
+    {
+      "id": "1",
+      "label": "Yes, proceed"
+    },
+    {
+      "id": "2",
+      "label": "No"
+    }
+  ],
+  "pick": "1",
+  "confidence": 0.91,
+  "mode": "shadow",
+  "threshold": 0.85,
+  "applied": false,
+  "notApplied": "shadow",
+  "questionId": "q1"
+}
+```
+
+## `minor_decision.compared`
+
+Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, or `person` for a failed job), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
+
+| field | type | required |
+|---|---|---|
+| `pickId` | string | yes |
+| `point` | `question-answer` \| `failure-assessment` | yes |
+| `pick` | string | yes |
+| `actual` | string | yes |
+| `agreed` | boolean | yes |
+| `decidedBy` | string | yes |
+
+```json
+{
+  "pickId": "p1",
+  "point": "question-answer",
+  "pick": "1",
+  "actual": "1",
+  "agreed": true,
+  "decidedBy": "level-1"
+}
+```
+
+## `minor_decision.overridden`
+
+Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what a minor decision should have been (issue #550): `actual` in place of Jev's `pick`. Counts as a disagreement in the agreement rate unless it names Jev's pick.
+
+| field | type | required |
+|---|---|---|
+| `pickId` | string | yes |
+| `point` | `question-answer` \| `failure-assessment` | yes |
+| `pick` | string | no |
+| `actual` | string | yes |
+
+```json
+{
+  "pickId": "p1",
+  "point": "failure-assessment",
+  "pick": "retry",
+  "actual": "person"
+}
+```
+
+## `minor_decision.settings_changed`
+
+Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin changed a decision point's settings (issue #550): its mode (`off`, `shadow`, `active`) and its threshold, `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `point` | `question-answer` \| `failure-assessment` | yes |
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "point": "question-answer",
+  "from": {
+    "mode": "shadow",
+    "threshold": 0.85
+  },
+  "to": {
+    "mode": "active",
+    "threshold": 0.9
+  }
+}
+```

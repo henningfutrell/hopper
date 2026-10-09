@@ -33,6 +33,7 @@ import { splitSources } from './job-sources.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, type Logins } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
+import { createJev, createMinorDecisions, type MinorDecisions } from '../minor-decisions/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
@@ -106,6 +107,8 @@ export interface UserRuntime {
   logins: Logins;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
+  /** Minor decisions, Jev first (issue #550). */
+  minorDecisions: MinorDecisions;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   /** The user's connected GitHub account (issue #214). */
@@ -124,6 +127,8 @@ export interface UserRuntime {
 }
 
 const SEAM_SOURCE_POLL_MS = 1000;
+/** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
+const JEV_TIMEOUT_MS = 30_000;
 
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
@@ -260,8 +265,18 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   const logins = createLogins({ store, clock });
+  // Minor decisions (issue #550) go through Jev first, through TypeSafe with the runtime's key.
+  const minorDecisions: MinorDecisions = createMinorDecisions({
+    store, clock, logger, timeoutMs: JEV_TIMEOUT_MS,
+    jev: seams.jev ?? createJev({
+      python: 'python3', timeoutMs: JEV_TIMEOUT_MS, secret,
+      env: { PATH: o.env.PATH, HOME: o.env.HOME, PYTHONPATH: o.env.PYTHONPATH },
+    }),
+  });
+  // Read at each question and failure: reached only after `engine` exists.
+  const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
-    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { first: minorDecisions, gated },
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: o.answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -310,7 +325,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, logger, sweepMs: config.tickMs,
     rerun: (jobId, by) => sync.rerun(jobId, by), dismiss: (jobId) => { engine.dismiss(jobId); },
     machines: () => host.machines().list(), itemClosed: async (job) => sourceOf(job)?.itemClosed?.(job),
-    trigger: (reason) => engine.trigger(reason),
+    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
@@ -326,7 +341,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name),
     connectedAccounts,
     usageHistory,
@@ -343,12 +358,14 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       sync.start();
       usageHistory.start();
+      minorDecisions.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
     },
     stop() {
       stopped ??= (async () => {
         await failures.stop();
+        minorDecisions.stop();
         await sync.stop();
         usageHistory.stop();
         connectedAccounts.stop();

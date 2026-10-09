@@ -5,7 +5,7 @@ import type { IntakeMigration } from './intake.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
-  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
+  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, MinorDecisionSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
 import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, PriorityLaneSettings, UsageLimitPair } from './types.ts';
 
@@ -228,6 +228,9 @@ export interface UserSettingsRepository {
   /** The failure assessor's settings (issue #509); absent: never set. */
   getFailureSettings(): FailureSettings | undefined;
   setFailureSettings(settings: FailureSettings): void;
+  /** Each decision point's mode and threshold (issue #550); a point never set is absent. */
+  getMinorDecisionSettings(): Partial<MinorDecisionSettings>;
+  setMinorDecisionSettings(settings: MinorDecisionSettings): void;
   /** The causes a person named for signatures (issue #509). */
   getNamedCauses(): NamedCause[];
   setNamedCauses(causes: readonly NamedCause[]): void;
