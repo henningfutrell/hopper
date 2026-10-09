@@ -6,6 +6,7 @@
 // its instance name.
 import type { MachineSource, UsageSource } from '../domain/ports.ts';
 import type { Detection, InstanceSpec, InstanceStatus, Role } from '../domain/types.ts';
+import type { ConfiguredBackend, VaultBackend } from '../domain/vault.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
 import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts';
 
@@ -77,6 +78,23 @@ export function applyUsageSpecs(slot: { built?: Built<UsageSource>[] }, specs: I
     label: 'usage source', logger: deps.logger, build: (spec) => buildUsageSource(spec, deps),
     retire: (gone) => { for (const b of gone) b.instance?.stop?.(); },
   });
+}
+
+/** The vault backends as the plugins config names them now (issue #585); each named after its instance. */
+export function applyVaultBackendSpecs(slot: { built?: Built<VaultBackend>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<boolean> {
+  return followSpecs(slot, specs, {
+    label: 'vault backend', logger: deps.logger,
+    build: async (spec) => {
+      const b = await buildOne('vault-backend', spec, deps, { needsSetupRuns: true });
+      return b.instance ? { ...b, instance: Object.create(b.instance, { name: { value: b.spec.name, enumerable: true } }) as VaultBackend } : b;
+    },
+  });
+}
+
+/** A vault backend as the vault is given it: running, or why not; and what it still needs (its token). */
+export function configuredBackend(b: Built<VaultBackend>): ConfiguredBackend {
+  const setup = b.detection.status === 'needs-setup' ? b.detection.reason : undefined;
+  return { name: b.spec.name, plugin: b.spec.plugin, ...(b.instance ? { backend: b.instance } : { problem: b.reason }), ...(setup ? { setup } : {}) };
 }
 
 async function buildUsageSource(spec: InstanceSpec, deps: SlotDeps): Promise<Built<UsageSource>> {

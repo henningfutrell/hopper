@@ -15,7 +15,8 @@
         "job-source",
         "machine-source",
         "usage-source",
-        "notifier"
+        "notifier",
+        "vault-backend"
       ]
     },
     "commit": {
