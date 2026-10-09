@@ -21,6 +21,7 @@ import {
 } from './ui/index.ts';
 import { answerBody, intakeActionBody, rejectBody, requeueBody } from './ui/job-bodies.ts';
 import { notifierActionBody, webhookTestBody, webhooksEditBody } from './ui/webhooks-notifiers.ts';
+import { vaultEditBody } from './ui/vault.ts';
 import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { reviewQuery } from './reviews.ts';
 import { acceptBody, notesBody, optionalNotesBody, reviewSettingsBody } from './ui/reviews.ts';
@@ -28,7 +29,7 @@ import { phaseShiftSettingsBody, shiftBody } from './ui/phase-shifts.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Minor decisions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Minor decisions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -160,6 +161,8 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/notifiers', tag: 'Plugins and routing', summary: 'Run a notifier\'s action', description: 'A running notifier instance, by name, does one of the actions GET /api/plugins lists for it: `test` sends one marked test payload, one attempt; `send-open` sends every question open at the human now. Answers what it did, with the receiver\'s HTTP status. Nothing is stored.', role: 'admin', body: notifierActionBody, returns: '`NotifierActionResult`', errors: [400, 404] },
   { method: 'get', path: '/api/routing', tag: 'Plugins and routing', summary: 'Routing rules', returns: 'the rules as configured and their report' },
   { method: 'post', path: '/ui/api/routing', tag: 'Plugins and routing', summary: 'Replace the routing rules', description: 'Applies to new jobs, and to waiting jobs that have not started on the next sync of their source.', role: 'admin', body: routingEditBody, returns: 'the new routing report', errors: [409] },
+  { method: 'get', path: '/api/vault', tag: 'Vault', summary: 'Vault secrets: metadata only', description: 'Each secret\'s name, scope, who set it and when, who last changed it and when. Never a value, to any role. `problem` when the runtime gives no `HOPPER_TOKEN_KEY`. Not cached.', returns: '`{ secrets, problem? }`' },
+  { method: 'post', path: '/ui/api/vault', tag: 'Vault', summary: 'Set or remove a vault secret', description: '`set` stores a new secret, or a new value (and scope, when given) for one: kept encrypted in the database and never answered back. `remove` deletes it. Not cached. 503 when the runtime gives no `HOPPER_TOKEN_KEY` to encrypt it with.', role: 'admin', body: vaultEditBody, returns: 'the new view, as GET /api/vault', errors: [404, 503] },
   { method: 'get', path: '/api/webhooks', tag: 'Webhooks', summary: 'Webhook subscriptions', description: 'Each with when its signing secret last changed (`secretChangedAt`) — or, for a subscription from before with none stored, the runtime variable it reads (`secretEnv`) — and why it cannot sign, if so (`secretProblem`). Never a secret.', returns: '`{ subscriptions }`' },
   { method: 'get', path: '/api/webhooks/deliveries', tag: 'Webhooks', summary: 'Webhook deliveries', query: deliveriesQuery, returns: '`{ deliveries }`, newest first' },
   { method: 'post', path: '/ui/api/webhooks', tag: 'Webhooks', summary: 'Add, edit or remove a subscription; replace or rotate its signing secret', description: 'The signing secret is the hopper\'s own, kept encrypted in the database and never answered back. `add` takes one typed in (`secret`: 32 to 4096 printable ASCII characters, no spaces), or none, and then the hopper makes one; `replace` stores one typed in; `rotate` has the hopper make one. A secret the hopper made is in this answer only (`generatedSecret`): copy it to the receiver. Applies from the next delivery. Not cached. 503 when the runtime gives no `HOPPER_TOKEN_KEY` to encrypt it with.', role: 'admin', body: webhooksEditBody, returns: 'the new view, as GET /api/webhooks, with `generatedSecret` when the hopper made one', errors: [404, 409, 503] },
@@ -203,6 +206,7 @@ const TAGS: Record<Tag, string> = {
   'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
+  Vault: 'Write-only secrets for jobs: set once, never read back.',
   Events: 'The event log, read back or streamed.',
   'Self-update': 'The install and the update repository.',
   Users: 'The people one hopper works for, each with their own work, kept apart.',

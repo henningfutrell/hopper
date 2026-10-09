@@ -2178,3 +2178,37 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
   "error": "GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)"
 }
 ```
+
+## `vault.secret_set`
+
+Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+| `replaced` | boolean | yes |
+
+```json
+{
+  "name": "KUBE_TOKEN",
+  "by": "Ada",
+  "replaced": false
+}
+```
+
+## `vault.secret_removed`
+
+Version 1 (`docs/schemas/vault.secret_removed.v1.json`). A vault secret was removed (issue #558), and who removed it.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "KUBE_TOKEN",
+  "by": "Ada"
+}
+```

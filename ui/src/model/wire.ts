@@ -15,6 +15,7 @@ import type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
+  VaultSecret, VaultView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -32,6 +33,7 @@ export type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
+  VaultSecret, VaultView,
 };
 
 export interface Queue {

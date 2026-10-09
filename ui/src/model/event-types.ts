@@ -31,6 +31,7 @@ const ALL: Record<EventType, true> = {
   'minor_decision.picked': true, 'minor_decision.compared': true, 'minor_decision.overridden': true, 'minor_decision.settings_changed': true,
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
+  'vault.secret_set': true, 'vault.secret_removed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

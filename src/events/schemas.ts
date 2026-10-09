@@ -260,6 +260,9 @@ export const EVENT_SCHEMAS = {
   }),
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean(), question: z.enum(['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled', 'missing']).optional() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
+  // The vault (issue #558): names and people; never a value.
+  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean() }),
+  'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),

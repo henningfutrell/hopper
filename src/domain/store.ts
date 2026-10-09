@@ -2,6 +2,7 @@
 // user's store and the instance store. Re-exported from ports.ts.
 
 import type { IntakeMigration } from './intake.ts';
+import type { VaultSecret } from './vault.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion, PhaseShiftSettings, PhaseSuggestion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
@@ -92,6 +93,20 @@ export interface WebhookRepository {
   /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
   dueDeliveries(now: Date): WebhookDelivery[];
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
+}
+
+/** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. */
+export interface VaultRepository {
+  list(): VaultSecret[];
+  get(name: string): VaultSecret | undefined;
+  /** Keeps a new secret, its value already sealed for its id. False (nothing written) when the name is taken. */
+  add(secret: VaultSecret, sealed: string): boolean;
+  /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
+  replace(secret: VaultSecret, sealed: string): boolean;
+  /** The secret's sealed value; undefined when there is none. Never part of a secret. */
+  sealed(id: string): string | undefined;
+  /** True when there was one. */
+  remove(name: string): boolean;
 }
 
 export interface QuestionRepository {
@@ -476,6 +491,8 @@ export interface UserStore {
   decisions: DecisionRepository;
   events: EventLog;
   webhooks: WebhookRepository;
+  /** The vault (issue #558). */
+  vault: VaultRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;

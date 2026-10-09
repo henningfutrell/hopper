@@ -105,6 +105,8 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'phase_shifts.settings_changed': 'An admin saved the phase-shift settings (issue #548): the default mode (`fork` or `switch`), what a parent does while its fork runs (`wait` or `park`), and the escalation levels that may shift a job themselves.',
   'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
+  'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.',
+  'vault.secret_removed': 'A vault secret was removed (issue #558), and who removed it.',
 };
 
 type Prop = Record<string, unknown>;

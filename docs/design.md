@@ -9183,3 +9183,50 @@ style, not a process: no review agent, no rewriting pass, no gate, no check by J
   prompt the same way. If adherence is poor, that is raised again; nothing checks it now.
 
 **Verification.** `test/job-rules/writing-style.test.ts`, `test/herdr/screen.test.ts` (the footer verbatim).
+
+## The vault (issue #558, 2026-10-09)
+
+Owner request: a vault inside the hopper for one job — getting secrets to box containers safely. Owner clarification
+(issue #558): local to the hopper, not an outside key service and not a replacement for one. The accepted proposal
+builds it in three slices, one pull request each; the scope comment on the issue lists what is not built (an outside
+key service, minted short-lived credentials, per-operation profiles, boxes the hopper launches itself).
+
+1. **Write-only vault secrets** (this section, below).
+2. **Box templates**: an image and the vault secrets its boxes may ask for, approved once by a person; the scope comes
+   from the template, never from the job. Not built yet.
+3. **Delivery**: a box's job asks the hopper client over a socket; the client asks the hopper over its signed link with
+   a job-bound token, as the GitHub proxy (issue #563) does; nothing in the environment or on disk. Not built yet.
+
+### Write-only vault secrets (slice 1)
+
+A **vault secret** is a name (a letter, then letters, digits, `_`, `.`, `-`; at most 64), an optional **scope** (one
+line, at most 200 characters: what it reaches, in the words of whoever set it) and a value (1 to 64 KiB). An admin sets,
+replaces or removes it in Settings → Vault (`POST /ui/api/vault`, `set` / `remove`). `GET /api/vault` and the edit's
+answer carry each secret's metadata — id, name, scope, who set it and when, who last changed it and when — and never a
+value, to any role; both are `cache-control: no-store`. The page's value field is a password field the browser does not
+fill in or remember.
+
+**Kept** in the user schema's `vault_secrets` (tenant migration 28, a table only: the build before runs on it): the
+metadata as JSON in `body`, the value in `sealed`, sealed by the sealer ("Sealed in the database") under the token key,
+bound to `vault:<id>/value`. The id, not the name or the user, so a fold of one user into another keeps it, and a value
+copied to another row does not open. `sealed` is read only by the vault service, never into a secret's metadata. A
+database dump holds no value; a copy of the hopper's container or image holds none either (the token key is in the
+runtime's `secrets` volume). A key rotation seals every vault secret again at start, as it does the webhook secrets
+(`resealAll`, logged as a count). No key: nothing is stored (503 naming `HOPPER_TOKEN_KEY`) and the page says why.
+
+**Never carried**: an event (`vault.secret_set` — `name`, `by`, `replaced` — and `vault.secret_removed` — `name`, `by`),
+a log line, an error text or a webhook delivery (deliveries are events). No job prompt is given one: nothing in this
+slice reads a value but the sealer's own check of a rotation.
+
+**Seams.** `src/domain/vault.ts` (the types and limits), `src/store/vault.ts` (the table), `src/vault/service.ts`
+(set, remove, view, reseal: the only code that seals a vault value), `src/http/vault.ts` (the read),
+`src/http/ui/vault.ts` (the edits, admin), `ui/src/views/vault.tsx` and `ui/src/model/vault.ts` (the page).
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation | engine, http, plugins, decider, executors |
+
+Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
+every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
+a log line or an error; no session refused; no key 503; a key rotation seals again), `test/ui/vault.test.ts` (the page's
+model).
