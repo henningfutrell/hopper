@@ -57,7 +57,7 @@ describe('in-memory fake GitHub', () => {
     const gh = createFakeGitHub();
     gh.createIssue({ repo: 'h/a', labels: ['hopper'] });
     const pr = gh.openPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', isDraft: true });
-    expect(pr).toEqual({ url: 'https://github.com/h/a/pull/1001', createdAt: '2026-10-02T10:30:00.000Z', isDraft: true });
+    expect(pr).toEqual({ url: 'https://github.com/h/a/pull/1001', createdAt: '2026-10-02T10:30:00.000Z', isDraft: true, conflicting: false });
     expect(gh.issue('h/a', 1).state).toBe('open');
     expect(await gh.openClosingPullRequests('h/a', 1)).toEqual([pr]);
     gh.closeByPullRequest('h/a', 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });

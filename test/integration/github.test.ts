@@ -106,7 +106,7 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no merged pull request opened by this job closes ${issue.url}`);
+    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}`);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
     expect(gh.issue(REPO, issue.number).state).toBe('open');
