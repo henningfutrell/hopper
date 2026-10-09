@@ -299,6 +299,15 @@ describe('the Add machine line (issue #308)', () => {
     expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
+  it('a sandbox box from a box template (issue #558): named after the template, its image the template\'s', () => {
+    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join });
+    expect(line).toContain('--name hopper-sandbox-kube ');
+    expect(line).toContain('-v hopper-sandbox-kube-home:/home/agent');
+    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-kube ');
+    expect(line.endsWith(' localhost/box-kubectl:1')).toBe(true);
+    expect(line).toContain('--cap-drop ALL --security-opt no-new-privileges --read-only');
+  });
+
   it('the agents a box is offered with are those an executor drives on a client target', () => {
     expect(BOX_AGENTS).toEqual(['claude']);
   });
