@@ -2,9 +2,11 @@
 // proposal or a research report waits on it (waiting_answer, no question), as on a question: it holds no lane, its
 // pane stays, it can be parked. Sent back, the job is re-queued with what to do next, and its next document is the
 // next version. Accepted, a job that asks for a further section (research, then the proposal: REVIEW_KINDS) is
-// re-queued, told to write that next, in the same session; otherwise, accepted or rejected, the job ends `finished`
-// with every decision it reached as its result — what an accepted item becomes is decided later (it stays linked to
-// the job and its item). The handlers run inside the review service's tx.
+// re-queued, told to write that next, in the same session. A job that was not asked for the item — its agent wrote it
+// because its own item asked for it within the work — is told it was accepted and, where the type goes on (research:
+// issue #538, open decision D2), goes on in the same session: with the rest of its work, or it ends done, by its own outcome. Otherwise, accepted or
+// rejected, the job ends `finished` with every decision it reached as its result — what an accepted item becomes is
+// decided later (it stays linked to the job and its item). The handlers run inside the review service's tx.
 import type { ExecutionReport } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import {
@@ -63,7 +65,7 @@ export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined,
 }
 
 export interface ReviewHandlers {
-  /** Accepted or rejected: the job moves on to the next section it asks for, or ends `finished` with its decisions. */
+  /** Accepted or rejected: the job moves on to the next section it asks for, goes on with its work (an item it was not asked for, accepted), or ends `finished` with its decisions. */
   onDecided(p: ReviewItem): void;
   /** Sent back: the job is re-queued with `brief` pending (a parked one keeps it until it is re-queued). */
   onRevise(p: ReviewItem, brief: string): void;
@@ -79,6 +81,12 @@ function nextAsk(job: Job, kind: ReviewKind): ReviewKind | undefined {
 const moveOnBrief = (p: ReviewItem, next: ReviewKind): string => {
   const notes = p.signOff?.notes ? ` Its notes: ${p.signOff.notes}` : '';
   return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was accepted.${notes}\n${REVIEW_SECTIONS[next].ask.replace('Change nothing', 'Build on it; change nothing')}`;
+};
+
+/** What a job is told when an item it was not asked for was accepted (issue #538): go on with its work, or end done. */
+const goOnBrief = (p: ReviewItem): string => {
+  const notes = p.signOff?.notes ? ` Its notes: ${p.signOff.notes}` : '';
+  return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was accepted.${notes}\nGo on with what else your item asks, in this session. If it asks for nothing more, end your message with a line containing only HOPPER_DONE.`;
 };
 
 export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): ReviewHandlers {
@@ -102,6 +110,9 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
       if (!job) return;
       const next = p.status === 'accepted' ? nextAsk(job, p.kind) : undefined;
       if (next) return requeue(job, moveOnBrief(p, next), `${REVIEW_SECTIONS[p.kind].noun} accepted: on to the ${REVIEW_SECTIONS[next].noun}`);
+      // Not asked for it: the item was part of the job's own work, which goes on where its type says so (issue #538).
+      const type = REVIEW_SECTIONS[p.kind];
+      if (p.status === 'accepted' && type.goesOn && !job.spec[type.specFlag]) return requeue(job, goOnBrief(p), `${REVIEW_SECTIONS[p.kind].noun} accepted: the job goes on`);
       const result = decidedResult(itemsOfJob(c, store.jobs.get(p.jobId)!));
       store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined });
       store.events.append({ type: 'job.finished', jobId: p.jobId, data: { result } });

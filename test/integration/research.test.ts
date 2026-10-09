@@ -108,6 +108,25 @@ describe('a job asked to research', () => {
     expect((await decide(a, token, 'research', r.id, 'accept')).status).toBe(409);
   });
 
+  it('a job its item asked to research as part of its work, not asked by the hopper: accepted, it goes on in the same session and ends as its work does', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(research(), { title: 'research the probe, then extend it' });
+    expect(job.spec.research).toBeFalsy();
+    const r = await waitForItem(a, 'research', job.id, forPerson);
+    expect((await decide(a, token, 'research', r.id, 'accept', { notes: 'go with the tool probe' })).body).toMatchObject({ status: 'accepted' });
+    const done = await a.waitForStatus(job.id, 'finished');
+    // Told in its session that the research was accepted, then it ended through its own outcome, not by the decision.
+    const told = (done.result as { answer: string }).answer;
+    expect(told).toContain('research report was accepted');
+    expect(told).toContain('go with the tool probe');
+    expect(told).toContain('HOPPER_DONE');
+    const events = ofJob(await a.events(), job.id);
+    expect(events.find((e) => e.type === 'job.requeued')!.data).toEqual({ from: 'waiting_answer', reason: 'research report accepted: the job goes on' });
+    expect(events.filter((e) => e.type === 'job.finished')).toHaveLength(1);
+    expect((await itemsOf(a, 'research', job.id))[0]).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', version: 1 } });
+  });
+
   it('a reviewer level reviews a research report when the research settings name it; a reviewer that is no escalation level is refused', async () => {
     const seen: ReviewRequest[] = [];
     const level: EscalationLevel = createFakeLevel({
