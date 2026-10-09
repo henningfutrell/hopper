@@ -52,7 +52,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
-| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
+| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -9077,10 +9077,12 @@ already minted is widened, and minted credentials are short-lived. This builds t
 minting and no first-time human gate (both #558's). The dependency runs #558 → #559.
 
 **The entry point** — `Access.decideMint(request)` (`src/authz/service.ts`, the app's `access`), with
-`MintRequest` (`src/domain/access.ts`): the job (`userId`, `jobId`), its template, the operation and the asset.
+`MintRequest` (`src/domain/access.ts`): the **requester** (issue #581: a job, a machine or a user), the operation and the
+asset. The template is not in the request: it comes from the requester's relations below.
 It answers a `MintDecision` — `allowed`, `reason`, the relationship `path` when the hopper can name it, the
-OpenFGA model asked — and records it. The vault calls it before every mint and every renewal, and mints nothing
-unless `allowed`; the template comes from the machine's registration, never from the job's prompt.
+OpenFGA model asked — and records it, with the requester and the template it runs as. The vault calls it before every
+mint and every renewal, and mints nothing unless `allowed`; the template comes from the machine's join line, never from
+the job's prompt. The skill broker (issue #582) asks it for the job.
 
 **The types the model needs**, kept minimal for the vault to adopt or extend (`src/domain/access.ts`):
 
@@ -9091,49 +9093,72 @@ unless `allowed`; the template comes from the machine's registration, never from
 | asset | `cluster`, `namespace` (`<cluster>/<namespace>`), `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role` (`<account>/<role>`), and a name (`ASSET_NAME`: OpenFGA takes no `:`, `@`, `#` or space in an id, so not an ARN) | `asset:cluster/x` |
 | operation profile | an operation on an asset | `operation_profile:read/cluster/x` |
 | job | one run of a job: the issue's *session* (*UI session* is taken, glossary) | `job:<user>/<job>` |
+| user | a person the hopper works for (issue #581) | `user:<user>` |
+| machine | a machine jobs run on, of one user; its name escaped (`encodeURIComponent`: OpenFGA takes no space, `:` or `#`) | `machine:<user>/<name>` |
 
 The issue's *target* is an **asset** here: *target* is an attached machine (glossary).
 
-**The model** (`src/authz/model.ts`, `DEFAULT_ACCESS_MODEL`, OpenFGA DSL):
+**The model** (`src/authz/model.ts`, `DEFAULT_ACCESS_MODEL`, OpenFGA DSL; a tuple reads *subject relation object*):
 
 ```
-type job
-type template            running: [job]
-type operation_profile   approved_for: [template]; running_job: running from approved_for
-type asset              grants_<op>: [operation_profile]; can_<op>: running_job from grants_<op>
+type user
+type job                 owns: [user]                      # user:u owns job:u/j
+type machine             runs_on: [job]; owner: owns from runs_on          # job runs_on machine
+type template            running: [job]; instance_of: [machine]            # machine instance_of template
+                         requester: running or instance_of or runs_on from instance_of or owner from instance_of
+type operation_profile   approved_for: [template]; requester: requester from approved_for
+type asset               grants_<op>: [operation_profile]; can_<op>: requester from grants_<op>
 ```
 
 An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the asset, and the template is
-`approved_for` the profile. A check asks `job:<user>/<job>` `can_<op>` `asset:…` with one **contextual tuple**,
-`job running template` — told only while the job is live (`claimed`, `running`, `waiting_answer`), never stored. So
-a job that ended, failed or was parked gets nothing, with no tuple to delete; a job not live is denied before
-OpenFGA is asked. The user, machine and admin relations the issue sketches are not in the model yet: nothing asks
-them. A template the vault registers per binary, and a machine that is an instance of one, are #558's to add — a
-model edit, so no restart.
+`approved_for` the profile.
+
+**Requesters** (issue #581; the issue's *identity*, but *identity* is who signed in, glossary). A check starts from the
+requester that asks — `job:<user>/<job>`, `machine:<user>/<name>` or `user:<user>` — `can_<op>` `asset:…`, and follows the
+tuples the hopper writes from **who is live** (`requesterTuples`): a user `owns` each of their live jobs (`claimed`,
+`running`, `waiting_answer`); a job `runs_on` the machine it runs on (its lane's, else where it resumes); a box is an
+`instance_of` the template its join line named. So a job reaches a template through its box, a box through its join,
+and a user through their live jobs; a job on a machine of no template reaches none. Who is live comes from each user's
+store through the composition root (`AccessOptions.requesters`, the vault's `boxes()`); nothing is stored for it. It
+is pushed with the approvals: within 2 s of a change (`REQUESTERS_CHECK_MS`: a job started or ended, a box joined or
+left) and before every check, which asks OpenFGA only once it holds who is live now. A requester that is not live is
+denied before OpenFGA is asked: a job not live, a machine that is no box of a template now, a user the hopper does not
+have. A check tried in Settings → Access still tells a made-up job `running` from the template as a contextual tuple.
+Not built (later, #241, #242): admin roles; a template is named by its name alone, so two users' templates of one name
+share their approvals.
+
+**The model kept.** The default model of #559 lacked the requester relations. At start, a newest model the hopper wrote
+(`writtenBy: hopper`) that lacks a relation this build writes is replaced by this build's default, as a new version.
+One a person edited is kept: until a model with the relations is saved, the push stops and every check is denied, the
+status saying what it lacks.
 
 **The hopper's database is the source of truth** (migration 29, instance schema; `src/store/access.ts`):
 `access_models` (each saved model, its version the row), `access_tuples` (every tuple pushed, a revoked one kept
 with who and when), `access_state` (OpenFGA's store id and the model pushed there), `access_decisions` (every
 decision). **Push** (`sync`): the store (made when OpenFGA holds none by the kept id — a new OpenFGA is filled from
 the database), the model when the store or version changed, then the tuples: what OpenFGA holds and the database
-does not is deleted, what it lacks is written. At start, after every change, and every 30 s, so drift is put back
+does not is deleted, what it lacks is written — the approvals, and the tuples of who is live. At start, after every change, and every 30 s, so drift is put back
 and an OpenFGA come back is found. One push at a time.
 
 **Fail closed.** Every mint is denied, and recorded, when: no OpenFGA is set up; OpenFGA cannot be reached or
 refused what was pushed; a change is not pushed yet (a revoke OpenFGA has not taken: the next check pushes first,
-and denies when it cannot); the job is not live; the request names no template, operation or asset the model can
+and denies when it cannot); the requester is not live; the model lacks a relation the hopper writes; the request names no template, operation or asset the model can
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
 shown in Settings → Access.
 
 **The relationship path.** OpenFGA's check answers only allowed or not. On an allow, the path is the hopper's
-reading of its own live tuples: the job runs from the template → the template is approved for the profile → the
-profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
+reading of its own live tuples: (for a job, its owner first) the user owns the job → the job runs on the machine → the
+machine is an instance of the template → the template is approved for the profile → the profile grants the operation on
+the asset; for a tried check, the made-up job runs from the template. When a model edit allowed it another way, no path
+is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
 status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
 (issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
-decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
+decisions; **Who may do what** — the permission matrix's rows (issue #581): every user, each live job (its machine and
+template) and each box, each asset an approval names a column, each cell the operations the requester may do, with the
+path on hover, the hopper's reading of its own rows (`AccessView.requesters`); and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
 API for the vault's gate (#558) to write; the UI offers no approve, since that is the gate.
 
@@ -9145,6 +9170,13 @@ postgres service. Not bundled into the hopper's image: OpenFGA is a Go server wi
 migrations, and a second process in the hopper's container would need a supervisor. Tests put a double at the seam
 (`AppSeams.authorizationServer`, `test/support/fake-authorization-server.ts`, which evaluates the model's JSON);
 `test/authz/openfga-real.test.ts` runs against a real one when `HOPPER_TEST_OPENFGA_URL` is set.
+
+Tests (issue #581): `test/integration/access-requesters.test.ts` (a real joined box: a job on a box of an approved
+template allowed with the path user, job, machine, template; the box and the user too; a box of a template not approved
+denied; a job's tuples gone when it ends and a box's when it leaves, each next check denied; the matrix rows),
+`test/integration/access.test.ts` (a job on a machine of no template denied; the default model of #559 replaced at start,
+an edited one kept and denied until saved again), `test/authz/model.test.ts`, `test/store/migration-31.test.ts`
+(a decision recorded for a job names it as its requester), `test/ui/access-view.test.ts`.
 
 Not yet: retention of `access_decisions` (they grow like the event log); the issue's audit beside #558's issuance
 audit is that table until the vault adds its own.
@@ -9439,8 +9471,8 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   the highest.
 
 **Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
-discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
-carries its `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+discovered rating only. The permission matrix (#559): its rows are the requesters (issue #581, `AccessView.requesters`); a click on a
+cell to explain it and revoke from there is not built yet. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
 
 Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
 not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
@@ -9613,7 +9645,7 @@ same row Settings → Access shows.
 **Not built.** Minting (#580): the link uses the vault secret as it is, delivered just in time. Skills a user or a plugin
 adds; a skill the hopper learns (#583, Render). A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
 link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
-their approvals (#581 makes identity richer).
+their approvals. Access checks the job (issue #581): its box's template comes from the job's relations.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
