@@ -127,6 +127,7 @@
         "vault.approved",
         "vault.delivered",
         "vault.refused",
+        "yolo_mode.changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

@@ -70,18 +70,17 @@ describe('operator-led work', () => {
     expect((await a.job(job.id)).status).toBe('operator_led');
   });
 
-  it('done is the closing pull request: an open one is not enough at merge completion, the merge finishes the job', async () => {
+  it('done is the closing pull request ready for review (issue #579): a draft is not enough; an open, ready one finishes the job, no merge needed', async () => {
     const gh = createFakeGitHub();
     const { a, token } = await boot(gh);
     const { issue, job } = await waitingJob(a, gh);
     await claim(a, token, job.id);
 
-    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
+    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString(), isDraft: true });
     await a.sync();
     expect((await a.job(job.id)).status).toBe('operator_led');
 
-    const now = new Date().toISOString();
-    gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
+    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
     await a.sync();
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.finishedAt).toBeDefined();

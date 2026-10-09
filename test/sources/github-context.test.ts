@@ -3,28 +3,34 @@ import { REPO, discoverOne, setup } from './fixtures/github-support.ts';
 
 const URL1 = `https://github.com/${REPO}/issues/1`;
 
-const DONE_AT_MERGE = 'done (completion: merge): only once the change ships — the repo\'s own checks pass, the change is pushed, a pull request this job opens with "Closes #1" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed. One exception: when the issue needs no code change, close it as completed and end done';
-const DONE_AT_PR = 'done (completion: pull-request): once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open and not a draft. Do not merge it: a person reviews and merges it. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed';
+const DONE = 'done: once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done';
+const DONE_NO_MERGE = `${DONE}. Do not merge it: a person reviews and merges it`;
+const DONE_YOLO = `${DONE}. Yolo mode is on for this repo: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done`;
 
-describe('GitHub source: the done line follows the completion (issue #187)', () => {
-  const doneLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('done '));
+describe('GitHub source: done is a pull request; yolo mode adds the merge (issue #579)', () => {
+  const doneLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('done'));
 
-  it('the configured completion: merge by default, pull-request when set', async () => {
-    const merge = setup();
-    merge.gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    expect(doneLine((await discoverOne(merge.source)).prompt)).toBe(DONE_AT_MERGE);
-    const pr = setup({ completion: 'pull-request' });
-    pr.gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    expect(doneLine((await discoverOne(pr.source)).prompt)).toBe(DONE_AT_PR);
+  it('yolo mode off (the default): done is the pull request, and the job is told not to merge it', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(doneLine((await discoverOne(source)).prompt)).toBe(DONE_NO_MERGE);
   });
 
-  it('a completion label on the issue overrides the configured completion', async () => {
-    const toPr = setup();
-    toPr.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:complete-at-pr'] });
-    expect(doneLine((await discoverOne(toPr.source)).prompt)).toBe(DONE_AT_PR);
-    const toMerge = setup({ completion: 'pull-request' });
-    toMerge.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:complete-at-merge'] });
-    expect(doneLine((await discoverOne(toMerge.source)).prompt)).toBe(DONE_AT_MERGE);
+  it('yolo mode on for the issue\'s repo: done is still the pull request; the job may merge it once the checks pass', async () => {
+    const asked: string[] = [];
+    const { gh, source } = setup({}, { yoloMode: (repo) => { asked.push(repo); return true; } });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(doneLine((await discoverOne(source)).prompt)).toBe(DONE_YOLO);
+    expect(asked).toEqual([REPO]);
+  });
+
+  it('read at each prompt: turned off, the next prompt says not to merge', async () => {
+    let on = true;
+    const { gh, source } = setup({}, { yoloMode: () => on });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(doneLine((await discoverOne(source)).prompt)).toBe(DONE_YOLO);
+    on = false;
+    expect(doneLine((await discoverOne(source)).prompt)).toBe(DONE_NO_MERGE);
   });
 });
 
@@ -42,7 +48,7 @@ describe('GitHub source: full issue context and job environment', () => {
       'title: Add a README',
       'labels: hopper, hopper:high · author: owner',
       'priority: 75 (label:hopper:high) · project item: none',
-      DONE_AT_MERGE,
+      DONE_NO_MERGE,
       "recent comments (oldest first, up to 10; only the assignee's, no hopper-marked comments):",
       `- owner at ${c.createdAt}: Keep it short.`,
     ].join('\n'));

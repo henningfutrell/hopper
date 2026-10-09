@@ -23,7 +23,7 @@ export interface FakeGitHub extends GitHubApi {
    */
   closeIssue(repo: string, number: number, closedBy?: string, o?: { at?: string; reason?: 'completed' | 'not_planned' }): void;
   /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
-  openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean }): OpenPullRequest;
+  openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean; conflicting?: boolean }): OpenPullRequest;
   /** The merge of a pull request (opened at createdAt) closes the issue; no open one is left. */
   closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
   deleteIssue(repo: string, number: number): void;
@@ -188,9 +188,9 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       Object.assign(i, { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
       closers.delete(key(repo, n));
     },
-    openPullRequest(repo, n, { createdAt, isDraft }) {
+    openPullRequest(repo, n, { createdAt, isDraft, conflicting }) {
       find(repo, n);
-      const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, isDraft: isDraft ?? false };
+      const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, isDraft: isDraft ?? false, conflicting: conflicting ?? false };
       opened.set(key(repo, n), [...(opened.get(key(repo, n)) ?? []), pr]);
       return { ...pr };
     },

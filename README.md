@@ -254,10 +254,10 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
    `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
    proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
-   A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
-   an open pull request for you to review and merge, set the source's `completion` to
-   `pull-request` in the Plugins view; `hopper:complete-at-pr` or `hopper:complete-at-merge` on an
-   issue sets it for that issue alone.
+   A job is done when its pull request is open and ready for review; you review and merge it, and the
+   merge closes the issue. To let jobs merge their own pull requests once the checks pass, turn on
+   yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read
+   its warning first.
 
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's

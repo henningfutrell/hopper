@@ -35,6 +35,8 @@ export interface OpenPullRequest {
   url: string;
   createdAt: string;
   isDraft: boolean;
+  /** GitHub says it cannot merge as it stands (`mergeable: CONFLICTING`); not yet computed counts as not. */
+  conflicting: boolean;
 }
 
 export interface GitHubComment {

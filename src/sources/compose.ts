@@ -45,6 +45,8 @@ export interface GitHubSourceDeps {
   accounts?: ConnectedAccountTokens;
   /** Claim holders, the intake migration and intake events for this source (issue #440). */
   intake?: IntakeContext | undefined;
+  /** The user's yolo mode for a repository (issue #579); absent: off. */
+  yoloMode?: (repo: string) => boolean;
 }
 
 /**
@@ -61,7 +63,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const api: GitHubApi = o.api ?? real!;
   return createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
-    ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), api, assignee,
+    ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), api, assignee,
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
@@ -96,7 +98,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
         source: createGitHubSource({
           name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
-          ...(o.intake ? { intake: o.intake } : {}),
+          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}),
         }),
       };
     }

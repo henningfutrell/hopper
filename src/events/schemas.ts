@@ -85,6 +85,7 @@ const divergence = strict({
 // Phase shifts (issue #548): a phase, a review kind, the settings an admin saves.
 const phase = z.enum(JOB_PHASES);
 const reviewKind = z.enum(REVIEW_KINDS);
+const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {
@@ -261,6 +262,8 @@ export const EVENT_SCHEMAS = {
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean(), question: z.enum(['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled', 'missing']).optional() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   // The vault (issue #558): names and people; never a value.
+  // Yolo mode (issue #579): the settings before and after, and who changed them.
+  'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),

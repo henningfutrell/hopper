@@ -3,7 +3,10 @@
 // source config they turn into: `model: null` dropped. No path: a job's work tree is its machine's (issue #361). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown. There is no `authors`
 // option (issue #387): a source takes an issue by its label and its assignee, never by who filed it. An
-// instance still carrying one loads with it dropped; tenant migration 16 removes it from the stored config.
+// instance still carrying one loads with it dropped; tenant migration 16 removes it from the stored config. There
+// is no `completion` option either (issue #579): done is always a pull request ready for review, and whether a job
+// may merge it is yolo mode, a setting of the user's (src/domain/yolo-mode.ts). Dropped on load the same way;
+// tenant migration 30 removes it.
 import { z } from 'zod';
 
 const projectSchema = z.object({
@@ -30,19 +33,17 @@ const sharedKeys = {
   model: z.string().min(1).nullable().default(null),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
-  completion: z.enum(['merge', 'pull-request']).default('merge')
-    .meta({ description: "when a job's work is done: merge — its pull request merged; pull-request — its pull request open for review. Issue labels hopper:complete-at-merge and hopper:complete-at-pr override it" }),
 };
 
-/** Options as stored before issue #387 may carry `authors`: dropped, not refused. */
-function withoutAuthors(raw: unknown): unknown {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw)) return raw;
-  const { authors: _authors, ...rest } = raw as Record<string, unknown>;
+/** Options as stored before issue #387 may carry `authors`, before issue #579 `completion`: dropped, not refused. */
+function withoutGone(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw || 'completion' in raw)) return raw;
+  const { authors: _authors, completion: _completion, ...rest } = raw as Record<string, unknown>;
   return rest;
 }
 
 /** github-app: the App source, posting as the app's bot, taking issues assigned to the user's connected account. */
-export const githubAppOptions = z.preprocess(withoutAuthors, z.object({
+export const githubAppOptions = z.preprocess(withoutGone, z.object({
   enabled: z.boolean().default(true),
   // The identity the source acts as, and where its key comes from: command-bearing.
   appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
@@ -68,7 +69,7 @@ const accountKeys = {
 };
 
 /** github-account: the GitHub account the user connected. */
-export const githubAccountOptions = z.preprocess(withoutAuthors, z.object(accountKeys).strict());
+export const githubAccountOptions = z.preprocess(withoutGone, z.object(accountKeys).strict());
 
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;

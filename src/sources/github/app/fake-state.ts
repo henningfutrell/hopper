@@ -20,7 +20,7 @@ export interface FakeIssueInput {
   /** The merged pull request that closed it (GraphQL ClosedEvent closer). */
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
   /** Open pull requests whose merge will close it (GraphQL closedByPullRequestsReferences). */
-  openPullRequests?: { url: string; createdAt: string; isDraft: boolean }[];
+  openPullRequests?: { url: string; createdAt: string; isDraft: boolean; mergeable?: string }[];
   comments?: FakeCommentInput[];
 }
 
@@ -66,7 +66,7 @@ export interface FakeIssue {
   closedAt?: string;
   stateReason?: string;
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
-  openPullRequests: { url: string; createdAt: string; isDraft: boolean }[];
+  openPullRequests: { url: string; createdAt: string; isDraft: boolean; mergeable?: string }[];
   updatedAt: string;
   comments: FakeComment[];
 }

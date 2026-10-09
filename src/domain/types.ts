@@ -437,6 +437,7 @@ export * from './review.ts';
 export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
+export * from './yolo-mode.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
