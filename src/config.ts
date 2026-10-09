@@ -60,6 +60,8 @@ export interface Config {
   leftoverEnv: Record<string, string>;
   /** The hopper's app — its GitHub App — people sign in and connect through (issue #214): the shipped one unless the environment names another. */
   hopperApps: HopperApps;
+  /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
+  openFgaUrl?: string;
 }
 
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
@@ -110,6 +112,7 @@ const schema = z.object({
   HOPPER_GITHUB_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
+  HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -153,6 +156,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
+  HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -192,6 +196,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
                                           stored, said at start
   HOPPER_TOKEN_KEY_PREVIOUS               older keys, one per line: they still open what they sealed, and the
                                           webhook signing secrets are sealed again under HOPPER_TOKEN_KEY at start
+  HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
+                                          each call. Unset: none sent
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -212,6 +218,8 @@ const PART_SETTINGS = [
   'HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE',
   // Read by each user's runtime (src/secrets/token-box.ts, issue #441; src/secrets/sealer.ts, issue #451).
   'HOPPER_TOKEN_KEY', 'HOPPER_TOKEN_KEY_FILE', 'HOPPER_TOKEN_KEY_PREVIOUS', 'HOPPER_TOKEN_KEY_PREVIOUS_FILE',
+  // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).
+  'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
 ];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
@@ -268,6 +276,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     lanPeers: e.HOPPER_LAN_PEERS,
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
+    ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

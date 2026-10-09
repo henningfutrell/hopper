@@ -2,6 +2,7 @@
 // that evaluates the authorization model's JSON as OpenFGA does for the rewrites a model uses here (direct, computed
 // userset, tuple to userset, union, intersection, difference), contextual tuples included. `reachable = false` makes
 // every call fail as a refused connection; `refuseModels` makes a model write fail as OpenFGA's validation does.
+import { randomUUID } from 'node:crypto';
 import type { AuthorizationServer, RelationshipTuple } from '../../src/domain/ports.ts';
 import { authorizationServerRefusal } from '../../src/domain/ports.ts';
 
@@ -42,7 +43,7 @@ export function createFakeAuthorizationServer(): FakeAuthorizationServer {
     async store(id, name) {
       reach();
       if (id !== undefined && stores.has(id)) return id;
-      const created = `store-${++n}`;
+      const created = `store-${randomUUID()}`;
       stores.set(created, { name, models: new Map(), tuples: new Map() });
       return created;
     },

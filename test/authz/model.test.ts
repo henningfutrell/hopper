@@ -25,8 +25,8 @@ describe('the access model', () => {
 
 describe('access objects', () => {
   it('names an operation profile by its operation and target, and reads it back', () => {
-    const target = { kind: 'aws-role', name: 'arn:aws:iam::123456789012:role/read-only' } as const;
-    expect(profileId({ operation: 'read', target })).toBe('read@aws-role/arn:aws:iam::123456789012:role/read-only');
+    const target = { kind: 'aws-role', name: '123456789012/read-only' } as const;
+    expect(profileId({ operation: 'read', target })).toBe('read/aws-role/123456789012/read-only');
     expect(profileOf(profileId({ operation: 'read', target }))).toEqual({ operation: 'read', target });
     expect(profileOf('nonsense')).toBeUndefined();
     expect(targetObject({ kind: 'namespace', name: 'x/payments' })).toBe('target:namespace/x/payments');
@@ -34,8 +34,8 @@ describe('access objects', () => {
 
   it('approves a template with two tuples: the profile grants its operation, the template is approved for the profile', () => {
     expect(approvalTuples('kubectl-diag', { operation: 'sync', target: { kind: 'argocd-app', name: 'shop' } })).toEqual({
-      grant: { subject: 'operation_profile:sync@argocd-app/shop', relation: 'grants_sync', object: 'target:argocd-app/shop' },
-      approval: { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:sync@argocd-app/shop' },
+      grant: { subject: 'operation_profile:sync/argocd-app/shop', relation: 'grants_sync', object: 'target:argocd-app/shop' },
+      approval: { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:sync/argocd-app/shop' },
     });
   });
 });

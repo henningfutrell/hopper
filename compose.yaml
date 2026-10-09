@@ -25,8 +25,9 @@ name: hopper
 services:
   # Postgres makes the database password on its first start, kept in the secrets volume, before the
   # database starts, and the hopper's token key with it (issue #441). Each file is readable only by the one service that needs it (postgres: uid 70;
-  # the hopper: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
-  # dependency has exited.
+  # the hopper: uid 1000; OpenFGA: uid 65532). No one-shot service for it: podman-compose cannot start a container whose
+  # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
+  # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -39,9 +40,15 @@ services:
           [ -s $$s/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/postgres_password
           printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat $$s/postgres_password)" > $$s/database_url
           [ -s $$s/token_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/token_key
+          [ -s $$s/openfga_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/openfga_key
+          mkdir -p $$s/openfga
+          printf 'datastore:\n  engine: postgres\n  uri: postgres://hopper:%s@postgres:5432/hopper?sslmode=disable&search_path=openfga\nauthn:\n  method: preshared\n  preshared:\n    keys: ["%s"]\nplayground:\n  enabled: false\n' \
+            "$$(cat $$s/postgres_password)" "$$(cat $$s/openfga_key)" > $$s/openfga/config.yaml
         )
         chown 70:70 $$s/postgres_password
-        chown 1000:1000 $$s/database_url $$s/token_key
+        chown 1000:1000 $$s/database_url $$s/token_key $$s/openfga_key
+        chown -R 65532:65532 $$s/openfga
+        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga') &
         exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: hopper
@@ -69,6 +76,9 @@ services:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
       # The key the GitHub connection's tokens are sealed under in the database (issue #441), made beside it.
       HOPPER_TOKEN_KEY_FILE: /run/hopper-secrets/token_key
+      # OpenFGA, asked before every credential a job is given (issue #559), and its preshared key.
+      HOPPER_OPENFGA_URL: ${HOPPER_OPENFGA_URL:-http://openfga:8080}
+      HOPPER_OPENFGA_KEY_FILE: /run/hopper-secrets/openfga_key
       # The same port inside and out: the Host the browser sends must name the daemon's port.
       HOPPER_PORT: ${HOPPER_PORT:-4790}
       # The published port reaches the daemon from the compose network, not its loopback: those
@@ -82,6 +92,33 @@ services:
       - home:/home/node
     ports:
       - "127.0.0.1:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
+
+  # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
+  # the hopper's Postgres; its config is the file postgres writes, read from its working directory. On no host port:
+  # only the hopper reaches it, with the preshared key. `openfga-migrate` brings the schema up to this version and
+  # exits; it retries until postgres has made the schema, and nothing depends on it. Until it has run, OpenFGA
+  # answers with errors, so the hopper denies every credential (fail closed).
+  openfga-migrate:
+    image: docker.io/openfga/openfga:v1.22.0
+    restart: on-failure
+    command: [migrate]
+    working_dir: /run/hopper-secrets/openfga
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - secrets:/run/hopper-secrets:ro
+
+  openfga:
+    image: docker.io/openfga/openfga:v1.22.0
+    restart: unless-stopped
+    command: [run]
+    working_dir: /run/hopper-secrets/openfga
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - secrets:/run/hopper-secrets:ro
 
 volumes:
   secrets:

@@ -49,8 +49,8 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(read.body.allowed).toBe(true);
     expect(read.body.path).toEqual([
       { subject: expect.stringMatching(/^job:/), relation: 'running', object: 'template:kubectl-diag' },
-      { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read@cluster/x' },
-      { subject: 'operation_profile:read@cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
+      { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' },
+      { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
     ]);
 
     const write = await check(a, token, 'write');
@@ -63,8 +63,8 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(v.templates).toEqual([{ template: 'kubectl-diag', approvals: [expect.objectContaining({
       profile: { operation: 'read', target: CLUSTER_X }, approvedBy: expect.any(String),
       chain: [
-        { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read@cluster/x' },
-        { subject: 'operation_profile:read@cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
+        { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' },
+        { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
       ],
     })] }]);
     expect(v.decisions.map((d) => [d.operation, d.allowed])).toEqual([['write', false], ['read', true]]);
@@ -82,7 +82,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(revoked.body.templates).toEqual([]);
     expect(revoked.body.revoked).toEqual([expect.objectContaining({ id: approval.id, revokedBy: expect.any(String) })]);
     const [storeId] = server.stores.keys();
-    expect([...server.storeTuples(storeId!).keys()]).not.toContain('template:kubectl-diag approved_for operation_profile:read@cluster/x');
+    expect([...server.storeTuples(storeId!).keys()]).not.toContain('template:kubectl-diag approved_for operation_profile:read/cluster/x');
 
     const after = await check(a, token, 'read');
     expect(after.body.allowed).toBe(false);
@@ -140,13 +140,13 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect((await edit(a, token, { action: 'revoke', approval: approval.id })).status).toBe(200);
     // OpenFGA still holds the approval; the hopper does not ask it until the revoke is pushed.
     const [storeId] = server.stores.keys();
-    expect([...server.storeTuples(storeId!).keys()]).toContain('template:kubectl-diag approved_for operation_profile:read@cluster/x');
+    expect([...server.storeTuples(storeId!).keys()]).toContain('template:kubectl-diag approved_for operation_profile:read/cluster/x');
     server.reachable = true;
     const checksBefore = server.checks.length;
     const d = await check(a, token, 'read');
     expect(d.body.allowed).toBe(false);
     expect(server.checks.length).toBe(checksBefore + 1);
-    expect([...server.storeTuples(storeId!).keys()]).not.toContain('template:kubectl-diag approved_for operation_profile:read@cluster/x');
+    expect([...server.storeTuples(storeId!).keys()]).not.toContain('template:kubectl-diag approved_for operation_profile:read/cluster/x');
   });
 
   it('applies a model change live, and refuses a model without a relation the hopper asks or one OpenFGA refuses', async () => {
@@ -195,8 +195,11 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect((await check(second.a, second.token, 'read')).body.allowed).toBe(true);
     const [storeId] = second.server.stores.keys();
     const tuples = second.server.storeTuples(storeId!);
-    tuples.set('x', { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:write@cluster/x' });
-    tuples.set('y', { subject: 'operation_profile:write@cluster/x', relation: 'grants_write', object: 'target:cluster/x' });
+    for (const t of [
+      { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:write/cluster/x' },
+      { subject: 'operation_profile:write/cluster/x', relation: 'grants_write', object: 'target:cluster/x' },
+    ]) tuples.set(`${t.subject} ${t.relation} ${t.object}`, t);
+    expect((await check(second.a, second.token, 'write')).body.allowed).toBe(true);
     await second.a.app.access.sync();
     expect((await check(second.a, second.token, 'write')).body.allowed).toBe(false);
   });

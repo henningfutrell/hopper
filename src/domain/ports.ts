@@ -12,6 +12,8 @@ import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 export type * from './escalation-ports.ts';
+export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
+export { authorizationServerRefusal, isRefusal } from './access.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 

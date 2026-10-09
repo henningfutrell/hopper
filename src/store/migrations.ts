@@ -169,6 +169,19 @@ const MIGRATIONS: readonly Migration[] = [
   // 28: the UI sessions table as the build before 27 reads and writes it, beside this build's (issue #527): 27 dropped
   // `expires_at`, and that build, rolled back to on a migrated store, failed every session it made or looked up.
   sessionsTheBuildBeforeReads,
+  // 29: access (issue #559): the access models, the tuples the hopper pushes to OpenFGA (a revoked one kept with who
+  // and when), what it keeps of OpenFGA (its store and the model pushed there) and every mint decision. New tables
+  // only: the build before never reads them.
+  `
+  CREATE TABLE IF NOT EXISTS access_models (seq BIGSERIAL PRIMARY KEY, dsl TEXT NOT NULL, written_by TEXT NOT NULL, written_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS access_tuples (
+    seq BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, relation TEXT NOT NULL, object TEXT NOT NULL,
+    written_by TEXT NOT NULL, written_at TEXT NOT NULL, revoked_by TEXT, revoked_at TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS access_tuples_live ON access_tuples (subject, relation, object) WHERE revoked_at IS NULL;
+  CREATE TABLE IF NOT EXISTS access_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS access_decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, at TEXT NOT NULL, body TEXT NOT NULL);
+  `,
 ];
 
 /**

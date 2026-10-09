@@ -14,6 +14,7 @@ import type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionShifts, ShiftMode, ShiftThen,
+  AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Target, TargetKind,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -30,6 +31,7 @@ export type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionShifts, ShiftMode, ShiftThen,
+  AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Target, TargetKind,
 };
 
 export interface Queue {

@@ -26,6 +26,8 @@ import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
+import { registerAccessRoutes } from './access.ts';
+import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
 export interface UiRouteOptions {
@@ -45,6 +47,8 @@ export interface UiRouteOptions {
   updater: Updater;
   /** Whether a session may do what is the instance's (issue #240). */
   instanceAdmin: InstanceAdmin;
+  /** Access (issue #559): the instance's. */
+  access: Access;
 }
 
 const idParams = z.object({ id: z.string() });
@@ -285,6 +289,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
   for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant });
+  registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
