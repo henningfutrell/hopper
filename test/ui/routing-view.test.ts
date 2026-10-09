@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: version, version history, question gates, question history, minor decisions, job rules, yolo mode, routing, plugins, webhooks, vault, users, sign-in, access', async () => {
+  it('one navigation entry holds the configuration: version, version history, question gates, question history, minor decisions, job rules, yolo mode, routing, plugins, webhooks, vault, users, sign-in, access, permission matrix', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,7 +97,7 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/minor-decisions', '#settings/job-rules', '#settings/yolo-mode', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/access']);
+      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/minor-decisions', '#settings/job-rules', '#settings/yolo-mode', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/access', '#settings/permissions']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
   });
 });
