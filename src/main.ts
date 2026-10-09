@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
 import { createAccess, type Access } from './authz/service.ts';
+import { accessHolders } from './users/access-holders.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
@@ -137,6 +138,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
     jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
     templates: () => runtimes.all().flatMap((rt) => rt.vault.templateScopes()),
+    holders: () => accessHolders(runtimes.all()),
   });
   const runtimes = createRuntimes({
     instance, logger,

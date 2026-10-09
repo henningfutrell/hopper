@@ -97,12 +97,24 @@ export interface AccessModelView {
   writtenAt: string;
 }
 
+/**
+ * Who stands on the asking side of a check, beside the templates (issue #559, the permission matrix): a machine that
+ * joined as a box of a template, and a live job on such a machine. Each may do what its template is approved for;
+ * names and ids only, never a job's text or a secret.
+ */
+export interface AccessHolders {
+  machines: { user: string; machine: string; template: string }[];
+  jobs: { user: string; job: string; machine: string; template: string; status: string }[];
+}
+
 /** GET /api/access: Settings → Access. */
 export interface AccessView {
   status: AccessStatus;
   model: AccessModelView;
   /** Each template with an approval or a vault template's name, its approvals and its blast radius (issue #584). */
   templates: { template: string; approvals: Approval[]; radius: TemplateRadius }[];
+  /** The machines and live jobs of a template: the permission matrix's other rows. */
+  holders: AccessHolders;
   /** The newest revoked approvals. */
   revoked: RevokedApproval[];
   /** The newest decisions, newest first. */

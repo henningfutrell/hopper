@@ -9,7 +9,7 @@ import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import {
   DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
   type RadiusRules, type TemplateApprovals, type TemplateRadius,
-  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
+  type AccessDecisionRecord, type AccessHolders, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
   type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
 import { compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, type ModelJson } from './model.ts';
@@ -61,6 +61,8 @@ export interface AccessOptions {
   syncMs?: number;
   /** Every user's vault templates (issue #584), each with that user's blast-radius rules: what a template's rating reads beside its approvals. */
   templates?: () => { name: string; scope: TemplateScope; rules: RadiusRules }[];
+  /** Every user's machines of a template and live jobs on them (the permission matrix's rows); none when absent. */
+  holders?: () => AccessHolders;
 }
 
 const KEY_STORE = 'storeId';
@@ -259,7 +261,8 @@ export function createAccess(o: AccessOptions): Access {
         const a = approvalOf(t);
         return a ? [{ ...a, revokedBy: t.revokedBy!, revokedAt: t.revokedAt! }] : [];
       });
-      return { status, model: model(), templates, revoked, decisions: o.repo.decisions(DECISIONS_SHOWN) };
+      const holders = o.holders?.() ?? { machines: [], jobs: [] };
+      return { status, model: model(), templates, holders, revoked, decisions: o.repo.decisions(DECISIONS_SHOWN) };
     },
     start() {
       model();
