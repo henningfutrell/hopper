@@ -34,6 +34,7 @@ import { proxyToken } from '../../src/github-proxy/token.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
+import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
 
@@ -109,15 +110,19 @@ const fakeSts = () => fakeServer(() => ({
   body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>ASIAMINTED</AccessKeyId><SecretAccessKey>minted-secret</SecretAccessKey><SessionToken>minted-session</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${ACCOUNT}:assumed-role/diag/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
 }));
 
-async function boot(): Promise<{ a: TestApp; session: string; kube: Awaited<ReturnType<typeof fakeKube>>; sts: Awaited<ReturnType<typeof fakeSts>> }> {
+/** `container`: the vault in a container of its own (issue #586), holding the token key; the hopper holds none. */
+async function boot(o: { container?: boolean } = {}): Promise<{ a: TestApp; session: string; kube: Awaited<ReturnType<typeof fakeKube>>; sts: Awaited<ReturnType<typeof fakeSts>> }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   const kube = await fakeKube();
   const sts = await fakeSts();
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_TOKEN_KEY: KEY }) : undefined;
+  if (vault) cleanups.push(() => { void vault.stop(); });
+  const keys = vault ? { secrets: { HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_TOKEN_KEY: KEY } };
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY },
+    dbPath: db.dbPath, ...keys,
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
     seams: { authorizationServer: createFakeAuthorizationServer() },
   });
@@ -190,7 +195,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     const event = (await a.events()).find((e) => e.type === 'vault.minted');
     expect(event).toMatchObject({ jobId: job, machineId: 'hopper-sandbox-kube', data: { kind: 'kube', operation: 'read', asset: WEB, template: 'kube', job, expiresAt: EXPIRES, renewal: false } });
     const decision = (await accessOf(a, session)).decisions.find((d) => d.id === (event!.data as { decision: string }).decision);
-    expect(decision).toMatchObject({ allowed: true, template: 'kube', operation: 'read', asset: WEB, job: { jobId: job } });
+    expect(decision).toMatchObject({ allowed: true, template: 'kube', operation: 'read', asset: WEB, requester: { kind: 'job', jobId: job } });
 
     const write = await helper(dir, ['kube', 'write', 'namespace/lab/web'], token);
     expect(write.code).not.toBe(0);
@@ -250,4 +255,5 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(kube.seen).toHaveLength(0);
     mintingCredentialsNowhere(a, dir);
   });
+
 });

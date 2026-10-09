@@ -52,7 +52,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
-| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
+| `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -61,6 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog and a link's text (`catalog.ts`, pure), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `local.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -9077,10 +9078,12 @@ first-time gate is #584's ("A template's blast radius") and the minting is #580'
 credentials"), which calls it.
 
 **The entry point** — `Access.decideMint(request)` (`src/authz/service.ts`, the app's `access`), with
-`MintRequest` (`src/domain/access.ts`): the job (`userId`, `jobId`), its template, the operation and the asset.
+`MintRequest` (`src/domain/access.ts`): the **requester** (issue #581: a job, a machine or a user), the operation and the
+asset. The template is not in the request: it comes from the requester's relations below.
 It answers a `MintDecision` — `allowed`, `reason`, the relationship `path` when the hopper can name it, the
-OpenFGA model asked — and records it. The vault calls it before every mint and every renewal, and mints nothing
-unless `allowed`; the template comes from the machine's registration, never from the job's prompt.
+OpenFGA model asked — and records it, with the requester and the template it runs as. The vault calls it before every
+mint and every renewal, and mints nothing unless `allowed`; the template comes from the machine's join line, never from
+the job's prompt. The skill broker (issue #582) asks it for the job.
 
 **The types the model needs**, kept minimal for the vault to adopt or extend (`src/domain/access.ts`):
 
@@ -9091,49 +9094,72 @@ unless `allowed`; the template comes from the machine's registration, never from
 | asset | `cluster`, `namespace` (`<cluster>/<namespace>`), `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role` (`<account>/<role>`), and a name (`ASSET_NAME`: OpenFGA takes no `:`, `@`, `#` or space in an id, so not an ARN) | `asset:cluster/x` |
 | operation profile | an operation on an asset | `operation_profile:read/cluster/x` |
 | job | one run of a job: the issue's *session* (*UI session* is taken, glossary) | `job:<user>/<job>` |
+| user | a person the hopper works for (issue #581) | `user:<user>` |
+| machine | a machine jobs run on, of one user; its name escaped (`encodeURIComponent`: OpenFGA takes no space, `:` or `#`) | `machine:<user>/<name>` |
 
 The issue's *target* is an **asset** here: *target* is an attached machine (glossary).
 
-**The model** (`src/authz/model.ts`, `DEFAULT_ACCESS_MODEL`, OpenFGA DSL):
+**The model** (`src/authz/model.ts`, `DEFAULT_ACCESS_MODEL`, OpenFGA DSL; a tuple reads *subject relation object*):
 
 ```
-type job
-type template            running: [job]
-type operation_profile   approved_for: [template]; running_job: running from approved_for
-type asset              grants_<op>: [operation_profile]; can_<op>: running_job from grants_<op>
+type user
+type job                 owns: [user]                      # user:u owns job:u/j
+type machine             runs_on: [job]; owner: owns from runs_on          # job runs_on machine
+type template            running: [job]; instance_of: [machine]            # machine instance_of template
+                         requester: running or instance_of or runs_on from instance_of or owner from instance_of
+type operation_profile   approved_for: [template]; requester: requester from approved_for
+type asset               grants_<op>: [operation_profile]; can_<op>: requester from grants_<op>
 ```
 
 An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the asset, and the template is
-`approved_for` the profile. A check asks `job:<user>/<job>` `can_<op>` `asset:…` with one **contextual tuple**,
-`job running template` — told only while the job is live (`claimed`, `running`, `waiting_answer`), never stored. So
-a job that ended, failed or was parked gets nothing, with no tuple to delete; a job not live is denied before
-OpenFGA is asked. The user, machine and admin relations the issue sketches are not in the model yet: nothing asks
-them. A template the vault registers per binary, and a machine that is an instance of one, are #558's to add — a
-model edit, so no restart.
+`approved_for` the profile.
+
+**Requesters** (issue #581; the issue's *identity*, but *identity* is who signed in, glossary). A check starts from the
+requester that asks — `job:<user>/<job>`, `machine:<user>/<name>` or `user:<user>` — `can_<op>` `asset:…`, and follows the
+tuples the hopper writes from **who is live** (`requesterTuples`): a user `owns` each of their live jobs (`claimed`,
+`running`, `waiting_answer`); a job `runs_on` the machine it runs on (its lane's, else where it resumes); a box is an
+`instance_of` the template its join line named. So a job reaches a template through its box, a box through its join,
+and a user through their live jobs; a job on a machine of no template reaches none. Who is live comes from each user's
+store through the composition root (`AccessOptions.requesters`, the vault's `boxes()`); nothing is stored for it. It
+is pushed with the approvals: within 2 s of a change (`REQUESTERS_CHECK_MS`: a job started or ended, a box joined or
+left) and before every check, which asks OpenFGA only once it holds who is live now. A requester that is not live is
+denied before OpenFGA is asked: a job not live, a machine that is no box of a template now, a user the hopper does not
+have. A check tried in Settings → Access still tells a made-up job `running` from the template as a contextual tuple.
+Not built (later, #241, #242): admin roles; a template is named by its name alone, so two users' templates of one name
+share their approvals.
+
+**The model kept.** The default model of #559 lacked the requester relations. At start, a newest model the hopper wrote
+(`writtenBy: hopper`) that lacks a relation this build writes is replaced by this build's default, as a new version.
+One a person edited is kept: until a model with the relations is saved, the push stops and every check is denied, the
+status saying what it lacks.
 
 **The hopper's database is the source of truth** (migration 29, instance schema; `src/store/access.ts`):
 `access_models` (each saved model, its version the row), `access_tuples` (every tuple pushed, a revoked one kept
 with who and when), `access_state` (OpenFGA's store id and the model pushed there), `access_decisions` (every
 decision). **Push** (`sync`): the store (made when OpenFGA holds none by the kept id — a new OpenFGA is filled from
 the database), the model when the store or version changed, then the tuples: what OpenFGA holds and the database
-does not is deleted, what it lacks is written. At start, after every change, and every 30 s, so drift is put back
+does not is deleted, what it lacks is written — the approvals, and the tuples of who is live. At start, after every change, and every 30 s, so drift is put back
 and an OpenFGA come back is found. One push at a time.
 
 **Fail closed.** Every mint is denied, and recorded, when: no OpenFGA is set up; OpenFGA cannot be reached or
 refused what was pushed; a change is not pushed yet (a revoke OpenFGA has not taken: the next check pushes first,
-and denies when it cannot); the job is not live; the request names no template, operation or asset the model can
+and denies when it cannot); the requester is not live; the model lacks a relation the hopper writes; the request names no template, operation or asset the model can
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
 shown in Settings → Access.
 
 **The relationship path.** OpenFGA's check answers only allowed or not. On an allow, the path is the hopper's
-reading of its own live tuples: the job runs from the template → the template is approved for the profile → the
-profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
+reading of its own live tuples: (for a job, its owner first) the user owns the job → the job runs on the machine → the
+machine is an instance of the template → the template is approved for the profile → the profile grants the operation on
+the asset; for a tried check, the made-up job runs from the template. When a model edit allowed it another way, no path
+is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
 status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
 (issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
-decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
+decisions; **Who may do what** — the permission matrix's rows (issue #581): every user, each live job (its machine and
+template) and each box, each asset an approval names a column, each cell the operations the requester may do, with the
+path on hover, the hopper's reading of its own rows (`AccessView.requesters`); and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
 API for the vault's gate (#558) to write; the UI offers no approve, since that is the gate.
 
@@ -9145,6 +9171,13 @@ postgres service. Not bundled into the hopper's image: OpenFGA is a Go server wi
 migrations, and a second process in the hopper's container would need a supervisor. Tests put a double at the seam
 (`AppSeams.authorizationServer`, `test/support/fake-authorization-server.ts`, which evaluates the model's JSON);
 `test/authz/openfga-real.test.ts` runs against a real one when `HOPPER_TEST_OPENFGA_URL` is set.
+
+Tests (issue #581): `test/integration/access-requesters.test.ts` (a real joined box: a job on a box of an approved
+template allowed with the path user, job, machine, template; the box and the user too; a box of a template not approved
+denied; a job's tuples gone when it ends and a box's when it leaves, each next check denied; the matrix rows),
+`test/integration/access.test.ts` (a job on a machine of no template denied; the default model of #559 replaced at start,
+an edited one kept and denied until saved again), `test/authz/model.test.ts`, `test/store/migration-31.test.ts`
+(a decision recorded for a job names it as its requester), `test/ui/access-view.test.ts`.
 
 Not yet: retention of `access_decisions` (they grow like the event log). The vault's issuance audit is its
 `vault.minted` event, which names the decision's id (issue #580).
@@ -9351,7 +9384,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); whose ask a box's ask is (`box.ts`); minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`, issue #580) | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`) | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9364,12 +9397,10 @@ Owner constraint (issue #558): a key service (a cloud KMS, or a local one) is al
 the vault needs nothing outside the hopper to start, and a user hosting everything themselves has a vault that works.
 So the vault reaches its key through one small seam, the **key provider** — the `Sealer` interface of
 `src/secrets/sealer.ts` (`seal(value, context)`, `open(sealed, context)`, `current(sealed)`, `keyId`) — and
-`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, the
-only one built. A KMS mode would be another `Sealer`: it would wrap each value's key with the key service (or have it
-encrypt), record its own key id, and plug in where `sealerOf` is chosen; nothing in the vault, the store or the routes
-changes, and a value it cannot open is `SecretUnreadable` as now. Not built: it would add a cloud SDK or a network
-service, and the vault's purpose is getting secrets to boxes, not key management. `test/vault/key-seam.test.ts` keeps
-the vault working behind any key provider.
+`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, used
+when no KMS is named. Since issue #586 a **KMS** can stand behind it, optional ("The KMS: an optional key provider" below); nothing
+in the vault, the store or the routes changed for it, and a value it cannot open is `SecretUnreadable` as before.
+`test/vault/key-seam.test.ts` keeps the vault working behind any key provider.
 
 ### Templates (slice 2)
 
@@ -9445,8 +9476,8 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   the highest.
 
 **Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
-discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
-carries its `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
+discovered rating only. The permission matrix (#559): its rows are the requesters (issue #581, `AccessView.requesters`); a click on a
+cell to explain it and revoke from there is not built yet. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
 
 Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
 not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
@@ -9512,7 +9543,7 @@ of the hopper's compose stack, as Postgres is, so this needs nothing outside it.
 
 **A minting credential** is a vault secret marked with what it mints for (`VaultSecret.mints`: an `aws-account` or a
 `cluster` asset; `set` with `mints`, *Mints for* on Settings → Vault; in its JSON body, so no migration). It is sealed
-like any vault secret, and it never leaves the hopper: `deliver` refuses it, no template may list it in its scope, and
+like any vault secret (or kept in a vault backend, issue #585), and it never leaves the vault: `deliver` refuses it, no template may list it in its scope, and
 the page leaves it out of a template's secrets. Its value is JSON (`mintingCredentialOf`, `src/domain/minting.ts`):
 for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
 `token`, optional `certificateAuthorityData`.
@@ -9542,7 +9573,8 @@ authenticated data.
 1. the box and the job (`src/vault/box.ts`, the same checks as a delivery): a client target holds the key, the proxy
    token is the job's, the job is at work on that machine, the machine is a box of a template;
 2. the profile is one the model can hold, and of an asset kind the form mints for;
-3. **Access**: `decideMint({ job, template, operation, asset })`. A deny mints nothing. When the template declares
+3. **Access**: `decideMint({ requester: { kind: 'job', … }, operation, asset })` — Access finds the template from the
+   job's box (issue #581). A deny mints nothing. When the template declares
    the profile and access does not approve it, the reason says it waits for a person's approval on Settings → Vault
    (the first-time gate: `approve-template` for a read profile, `approve-profile` for a high-radius one); when the
    template does not declare it, that a person adds it first;
@@ -9550,6 +9582,11 @@ authenticated data.
 5. STS or the Kubernetes API (`src/vault/minter.ts`, at the `CredentialMinter` port: `@aws-sdk/client-sts`, and one
    POST with node's https and the cluster's CA — a Kubernetes client library would cost more than the call). A
    refusal there is said, without the minting credential.
+
+**With the vault in a container of its own** (issue #586). Steps 1 to 4 and Access run in the hopper; only step 5
+crosses: `POST /vault/mint` (`credential`, the target, the session name), and the vault container opens the minting
+credential and calls STS or the Kubernetes API itself, so it must reach them; the minted credential crosses back, the
+minting one never. One kept in a vault backend is minted in the hopper, which runs the backends.
 
 **Audit.** `vault.minted`: the form, the profile, the template, the machine, the job, the minting credential's name,
 the expiry, `renewal` (the job had one for that profile before; kept in memory, so a restart counts the next as a
@@ -9571,6 +9608,73 @@ session with the read-only policy, its renewal recorded; a revoke denies the nex
 given out nor in a template's scope; an undeclared profile and a wrong asset kind refused; the minting credentials in
 no event, log line or file of the box), `test/client/vault.test.ts` (the mint ask, its sealed answer, the minted
 output), `test/integration/skills.test.ts` (the minted link), `test/ui/vault.test.ts` (*Mints for*).
+
+### The KMS: an optional key provider (issue #586, 2026-10-09)
+
+Owner rule (issue #586): extra compose services are allowed; nothing outside the hopper's compose stack is required;
+the KMS is always optional. So the KMS is a second key provider, chosen by one runtime setting, never a dependency.
+
+- **Envelope encryption, a data key per user.** With `HOPPER_KMS_URL` set, the vault asks the KMS once for a data key
+  (`GenerateDataKey`, AES-256, bound to the encryption context `hopper: vault data key v1`). It keeps only the wrapped
+  form, in the user schema's `config` table as the row `vault-data-key` (no config record names it, so no route or CLI
+  reads it). At each start the KMS opens it (`Decrypt`). The vault's sealer is then the usual one (`src/secrets/sealer.ts`)
+  under the data key: each value still gets its own key from a salt, AES-256-GCM, bound to `vault:<id>/value`. The data
+  key's id is its fingerprint, so a sealed value says which key it needs.
+- **Turning it on.** The token keys stay as previous keys, so a vault secret sealed before opens, and is sealed again
+  under the data key when the vault opens (`resealAll`). Two starts at once: the first to keep its data key wins
+  (`INSERT … ON CONFLICT DO NOTHING`), the other opens that one.
+- **Fails closed.** A KMS that gives no data key (down, refused, a changed wrapped key) leaves the vault with no sealer
+  and a problem naming the KMS: Settings → Vault says it, nothing is stored, nothing delivered. In the hopper, a restart
+  asks again; the vault container asks again at the next request.
+- **Turning it off** is not built: a value sealed under the data key does not open without the KMS, and is said so.
+  Set each secret again. A fold of users (issue #265) keeps the kept user's data key; the folded user's secrets sealed
+  under another data key are set again.
+- **The KMS built**: local-kms (`docker.io/nsmithuk/local-kms`, AWS KMS's API, keys in its `/data` volume), the
+  compose profile `kms`. The key is `HOPPER_KMS_KEY` (default `alias/hopper-vault`), made with its alias at the first
+  ask when the KMS has none. The client is AWS's own (`@aws-sdk/client-kms`), with fixed placeholder credentials:
+  local-kms checks none. A KMS that checks credentials (AWS) is not supported yet. Residual risk: local-kms keeps its key
+  material in clear in its volume; it parts the key from the database (a dump holds no usable value), not from the host.
+
+Tests: `test/vault/kms-keys.test.ts` (a fake KMS at the `KeyService` port: wrap once, open again, seal again, fail
+closed), `test/vault/local-kms.test.ts` (the adapter against a real local-kms, when `HOPPER_TEST_KMS_URL` names one).
+
+### The vault in a container of its own (issue #586, 2026-10-09)
+
+The vault can run as a separate compose container, `hopper-vault` (profile `hopper-vault`): the hopper's image, `node
+src/vault/main.ts`. With `HOPPER_VAULT_URL` set, the hopper builds no vault of its own and holds none of its keys: it
+asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopper, as before.
+
+- **The split.** The vault container holds the vault's key and the secret values: a secret set or removed, a delivery,
+  and whether the vault can be used now (`status`, shown as Settings → Vault's problem) go to it. The secrets' metadata
+  and the templates — whose operation profiles are approved in access (issue #584), the hopper's — are read and changed
+  in the hopper, by a vault service that holds no key. So is a secret kept in a vault backend (issue #585): its set and
+  its delivery run in the hopper, which runs the backends; the vault container never sees one. The service is named
+  `hopper-vault`, apart from `vault`, the HashiCorp Vault backend's service. `scopeOf` and `templateScopes` stay synchronous for the skill
+  broker (issue #582) and the access rating.
+- **The same checks.** The server (`src/vault/server.ts`) opens the user's store and runs the same vault service per
+  request: the write-only rule and every check of a delivery stay in the vault. What only the hopper knows travels with
+  an ask: the client target whose link signed it (name, machine key, template) and whether the job's token is one the
+  user's link key gives (issue #563). The vault decides the rest — the job at work, on that machine, the secret in the
+  template's approved scope, read from the user's store — and opens the value.
+- **The wire** (`src/vault/wire.ts`): `POST /vault/<op>` — `status`, `set`, `remove`, `deliver` — JSON, with the
+  preshared key `HOPPER_VAULT_KEY` as a bearer token (compared in constant time; the postgres service makes it on first
+  start, `vault_key`, uid 1000). The answer is `{ result, events }`. On the compose network only: no host port. Residual
+  risk: plain HTTP on that network, as for OpenFGA; a value crosses it when it is set and when it is delivered.
+- **The hopper keeps the event log.** The vault answers the events it would append (`vault.secret_set`,
+  `vault.delivered`, …); the hopper appends them, so webhooks and the UI see them as before. A vault edit and its event
+  are no longer one transaction.
+- **Not running, or the wrong key**: the view carries the problem ("not reachable", "refused the hopper"), an edit
+  answers 503, an ask is refused and recorded (`vault.refused`). Nothing else in the hopper waits on the vault.
+- **Its key provider** is chosen in the vault container: the token key (mounted read-only from the `secrets` volume), or
+  the KMS's data key with `HOPPER_KMS_URL`. The hopper's token key still seals what the hopper owns itself (webhook
+  signing secrets, the GitHub connection's tokens).
+- **Migrations stay the hopper's.** The vault server opens the store at its first request, after the hopper has
+  migrated it.
+
+Tests: `test/integration/vault-container.test.ts` (the hopper with no token key, the vault server with it: set, sealed
+under the vault's key, events in the hopper's log; a wrong key; no vault running and the hopper works),
+`test/integration/vault-delivery.test.ts` (a box's job gets a secret through the vault container),
+`test/scripts/compose.test.ts` (the profiles).
 
 ## Skills: what the hopper can set up for a box (issue #582, 2026-10-09)
 
@@ -9624,7 +9728,7 @@ minted stanza ("Minting: short-lived credentials"); else the vault secret as it 
 **Not built.** Skills a user or a plugin
 adds; a skill the hopper learns (#583, Render). A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
 link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
-their approvals (#581 makes identity richer).
+their approvals. Access checks the job (issue #581): its box's template comes from the job's relations.
 
 | dir | owns | must not import |
 |-----|------|-----------------|

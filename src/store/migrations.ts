@@ -184,7 +184,19 @@ const MIGRATIONS: readonly Migration[] = [
   `,
   // 30: a join code may name the template the machine joins as (issue #558). A column only: the build before runs on it.
   'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS template TEXT;',
+  // 31: an access decision names its requester (issue #581): a decision for a job names the job as the requester. The
+  // build before reads a decision with no job as a trial's: it still runs.
+  decisionsNameTheirRequester,
 ];
+
+/** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */
+function decisionsNameTheirRequester(db: Db): void {
+  for (const r of db.all('SELECT id, body FROM access_decisions')) {
+    const { job, ...rest } = JSON.parse(String(r.body)) as { job?: { userId: string; jobId: string } } & Record<string, unknown>;
+    if (!job) continue;
+    db.run('UPDATE access_decisions SET body = ? WHERE id = ?', JSON.stringify({ ...rest, requester: { kind: 'job', userId: job.userId, jobId: job.jobId } }), r.id as string);
+  }
+}
 
 /**
  * An ssh-attached machine that named no session ran its jobs in `job-hopper`, the session its own unit

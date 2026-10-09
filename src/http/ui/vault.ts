@@ -8,6 +8,7 @@ import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
 import { MINTS_FOR_KINDS } from '../../domain/minting.ts';
 import { VAULT_REFERENCE_MAX, VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import { vaultView } from '../../vault/service.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
 
@@ -43,14 +44,14 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const { vault } = o.tenant(req);
     const edit = parseWith(vaultEditBody, req.body);
     const said = { ...('scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {}), ...('mints' in edit && edit.mints !== undefined ? { mints: edit.mints } : {}) };
-    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...said }, by)
-      : edit.action === 'set-in-backend' ? vault.set({ name: edit.name, backend: edit.backend, reference: edit.reference, ...said }, by)
-        : edit.action === 'remove' ? vault.remove(edit.name, by)
+    const r = edit.action === 'set' ? await vault.set({ name: edit.name, value: edit.value, ...said }, by)
+      : edit.action === 'set-in-backend' ? await vault.set({ name: edit.name, backend: edit.backend, reference: edit.reference, ...said }, by)
+        : edit.action === 'remove' ? await vault.remove(edit.name, by)
           : edit.action === 'save-template' ? await vault.saveTemplate(edit, by)
             : edit.action === 'remove-template' ? await vault.removeTemplate(edit.name, by)
               : edit.action === 'approve-template' ? await vault.approveTemplate(edit.name, by)
                 : await vault.approveProfile(edit.name, { operation: edit.operation, asset: edit.asset }, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
-    return vault.view();
+    return await vaultView(vault);
   });
 }

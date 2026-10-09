@@ -205,6 +205,62 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
+## Optional services
+
+`compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
+
+- **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once). A plain
+  `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the token key.
+- **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper starts
+  and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
+  Vault, a vault backend ("Vault backends" below); the other two are here.
+
+Turn them on with lines in the `.env` file beside `compose.yaml`, then run `podman compose up -d`:
+
+| You want | `.env` lines |
+|---|---|
+| The vault in a container of its own | `COMPOSE_PROFILES=hopper-vault` and `HOPPER_VAULT_URL=http://hopper-vault:4791` |
+| That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
+| A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
+
+Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists
+`hopper-vault` and `kms` as running. To turn a service off, remove its lines and run
+`podman compose up -d --remove-orphans`.
+
+### The vault container (`hopper-vault`)
+
+The hopper's vault runs in its own container, from the hopper's image (`node src/vault/main.ts`). It holds the vault's
+key and the secret values, in the hopper's Postgres. Templates and their approvals, and secrets kept in a vault backend,
+stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at `HOPPER_VAULT_URL` with the
+preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
+(`vault_key` in the `secrets` volume). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
+recreates `postgres` once.
+
+- The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
+- When the vault container is not running, the hopper still works. Settings → Vault says the vault is not reachable,
+  a change answers 503, and a box's ask is refused.
+- Its key: the token key, or the KMS's data key when `HOPPER_KMS_URL` is set. `HOPPER_TOKEN_KEY_PREVIOUS` in `.env`
+  reaches it too (key rotation, "Rotating the token key").
+- **Elsewhere** (not compose): run `node src/vault/main.ts` with `HOPPER_DATABASE_URL`, `HOPPER_TOKEN_KEY` and
+  `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL`; `HOPPER_VAULT_PORT` moves its port (4791).
+  Give the hopper `HOPPER_VAULT_URL` and the same `HOPPER_VAULT_KEY`. Keep the port off every network but the hopper's.
+
+### The local KMS (`kms`)
+
+A local KMS (local-kms, AWS KMS's API) wraps a data key per user: envelope encryption. The vault asks it for the data
+key once, keeps only the wrapped form in the user's store, and asks the KMS to open it at each start. Every vault secret
+is then sealed under the data key. The KMS's key is `alias/hopper-vault` (`HOPPER_KMS_KEY` names another), made at the
+first ask. Its keys are in the `kms` volume.
+
+- **Turn it on** with secrets in the vault: they still open, and are sealed again under the data key at the vault's
+  first use.
+- **Turn it off**: a value sealed under the data key does not open without the KMS. Set each vault secret again.
+- **Keep the `kms` volume.** Removing it (`podman compose down -v`) loses every value sealed under a data key. Back it
+  up with the database.
+- When the KMS is down, the vault stores and delivers nothing and Settings → Vault says why. The vault container asks
+  the KMS again at the next request; a vault in the hopper asks again at the next restart.
+- local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,

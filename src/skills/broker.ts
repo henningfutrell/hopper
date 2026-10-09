@@ -103,7 +103,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         if (!box.template) {
           return no(403, `${machine ?? 'this machine'} is no box of a template: Access checks a box by the template it joined as, so the hopper sets up no link here. Find another way, or run on a box of a template.`);
         }
-        const decision = await o.decide({ job: { userId: user!.id, jobId: job!.id }, template: box.template, operation: l.operation, asset });
+        const decision = await o.decide({ requester: { kind: 'job', userId: user!.id, jobId: job!.id }, operation: l.operation, asset });
         if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Settings → Access; until then, find another way.`, decision);
         if (user!.mintsFor(l.form, asset)) return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${mintedLinkText(l.form, l.operation, said)}`, decision);
         if (box.secrets.length === 0) {

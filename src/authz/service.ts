@@ -1,10 +1,12 @@
 // Access (issue #559, design.md "Access: OpenFGA decides each mint"): the decision point the vault (issue #558) asks
 // before every credential it mints or renews — `decideMint` —, the approvals and the model the hopper keeps and pushes
-// to OpenFGA, and Settings → Access's view. Fail closed: with no OpenFGA set up, OpenFGA not reached, a change it has
-// not taken yet, a model it refused, or a job that is not live, the answer is a deny, recorded like any other. Each
-// template shows with its blast radius (issue #584), rated from its approvals and the vault templates of that name.
+// to OpenFGA with the tuples of who is live (issue #581), and Settings → Access's view. Fail closed: with no OpenFGA set
+// up, OpenFGA not reached, a change it has not taken yet, a model it refused or that lacks a relation the hopper writes,
+// or a requester that is not live, the answer is a deny, recorded like any other. Each template shows with its blast
+// radius (issue #584), rated from its approvals and the vault templates of that name.
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
+import type { JobStatus, LiveRequesters } from '../domain/types.ts';
 import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import {
   DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
@@ -13,12 +15,15 @@ import {
   type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
 import { compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, type ModelJson } from './model.ts';
-import { approvalTuples, jobObject, profileOf, relationshipPath, runningTuple, assetObject } from './objects.ts';
+import { approvalTuples, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject } from './objects.ts';
+import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running or waiting on an answer: parked, operator-led, ended or not yet started, it gets nothing. */
-export const LIVE_JOB_STATUSES: readonly string[] = ['claimed', 'running', 'waiting_answer'];
+export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer'];
 /** How often everything is pushed again: drift in OpenFGA is put back, and an OpenFGA come back is found. */
 export const ACCESS_SYNC_MS = 30_000;
+/** How often who is live is compared with what OpenFGA was given: a job started or ended, a box joined or left (issue #581). */
+export const REQUESTERS_CHECK_MS = 2_000;
 const STORE_NAME = 'hopper';
 const DECISIONS_SHOWN = 50;
 const REVOKED_SHOWN = 20;
@@ -34,10 +39,10 @@ export class AccessEditError extends Error {
 }
 
 export interface Access extends TemplateApprovals {
-  /** Allowed or denied, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
+  /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
-  tryCheck(request: Omit<MintRequest, 'job'>, by: string): Promise<AccessDecisionRecord>;
+  tryCheck(request: Omit<MintRequest, 'requester'> & { template: string }, by: string): Promise<AccessDecisionRecord>;
   /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */
   approve(template: string, profile: OperationProfile, by: string): Promise<void>;
   revoke(approval: number, by: string): Promise<void>;
@@ -55,8 +60,10 @@ export interface AccessOptions {
   /** OpenFGA, or undefined while none is set up. */
   server: AuthorizationServer | undefined;
   clock: Clock;
-  /** A job's status, or undefined when the user has no such job. */
+  /** A job's status, or undefined when the user has no such job: what a deny for a job not live says. */
   jobStatus(userId: string, jobId: string): string | undefined;
+  /** Who is live now, per user (issue #581): written to OpenFGA, and what a requester may ask by. */
+  requesters(): LiveRequesters[];
   logger: { warn(line: string): void };
   syncMs?: number;
   /** Every user's vault templates (issue #584), each with that user's blast-radius rules: what a template's rating reads beside its approvals. */
@@ -70,6 +77,8 @@ const SYSTEM = 'hopper';
 const tupleKey = (t: RelationshipTuple) => `${t.subject} ${t.relation} ${t.object}`;
 const plain = (t: StoredTuple): RelationshipTuple => ({ subject: t.subject, relation: t.relation, object: t.object });
 const describeAsset = (t: Asset) => `${t.kind} ${t.name}`;
+const keyOf = (ts: RelationshipTuple[]): string => ts.map(tupleKey).sort().join('\n');
+const gapsOf = (dsl: string): string[] => modelGaps(compileAccessModel(dsl));
 const rank = (r: TemplateRadius): number => RADIUS_LEVELS.indexOf(r.level);
 
 /** Why a request names no template, operation or asset the model can hold, or undefined. */
@@ -85,10 +94,20 @@ export function createAccess(o: AccessOptions): Access {
   let dirty = true;
   let running: Promise<void> | undefined;
   let timer: NodeJS.Timeout | undefined;
+  let watch: NodeJS.Timeout | undefined;
+  // Who is live, as last pushed: a check asks OpenFGA only once it holds who is live now.
+  let pushedRequesters: string | undefined;
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     return { version: m.seq, dsl: m.dsl, writtenBy: m.writtenBy, writtenAt: m.writtenAt };
+  };
+  /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
+  const upgradeModel = (): void => {
+    const m = o.repo.model();
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length === 0) return;
+    o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
+    o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
   const pushedModel = (): { storeId: string; version: number; modelId: string } | undefined => {
     const raw = o.repo.state(KEY_PUSHED);
@@ -105,17 +124,21 @@ export function createAccess(o: AccessOptions): Access {
     const storeId = await server.store(o.repo.state(KEY_STORE), STORE_NAME);
     if (storeId !== o.repo.state(KEY_STORE)) o.repo.setState(KEY_STORE, storeId);
     const m = model();
+    const gaps = gapsOf(m.dsl);
+    if (gaps.length > 0) throw new Error(`the access model lacks what the hopper writes or asks: ${gaps.join(', ')}: save one that has them in Settings → Access`);
     let pushed = pushedModel();
     if (pushed?.storeId !== storeId || pushed.version !== m.version) {
       const modelId = await server.writeModel(storeId, compileAccessModel(m.dsl));
       pushed = { storeId, version: m.version, modelId };
       o.repo.setState(KEY_PUSHED, JSON.stringify(pushed));
     }
-    const want = new Map(o.repo.liveTuples().map((t) => [tupleKey(t), plain(t)]));
+    const who = requesterTuples(o.requesters());
+    const want = new Map([...o.repo.liveTuples().map(plain), ...who].map((t) => [tupleKey(t), t]));
     const have = new Map((await server.tuples(storeId)).map((t) => [tupleKey(t), t]));
     const writes = [...want].filter(([k]) => !have.has(k)).map(([, t]) => t);
     const deletes = [...have].filter(([k]) => !want.has(k)).map(([, t]) => t);
     if (writes.length + deletes.length > 0) await server.write(storeId, pushed.modelId, { writes, deletes });
+    pushedRequesters = keyOf(who);
     status = { state: 'connected', syncedAt: now(), storeId, modelId: pushed.modelId };
   };
 
@@ -148,20 +171,22 @@ export function createAccess(o: AccessOptions): Access {
     return full;
   };
 
-  /** OpenFGA's answer for `job` running from the template, once everything is pushed; a deny when it cannot be had. */
-  const ask = async (job: string, r: Omit<MintRequest, 'job'>): Promise<Pick<MintDecision, 'allowed' | 'reason' | 'path' | 'modelId'>> => {
+  /** OpenFGA's answer for `subject`, once everything is pushed; a deny when it cannot be had. `template`: the one it runs as, for the reason. */
+  const ask = async (subject: string, contextual: RelationshipTuple[], r: Omit<MintRequest, 'requester'>, who: string):
+  Promise<Pick<MintDecision, 'allowed' | 'reason' | 'path' | 'modelId'>> => {
     const server = o.server;
     if (!server) return { allowed: false, reason: NOT_CONFIGURED };
+    if (keyOf(requesterTuples(o.requesters())) !== pushedRequesters) dirty = true;
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
     const pushed = pushedModel()!;
     const profile = { operation: r.operation, asset: r.asset };
     try {
-      const allowed = await server.check(pushed.storeId, pushed.modelId,
-        { subject: job, relation: `can_${r.operation}`, object: assetObject(r.asset) }, [runningTuple(job, r.template)]);
-      if (!allowed) return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
-      const path = relationshipPath(o.repo.liveTuples().map(plain), job, r.template, profile);
-      return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is approved to ${r.operation} on ${describeAsset(r.asset)}`, ...(path ? { path } : {}) };
+      const allowed = await server.check(pushed.storeId, pushed.modelId, { subject, relation: `can_${r.operation}`, object: assetObject(r.asset) }, contextual);
+      if (!allowed) return { allowed, modelId: pushed.modelId, reason: `${who} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
+      const path = relationshipPath([...o.repo.liveTuples().map(plain), ...requesterTuples(o.requesters()), ...contextual], subject, profile);
+      const through = templateOnPath(path);
+      return { allowed, modelId: pushed.modelId, reason: `${through === undefined ? who : `template ${through}`} is approved to ${r.operation} on ${describeAsset(r.asset)}`, ...(path ? { path } : {}) };
     } catch (e) {
       dirty = true;
       down((e as Error).message);
@@ -197,21 +222,21 @@ export function createAccess(o: AccessOptions): Access {
       await changed();
     },
     async decideMint(request) {
-      const { job, template, operation, asset } = request;
-      const base = { job: { userId: job.userId, jobId: job.jobId }, template, operation, asset };
-      const problem = requestProblem(request);
+      const { requester, operation, asset } = request;
+      const base = { requester: requesterCopy(requester), operation, asset };
+      const problem = profileProblem(request);
       if (problem) return record({ ...base, allowed: false, reason: `not a request the model can hold: ${problem}` });
-      const jobStatus = o.jobStatus(job.userId, job.jobId);
-      if (jobStatus === undefined || !LIVE_JOB_STATUSES.includes(jobStatus)) {
-        return record({ ...base, allowed: false, reason: `job ${job.jobId} is not live (${jobStatus ?? 'no such job'})` });
-      }
-      return record({ ...base, ...await ask(jobObject(job), request) });
+      const asks = standing(o.requesters(), requester, o.jobStatus);
+      if ('problem' in asks) return record({ ...base, allowed: false, reason: asks.problem });
+      const at = asks.template === undefined ? {} : { template: asks.template };
+      return record({ ...base, ...at, ...await ask(requesterObject(requester), [], request, requesterText(requester, asks.template)) });
     },
     async tryCheck(request, by) {
       const problem = requestProblem(request);
       if (problem) throw new AccessEditError(400, problem);
       const { template, operation, asset } = request;
-      return record({ trial: { by }, template, operation, asset, ...await ask(`job:trial/${randomUUID()}`, request) });
+      const job = `job:trial/${randomUUID()}`;
+      return record({ trial: { by }, template, operation, asset, ...await ask(job, [runningTuple(job, template)], request, `template ${template}`) });
     },
     async approve(template, profile, by) {
       const problem = requestProblem({ template, ...profile });
@@ -249,6 +274,8 @@ export function createAccess(o: AccessOptions): Access {
     },
     sync: async () => { await running; await sync(); },
     view() {
+      const live = o.requesters();
+      const tuples = [...o.repo.liveTuples().map(plain), ...requesterTuples(live)];
       const all = approvals();
       const scopes = o.templates?.() ?? [];
       const templates = [...new Set([...all.map((a) => a.template), ...scopes.map((s) => s.name)])].sort().map((template) => {
@@ -259,17 +286,25 @@ export function createAccess(o: AccessOptions): Access {
         const a = approvalOf(t);
         return a ? [{ ...a, revokedBy: t.revokedBy!, revokedAt: t.revokedAt! }] : [];
       });
-      return { status, model: model(), templates, revoked, decisions: o.repo.decisions(DECISIONS_SHOWN) };
+      const requesters = requesterRows(live, tuples, all.map((a) => a.profile));
+      return { status, model: model(), templates, revoked, requesters, decisions: o.repo.decisions(DECISIONS_SHOWN) };
     },
     start() {
-      model();
+      upgradeModel();
       void sync();
       timer = setInterval(() => { void sync(); }, o.syncMs ?? ACCESS_SYNC_MS);
       timer.unref();
+      // A job started or ended, a box joined or left: pushed at once, not at the next full push.
+      watch = setInterval(() => {
+        if (status.state === 'connected' && !running && keyOf(requesterTuples(o.requesters())) !== pushedRequesters) void changed();
+      }, REQUESTERS_CHECK_MS);
+      watch.unref();
     },
     stop() {
       if (timer) clearInterval(timer);
+      if (watch) clearInterval(watch);
       timer = undefined;
+      watch = undefined;
     },
   };
 }

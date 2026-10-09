@@ -125,9 +125,11 @@ describe('templates', () => {
     const cfg2 = (await a.api('GET', '/api/machines/config')).body as { machines: { name: string; options: Record<string, unknown> }[] };
     expect(cfg2.machines.find((m) => m.name === 'laptop')!.options.template).toBeUndefined();
     // The scope a machine gets is its template's approved scope: nothing yet.
-    expect(a.user().vault.scopeOf('hopper-sandbox-kube')).toEqual({ template: 'kube', secrets: [] });
+    // (The vault reaches the hopper through its edges since issue #586: the scope is read as the vault shows it.)
+    const gives = async (): Promise<string[]> => ((await a.api('GET', '/api/vault')).body.templates as { name: string; gives: string[] }[]).find((t) => t.name === 'kube')!.gives;
+    expect(cfg2.machines.find((m) => m.name === 'hopper-sandbox-kube')!.options.template).toBe('kube');
+    expect(await gives()).toEqual([]);
     await edit(a, session, { action: 'approve-template', name: 'kube' });
-    expect(a.user().vault.scopeOf('hopper-sandbox-kube')).toEqual({ template: 'kube', secrets: ['KUBE_TOKEN'] });
-    expect(a.user().vault.scopeOf('laptop')).toEqual({ secrets: [] });
+    expect(await gives()).toEqual(['KUBE_TOKEN']);
   });
 });

@@ -5,11 +5,12 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
-import { createAccess, type Access } from './authz/service.ts';
+import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
+import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
@@ -130,13 +131,22 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const reachable = (): string | undefined => config.publicUrl ?? (config.lanNames[0] ? `http://${config.lanNames[0]}:${port}` : undefined);
   const proxyUrl = (m: MachineSnapshot, dialled: string | undefined): string | undefined =>
     dialled ?? (m.client ? reachable() : !m.ssh && !m.docker ? `http://127.0.0.1:${port}` : reachable());
-  // Access (issue #559): the instance's. A job is live by its status in its user's store; a template is rated from every
-  // user's vault templates of its name (issue #584). Made before the runtimes: each user's vault approves profiles in it.
+  // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on,
+  // and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
+  // Made before the runtimes: each user's vault approves profiles in it.
   const fgaKey = runtimeSecrets(env);
   const access = createAccess({
     repo: instance.access, clock, logger,
     server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
     jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
+    requesters: () => runtimes.all().map((rt) => ({
+      userId: rt.user.id,
+      jobs: rt.store.jobs.list({ status: [...LIVE_JOB_STATUSES] }).map((j) => {
+        const machine = machineOfLane(j.laneId) ?? j.resumeOn;
+        return { jobId: j.id, ...(machine === undefined ? {} : { machine }) };
+      }),
+      boxes: rt.vault.boxes(),
+    })),
     templates: () => runtimes.all().flatMap((rt) => rt.vault.templateScopes()),
   });
   // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it.

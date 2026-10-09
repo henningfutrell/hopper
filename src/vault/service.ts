@@ -12,8 +12,8 @@ import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { mintsForProblem } from '../domain/minting.ts';
-import { AT_WORK, boxAsk, clientOf } from './box.ts';
-import { createMinting, type MintAsk } from './mint.ts';
+import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
+import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/blast-radius.ts';
 import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
@@ -47,18 +47,54 @@ export interface VaultService {
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<VaultResult>;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
+  /** Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581). */
+  boxes(): { machine: string; template: string }[];
   /**
    * A machine's ask (slice 3), already proven to be the machine's (its link's signature): one secret, for the job whose
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
    */
   deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
-  /** A machine's ask for a credential minted (issue #580): Access decides first, every time; the minted credential as JSON, or why not. */
-  mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
+  /**
+   * A machine's ask for a credential minted (issue #580): the same checks as a delivery, then Access decides, every time;
+   * the minted credential as JSON, or why not. `from` mints from the minting credential: by default here (mintFrom).
+   */
+  mint(ask: MintAsk, machineKey: string, from?: MintFrom): Promise<{ value: string } | { refused: string }>;
+  /** Mints from the minting credential `name` for `target`, here: its value opened or read in its backend, then STS or the Kubernetes API. */
+  mintFrom: MintFrom;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
+
+/**
+ * The vault as the hopper's parts reach it (issue #586): in the hopper (`localVault`), or with its secrets in a container
+ * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
+ * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
+ */
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxes' | 'templateScopes'> {
+  /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
+  view(): VaultView;
+  /** Why no vault secret can be stored or delivered now; undefined when one can. */
+  status(): Promise<string | undefined>;
+  set(s: SetSecret, by: string): Promise<VaultResult>;
+  remove(name: string, by: string): Promise<VaultResult>;
+  deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
+  mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
+}
+
+/** What `GET /api/vault` and each edit answer: the view, with the vault's status as its problem. */
+export async function vaultView(v: Vault): Promise<VaultView> {
+  const problem = await v.status();
+  const { problem: _local, ...view } = v.view();
+  return { ...view, ...(problem !== undefined ? { problem } : {}) };
+}
+
+export type { ClientTarget } from './box.ts';
+
+/** The client targets among the attached machines. */
+export const clientTargets = (machines: readonly AttachedMachine[]): ClientTarget[] =>
+  machines.flatMap((m) => ('client' in m ? [{ name: m.name, key: m.client.key, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []));
 
 /**
  * A secret to set: its value, or (issue #585) the vault backend that keeps it and where. `mints` (issue #580): the
@@ -80,8 +116,8 @@ export function createVaultService(o: {
   /** Mints short-lived credentials (issue #580). Absent: the vault mints nothing. */
   minter?: CredentialMinter;
   logger: { warn(line: string): void };
-  /** The attached machines now: a client target's key and the template it joined as (its join line named it). */
-  targets?: () => AttachedMachine[];
+  /** The client targets now: each one's key and the template it joined as (its join line named it). */
+  targets?: () => ClientTarget[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
   /** The vault backends the plugins config names now (issue #585); none when absent. */
@@ -136,6 +172,13 @@ export function createVaultService(o: {
       return { refused: `the vault secret ${secret.name} cannot be opened: set it again` };
     }
   }
+
+  const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
+
+  const mint = createMinting({
+    store: o.store, userId: o.userId ?? '', clock: o.clock,
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
+  });
 
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
     const name = clientOf(o.targets, (m) => m.name === machine)?.template;
@@ -263,6 +306,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
+    boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined ? [{ machine: m.name, template: m.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
@@ -299,10 +343,8 @@ export function createVaultService(o: {
       return { value: r.value };
     },
 
-    mint: createMinting({
-      store: o.store, userId: o.userId ?? '', read: valueOf, clock: o.clock,
-      ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
-    }),
+    mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
+    mintFrom,
 
     resealAll() {
       if (!sealer) return 0;
@@ -325,7 +367,7 @@ export function createVaultService(o: {
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
 export function openVault(o: {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; userId?: string; access?: VaultAccess; minter?: CredentialMinter; keys: SealerState; clock: Clock;
-  logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean;
+  logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
   backends: () => ConfiguredBackend[];
 }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });

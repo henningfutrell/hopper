@@ -5,22 +5,27 @@
 // first-time gate (Settings → Vault) when the template declares it, else it is refused; the reason is on the job's
 // timeline. The audit (`vault.minted`) carries Access's decision id beside each mint. The minting credential is opened
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
-import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
+import type { Clock, UserStore } from '../domain/ports.ts';
 import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
-import { expiryOf, mintingCredentialOf, mintTarget, profileInWords, type MintKind, type MintTarget } from '../domain/minting.ts';
+import { expiryOf, mintTarget, profileInWords, type Minted, type MintKind, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
+import { mintingCredentialOf } from '../domain/minting.ts';
+import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 
 export interface MintAsk { mint: MintKind; operation: string; asset: string; token: string }
+
+/**
+ * Mints from the minting credential `name` for `target`: in the hopper, or (issue #586) in the vault's own container,
+ * which holds the value. Called only after Access allowed it. Never says the minting credential's value.
+ */
+export type MintFrom = (name: string, target: MintTarget, sessionName: string) => Promise<{ minted: Minted } | { refused: string }>;
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
   /** The vault's user: Access names a job by its user and id. */
   userId: string;
-  /** A secret's value now: opened by the key provider, or read in its vault backend (issue #585); or why not. */
-  read(secret: VaultSecret): Promise<{ value: string } | { refused: string }>;
   access?: VaultAccess;
-  minter?: CredentialMinter;
   clock: Clock;
 }
 
@@ -33,7 +38,7 @@ function assetOf(said: string): Asset | undefined {
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
-export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: string) => Promise<{ value: string } | { refused: string }> {
+export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: string, from: MintFrom) => Promise<{ value: string } | { refused: string }> {
   const { vault, events } = o.store;
   // A mint for a job and profile minted before is a renewal. Kept in memory: a restart counts the next one as a first.
   const minted = new Set<string>();
@@ -47,18 +52,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     return `Access denied it: ${d.reason}`;
   };
 
-  const mintWith = (target: MintTarget, value: string, jobId: string) => {
-    if (target.kind === 'aws') {
-      const c = mintingCredentialOf('aws', value);
-      if (typeof c === 'string') throw new Error(c);
-      return o.minter!.awsSession(c, { roleArn: target.roleArn, sessionName: `hopper-${jobId}`.slice(0, 64), policyArns: target.policyArns, durationSeconds: target.durationSeconds });
-    }
-    const c = mintingCredentialOf('kube', value);
-    if (typeof c === 'string') throw new Error(c);
-    return o.minter!.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds });
-  };
-
-  return async (ask, machineKey) => {
+  return async (ask, machineKey, from) => {
     const box = boxAsk({ ...o, job: (id) => o.store.jobs.get(id) }, ask.token, machineKey);
     const asset = assetOf(ask.asset);
     const said = { kind: ask.mint, operation: ask.operation, asset: asset ?? ask.asset };
@@ -83,24 +77,19 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     if (typeof target === 'string') return refuse(target);
     if (!o.access) return refuse('access is not part of this hopper: the vault mints nothing without it');
 
-    const decision = await o.access.decideMint({ job: { userId: o.userId, jobId: job.id }, template: machine.template, operation: profile.operation, asset });
+    // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.
+    const decision = await o.access.decideMint({ requester: { kind: 'job', userId: o.userId, jobId: job.id }, operation: profile.operation, asset });
     if (!decision.allowed) return refuse(denied(machine.template, profile, decision), decision);
 
     const { mintsFor } = target;
     const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
     if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision);
-    if (!o.minter) return refuse('this hopper has no minter', decision);
-    const read = await o.read(credential);
-    if ('refused' in read) return refuse(`the minting credential ${credential.name}: ${read.refused}`, decision);
-    // A vault backend's read (issue #585) takes a while: the job must still be at work now.
+    const made = await from(credential.name, target, `hopper-${job.id}`.slice(0, 64));
+    if ('refused' in made) return refuse(made.refused, decision);
+    const out = made.minted;
+    // A vault backend's read (issue #585) or the vault's container (issue #586) takes a while: the job must still be at work.
     const still = o.store.jobs.get(job.id)?.status;
     if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): the vault mints only while it runs`, decision);
-    let out;
-    try {
-      out = await mintWith(target, read.value, job.id);
-    } catch (e) {
-      return refuse(`minting from ${credential.name} failed: ${(e as Error).message}`, decision);
-    }
     const key = `${job.id} ${ask.mint} ${profileInWords(profile)}`;
     const renewal = minted.has(key);
     minted.add(key);
@@ -115,5 +104,28 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     });
     const { kind: _kind, ...answer } = out;
     return { value: JSON.stringify(answer) };
+  };
+}
+
+/** Mints here from the minting credential `name` (opened, or read in its vault backend): never says its value. */
+export function mintHere(o: { vault: Pick<VaultRepository, 'get'>; minter?: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> }): MintFrom {
+  return async (name, target, sessionName) => {
+    const credential = o.vault.get(name);
+    if (!credential?.mints) return { refused: `the vault holds no minting credential ${name}` };
+    if (!o.minter) return { refused: 'this vault has no minter' };
+    const read = await o.valueOf(credential);
+    if ('refused' in read) return { refused: `the minting credential ${name}: ${read.refused}` };
+    try {
+      if (target.kind === 'aws') {
+        const c = mintingCredentialOf('aws', read.value);
+        if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
+        return { minted: await o.minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, durationSeconds: target.durationSeconds }) };
+      }
+      const c = mintingCredentialOf('kube', read.value);
+      if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
+      return { minted: await o.minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds }) };
+    } catch (e) {
+      return { refused: `minting from ${name} failed: ${(e as Error).message}` };
+    }
   };
 }

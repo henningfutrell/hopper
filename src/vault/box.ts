@@ -1,7 +1,6 @@
 // Whose ask a box's vault ask is (issue #558 slice 3, issue #580): the machine whose link signed it, the job whose proxy
 // token it shows, and the template that machine joined as. A delivery and a mint check the same things in the same
 // order, here, before either looks at what is asked; the first that fails is the reason the job is told.
-import type { AttachedMachine } from '../domain/machines.ts';
 import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
@@ -9,9 +8,12 @@ import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts'
 /** The statuses a job is given vault secrets or minted credentials in: it holds its pane. Ended, failed or parked: nothing. */
 export const AT_WORK: readonly string[] = ['running', 'waiting_answer'];
 
+/** An attached machine as the vault knows it (issue #558): a client target's name, its machine key, its template. */
+export interface ClientTarget { name: string; key: string; template?: string }
+
 export interface BoxAskOptions {
-  /** The attached machines now: a client target's key and the template it joined as. */
-  targets?: () => AttachedMachine[];
+  /** The client targets now: each one's key and the template it joined as. */
+  targets?: () => ClientTarget[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
   job(id: string): Job | undefined;
@@ -22,10 +24,8 @@ export type BoxAsk =
   | { refused: string; machine?: { name: string; template?: string }; job?: Job }
   | { machine: { name: string; template: string }; job: Job };
 
-/** A client target and the template it joined as, found by `match`; undefined when none matches. */
-export function clientOf(targets: (() => AttachedMachine[]) | undefined, match: (m: { name: string; key: string }) => boolean): { name: string; template?: string } | undefined {
-  return (targets?.() ?? []).flatMap((m) => ('client' in m && match({ name: m.name, key: m.client.key }) ? [{ name: m.name, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []))[0];
-}
+/** A client target, found by `match`; undefined when none matches. */
+export const clientOf = (targets: (() => ClientTarget[]) | undefined, match: (m: ClientTarget) => boolean): ClientTarget | undefined => (targets?.() ?? []).find(match);
 
 /** The machine holding `machineKey`, the job `token` names, and the template, or the first check that fails. */
 export function boxAsk(o: BoxAskOptions, token: string, machineKey: string): BoxAsk {
