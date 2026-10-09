@@ -1,9 +1,10 @@
-// The built-in "test" executor: sleep / echo / fail / ask / fail-after-answer, per
-// docs/design.md "Test executor" and "Test executor additions". Idempotent; never rejects.
+// The built-in "test" executor: sleep / echo / fail / ask / fail-after-answer / propose, per
+// docs/design.md "Test executor" and "Test executor additions". Idempotent; never rejects. `propose` (issue #537) comes
+// back with `message` as its proposal; resumed (it was sent back), with a revision that quotes what it was told.
 
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 
-const OPS = ['sleep', 'echo', 'fail', 'ask', 'fail-after-answer'] as const;
+const OPS = ['sleep', 'echo', 'fail', 'ask', 'fail-after-answer', 'propose'] as const;
 const MAX_MS = 600000;
 const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
 
@@ -53,12 +54,14 @@ export function createTestExecutor(): Executor {
       if (op === 'echo') return { kind: 'finished', result: { echo: message } };
       if (op === 'fail') return { kind: 'failed', error: message ?? 'failed on purpose' };
       ctx.saveState({ asked: true });
+      if (op === 'propose') return { kind: 'proposal', proposal: { text: message ?? 'Goal: something', recentOutput: '' } };
       return { kind: 'question', question: { text: message ?? 'Which option?', recentOutput: '', detectedBy: 'test' } };
     },
     async resume(ctx, answer) {
-      const { op, ms } = ctx.job.spec.payload as unknown as TestPayload;
+      const { op, ms, message } = ctx.job.spec.payload as unknown as TestPayload;
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'fail-after-answer') return { kind: 'failed', error: `failed after answer: ${answer}` };
+      if (op === 'propose') return { kind: 'proposal', proposal: { text: `${message ?? 'Goal: something'}\nRevised after: ${answer}`, recentOutput: '' } };
       return { kind: 'finished', result: { answer } };
     },
   };

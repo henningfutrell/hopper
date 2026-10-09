@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, PROPOSAL_SECTIONS, REVIEW_VERDICTS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -15,6 +15,9 @@ const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.
 const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
 const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
+
+// Every proposal event (issue #537) but proposal.asked: the proposal, its version, the raising machine, the job's priority.
+const proposal = { proposalId: z.string(), version: z.number().int().min(1), raisedBy, priority: z.number().optional(), high: z.boolean().optional() };
 
 // Every auth event (issue #476) names its login, its kind and its tool; never the login's URL or code.
 const login = { loginId: z.string(), kind: z.enum(LOGIN_KINDS), tool: z.string().min(1) };
@@ -155,6 +158,18 @@ export const EVENT_SCHEMAS = {
   // or by a settings change; and the settings an admin saved.
   'priority_lanes.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.enum(['reliability', 'manual', 'settings']) }),
   'priority_lanes.settings_changed': strict({ from: priorityLaneSettings, to: priorityLaneSettings }),
+  // Proposals (issue #537): a job asked for one, the proposal and each version, its review by the reviewer levels and a
+  // person, and its sign-off. Every one but `proposal.asked` names its proposal and the version it is at, and the
+  // raising machine, as question events do; `priority`, `high`: the job's live priority.
+  'proposal.asked': strict({ by: z.enum(['user']) }),
+  'proposal.submitted': strict({ ...proposal, goal: z.string().optional(), missing: z.array(z.enum(PROPOSAL_SECTIONS)) }),
+  'proposal.escalated': strict({ ...proposal, target: stage, reason: z.string(), goal: z.string().optional() }),
+  'proposal.escalated_to_human': strict({ ...proposal, reason: z.string() }),
+  'proposal.reviewed': strict({ ...proposal, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional() }),
+  'proposal.revision_requested': strict({ ...proposal, stage, notes: z.string(), by: z.string().optional() }),
+  'proposal.accepted': strict({ ...proposal, stage, by: z.string().optional(), notes: z.string().optional() }),
+  'proposal.rejected': strict({ ...proposal, stage, by: z.string().optional(), notes: z.string().optional() }),
+  'proposal.cancelled': strict({ ...proposal, reason: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

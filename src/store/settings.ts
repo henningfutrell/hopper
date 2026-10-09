@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
+import type { ConnectedAccountProvider, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ProposalSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -122,6 +122,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setLoginWarnSec(seconds) {
       write('loginWarnSec', String(seconds));
+    },
+    getProposalSettings() {
+      const text = read('proposalSettings');
+      return text === undefined ? undefined : JSON.parse(text) as ProposalSettings;
+    },
+    setProposalSettings(settings) {
+      write('proposalSettings', JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions }));
     },
     getFailureSettings() {
       const text = read('failureSettings');

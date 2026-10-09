@@ -67,6 +67,10 @@
             "set"
           ],
           "additionalProperties": false
+        },
+        "proposal": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

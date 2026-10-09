@@ -13,7 +13,7 @@ import { ago, between } from '@/model/format';
 import { act, rerun, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
-import { CancelButton, OperatorLedButton, ParkButton, RequeueButton } from './lanes';
+import { CancelButton, OperatorLedButton, ParkButton, ProposeButton, RequeueButton } from './lanes';
 
 /** Run again: a new job for the item joins the queue now (issue #354). */
 function RerunButton({ job }: { job: Job }) {
@@ -131,6 +131,7 @@ export function WaitingPanel() {
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
             {authed && <RejectButton job={job} />}
+            <ProposeButton job={job} />
             <OperatorLedButton job={job} />
             <CancelButton job={job} />
           </div>
@@ -140,6 +141,7 @@ export function WaitingPanel() {
               : <StatusBadge status={job.status} title={WAITING_MEANING[job.status]} />}
             <span className="num">prio {job.priority}{effectivePriority != null && effectivePriority !== job.priority && ` → ${effectivePriority}`}</span>
             {job.approved && <StatusBadge status="approved" tone="ok" title={WAITING_MEANING.approved} />}
+            {job.spec.proposal && <StatusBadge status="proposal" tone="question" label="proposal asked" title="Its agent writes a proposal instead of doing the work" />}
             {job.advice && <span title={job.advice.reason}>advice <b className="font-medium text-foreground/80">{job.advice.action}</b></span>}
             <span className="ml-auto">for <Since iso={job.createdAt} /></span>
           </div>

@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, Router, SourceRegistry,
+  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, ProposalService, QuestionService, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
 import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
@@ -24,19 +24,15 @@ import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
-import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
 import { unavailableExecutors } from '../plugins/executor-slot.ts';
-import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
-import { localPlugin, startHerdrSession } from '../plugins/machine-source/local/index.ts';
+import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
-import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
-import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
-import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, type Logins } from '../logins/index.ts';
+import { createProposalService } from '../proposals/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
@@ -49,7 +45,7 @@ import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
-import type { UserSeams } from './seams.ts';
+import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -102,6 +98,10 @@ export interface UserRuntime {
   plugins: PluginsView;
   host: PluginHost;
   questions: QuestionService;
+  /** The proposal review (issue #537). */
+  proposals: ProposalService;
+  /** The escalation levels' names now: what may review proposals (issue #537). */
+  levelNames(): string[];
   /** The logins a job or run waits on (issue #476). */
   logins: Logins;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
@@ -124,27 +124,6 @@ export interface UserRuntime {
 }
 
 const SEAM_SOURCE_POLL_MS = 1000;
-
-/** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */
-function withSeams(seams: UserSeams) {
-  return BUILTIN_PLUGINS.map((p) => {
-    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
-    if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
-    if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
-    if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
-    if (p.id === 'grokbot-routine' && seams.grokbot) return grokbotRoutinePlugin(seams.grokbot);
-    return p;
-  });
-}
-
-/** A seam router (tests) answers as itself; the report stays the host's. */
-function seamPlugins(router: Router, host: PluginsView): PluginsView {
-  return {
-    routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
-    machinesConfig: host.machinesConfig, editMachines: host.editMachines, machineHostKey: host.machineHostKey, editMachineDefaults: host.editMachineDefaults,
-    routing: host.routing, editRouting: host.editRouting, notifierAction: host.notifierAction,
-  };
-}
 
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
@@ -289,12 +268,17 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onExpired: (q: Question) => engine.onExpired(q),
     onDismissed: (q: Question) => engine.onDismissed(q),
   });
+  // The proposal review (issue #537): the escalation levels the proposal settings name review; the engine ends or re-queues the job.
+  const proposals = createProposalService({
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
+    onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
+  });
   let { running, fixed } = splitSources(host.jobSources());
   const jobSources = () => [...running.map((r) => r.source), ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions, logins, queueSorter: host.queueSorter,
+    store, clock, executors, router, questions, proposals, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
@@ -341,7 +325,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, logins, failures, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, proposals, logins, failures, dispatcher, executors,
+    levelNames: () => levels().map((l) => l.name),
     connectedAccounts,
     usageHistory,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -367,6 +352,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         usageHistory.stop();
         connectedAccounts.stop();
         await questions.stop();
+        await proposals.stop();
         await engine.stop();
         await dispatcher.stop();
         await host.stopNotifiers();

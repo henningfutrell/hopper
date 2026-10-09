@@ -69,6 +69,8 @@ export async function recover(c: EngineContext): Promise<Recovered> {
       else requeue(job, job.status, 'daemon restart');
     }
     for (const job of store.jobs.list({ status: ['waiting_answer'] })) {
+      // On its proposal (issue #537): it waits on; ProposalService.recover re-drives a review, and a decision ends it.
+      if (!job.questionId && job.proposalId && store.proposals.get(job.proposalId)?.status === 'open') continue;
       byQuestion(job, job.questionId ? store.questions.get(job.questionId) : undefined);
     }
     for (const lane of store.lanes.list()) {

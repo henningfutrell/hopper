@@ -85,6 +85,13 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false)
     store.events.append({ type: 'job.unparked', jobId: id, questionId: q.id, data: { to: 'waiting_answer' } });
     return next;
   }
+  // Its proposal still in review (issue #537): it waits on it again.
+  const p = job.proposalId ? store.proposals.get(job.proposalId) : undefined;
+  if (p?.status === 'open' && job.pendingAnswer === undefined) {
+    const next = store.jobs.update(id, { status: 'waiting_answer' });
+    store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'waiting_answer' } });
+    return next;
+  }
   const next = store.jobs.update(id, { status: 'queued', pendingAnswer: job.pendingAnswer ?? PARKED_RESUME, holdReason: undefined, waitReason: undefined });
   store.events.append({ type: 'job.unparked', jobId: id, data: { to: 'queued' } });
   return next;

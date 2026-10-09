@@ -61,6 +61,7 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: before.slice(0, SUMMARY_CHARS), chatId } };
   if (last.startsWith('HOPPER_FAILED')) return { kind: 'failed', error: last.slice('HOPPER_FAILED'.length).trim() || 'HOPPER_FAILED without a reason' };
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
+  if (last === 'HOPPER_PROPOSAL') return { kind: 'proposal', proposal: { text: before, recentOutput: tail(text.trim()) } };
   return { statusNote: text.trim() };
 }
 
@@ -140,7 +141,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
         if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
         return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
       }
-      if (out.kind === 'question') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
+      if (out.kind === 'question' || out.kind === 'proposal') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
       return out;
     } catch (e) {
       return { kind: 'failed', error: `${label} on ${where}: ${(e as Error).message}` };

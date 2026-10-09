@@ -69,6 +69,15 @@ const WHEN: Record<EventType, string> = {
   'priority_lanes.changed': 'The priority lanes changed (issue #535): `from` and `to` the lanes high-priority jobs get first, best first. `by`: `reliability` (the hopper measured its lanes again and a lane became more reliable by more than the margin, or one dropped out), `manual` (an admin chose them), `settings` (a settings change, such as the count).',
   'priority_lanes.settings_changed': 'An admin saved the priority lane settings (issue #535): `from` and `to` the high-priority threshold, the count of priority lanes, what a priority lane does while no high-priority job waits (`keep-free` or `share`), the window and the minimum runs lane reliability is measured over, and the lanes an admin chose (`manual`; absent: by reliability).',
   'usage.limits_changed': 'The usage limits were set in the UI (issue #522): `from` the soft and hard limits the decider used, `to` the ones it uses from now on. Each is a fraction of a usage budget, from 0 to 1.',
+  'proposal.asked': 'A person asked a job that has not started for a proposal (issue #537): when it starts, its agent is told to write one instead of doing the work. A job from an item labelled `hopper:proposal` is asked from the start, with no event.',
+  'proposal.submitted': 'A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. `goal`: its Goal part; `missing`: the parts it left out.',
+  'proposal.escalated': 'A proposal entered a stage of its review (issue #537): `target` is the reviewer level (an escalation level named in the proposal settings) or `human`, and `reason` why it climbed.',
+  'proposal.escalated_to_human': 'A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version.',
+  'proposal.reviewed': 'A reviewer level gave its verdict on a proposal (issue #537): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.',
+  'proposal.revision_requested': 'A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person): `notes` is what to change. The job is re-queued with it and writes the next version.',
+  'proposal.accepted': 'A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. Its job ends finished, with the decision as its result; the proposal stays linked to the job and its item.',
+  'proposal.rejected': 'A person rejected a proposal (issue #537), with why (`notes`). Its job ends finished, with the decision as its result.',
+  'proposal.cancelled': 'A proposal waiting on a decision was cancelled because its job ended or is gone (issue #537).',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 

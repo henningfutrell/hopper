@@ -62,6 +62,8 @@ export interface JobSpec {
   meta?: Record<string, unknown>;
   /** The routing rule that set this job's machine, executor, priority or work tree (issue #18), at intake or a later sync (issue #375). */
   routedBy?: RoutedBy;
+  /** Asked for a proposal (issue #537): its agent writes one instead of doing the work, and is told so after the job rules. */
+  proposal?: true;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
@@ -106,6 +108,8 @@ export interface Job {
   executorState?: Record<string, unknown>;
   /** The open question this job waits on (status waiting_answer). */
   questionId?: string;
+  /** Its proposal (issue #537): while it is open, the job waits on it (status waiting_answer, no question). */
+  proposalId?: string;
   /** An answer to deliver on the next claim: the job resumes instead of starting fresh. */
   pendingAnswer?: string;
   /** Machine a resuming job must return to (its pane lives there, or its parked work tree and agent session). */
@@ -455,26 +459,9 @@ export interface Question {
   updatedAt: string;
 }
 
-// ---- Sources -----------------------------------------------------------------------
+// ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
-export interface SourceStatus {
-  name: string;
-  kind: string;
-  /** ok: last sync succeeded. error: last sync failed. disabled: configured off. starting: no sync yet. */
-  state: 'ok' | 'error' | 'disabled' | 'starting';
-  lastSyncAt?: string;
-  lastOkAt?: string;
-  lastError?: string;
-  nextSyncAt?: string;
-  /** Eligible items seen by the last discover. */
-  itemsSeen: number;
-  /** Jobs this source created since the daemon started. */
-  jobsCreated: number;
-  /** Non-terminal jobs from this source. */
-  activeJobs: number;
-  /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
-  detail: Record<string, unknown>;
-}
+export type { SourceStatus } from './sources.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
@@ -495,6 +482,7 @@ export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES, type GateActor, type PreSort, typ
 // ---- Logins (issue #476): src/domain/logins.ts (re-exported here) ----------------------
 
 export * from './logins.ts';
+export * from './proposals.ts';
 export * from './failures.ts';
 export * from './priority.ts';
 

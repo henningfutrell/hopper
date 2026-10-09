@@ -25,7 +25,7 @@ export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 
-export type Marker = 'done' | 'question' | 'failed' | 'auth';
+export type Marker = 'done' | 'question' | 'proposal' | 'failed' | 'auth';
 
 /** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
 export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval'] as const;
@@ -76,6 +76,7 @@ function markerOf(line: string): Marker | null {
   const s = normaliseMarkerLine(line);
   if (s === 'HOPPER_DONE') return 'done';
   if (s === 'HOPPER_QUESTION') return 'question';
+  if (s === 'HOPPER_PROPOSAL') return 'proposal';
   if (s === 'HOPPER_AUTH_PENDING') return 'auth';
   if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;

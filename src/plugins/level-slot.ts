@@ -4,7 +4,7 @@
 // question it gets (fail safe: a broken level never answers, and never hides the levels above it).
 // The instance is named after the plugins config whatever the plugin calls itself: that name is the
 // question's stage.
-import type { AnswerRequest, EscalationLevel, LevelReply } from '../domain/ports.ts';
+import type { AnswerRequest, EscalationLevel, LevelReply, ReviewReply, ReviewRequest } from '../domain/ports.ts';
 import type { Detection, InstanceSpec, InstanceStatus } from '../domain/types.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
 
@@ -25,6 +25,8 @@ export async function buildLevel(spec: InstanceSpec, deps: SlotDeps): Promise<Bu
       name: spec.name,
       ...(inner.model ? { model: inner.model } : {}),
       answer: (req: AnswerRequest, signal: AbortSignal) => inner.answer(req, signal),
+      // A plugin that cannot review (issue #537): every proposal it gets escalates.
+      review: (req: ReviewRequest, signal: AbortSignal) => (inner.review ? inner.review(req, signal) : Promise.resolve({ error: `${spec.plugin} cannot review proposals` })),
     };
     return { spec, level, detection: built.detection, plugin: built.plugin };
   }
@@ -34,6 +36,9 @@ export async function buildLevel(spec: InstanceSpec, deps: SlotDeps): Promise<Bu
     name: spec.name,
     async answer(): Promise<LevelReply> {
       return { escalate: true, reason: `unavailable: ${why}` };
+    },
+    async review(): Promise<ReviewReply> {
+      return { verdict: 'escalate', notes: `unavailable: ${why}` };
     },
   };
   return { spec, level, detection: built.detection, plugin: null, reason: why };

@@ -1,7 +1,7 @@
 // The engine: gather → decide → apply, on a tick and on the events that change admission.
 import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
-import type { EventType } from '../domain/types.ts';
+import type { EventType, Job } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -9,6 +9,7 @@ import { createCommands, type Commands } from './commands.ts';
 import type { EngineContext, EngineOptions } from './context.ts';
 import { decisionStep } from './decision-step.ts';
 import { createPaneAnswers } from './pane-answers.ts';
+import { askForProposal, createProposalHandlers, type ProposalHandlers } from './proposals.ts';
 import { createQueries, type Queries } from './queries.ts';
 import { createQueueGateCommands, type QueueGateCommands } from './queue-gate.ts';
 import { recover } from './recovery.ts';
@@ -32,15 +33,18 @@ const SHUTDOWN_WAIT_MS = 5000;
  * a respecified job may be pinned to another machine; a deferred cleanup that went through
  * frees a waiting job of its item (issue #371); parking frees a lane and a re-queue queues a job (issue #501); a
  * problem grouped or resolved holds or frees jobs (issue #509); new usage limits change every lane cap (issue #522);
- * new priority lane settings change which lanes default jobs may take (issue #535). */
+ * new priority lane settings change which lanes default jobs may take (issue #535); a proposal frees a lane, and one sent
+ * back requeues its job (issue #537). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
-  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
+  'job.parked', 'job.unparked', 'proposal.submitted', 'proposal.revision_requested', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
 ]);
 
-export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers {
+export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ProposalHandlers {
+  /** Ask a job that has not started for a proposal (issue #537). */
+  askForProposal(id: string): Job;
   /** Registered executor names. */
   /** The runnable executors now: they follow the plugins config (issue #142). */
   readonly executorNames: string[];
@@ -75,7 +79,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials, problems: o.problems,
+    questions: o.questions, proposals: o.proposals, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, notComplete: o.notComplete, credentials: o.credentials, problems: o.problems,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -99,6 +103,8 @@ export function createEngine(o: EngineOptions): Engine {
     ...createUsageLimitCommands(c),
     ...createQueries(c),
     ...createAnswerHandlers(c, cleanup),
+    ...createProposalHandlers(c, cleanup),
+    askForProposal: (id) => askForProposal(c, id),
     async start() {
       const recovered = await recover(c);
       // The reap of each job recovery ended, then the sweep of every machine (issue #410): what a hopper
@@ -119,12 +125,14 @@ export function createEngine(o: EngineOptions): Engine {
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
       o.questions.recover();
+      o.proposals.recover();
       timer = setInterval(() => {
         classifier.sweep();
         void paneAnswers.sweep();
         cleanups.retry();
         o.logins.sweep();
         o.questions.sweep();
+        o.proposals.sweep();
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

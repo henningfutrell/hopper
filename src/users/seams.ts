@@ -1,5 +1,11 @@
 // The doubles a user's runtime takes at its ports.ts seams (issue #158), for integration tests. Production passes none.
-import type { EscalationLevel, Executor, JobSource, Router, SettableUsageSource } from '../domain/ports.ts';
+import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource } from '../domain/ports.ts';
+import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
+import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
+import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
+import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
+import { localPlugin } from '../plugins/machine-source/local/index.ts';
+import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
 import type { AttachedMachine, HostKeyOffer } from '../domain/types.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
 import type { MachineProbe, ResolvedTarget } from '../machines/index.ts';
@@ -33,4 +39,25 @@ export interface UserSeams {
   hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
   /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
   herdrSession?: (session: string) => Promise<void>;
+}
+
+/** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */
+export function withSeams(seams: UserSeams) {
+  return BUILTIN_PLUGINS.map((p) => {
+    if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
+    if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
+    if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
+    if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
+    if (p.id === 'grokbot-routine' && seams.grokbot) return grokbotRoutinePlugin(seams.grokbot);
+    return p;
+  });
+}
+
+/** A seam router (tests) answers as itself; the report stays the host's. */
+export function seamPlugins(router: Router, host: PluginsView): PluginsView {
+  return {
+    routerStatus: () => ({ name: router.name, plugin: router.name, fallback: false }), report: host.report, edit: host.edit,
+    machinesConfig: host.machinesConfig, editMachines: host.editMachines, machineHostKey: host.machineHostKey, editMachineDefaults: host.editMachineDefaults,
+    routing: host.routing, editRouting: host.editRouting, notifierAction: host.notifierAction,
+  };
 }

@@ -3,7 +3,7 @@
 
 import type { IntakeMigration } from './intake.ts';
 import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy,
+  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, Proposal, ProposalReview, ProposalSettings, ProposalStatus, ProposalVersion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
@@ -107,6 +107,18 @@ export interface QuestionRepository {
   addAttempt(id: string, attempt: QuestionAttempt): Question;
 }
 
+/** Proposals (issue #537): one per job's proposal, its versions and review trail in it. */
+export interface ProposalRepository {
+  create(input: { jobId: JobId; stage: string; version: ProposalVersion; raisedBy?: RaisedBy; source?: Proposal['source'] }): Proposal;
+  get(id: string): Proposal | undefined;
+  /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open ones, the longest waiting first). */
+  list(filter?: { status?: ProposalStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Proposal[];
+  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
+  update(id: string, patch: Partial<Omit<Proposal, 'id' | 'jobId' | 'createdAt' | 'reviews' | 'versions'>>): Proposal;
+  addReview(id: string, review: ProposalReview): Proposal;
+  addVersion(id: string, version: ProposalVersion): Proposal;
+}
+
 /** Logins (issue #476): what the hopper keeps of each, never its URL or code. */
 export interface LoginRepository {
   create(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login;
@@ -204,6 +216,9 @@ export interface UserSettingsRepository {
   /** How long before a login's code runs out the Logins view warns, in seconds (issue #477); absent: never chosen. */
   getLoginWarnSec(): number | undefined;
   setLoginWarnSec(seconds: number): void;
+  /** The proposal settings (issue #537); absent: never saved. */
+  getProposalSettings(): ProposalSettings | undefined;
+  setProposalSettings(settings: ProposalSettings): void;
   /** The failure assessor's settings (issue #509); absent: never set. */
   getFailureSettings(): FailureSettings | undefined;
   setFailureSettings(settings: FailureSettings): void;
@@ -435,6 +450,7 @@ export interface UserStore {
   events: EventLog;
   webhooks: WebhookRepository;
   questions: QuestionRepository;
+  proposals: ProposalRepository;
   logins: LoginRepository;
   failures: FailureRepository;
   problems: ProblemRepository;
