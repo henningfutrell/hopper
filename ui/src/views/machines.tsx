@@ -19,7 +19,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -55,6 +55,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const now = useNow();
   const kind: MachineKind = kindOf(ctx.config, m.id);
   const busyLanes = m.lanes.filter((l) => l.state !== 'idle').length;
+  const updateLine = clientUpdateLine(m.client, window.location.origin);
   const editing = ctx.editing === m.id;
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
     <>
@@ -86,6 +87,16 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
       </dl>
+      {updateLine && (
+        <div role="alert" className="grid gap-1.5 text-sm">
+          <p className="text-destructive">Its client cannot be updated from here: {m.client?.update?.problem}.</p>
+          <p className="text-xs text-muted-foreground">Run this in a terminal on that computer to reinstall it: it stays the same machine, and jobs running there keep going. On a sandbox box, remove <code>~/.local/lib/hopper-client</code> in the box and restart it.</p>
+          <div className="flex flex-wrap items-start gap-2 text-xs">
+            <code className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all">{updateLine}</code>
+            <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void navigator.clipboard?.writeText(updateLine).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'))}>Copy</Button>
+          </div>
+        </div>
+      )}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
       )}

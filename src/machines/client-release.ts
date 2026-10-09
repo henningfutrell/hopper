@@ -48,7 +48,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     try {
       await loadClientRelease(t, bridgeRelease(o.release, names));
     } catch (e) {
-      throw new Error(`it runs release ${running}, an older release that can't load the hopper's, and refused the bridge: ${cause(e, t.machine)}`);
+      throw new Error(`it runs release ${running}, an older release that can't load the hopper's, and refused the bridge: ${cause(e, t.machine)}`, { cause: e });
     }
     say(t.machine, `hopper: client ${t.machine}: runs release ${running}, which checks a fixed file list: loaded the bridge to release ${ours}; it restarts twice to run it`);
   }

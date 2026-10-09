@@ -9,17 +9,27 @@
 # and runs the client and its herdr session as the user units hopper-client and hopper-client-herdr.
 # Nothing inbound: the client dials in to the hopper's URL. Re-running installs the release again and
 # keeps the machine's link key, so it stays the same machine.
+#
+#   curl -fsSL '<hopper URL>/client/install' | sh -s -- '<hopper URL>'
+#
+# with no join code reinstalls the client of a computer that joined already: the hopper's release written
+# over the old one, then the client restarted (issue #545, the line Machines shows for a client the hopper
+# could not update). It joins nothing.
 set -eu
 
 die() { printf 'hopper-client install: %s\n' "$*" >&2; exit 1; }
 
 line="${1:-}"
 case "$line" in
-  http://*'#'*|https://*'#'*) ;;
+  http://*'#'*|https://*'#'*) reinstall= ;;
+  http://*|https://*) reinstall=1 ;;
   *) die "usage: curl -fsSL '<hopper URL>/client/install' | sh -s -- '<hopper URL>#<join code>' [name] (copy the line from Add machine)" ;;
 esac
 url="${line%%#*}"
 name="${2:-}"
+if [ -n "$reinstall" ] && [ ! -f "${HOPPER_CLIENT_DIR:-$HOME/.config/hopper-client}/link.json" ]; then
+  die "this computer has not joined a hopper: run the line from Add machine, with its join code"
+fi
 
 command -v node >/dev/null 2>&1 || die 'node is not installed: install Node.js 24 or later (https://nodejs.org)'
 node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' \
@@ -43,9 +53,10 @@ node --input-type=module -e '
   console.log(`hopper-client install: client release ${id} in ${lib}`);
 ' "$url" "$lib"
 
-if [ -n "$name" ]; then node "$lib/main.ts" join "$line" "$name"; else node "$lib/main.ts" join "$line"; fi
+if [ -n "$reinstall" ]; then :; elif [ -n "$name" ]; then node "$lib/main.ts" join "$line" "$name"; else node "$lib/main.ts" join "$line"; fi
 
 if ! command -v systemctl >/dev/null 2>&1 || ! systemctl --user show-environment >/dev/null 2>&1; then
+  [ -n "$reinstall" ] && printf '%s\n' 'hopper-client install: no systemd user session here; restart the client yourself to run it (stop it, and the loop that runs it starts it again)'
   # The client exits 75 after the hopper loads a new release into it: whatever runs it starts it again.
   printf '%s\n' 'hopper-client install: no systemd user session here; run the client yourself (restarted after a release load, exit 75):' \
     "  $herdr --session hopper-client server &" "  cd && while :; do $node $lib/main.ts; [ \$? -eq 75 ] || break; done"

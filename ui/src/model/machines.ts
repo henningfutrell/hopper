@@ -236,7 +236,16 @@ export function thisBody(d: ThisDraft, version: string): MachineEdit {
 export function clientReleaseText(client: MachineSnapshot['client']): string | null {
   if (client?.current === undefined) return null;
   if (!client.release) return 'none: older than releases, add it again: Add machine';
-  return client.current ? `${client.release} (the hopper's)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
+  if (client.current) return `${client.release} (the hopper's)`;
+  return client.update ? `${client.release} (not the hopper's, and it cannot be updated from here)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
+}
+
+/**
+ * The line that reinstalls the client of a client target the hopper could not update (issue #545): the
+ * install the hopper serves, with no join code, run on that computer. Null while the hopper can still update it.
+ */
+export function clientUpdateLine(client: MachineSnapshot['client'], origin: string): string | null {
+  return client?.update ? `curl -fsSL '${origin}/client/install' | sh -s -- '${origin}'` : null;
 }
 
 const gb = (bytes: number): string => {
