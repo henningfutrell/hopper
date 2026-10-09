@@ -135,6 +135,12 @@ export interface Job extends JobPhaseFields {
    * that claim reopens the session instead of typing into a pane.
    */
   parked?: { at: string; from: 'running' | 'waiting_answer' };
+  /**
+   * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
+   * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
+   * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
+   */
+  continued?: { at: string; handoffId: string };
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
   fromConfig?: SpecFromConfig;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */

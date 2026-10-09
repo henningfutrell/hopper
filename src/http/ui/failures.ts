@@ -1,12 +1,13 @@
 // The UI session's actions on failures (issue #509): resolve a problem, release its held jobs, run a surfaced
-// failure's job again, run a hand-off's job again or clear it (issue #516) (operator); the failures settings and the known causes a person names (admin). Each refuses
+// failure's job again, resolve a hand-off (issues #516, #551) (operator); the failures settings and the known causes a person names (admin). Each refuses
 // with the reason the Failures view reads from `actions`, so the view offers only what is taken.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS } from '../../domain/types.ts';
+import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS } from '../../domain/types.ts';
 import type { FailureAction } from '../../failures/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import type { TenantParts } from '../tenants.ts';
+import { signedInOf, type TenantParts } from '../tenants.ts';
+import { identityName } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -25,6 +26,17 @@ export const failureCauseBody = z.strictObject({
   signature, name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).default(''), decision: z.enum(FAILURE_DECISIONS),
 });
 export const failureForgetBody = z.strictObject({ signature });
+const NOTE_MAX = 4000;
+/**
+ * A hand-off's resolution (issue #551): the action, a note — Won't do says why —, and for Done by hand a link to the
+ * work. The note and the link are written to the job's item at its source.
+ */
+export const handoffResolveBody = z.strictObject({
+  action: z.enum(HANDOFF_RESOLUTIONS),
+  note: z.string().trim().max(NOTE_MAX).optional(),
+  link: z.url({ protocol: /^https?$/, error: 'link must be an http or https URL' }).max(2000).optional(),
+}).refine((b) => b.action !== 'wont_do' || (b.note ?? '') !== '', { message: 'Won\'t do says why: give a note', path: ['note'] })
+  .refine((b) => b.link === undefined || b.action === 'done_by_hand', { message: 'only Done by hand takes a link', path: ['link'] });
 
 const STATUS = { not_found: 404, conflict: 409 } as const;
 
@@ -36,8 +48,13 @@ function answer<T>(r: FailureAction<T>): T {
 export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
   app.post('/ui/api/failures/problems/:id/resolve', o.operator, async (req) => answer(o.tenant(req).failures.resolve(parseWith(idParams, req.params).id)));
   app.post('/ui/api/failures/problems/:id/release', o.operator, async (req) => answer(o.tenant(req).failures.release(parseWith(idParams, req.params).id)));
-  app.post('/ui/api/failures/handoffs/:id/run-again', o.operator, async (req) => answer(await o.tenant(req).failures.runAgain(parseWith(idParams, req.params).id)));
-  app.post('/ui/api/failures/handoffs/:id/clear', o.operator, async (req) => answer(o.tenant(req).failures.clear(parseWith(idParams, req.params).id)));
+  // Who resolved it is kept on the hand-off, never written to the source (issue #551).
+  app.post('/ui/api/failures/handoffs/:id/resolve', o.operator, async (req) => {
+    const s = signedInOf(req);
+    if (!s) throw new HttpError(401, 'sign in to resolve a hand-off');
+    const { action, note, link } = parseWith(handoffResolveBody, req.body);
+    return answer(await o.tenant(req).failures.resolveHandoff(parseWith(idParams, req.params).id, { action, ...(note ? { note } : {}), ...(link ? { link } : {}) }, identityName(s.identity)));
+  });
   app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id)));
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {

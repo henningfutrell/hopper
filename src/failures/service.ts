@@ -11,28 +11,25 @@
 // closed (`item-check.ts`). A failure no known cause explains, which the rules hand to a person, is a minor decision
 // (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
 // is active and it is sure.
-import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
+import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
-  type Handoff, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
+  type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
 import { rerunRecordOf } from './rerun.ts';
-import { createHandoffs } from './handoffs.ts';
+import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
 import { createItemCheck } from './item-check.ts';
 import { signatureOf } from './signature.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
-export interface FailuresOptions {
+/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `resumable`, `dismiss`: as the hand-offs take them. */
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'resumable' | 'dismiss'> {
   store: UserStore;
   clock: Clock;
-  /** Run an ended job's item again: the sync loop's Run again. */
-  rerun(jobId: string, by: RerunBy): Promise<RerunResult>;
-  /** Dismiss a failed job's locked entry (issue #355): a cleared hand-off leaves the queue too. Throws when it is not one. */
-  dismiss(jobId: string): void;
   /** The machines now: a problem's check reads them. */
   machines(): Promise<MachineSnapshot[]>;
   /** Whether the job's item is closed at its source (issue #529); undefined: its source cannot tell. Throws: asked again later. */
@@ -65,10 +62,8 @@ export interface Failures {
   release(problemId: string): FailureAction<Problem>;
   /** A person runs a surfaced failure's job again. */
   retry(recordId: string): Promise<FailureAction<Job>>;
-  /** A person runs a hand-off's job again (issue #516): past its retry limit, past its problem's hold. */
-  runAgain(handoffId: string): Promise<FailureAction<Job>>;
-  /** A person clears a hand-off: acknowledged, no more work; its locked entry leaves the queue. */
-  clear(handoffId: string): FailureAction<Handoff>;
+  /** A person resolves a hand-off (issue #551), `by` the person signed in: the hand-off and the job that follows, if any. */
+  resolveHandoff(handoffId: string, input: HandoffResolve, by: string): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
   nameCause(cause: NamedCause): KnownCause;
   forgetCause(signature: string): boolean;
 }
@@ -89,8 +84,11 @@ export function createFailures(o: FailuresOptions): Failures {
   let prunedAt = 0;
   const now = () => clock.now();
   const settings = (): FailureSettings => ({ ...DEFAULT_FAILURE_SETTINGS, ...store.settings.getFailureSettings() });
-  const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
+  const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, continueJob: o.continueJob, resumable: o.resumable, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
   const checkItems = createItemCheck({ store, clock, itemClosed: o.itemClosed, closed: (id) => handoffs.itemClosed(id), logger: o.logger, live: () => !stopped });
+
+  /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
+  const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); };
 
   /** Its run in its chain of retries: 1, plus each earlier job of its item that a retry ran again. */
   function attemptOf(job: Job): number {
@@ -126,7 +124,7 @@ export function createFailures(o: FailuresOptions): Failures {
     let jevCase: JevCase | undefined;
     store.tx(() => {
       const job = store.jobs.get(jobId);
-      if (!job || job.status !== 'failed' || job.assessment || store.failures.forJob(jobId)) return;
+      if (!job || job.status !== 'failed' || job.assessment || assessedRun(jobId)) return;
       const s = settings();
       const at = now();
       const error = job.error ?? 'failed without a reason';
@@ -319,7 +317,7 @@ export function createFailures(o: FailuresOptions): Failures {
       await sweeping;
     },
     sweep,
-    view: () => viewOf(store, settings(), now()),
+    view: () => viewOf(store, settings(), now(), o.resumable),
     blocks() {
       if (!settings().auto.hold) return [];
       return store.problems.list({ status: 'open' }).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
@@ -344,8 +342,7 @@ export function createFailures(o: FailuresOptions): Failures {
       return done;
     },
     retry: (recordId) => rerunRecord(recordId, 'user', 'run again by a person'),
-    runAgain: (handoffId) => handoffs.runAgain(handoffId),
-    clear: (handoffId) => handoffs.clear(handoffId),
+    resolveHandoff: (handoffId, input, by) => handoffs.resolve(handoffId, input, by),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);
       return namedCause(cause);

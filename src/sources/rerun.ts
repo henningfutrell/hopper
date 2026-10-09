@@ -1,9 +1,9 @@
-// Run again, the sync loop's half (issues #313, #354; a rejected job too, issue #387): an ended job's source gives its item back
+// Run again, the sync loop's half (issues #313, #354; a rejected job too, issue #387; with a brief, and Continue, issue #551): an ended job's source gives its item back
 // (`JobSource.rerun` — on GitHub a closed issue is reopened and the end labels go) and the new job is
 // queued in the same step (`SourceHost.rerun`), so the user sees it at once. The sync loop (sync.ts)
 // hands it the job's report chain.
 
-import type { JobSource, RerunBy, RerunResult, SourceHost } from '../domain/ports.ts';
+import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import type { Job } from '../domain/types.ts';
 
@@ -37,26 +37,35 @@ export function createRerun(c: RerunContext) {
     return source;
   }
 
+  /** The item given back by its source, then `then` with it, on the job's report chain. */
+  async function takeBack(jobId: string, then: (item: SourceItem, source: JobSource) => RerunResult): Promise<RerunResult> {
+    const checked = check(jobId);
+    if ('ok' in checked) return checked;
+    let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
+    await c.enqueue(jobId, async () => {
+      const source = check(jobId);
+      if ('ok' in source) { result = source; return; }
+      let item;
+      try {
+        item = await source.rerun!(store.jobs.get(jobId)!);
+      } catch (e) {
+        result = e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
+        return;
+      }
+      result = then(item, source);
+    });
+    // The new job's claim is reported at once, not at the next poll.
+    if (result.ok) c.syncSoon(checked);
+    return result;
+  }
+
   return {
-    async rerun(jobId: string, by: RerunBy = 'user'): Promise<RerunResult> {
-      const checked = check(jobId);
-      if ('ok' in checked) return checked;
-      let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
-      await c.enqueue(jobId, async () => {
-        const source = check(jobId);
-        if ('ok' in source) { result = source; return; }
-        let item;
-        try {
-          item = await source.rerun!(store.jobs.get(jobId)!);
-        } catch (e) {
-          result = e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
-          return;
-        }
-        result = { ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by) };
-      });
-      // The new job's claim is reported at once, not at the next poll.
-      if (result.ok) c.syncSoon(checked);
-      return result;
+    rerun(jobId: string, by: RerunBy = 'user', brief?: string): Promise<RerunResult> {
+      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by, brief) }));
+    },
+    /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
+    continueJob(jobId: string, brief: string, handoffId: string): Promise<RerunResult> {
+      return takeBack(jobId, () => c.host.continueJob(jobId, brief, handoffId));
     },
   };
 }

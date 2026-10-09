@@ -42,7 +42,9 @@ const DAY_MS = 86_400_000;
 /** A free-text answer, kept as what was decided, at most this long. */
 const ACTUAL_MAX = 200;
 /** What a person's end of a hand-off says the failed job needed. */
-const HANDOFF_ACTUAL: Readonly<Record<string, string>> = { run_again: 'retry', cleared: 'person' };
+const HANDOFF_ACTUAL: Readonly<Record<string, string>> = {
+  run_again: 'retry', continued: 'retry', cleared: 'person', done_by_hand: 'person', wont_do: 'person',
+};
 
 export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
   const { store, clock } = o;

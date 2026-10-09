@@ -113,7 +113,7 @@ describe('a closed item resolves its failure', () => {
       const v = await failuresOf(second);
       return v.handoffs.find((x) => x.id === h.id)?.status === 'closed' ? v : undefined;
     }, { what: 'the hand-off closed by its closed item' });
-    expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ end: 'item_closed', actions: { runAgain: { ok: false }, clear: { ok: false } } });
+    expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ end: 'item_closed', actions: { continue: { ok: false }, fixed: { ok: false }, doneByHand: { ok: false }, wontDo: { ok: false } } });
     expect(view.counts.needsPerson).toBe(0);
     expect(view.recent.some((r) => r.jobId === job.id)).toBe(false);
     expect(second.user().store.failures.forJob(job.id)).toMatchObject({ outcome: 'item_closed' });
@@ -134,7 +134,7 @@ describe('a failure nothing superseded stays', () => {
     await second.user().failures.sweep();
     await second.user().failures.sweep();
     const view = await failuresOf(second);
-    expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ status: 'open', actions: { runAgain: { ok: true }, clear: { ok: true } } });
+    expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ status: 'open', actions: { continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } } });
     expect(view.counts.needsPerson).toBe(1);
     expect(view.recent.find((r) => r.jobId === job.id)).toMatchObject({ outcome: 'surfaced' });
   });

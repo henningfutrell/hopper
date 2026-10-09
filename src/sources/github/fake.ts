@@ -123,6 +123,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
         assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: stamp() }]);
       }
     },
+    async postComment(repo, n, body) {
+      enter('postComment', [repo, n, body]);
+      const i = find(repo, n);
+      const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
+      comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);

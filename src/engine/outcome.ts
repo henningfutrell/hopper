@@ -61,8 +61,8 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
   return store.tx(() => {
     const at = nowIso(c);
     const lane = store.lanes.list().find((l) => l.id === laneId);
-    // A parked job's resumed run (issue #501) has reopened its session: its next claim types into the pane again.
-    if (job.parked) store.jobs.update(job.id, { parked: undefined });
+    // A parked or continued job's resumed run (issues #501, #551) has reopened its session: its next claim types into the pane again.
+    if (job.parked || job.continued) store.jobs.update(job.id, { parked: undefined, continued: undefined });
     let recorded: Recorded = TERMINAL;
     if (cancelReason !== undefined) {
       store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined });

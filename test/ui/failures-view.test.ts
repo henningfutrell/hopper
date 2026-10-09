@@ -32,7 +32,7 @@ const record = (over: Record<string, unknown> = {}) => ({
 const handoff = (over: Record<string, unknown> = {}) => ({
   id: 'h1', jobId: 'j9', recordId: 'f2', status: 'open', reason: 'person', openedAt: at(-30), decision: 'person', class: 'job',
   summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', reasons: ['no known cause matches', 'not seen on other jobs: it needs a person'], error: 'HOPPER_FAILED tests fail',
-  actions: { runAgain: { ok: true }, clear: { ok: true } }, ...over,
+  actions: { continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } }, continueResumes: true, signature: 'bbbbbbbbbbbb', ...over,
 });
 const view = (over: Record<string, unknown> = {}) => ({
   now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
@@ -50,6 +50,7 @@ interface Daemon { failures: ReturnType<typeof view>; role?: Role }
 
 function fakeDaemon(d: Daemon) {
   const posts: string[] = [];
+  const bodies: unknown[] = [];
   let reads = 0;
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
@@ -65,10 +66,10 @@ function fakeDaemon(d: Daemon) {
     const [path] = String(input).split('?') as [string];
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: d.role ?? 'operator', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/api/failures') { reads += 1; return json(200, d.failures); }
-    if (path.startsWith('/ui/api/')) { posts.push(`${init.method ?? 'GET'} ${path}`); return json(200, {}); }
+    if (path.startsWith('/ui/api/')) { posts.push(`${init.method ?? 'GET'} ${path}`); bodies.push(init.body ? JSON.parse(String(init.body)) : undefined); return json(200, {}); }
     return json(200, routes[path] ?? {});
   });
-  return { fetch, posts, reads: () => reads };
+  return { fetch, posts, bodies, reads: () => reads };
 }
 
 class FakeEventSource {
@@ -210,36 +211,67 @@ describe('the Failures view', () => {
     expect(navBadge()).toBe('3');
   });
 
-  it('offers only what the daemon takes: a refused action is hidden; a viewer is offered none', async () => {
-    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', actions: { runAgain: { ok: false, why: 'a newer job of its item exists' }, clear: { ok: true } } })] }) });
-    expect(buttonsIn(handoffRow())).toEqual(expect.arrayContaining(['Run again', 'Clear']));
-    expect(buttonsIn(handoffRow('h2'))).not.toContain('Run again');
-    expect(buttonsIn(handoffRow('h2'))).toContain('Clear');
-    await act(async () => root?.unmount());
-    await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'viewer' });
-    expect(buttonsIn(handoffRow())).not.toContain('Run again');
-    expect(buttonsIn(handoffRow())).not.toContain('Clear');
+  it('says the next step for why it was handed off, and what each resolution leads to (issue #551)', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', reason: 'retry_limit', continueResumes: false })] }) });
+    const row = handoffRow()!;
+    expect(row.querySelector('[data-slot="next-step"]')!.textContent).toContain('Continue with a note');
+    expect(handoffRow('h2')!.querySelector('[data-slot="next-step"]')!.textContent).toContain('the cause is likely outside the job');
+    expect(row.querySelector('[data-resolution="continue"]')!.textContent).toContain('Its own session goes on in its work tree');
+    expect(handoffRow('h2')!.querySelector('[data-resolution="continue"]')!.textContent).toContain('a new job of its item runs');
+    expect(row.querySelector('[data-resolution="done_by_hand"]')!.textContent).toContain('the job ends finished');
   });
 
-  it('Run again and Clear go to the daemon; once cleared, it leaves the badge', async () => {
+  it('a refused resolution says why instead of disappearing; a viewer is offered none', async () => {
+    const refused = { ok: false, why: 'a newer job of its item exists' };
+    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', actions: { continue: refused, fixed: refused, doneByHand: { ok: true }, wontDo: { ok: true } } })] }) });
+    expect(buttonsIn(handoffRow())).toEqual(expect.arrayContaining(['Continue', 'I fixed it', 'Done by hand', "Won't do"]));
+    expect(buttonsIn(handoffRow('h2'))).not.toContain('Continue');
+    expect(buttonsIn(handoffRow('h2'))).toContain('Done by hand');
+    expect(handoffRow('h2')!.querySelector('[data-resolution="continue"]')!.textContent).toContain('not now — a newer job of its item exists');
+    await act(async () => root?.unmount());
+    await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'viewer' });
+    expect(handoffRow()!.querySelector('[data-slot="resolve"]')).toBeNull();
+  });
+
+  it('a resolution goes to the daemon with the note (Won\'t do only with one); once resolved, the card says what was done and links the next job', async () => {
     const d: Daemon = { failures: view({ problems: [], handoffs: [handoff()] }) };
     await boot('#failures', d);
     expect(navBadge()).toBe('1');
-    const click = async (text: string) => {
-      const b = [...(handoffRow()?.querySelectorAll('button') ?? [])].find((x) => x.textContent === text) as HTMLButtonElement;
-      await act(async () => { b.click(); });
-      await settle();
-    };
-    await click('Run again');
-    expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/run-again');
-    await click('Clear');
-    expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/clear');
-    d.failures = view({ problems: [], handoffs: [handoff({ status: 'closed', end: 'cleared', closedAt: at(1), actions: { runAgain: { ok: false, why: 'already closed' }, clear: { ok: false, why: 'already closed' } } })] });
+    const button = (text: string) => [...(handoffRow()?.querySelectorAll('button') ?? [])].find((x) => x.textContent === text) as HTMLButtonElement;
+    expect(button("Won't do").disabled).toBe(true);
+    const note = handoffRow()!.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(note, 'Use the blue paint.');
+      note.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(button("Won't do").disabled).toBe(false);
+    await act(async () => { button('Continue').click(); });
+    await settle();
+    expect(daemon.posts).toContain('POST /ui/api/failures/handoffs/h1/resolve');
+    expect(daemon.bodies.at(-1)).toEqual({ action: 'continue', note: 'Use the blue paint.' });
+    d.failures = view({ problems: [], handoffs: [handoff({
+      status: 'closed', end: 'continued', closedAt: at(1), nextJobId: 'j9',
+      resolution: { action: 'continue', resumed: true, by: 'Pat', at: at(1), note: 'Use the blue paint.', writeBack: 'written' },
+      actions: { continue: { ok: false, why: 'already resolved: continued' }, fixed: { ok: false, why: 'already resolved: continued' }, doneByHand: { ok: false, why: 'x' }, wontDo: { ok: false, why: 'x' } },
+    })] });
     await act(async () => { FakeEventSource.last!.send({ seq: 2, schemaVersion: 1, id: 'e2', type: 'handoff.closed', at: at(1), jobId: 'j9', data: {} }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     await settle();
     expect(navBadge()).toBeUndefined();
-    expect(buttonsIn(handoffRow())).not.toContain('Clear');
+    const resolved = handoffRow()!.querySelector('[data-slot="resolution"]')!.textContent;
+    expect(resolved).toContain('continued in its session');
+    expect(resolved).toContain('by Pat');
+    expect(resolved).toContain('told its issue');
+    expect(handoffRow()!.querySelector('[data-slot="next-job"]')!.textContent).toContain('Goes on as');
+    expect(handoffRow()!.querySelector('[data-slot="resolve"]')).toBeNull();
+  });
+
+  it('an admin can name the cause from the card, with what to do next time', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'admin' });
+    const learn = handoffRow()!.querySelector('[data-slot="learn"]')!;
+    expect(learn.textContent).toContain('Name this cause');
+    await act(async () => { (learn.querySelector('button') as HTMLButtonElement).click(); });
+    expect(handoffRow()!.querySelector('input[aria-label="Next time"]')).not.toBeNull();
   });
 
   it('counts what is left (issue #517): failed jobs not assessed yet, and those that need a person', async () => {

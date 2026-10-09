@@ -75,6 +75,10 @@ export async function addLabels(req: Request, token: string, repo: string, numbe
   await req('POST /repos/{owner}/{repo}/issues/{issue_number}/labels', { ...splitRepo(repo), issue_number: number, labels, headers: auth(token) });
 }
 
+export async function postComment(req: Request, token: string, repo: string, number: number, body: string): Promise<void> {
+  await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...splitRepo(repo), issue_number: number, body, headers: auth(token) });
+}
+
 export async function reopenIssue(req: Request, token: string, repo: string, number: number): Promise<void> {
   await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, state: 'open', headers: auth(token) });
 }

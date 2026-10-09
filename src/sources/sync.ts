@@ -8,14 +8,17 @@
 // is used from its next sync, for its jobs too; a removed one pulls nothing more, is paused as REMOVED,
 // and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
 // A started job whose item is no longer assigned to its account is flagged, never ended (issue #387).
+// A person's resolution of a hand-off (issue #551) is told to its job's item on the job's report chain, after the job's
+// own end, when it is recorded and again at each sync until the source took it.
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
-import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
+import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
 import { createRerun } from './rerun.ts';
+import { createWriteBacks } from './write-back.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -159,6 +162,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   function onEvent(e: DomainEvent) {
+    if (running && writeBacks.follows(e)) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
     const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
@@ -243,22 +247,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return { seen: items.length, created };
   }
 
-  /** Log a changed error, or the end of one; record source.stalled once a run of failures passes the threshold. */
-  function told(slot: Slot, previous: string | undefined) {
-    const st = slot.status;
-    const name = slot.source.name;
-    if (st.state !== 'error') {
-      if (slot.failing) console.warn(`hopper: source ${name} is ok again`);
-      delete slot.failing;
-      return;
-    }
-    if (st.lastError !== previous) console.warn(`hopper: source ${name} failed: ${st.lastError}`);
-    slot.failing ??= { since: clock.now().toISOString(), stalled: false };
-    if (slot.failing.stalled || clock.now().getTime() - Date.parse(slot.failing.since) < stallAfterMs) return;
-    slot.failing.stalled = true;
-    store.events.append({ type: 'source.stalled', data: { source: name, kind: slot.source.kind, error: st.lastError ?? '', since: slot.failing.since } });
-  }
-
   async function syncOnce(slot: Slot) {
     const st = slot.status;
     const previous = st.state === 'error' ? st.lastError : undefined;
@@ -278,6 +266,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all(jobsOf(slot)
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
+      await writeBacks.catchUp(slot.source);
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -286,7 +275,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       st.state = 'error';
       st.lastError = message(e);
     }
-    told(slot, previous);
+    told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
@@ -331,6 +320,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
 
+  const writeBacks = createWriteBacks({
+    store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: (jobId) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined),
+  });
+
   const rerunning = createRerun({
     host, flagsOf, enqueue,
     sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
@@ -341,6 +334,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     rerun: rerunning.rerun,
+    continueJob: rerunning.continueJob,
     async intakeAction(name, action) {
       const slot = slots.get(name);
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };

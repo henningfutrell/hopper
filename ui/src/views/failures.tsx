@@ -1,26 +1,32 @@
 // Failures (issue #509): what the failure assessor made of the failed jobs. What is left first (issue #517): how
 // many failed jobs are not assessed yet and how many need a person. Then Needs a person (issue #516) —
-// every failed job automatic handling ended for, open until a person runs it again or clears it, with its own
-// count —; then open problems — one shared cause,
+// every failed job automatic handling ended for, with its own count; each card says the next step for why it was
+// handed off, and a person resolves it there with a note (issue #551): Continue, I fixed it, Done by hand, Won't do,
+// each saying what it leads to, or why not now. A resolved card says what was done, by whom, whether its issue was
+// told, and links the job that follows; an admin names its cause from it —; then open problems — one shared cause,
 // shown once with the jobs it hit and the ones held for it, with Resolve and Release held —; then the newest
 // assessed failures nothing settled (issue #529), each with its decision, its summary and Retry; then the profile and, for an admin, the
 // settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
 // updates live, read again on each assessor event.
-import { Check, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
+import { History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { JobTitle } from '@/components/job';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
-import { DECISION_LABEL, DECISION_TONE, HANDOFF_REASON_LABEL, countsText, handoffEndText, offered, outcomeText, plural } from '@/model/failures';
-import type { FailureRecordView, HandoffView, ProblemView } from '@/model/wire';
+import {
+  DECISION_LABEL, DECISION_TONE, HANDOFF_NEXT_STEP, HANDOFF_REASON_LABEL, RESOLUTIONS, countsText, handoffEndText, offered, outcomeText, plural, resolutionLeadsTo, writeBackText,
+} from '@/model/failures';
+import type { FailureRecordView, HandoffResolutionAction, HandoffView, ProblemView } from '@/model/wire';
 import { failureAct, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
-import { FailureProfilePanel } from './failure-profile';
+import { FailureProfilePanel, NameCause } from './failure-profile';
 import { FailureSettingsPanel } from './failure-settings';
 
 /** Where a problem applies, in words. */
@@ -77,35 +83,111 @@ function ProblemCard({ p }: { p: ProblemView }) {
   );
 }
 
-function HandoffRow({ h }: { h: HandoffView }) {
-  const canAct = useCanOperate();
+/** The job that follows a hand-off (issue #551): the same job continued, or the new one; where to watch it. */
+function FollowedBy({ h }: { h: HandoffView }) {
+  if (!h.nextJobId) return null;
+  return (
+    <div data-slot="next-job" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span>{h.nextJobId === h.jobId ? 'Goes on as' : 'Followed by'}</span>
+      <JobLine id={h.nextJobId} />
+      <a href="#queue" className="underline-offset-4 hover:underline">in Queue →</a>
+    </div>
+  );
+}
+
+/** What a person did about it, when, with their note and link, and whether its issue was told. */
+function Resolution({ h }: { h: HandoffView }) {
   const now = useNow();
+  const r = h.resolution;
+  if (!r) return null;
+  const told = writeBackText(r);
+  return (
+    <div data-slot="resolution" className="space-y-1 rounded bg-muted/40 px-2 py-1.5 text-xs">
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">
+        <span className="font-medium text-foreground">{handoffEndText(h)}</span>
+        <span>by {r.by}</span>
+        <span className="num" title={r.at}>{ago(r.at, now)}</span>
+        {told && <span className={r.writeBack === 'written' ? '' : 'text-warn'}>{told}</span>}
+      </div>
+      {r.note && <div className="whitespace-pre-wrap break-words">{r.note}</div>}
+      {r.link && <a href={r.link} target="_blank" rel="noopener noreferrer" className="break-all underline underline-offset-4">{r.link}</a>}
+    </div>
+  );
+}
+
+/**
+ * Resolve an open hand-off (issue #551): a note, a link for Done by hand, and the four resolutions, each saying what
+ * it leads to. One the daemon refuses now is said with its reason, never offered.
+ */
+function Resolve({ h }: { h: HandoffView }) {
+  const [note, setNote] = useState('');
+  const [link, setLink] = useState('');
   const [busy, setBusy] = useState(false);
-  const open = h.status === 'open';
-  const run = async (what: 'run-again' | 'clear', done: string) => {
+  const run = async (action: HandoffResolutionAction, label: string) => {
     setBusy(true);
-    await failureAct(`/ui/api/failures/handoffs/${encodeURIComponent(h.id)}/${what}`, {}, done);
+    const body = { action, ...(note.trim() ? { note: note.trim() } : {}), ...(action === 'done_by_hand' && link.trim() ? { link: link.trim() } : {}) };
+    if (await failureAct(`/ui/api/failures/handoffs/${encodeURIComponent(h.id)}/resolve`, body, label)) { setNote(''); setLink(''); }
     setBusy(false);
   };
   return (
-    <li data-handoff={h.id} className={cn('space-y-1.5 px-4 py-3', !open && 'opacity-70')}>
+    <div data-slot="resolve" className="space-y-2">
+      <Textarea aria-label="Note" className="min-h-16 text-sm" placeholder="What did you do, or what should the job do next? Your note goes to the job and to its issue."
+        value={note} onChange={(e) => setNote(e.target.value)} />
+      {h.actions.doneByHand.ok && (
+        <Input aria-label="Link" className="h-8 text-sm" placeholder="Link to the work, for Done by hand (pull request or commit)" value={link} onChange={(e) => setLink(e.target.value)} />
+      )}
+      <ul className="space-y-1.5">
+        {RESOLUTIONS.map(({ action, key, label }) => {
+          const allowed = h.actions[key];
+          const needsNote = action === 'wont_do' && note.trim() === '';
+          return (
+            <li key={action} data-resolution={action} className="flex flex-wrap items-center gap-2 text-xs">
+              {allowed.ok
+                ? <Button size="xs" variant={action === 'continue' ? 'default' : 'outline'} disabled={busy || needsNote} title={needsNote ? 'Say why in the note first' : undefined}
+                  onClick={() => void run(action, label)}>{label}</Button>
+                : <span className="font-medium text-muted-foreground">{label}:</span>}
+              <span className={allowed.ok ? 'text-muted-foreground' : 'text-muted-foreground/80'}>{allowed.ok ? resolutionLeadsTo(action, h) : `not now — ${allowed.why}`}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function HandoffRow({ h }: { h: HandoffView }) {
+  const canAct = useCanOperate();
+  const canAdmin = useCanAdmin();
+  const now = useNow();
+  const open = h.status === 'open';
+  return (
+    <li data-handoff={h.id} className={cn('space-y-2 px-4 py-3', !open && 'opacity-80')}>
       <div className="flex items-start gap-2">
         <JobLine id={h.jobId} tag={h} />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={h.reason} tone={open ? 'question' : 'ok'} label={open ? HANDOFF_REASON_LABEL[h.reason] : handoffEndText(h)} />
-          {offered(h.actions.runAgain, canAct) && <Button size="xs" variant="outline" disabled={busy} title="Its item runs again now: past its retry limit, past its problem's hold" onClick={() => void run('run-again', 'Running it again')}><RotateCcw />Run again</Button>}
-          {offered(h.actions.clear, canAct) && <Button size="xs" variant="outline" disabled={busy} title="Acknowledged, no more work: it leaves Needs a person and the queue" onClick={() => void run('clear', 'Cleared')}><Check />Clear</Button>}
         </span>
       </div>
       <div className="text-sm">{h.summary}</div>
+      {open && <div data-slot="next-step" className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Next step: </span>{HANDOFF_NEXT_STEP[h.reason]}</div>}
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none">Assessment</summary>
         <ul className="mt-1 list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
         <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
       </details>
+      {open && canAct && <Resolve h={h} />}
+      <Resolution h={h} />
+      <FollowedBy h={h} />
+      {canAdmin && h.signature && !h.causeName && (
+        <div data-slot="learn" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>Seen this before? Name its cause and what to do next time; the assessor follows it.</span>
+          <NameCause signature={h.signature} label="Name this cause" />
+        </div>
+      )}
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span className="num" title={h.openedAt}>waiting since {ago(h.openedAt, now)}</span>
         {!open && h.closedAt && <span className="num" title={h.closedAt}>closed {ago(h.closedAt, now)}</span>}
+        {h.causeName && <span>cause: {h.causeName}</span>}
       </div>
     </li>
   );

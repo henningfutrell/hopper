@@ -319,7 +319,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
     resume(ctx, answer) {
       const state = paneStateOf(ctx.job);
-      if (ctx.job.parked) return reopen(ctx, state, answer);
+      // A failed job a person continued (issue #551) left no pane either: its session reopens in its work tree as a parked one's.
+      if (ctx.job.parked || ctx.job.continued) return reopen(ctx, state, answer);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job, ctx.machine);
       const refused = heldElsewhere(ctx.laneId, state);

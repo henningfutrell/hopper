@@ -45,7 +45,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
-  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
+  'job.parked', 'job.unparked', 'job.continued', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
   'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed', 'job.forked',
 ]);
@@ -58,6 +58,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly executorNames: string[];
   /** Of those, the ones that can park a job (issue #530): the UI offers Park only for their jobs. */
   readonly parkingExecutors: string[];
+  /** Whether a failed job's own agent session can resume (issue #551): its executor parks, and it recorded a session and its pane state. */
+  resumable(job: Job): boolean;
   /** Of those, the ones that run the research and proposal loop (issue #548): only their jobs may shift phase from a question. */
   readonly reviewingExecutors: string[];
   /** Phase shifts from a question (issue #548): fork or switch into research or a proposal, and their settings. */
@@ -113,6 +115,7 @@ export function createEngine(o: EngineOptions): Engine {
   return {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
+    resumable: (job) => job.agentSession !== undefined && job.executorState !== undefined && o.executors.get(job.spec.executor)?.park !== undefined,
     get reviewingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.reviews === true); },
     phaseShifts,
     sourceHost: createSourceHost(c, commands),

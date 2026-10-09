@@ -1,6 +1,6 @@
 // Needs a person (issue #516): a failed job automatic handling has ended for — its retries used up, a job-specific
 // failure, an automatic action switched off, a run again refused, or a locked entry dismissed — is handed off to a
-// person and stays open until a person runs it again or clears it. Real daemon, real database, the manual source.
+// person and stays open until a person resolves it (issue #551, handoff-resolve.test.ts) or its item runs again. Real daemon, real database, the manual source.
 // A hand-off outlives a restart; the view offers only what the API takes; entering and leaving are events.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, FailureSettings, FailuresView, Handoff, Job } from '../../src/domain/types.ts';
@@ -61,13 +61,13 @@ describe('a failed job is handed off to a person when automatic handling ends', 
     expect(opened.data).toMatchObject({ handoffId: h.id, reason: 'retry_limit', notify: true });
   });
 
-  it('a job-specific failure (decision person): handed off, with Run again and Clear offered', async () => {
+  it('a job-specific failure (decision person): handed off, with every resolution offered', async () => {
     const a = await boot();
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     const h = await handoffOf(a, job.id);
     expect(h).toMatchObject({ reason: 'person', error: 'HOPPER_FAILED the tests do not pass' });
     const view = (await failuresOf(a)).handoffs.find((x) => x.id === h.id)!;
-    expect(view.actions).toEqual({ runAgain: { ok: true }, clear: { ok: true } });
+    expect(view.actions).toEqual({ continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } });
   });
 
   it('automatic retry off: the decision waits on a person, so it is handed off', async () => {
@@ -80,41 +80,41 @@ describe('a failed job is handed off to a person when automatic handling ends', 
 });
 
 describe('a person acts on a hand-off', () => {
-  it('Clear: it leaves Needs a person and the queue, with an event; refused once done', async () => {
+  it('Won\'t do: it leaves Needs a person and the queue, with an event; refused once done', async () => {
     const a = await boot();
     const token = await a.login();
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     const h = await handoffOf(a, job.id);
     expect(await openCount(a)).toBe(1);
-    const r = await a.ui<Handoff>(`/ui/api/failures/handoffs/${h.id}/clear`, {}, { token });
+    const r = await a.ui<{ handoff: Handoff }>(`/ui/api/failures/handoffs/${h.id}/resolve`, { action: 'wont_do', note: 'not wanted' }, { token });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ status: 'closed', end: 'cleared' });
+    expect(r.body.handoff).toMatchObject({ status: 'closed', end: 'wont_do' });
     expect(await openCount(a)).toBe(0);
     const closed = await waitFor(async () => (await eventsOf(a, 'handoff.closed')).find((e) => e.data.handoffId === h.id));
-    expect(closed.data).toMatchObject({ end: 'cleared' });
+    expect(closed.data).toMatchObject({ end: 'wont_do', resolution: 'wont_do' });
     // Cleared means no more work: the locked entry leaves the queue too, and is not handed off again.
     await waitFor(async () => (await a.job(job.id)).dismissedAt, { what: 'the locked entry dismissed' });
     await new Promise((res) => setTimeout(res, 300));
     expect(await openCount(a)).toBe(0);
     // Still shown, closed, for a day: no action offered, and the API refuses with the same reason.
     const shown = (await failuresOf(a)).handoffs.find((x) => x.id === h.id)!;
-    expect(shown.actions.clear).toEqual({ ok: false, why: 'already closed' });
-    const again = await a.ui<{ error: string }>(`/ui/api/failures/handoffs/${h.id}/clear`, {}, { token });
+    expect(shown.actions.wontDo).toEqual({ ok: false, why: 'already resolved: won\'t do' });
+    const again = await a.ui<{ error: string }>(`/ui/api/failures/handoffs/${h.id}/resolve`, { action: 'wont_do', note: 'again' }, { token });
     expect(again.status).toBe(409);
-    expect(again.body.error).toMatch(/already closed/);
+    expect(again.body.error).toMatch(/already resolved/);
   });
 
-  it('Run again: its item is queued again and it leaves Needs a person', async () => {
+  it('I fixed it: its item is queued again and it leaves Needs a person', async () => {
     const a = await boot();
     const token = await a.login();
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     const h = await handoffOf(a, job.id);
-    const r = await a.ui<Job>(`/ui/api/failures/handoffs/${h.id}/run-again`, {}, { token });
+    const r = await a.ui<{ job: Job }>(`/ui/api/failures/handoffs/${h.id}/resolve`, { action: 'fixed' }, { token });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ rerunOf: job.id });
+    expect(r.body.job).toMatchObject({ rerunOf: job.id });
     const closed = (await failuresOf(a)).handoffs.find((x) => x.id === h.id)!;
-    expect(closed).toMatchObject({ status: 'closed', end: 'run_again', nextJobId: r.body.id });
-    expect(closed.actions.runAgain.ok).toBe(false);
+    expect(closed).toMatchObject({ status: 'closed', end: 'run_again', nextJobId: r.body.job.id });
+    expect(closed.actions.fixed.ok).toBe(false);
     // The new job fails the same way: it is handed off on its own; the first one is not again.
     expect((await failuresOf(a)).handoffs.filter((x) => x.jobId === job.id && x.status === 'open')).toEqual([]);
   });

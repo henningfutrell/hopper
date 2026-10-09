@@ -1,9 +1,9 @@
 // What the Failures view reads (issue #509): how many failed jobs are left (issue #517), the hand-offs waiting on a
 // person and those closed in the last day (issue #516), the open problems and those resolved in the last day, the
-// newest assessed failures nothing settled (issue #529), the profile — and, on each problem and failure, whether the daemon takes each action now
+// newest assessed failures nothing settled (issue #529), the profile — and, on each problem, failure and hand-off (issue #551), whether the daemon takes each action now
 // and why not. The routes refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
 import { SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
@@ -59,12 +59,29 @@ export function recordRetry(store: Reads, r: FailureRecord): Allowed {
   return newestOfItem(store, r.jobId);
 }
 
-/** Whether a person may run a hand-off's job again, or clear it, now. */
-export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff): HandoffView {
-  if (h.status === 'closed') return { ...h, actions: { runAgain: no('already closed'), clear: no('already closed') } };
-  const pending = h.recordId ? store.failures.get(h.recordId)?.pending : undefined;
-  const runAgain = pending ? no(pending === 'retry' ? 'it runs again by itself' : 'it is being run again') : newestOfItem(store, h.jobId);
-  return { ...h, actions: { runAgain, clear: OK } };
+/** A resolution in words, as the card and the refusals say it (issue #551). */
+export const RESOLUTION_TEXT: Record<HandoffResolutionAction, string> = {
+  continue: 'continued', fixed: 'fixed and run again', done_by_hand: 'done by hand', wont_do: 'won\'t do',
+};
+
+/**
+ * Whether a person may resolve a hand-off each way now, and why not (issue #551): one that runs its item again
+ * (Continue, I fixed it) only while it is the newest job of its item and nothing runs it again already; Done by hand
+ * and Won't do while it is open. `resumable`: whether its job's own agent session can resume — then Continue resumes
+ * it, else it runs a new job.
+ */
+export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff, resumable: (job: Job) => boolean): HandoffView {
+  const record = h.recordId ? store.failures.get(h.recordId) : undefined;
+  const job = store.jobs.get(h.jobId);
+  const learn = record ? { signature: record.signature, ...(record.causeName ? { causeName: record.causeName } : {}) } : {};
+  const continueResumes = job !== undefined && resumable(job);
+  if (h.status === 'closed') {
+    const closed = no(h.resolution ? `already resolved: ${RESOLUTION_TEXT[h.resolution.action]}` : 'already closed');
+    return { ...h, ...learn, continueResumes, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
+  }
+  const pending = record?.pending;
+  const runs = pending ? no(pending === 'retry' ? 'it runs again by itself' : 'it is being run again') : newestOfItem(store, h.jobId);
+  return { ...h, ...learn, continueResumes, actions: { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK } };
 }
 
 function problemView(store: Reads, p: Problem): ProblemView {
@@ -75,7 +92,7 @@ function problemView(store: Reads, p: Problem): ProblemView {
   };
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, settings: FailureSettings, now: Date): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -87,7 +104,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
     now: now.toISOString(),
     counts: countsOf(store),
     settings,
-    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, h), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
+    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, h, resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on a settled one (issue #529): out of the list, still in the profile.
