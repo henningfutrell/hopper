@@ -107,9 +107,9 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
   'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.',
   'vault.secret_removed': 'A vault secret was removed (issue #558), and who removed it.',
-  'box_template.saved': 'A box template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).',
-  'box_template.removed': 'A box template was removed (issue #558): its boxes are given nothing from the vault.',
-  'vault.approved': 'A person approved a box template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.',
+  'template.saved': 'A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).',
+  'template.removed': 'A template was removed (issue #558): its boxes are given nothing from the vault.',
+  'vault.approved': 'A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.',
 };
 
 type Prop = Record<string, unknown>;

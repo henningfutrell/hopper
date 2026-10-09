@@ -1,6 +1,6 @@
 // Settings → Vault (issue #558): write-only secrets for jobs. Each is set once — a name, an optional scope saying what
 // it reaches, a value — and from then on only its metadata shows: no view, and no answer the page gets, holds a value.
-// Replace types a new value over it; Remove deletes it. Box templates: an image and the secrets its boxes may ask for,
+// Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
 // approved once by a person and again for a new secret or a new image. Editing is an admin's.
 import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -11,7 +11,7 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
 import { approvalText, DEFAULT_BOX_IMAGE, nameProblem, secretFacts } from '@/model/vault';
-import type { BoxTemplateView, VaultSecret, VaultView } from '@/model/wire';
+import type { TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -87,8 +87,8 @@ function SecretItem({ s, can, busy, send }: { s: VaultSecret; can: boolean; busy
   );
 }
 
-/** A box template's form: its name (fixed once saved), its image, and the vault secrets its boxes may ask for. */
-function TemplateForm({ t, secrets, busy, send, onDone }: { t?: BoxTemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
+/** A template's form: its name (fixed once saved), its image, and the vault secrets its boxes may ask for. */
+function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(t?.name ?? '');
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
@@ -100,7 +100,7 @@ function TemplateForm({ t, secrets, busy, send, onDone }: { t?: BoxTemplateView;
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
-          <Input className="h-9 font-mono text-sm" value={name} required maxLength={40} pattern="[A-Za-z0-9][A-Za-z0-9_\-]*" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          <Input className="h-9 font-mono text-sm" value={name} required maxLength={64} pattern="[a-z0-9][a-z0-9._\-]*" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder="kube" onChange={(e) => setName(e.target.value)} /></label>
       )}
       <label className="block space-y-1"><Label>Image — what its boxes run</Label>
@@ -125,7 +125,7 @@ function TemplateForm({ t, secrets, busy, send, onDone }: { t?: BoxTemplateView;
   );
 }
 
-function TemplateItem({ t, secrets, can, busy, send }: { t: BoxTemplateView; secrets: VaultSecret[]; can: boolean; busy: boolean; send: Send }) {
+function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
   const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0;
   return (
@@ -196,11 +196,11 @@ export function Vault() {
         {view && secrets.length === 0 && !adding && <Empty>No secrets yet.</Empty>}
         {secrets.length > 0 && <ul className="space-y-2">{secrets.map((s) => <SecretItem key={s.id} s={s} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
-      <Panel title="Box templates" icon={Boxes} count={templates.length || ''} bodyClassName="space-y-3"
+      <Panel title="Templates" icon={Boxes} count={templates.length || ''} bodyClassName="space-y-3"
         action={can && !addingTemplate ? <Button size="sm" onClick={() => setAddingTemplate(true)} disabled={busy}><Plus />Add template</Button> : undefined}>
-        <p className="text-sm text-muted-foreground">A box template is an image and the secrets its boxes may ask for. A sandbox box added from Machines with a template gets those secrets, once you approve the template: never more, whatever job runs in it.</p>
+        <p className="text-sm text-muted-foreground">A template is an image and the secrets its boxes may ask for. A sandbox box added from Machines with a template gets those secrets, once you approve the template: never more, whatever job runs in it.</p>
         {addingTemplate && <div className="rounded-md border p-3"><TemplateForm secrets={secrets} busy={busy} send={send} onDone={() => setAddingTemplate(false)} /></div>}
-        {view && templates.length === 0 && !addingTemplate && <Empty>No box templates yet.</Empty>}
+        {view && templates.length === 0 && !addingTemplate && <Empty>No templates yet.</Empty>}
         {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
     </div>

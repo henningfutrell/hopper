@@ -1,6 +1,6 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
-import type { BoxTemplateView, VaultSecret } from './wire.ts';
+import type { TemplateView, VaultSecret } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -27,11 +27,11 @@ export function secretFacts(s: VaultSecret): Fact[] {
   ];
 }
 
-/** The image a new box template starts with: the published sandbox box. */
+/** The image a new template starts with: the published sandbox box. */
 export const DEFAULT_BOX_IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 
-/** What a box template's card says of its approval: approved, or what waits for a person. */
-export function approvalText(t: BoxTemplateView): string {
+/** What a template's card says of its approval: approved, or what waits for a person. */
+export function approvalText(t: TemplateView): string {
   if (!t.approval) return 'not approved yet: its boxes get nothing from the vault';
   const waits = [...(t.pending.image ? ['a new image'] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : [])];
   return waits.length ? `waits for approval: ${waits.join('; ')}` : 'approved';

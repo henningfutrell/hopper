@@ -28,7 +28,7 @@ describe('a name', () => {
   });
 });
 
-describe('a box template on the page', () => {
+describe('a template on the page', () => {
   const base = { name: 'kube', image: 'img', secrets: ['A', 'B'], savedBy: 'Ada', savedAt: '2026-10-09T10:00:00Z' };
   it('never approved: its boxes get nothing', () => {
     expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true }, gives: [] })).toMatch(/not approved yet/);

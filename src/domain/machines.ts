@@ -57,7 +57,7 @@ export interface ContainerMachine extends AttachedBase {
  */
 export interface ClientMachine extends AttachedBase {
   /** `key`: its machine key, the public half of its link key — who it is when it dials in. */
-  /** Its machine key; and the box template its join line named (issue #558), when it is a sandbox box of one. */
+  /** Its machine key; and the template its join line named (issue #558), when it is a sandbox box of one. */
   client: { key: string; template?: string };
 }
 

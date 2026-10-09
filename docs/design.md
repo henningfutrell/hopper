@@ -9272,8 +9272,8 @@ builds it in three slices, one pull request each; the scope comment on the issue
 key service, minted short-lived credentials, per-operation profiles, boxes the hopper launches itself).
 
 1. **Write-only vault secrets** (this section, below).
-2. **Box templates**: an image and the vault secrets its boxes may ask for, approved once by a person; the scope comes
-   from the template, never from the job ("Box templates (slice 2)" below).
+2. **Templates**: an image and the vault secrets its boxes may ask for, approved once by a person; the scope comes
+   from the template, never from the job ("Templates (slice 2)" below).
 3. **Delivery**: a box's job asks the hopper client over a socket; the client asks the hopper over its signed link with
    a job-bound token, as the GitHub proxy (issue #563) does; nothing in the environment or on disk. Not built yet.
 
@@ -9304,7 +9304,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its box templates saved, approved and asked what a machine may be given (`scopeOf`) | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`) | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9324,12 +9324,13 @@ changes, and a value it cannot open is `SecretUnreadable` as now. Not built: it 
 service, and the vault's purpose is getting secrets to boxes, not key management. `test/vault/key-seam.test.ts` keeps
 the vault working behind any key provider.
 
-### Box templates (slice 2)
+### Templates (slice 2)
 
-A **box template** is a name (letters, digits, `_`, `-`; at most 40: its boxes are `hopper-sandbox-<name>`), an image
+A **template** (the glossary's, issue #559's `TEMPLATE_NAME`: lowercase letters, digits, `.`, `_`, `-`; at most 64; its
+boxes are `hopper-sandbox-<name>`) is, for the vault, an image
 (a full reference, as `podman run` takes it) and its **scope**: the vault secrets its boxes may ask for. An admin
 saves, removes or approves one on Settings → Vault (`POST /ui/api/vault`: `save-template`, `remove-template`,
-`approve-template`); `GET /api/vault` lists them under `templates`. Kept in the user schema's `box_templates` (tenant
+`approve-template`); `GET /api/vault` lists them under `templates`. Kept in the user schema's `templates` (tenant
 migration 29, a table only), the last approval in its body.
 
 - **Approved once.** A new template gives nothing. `approve-template` approves it as it is — its image and its whole
@@ -9342,8 +9343,14 @@ migration 29, a table only), the last approval in its body.
   joins as a client target whose `template` option is the template's name; its line runs the template's image under
   the name `hopper-sandbox-<template>`. A computer's line names none. `scopeOf(machine)` answers what a machine's jobs
   may be given: its template's `gives`, else nothing.
-- **Events**: `box_template.saved` (template, image, scope, who), `box_template.removed`, `vault.approved` — names,
+- **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
+
+**Access (#559) is not asked in v1.** #559's access check (OpenFGA) decides each credential the vault would *mint*; v1
+mints nothing and, by owner constraint, needs no system outside the hopper — so the vault's gate is the template's
+approval above, rows in the hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559
+says. A template's vault approval is not an access approval (`approved_for` an operation profile on an asset): the two
+name the same template and nothing else.
 
 **Not built** (owner: keep the vault minimal; deferred): the template's scope as an input to the blast-radius rating
 (#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one

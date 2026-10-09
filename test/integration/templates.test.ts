@@ -1,10 +1,10 @@
-// Issue #558, slice 2, through the real composition root and the real HTTP server: box templates. A box template is an
+// Issue #558, slice 2, through the real composition root and the real HTTP server: templates. A template is an
 // image and the vault secrets its boxes may ask for. The scope comes only from the template, never from a job. A new
 // template, or one whose scope widened or whose image changed, gives nothing until a person approves it once; what it
 // gives is what was approved. A sandbox box's join line names its template, so the box joins as an instance of it
 // (design.md "The vault").
 //
-// Feature: box templates, approved once
+// Feature: templates, approved once
 //   Scenario: a new template is saved and gives nothing until a person approves it
 //     Given the vault secrets KUBE_TOKEN and PROD_KEY
 //     When an admin saves the template kube: an image, and KUBE_TOKEN
@@ -55,7 +55,7 @@ const edit = (a: TestApp, session: string, body: Record<string, unknown>) => a.u
 const template = async (a: TestApp, name: string): Promise<Template | undefined> =>
   ((await a.api('GET', '/api/vault')).body.templates as Template[]).find((x) => x.name === name);
 
-describe('box templates', () => {
+describe('templates', () => {
   it('a new template gives nothing until a person approves it; then exactly what was approved', async () => {
     const { a, session } = await boot();
     const r = await edit(a, session, { action: 'save-template', name: 'kube', image: IMAGE, secrets: ['KUBE_TOKEN'] });
@@ -67,7 +67,7 @@ describe('box templates', () => {
     const approved = (await template(a, 'kube'))!;
     expect(approved).toMatchObject({ pending: { secrets: [], image: false }, gives: ['KUBE_TOKEN'], approval: { image: IMAGE, secrets: ['KUBE_TOKEN'], by: expect.any(String), at: expect.any(String) } });
     const types = (await a.events()).map((e) => e.type);
-    expect(types).toEqual(expect.arrayContaining(['box_template.saved', 'vault.approved']));
+    expect(types).toEqual(expect.arrayContaining(['template.saved', 'vault.approved']));
   });
 
   it('widening the scope waits for a person again; what was approved still holds meanwhile', async () => {

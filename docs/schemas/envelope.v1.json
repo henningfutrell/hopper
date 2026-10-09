@@ -122,8 +122,8 @@
         "github_proxy.failed",
         "vault.secret_set",
         "vault.secret_removed",
-        "box_template.saved",
-        "box_template.removed",
+        "template.saved",
+        "template.removed",
         "vault.approved",
         "jev.mode_changed",
         "router.mode_changed"

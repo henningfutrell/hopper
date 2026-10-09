@@ -3,7 +3,7 @@
 
 import type { AccessRepository } from './access.ts';
 import type { IntakeMigration } from './intake.ts';
-import type { BoxTemplate, VaultSecret } from './vault.ts';
+import type { Template, VaultSecret } from './vault.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion, PhaseShiftSettings, PhaseSuggestion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
@@ -108,9 +108,9 @@ export interface VaultRepository {
   sealed(id: string): string | undefined;
   /** True when there was one. */
   remove(name: string): boolean;
-  /** The box templates (issue #558), by name. */
-  templates(): BoxTemplate[]; template(name: string): BoxTemplate | undefined;
-  saveTemplate(t: BoxTemplate): void;
+  /** The templates (issue #558), by name. */
+  templates(): Template[]; template(name: string): Template | undefined;
+  saveTemplate(t: Template): void;
   /** True when there was one. */
   removeTemplate(name: string): boolean;
 }
@@ -349,7 +349,7 @@ export interface LoginCodeRepository {
 
 /** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
 export interface JoinCodeRepository {
-  /** `template`: the box template the machine joins as (issue #558), when the line names one. */
+  /** `template`: the template the machine joins as (issue #558), when the line names one. */
   create(codeHash: string, expiresAt: string, userId: string, template?: string): void;
   /** The code's user (and template), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
   take(codeHash: string, now: string): { userId: string; template?: string } | undefined;

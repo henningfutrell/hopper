@@ -1,5 +1,5 @@
 // The vault's edits (issue #558, design.md "The vault"), an admin's: set a secret — a new one, or a new value or scope
-// for one —, or remove it; save a box template (its image and scope), remove it, or approve it as it is now. Each answers the vault's view, never a value, and is not cached.
+// for one —, or remove it; save a template (its image and scope), remove it, or approve it as it is now. Each answers the vault's view, never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { VAULT_VALUE_MAX } from '../../domain/vault.ts';
@@ -12,9 +12,9 @@ type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<
 export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }),
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
-  z.strictObject({ action: z.literal('save-template'), name: z.string().max(40), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256) }),
-  z.strictObject({ action: z.literal('remove-template'), name: z.string().max(40) }),
-  z.strictObject({ action: z.literal('approve-template'), name: z.string().max(40) }),
+  z.strictObject({ action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256) }),
+  z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
+  z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),
 ]);
 
 const STATUS = { invalid: 400, not_found: 404, unavailable: 503 } as const;

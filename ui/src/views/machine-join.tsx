@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { get, post } from '@/lib/api';
 import { BOX_AGENTS, boxPlace, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
-import type { BoxTemplateView, MachinesConfig, VaultView } from '@/model/wire';
+import type { TemplateView, MachinesConfig, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 
 interface Minted { code: string; expiresAt: string }
@@ -29,9 +29,9 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   const [engine, setEngine] = useState<'podman' | 'docker'>('podman');
   const [agent, setAgent] = useState<BoxAgent>(BOX_AGENTS[0]);
   const [minted, setMinted] = useState<Minted | null>(null);
-  // A sandbox box may be one of a box template (issue #558): its line names the template and runs its image.
-  const [templates, setTemplates] = useState<BoxTemplateView[]>([]);
-  const [template, setTemplate] = useState<BoxTemplateView | null>(null);
+  // A sandbox box may be one of a template (issue #558): its line names the template and runs its image.
+  const [templates, setTemplates] = useState<TemplateView[]>([]);
+  const [template, setTemplate] = useState<TemplateView | null>(null);
   useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
@@ -80,7 +80,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
       )}
       {kind === 'box' && templates.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-muted-foreground">box template</span>
+          <span className="text-muted-foreground">template</span>
           <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(null)}>none</Button>
           {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
           {template && <span className="text-muted-foreground">its boxes get {template.gives.join(', ') || 'nothing yet: approve the template in Settings → Vault'}</span>}

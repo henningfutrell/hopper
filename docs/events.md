@@ -2213,9 +2213,9 @@ Version 1 (`docs/schemas/vault.secret_removed.v1.json`). A vault secret was remo
 }
 ```
 
-## `box_template.saved`
+## `template.saved`
 
-Version 1 (`docs/schemas/box_template.saved.v1.json`). A box template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).
 
 | field | type | required |
 |---|---|---|
@@ -2235,9 +2235,9 @@ Version 1 (`docs/schemas/box_template.saved.v1.json`). A box template was saved 
 }
 ```
 
-## `box_template.removed`
+## `template.removed`
 
-Version 1 (`docs/schemas/box_template.removed.v1.json`). A box template was removed (issue #558): its boxes are given nothing from the vault.
+Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (issue #558): its boxes are given nothing from the vault.
 
 | field | type | required |
 |---|---|---|
@@ -2253,7 +2253,7 @@ Version 1 (`docs/schemas/box_template.removed.v1.json`). A box template was remo
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a box template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.
 
 | field | type | required |
 |---|---|---|

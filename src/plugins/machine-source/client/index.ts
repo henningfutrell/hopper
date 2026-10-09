@@ -17,8 +17,8 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
   options: (z) => z.strictObject({
     key: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'key must be a machine key: the public half of its link key, 43 base64url characters')
       .meta({ commandBearing: true, description: 'its machine key, recorded when it joined: the public half of its link key — the one machine its jobs go to' }),
-    template: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/).optional()
-      .meta({ commandBearing: true, description: 'the box template it joined as (issue #558): its join line named it; what of the vault its jobs may ask for' }),
+    template: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/).optional()
+      .meta({ commandBearing: true, description: 'the template it joined as (issue #558): its join line named it; what of the vault its jobs may ask for' }),
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
     ...diskLowShape(z),

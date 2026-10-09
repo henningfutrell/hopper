@@ -299,7 +299,7 @@ export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
  */
 export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
   if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
-  // A box of a box template (issue #558) is named after it and runs its image.
+  // A box of a template (issue #558) is named after it and runs its image.
   const box = `hopper-sandbox-${choice.template?.name ?? choice.agent}`;
   const image = choice.template?.image ?? `${o.join.boxImage}:box-${choice.agent}`;
   return [

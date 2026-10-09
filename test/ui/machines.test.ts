@@ -299,7 +299,7 @@ describe('the Add machine line (issue #308)', () => {
     expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
-  it('a sandbox box from a box template (issue #558): named after the template, its image the template\'s', () => {
+  it('a sandbox box from a template (issue #558): named after the template, its image the template\'s', () => {
     const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join });
     expect(line).toContain('--name hopper-sandbox-kube ');
     expect(line).toContain('-v hopper-sandbox-kube-home:/home/agent');
