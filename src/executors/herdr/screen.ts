@@ -348,6 +348,17 @@ export function dialogOption(text: string, answer: string): string | undefined {
   return options.find((o) => o.words === words)?.n;
 }
 
+/** A dialog's key hints under its options: "Enter to confirm · Esc to cancel", "Esc to cancel · Tab to amend". */
+const DIALOG_HINT = /^\s*(Enter to confirm|Esc to cancel)\b/;
+
+/**
+ * Whether the screen shows a dialog of Claude's (issue #527): its cursor on a numbered option ("❯ 1. Yes"), or its
+ * key hints. Text the pane merely shows is none: a launch or setup command echoed, Claude's banner still drawing.
+ */
+export function showsDialog(text: string): boolean {
+  return text.split('\n').some((l) => DIALOG_OPTION.exec(l)?.[1] !== undefined || DIALOG_HINT.test(l));
+}
+
 /** The top of a dialog: its border. */
 const DIALOG_TOP = /^\s*(─{3,}|╭)/;
 /** Lines that are the dialog's frame or key hints, never its question: "╰───╯", "Esc to cancel · Tab to amend". */

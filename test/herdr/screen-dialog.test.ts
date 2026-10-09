@@ -1,6 +1,6 @@
 // Issue #377: the question a dialog asks is the dialog, not the screen above it.
 import { describe, expect, it } from 'vitest';
-import { autoDenyMs, dialogText, readTurn } from '../../src/executors/herdr/screen.ts';
+import { autoDenyMs, dialogText, readTurn, showsDialog } from '../../src/executors/herdr/screen.ts';
 
 // As seen live (paths shortened): a permission dialog under earlier tool output.
 const RM_DIALOG = [
@@ -104,5 +104,19 @@ describe('the final message is not a tool call', () => {
       '  HOPPER_DONE',
     ].join('\n');
     expect(readTurn(screen, 'go')).toMatchObject({ lastMarker: 'done', assistantText: 'Merged the pull request and verified the deploy.' });
+  });
+});
+
+// Issue #527: only a dialog of Claude's is one; what the pane shows before Claude draws is not.
+describe('showsDialog', () => {
+  it('a numbered option under the cursor, or a dialog\'s key hints, is a dialog', () => {
+    expect(showsDialog(RM_DIALOG)).toBe(true);
+    expect(showsDialog([' Accessing workspace:', '', ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel'].join('\n'))).toBe(true);
+  });
+
+  it('an echoed launch or setup command, a shell prompt, Claude\'s empty input box: no dialog', () => {
+    expect(showsDialog('PS C:\\Users\\dev> powershell.exe -NoProfile -EncodedCommand JABFAHIAcgBvAHIA')).toBe(false);
+    expect(showsDialog('$ rm -rf "$d.part" && mkdir -p "$d.part" && mv "$w/node_modules" "$d.part/node_modules"\nhopper-deps-installed\n$ ')).toBe(false);
+    expect(showsDialog(['─'.repeat(40), '❯ ', '─'.repeat(40), '  ⏵⏵ bypass permissions on (shift+tab to cycle)'].join('\n'))).toBe(false);
   });
 });

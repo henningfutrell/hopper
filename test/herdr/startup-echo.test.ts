@@ -45,6 +45,7 @@ describe('herdr-claude executor: the pane before Claude draws (issue #527)', () 
     expect(error).toContain('-EncodedCommand');
     expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
     expect(progress.filter((p) => p.message?.includes('did not start'))).toHaveLength(2);
-    expect(herdr.keys).toEqual([]);
+    // Nothing answered: the only keys are the ones that close each pane.
+    expect(herdr.keys.some((k) => k.keys.includes('down') || k.keys.includes('enter'))).toBe(false);
   });
 });

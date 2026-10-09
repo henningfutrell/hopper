@@ -6,10 +6,10 @@ import { HerdrError } from './client.ts';
 import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
-import type { FakeHerdrOptions } from './fake-options.ts';
+import type { FakeHerdrClient, FakeHerdrOptions } from './fake-options.ts';
 import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, importsDialog, trustDialog, wrap } from './fake-screens.ts';
 
-export type { FakeHerdrOptions };
+export type { FakeHerdrClient, FakeHerdrOptions };
 
 export interface FakeTurn {
   /** Lines appended while working, one per poll. */
@@ -62,33 +62,6 @@ interface Pane {
   echoPolls?: number;
   /** Background work the last turn started, still running (FakeTurn.background). */
   background?: { work: string; polls: number; wakes?: boolean };
-}
-
-export interface FakeHerdrClient extends HerdrClient {
-  readonly calls: { method: string; args: unknown[] }[];
-  readonly prompts: { name: string; text: string }[];
-  readonly keys: { paneId: string; keys: string[] }[];
-  readonly texts: { paneId: string; text: string }[];
-  readonly closed: string[];
-  readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
-  /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
-  readonly reaps: { jobId: string; scratch?: string }[];
-  /** Each credential file kept on the machine through its connection (issue #441), in order. */
-  readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
-  addTurns(...turns: FakeTurn[]): void;
-  /** The next N prompts never reach Claude, as `dropsPrompts`. */
-  dropPrompts(n: number): void;
-  /** Claude denies its dialog by itself, its countdown run out (issue #376): it goes on with the next scripted turn, nothing typed. */
-  lapseDialog(name: string): void;
-  /** Claude disappears from its pane (crashed, closed by hand). */
-  killAgent(name: string): void;
-  /** Claude goes on with the next scripted turn by itself, nothing sent: a background notification, or a person typing in its pane. */
-  wake(name: string): void;
-  /** The next call of `method` rejects with a HerdrError of this code. */
-  failNext(method: keyof HerdrClient, code: string): void;
-  /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
-  setUnreachable(on: boolean): void;
-  screen(paneId: string): string;
 }
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {

@@ -3,7 +3,8 @@
 // queued in the same step (`SourceHost.rerun`), so the user sees it at once. The sync loop (sync.ts)
 // hands it the job's report chain.
 
-import { RerunRefused, type JobSource, type RerunBy, type RerunResult, type SourceHost } from '../domain/ports.ts';
+import type { JobSource, RerunBy, RerunResult, SourceHost } from '../domain/ports.ts';
+import { RerunRefused } from '../domain/rerun-refused.ts';
 import type { Job } from '../domain/types.ts';
 
 export interface RerunContext {

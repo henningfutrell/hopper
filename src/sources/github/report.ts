@@ -12,7 +12,8 @@
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
-import { RerunRefused, SourceError } from '../../domain/ports.ts';
+import { SourceError } from '../../domain/ports.ts';
+import { RerunRefused } from '../../domain/rerun-refused.ts';
 import type { SourceReport } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
