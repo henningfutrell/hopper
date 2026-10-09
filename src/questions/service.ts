@@ -71,8 +71,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
   function escalationData(q: Question, target: string, reason: string): Record<string, unknown> {
     // The job's live priority (issue #535): a high-priority question is told apart wherever it goes.
-    const tag = jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId);
-    const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}), ...tag };
+    const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}), ...jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId) };
     if (target !== HUMAN) return base;
     return { ...base, goal: store.jobs.get(q.jobId)?.spec.goal, answerUrl: o.answerUrl(q.id), notifyCount: q.notifyCount };
   }

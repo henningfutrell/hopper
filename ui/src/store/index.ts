@@ -11,8 +11,9 @@ import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, SessionUser, SessionView } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Question, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import type { FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, QuestionView, SessionUser, SessionView } from '@/model/wire';
+import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -38,12 +39,16 @@ export interface HopperState {
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
+  /** The high-priority threshold /api/queue answered (issue #535); null until read: nothing is tagged. */
+  highPriority: number | null;
+  /** GET /api/priority-lanes (issue #535): the settings, the lanes chosen, every lane's reliability; null until read. */
+  priorityLanes: PriorityLanesView | null;
   machines: MachineView[];
   decisions: Decision[];
-  /** Open questions, every stage. */
-  questions: Question[];
+  /** Open questions, every stage, each with its job's live priority (issue #535). */
+  questions: QuestionView[];
   /** The question history: every question no longer open, newest first (GET /api/questions?status=all). */
-  handled: Question[];
+  handled: QuestionView[];
   /** The logins, newest first (GET /api/logins, issue #477): open and ended; never in `questions`. */
   logins: LoginView[];
   /** The logins settings, as GET /api/logins answered them; null until read. */
@@ -78,7 +83,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, machines: [],
   decisions: [], questions: [], handled: [], logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   usageRecorded: 0,
@@ -91,12 +96,13 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort'> => ({
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
   locked: q.locked,
   gate: q.gate,
   presort: q.presort,
+  highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }
@@ -112,10 +118,10 @@ export async function refreshRouting() {
 }
 export const setRouting = (routing: RoutingReport) => set({ routing, routingError: null });
 export const HANDLED_LIMIT = 200;
-const handledOf = (all: Question[]) => all.filter((q) => q.status !== 'open');
+const handledOf = (all: QuestionView[]) => all.filter((q) => q.status !== 'open');
 export async function refreshQuestions() {
   const [open, all] = await Promise.all([
-    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+    get<{ questions: QuestionView[] }>('/api/questions?status=open'), get<{ questions: QuestionView[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
   ]);
   set({ questions: open.questions, handled: handledOf(all.questions) });
 }
@@ -166,8 +172,8 @@ export async function saveFailureSettings(body: Partial<FailureSettings>): Promi
 export async function markSeen(ids: string[]) {
   for (const id of ids) {
     try {
-      const q = await post<Question>(`/ui/api/questions/${encodeURIComponent(id)}/seen`);
-      set({ questions: state().questions.map((x) => (x.id === q.id ? q : x)) });
+      const q = await post<QuestionView>(`/ui/api/questions/${encodeURIComponent(id)}/seen`);
+      set({ questions: state().questions.map((x) => (x.id === q.id ? { ...x, ...q } : x)) });
     } catch (e) {
       if (e instanceof SessionRejected) { set({ authed: false }); return; }
     }
@@ -311,6 +317,10 @@ export function onDomainEvent(e: DomainEvent) {
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type.startsWith('auth.')) refreshLoginsSoon();
   if (FAILURE_EVENTS.has(e.type)) refreshFailuresSoon();
+  // A job's priority changed (a label): its question, login and hand-off are tagged and sorted by it (issue #535).
+  if (e.type === 'job.reprioritized') { refreshQuestionsSoon(); refreshLoginsSoon(); refreshFailuresSoon(); }
+  if (e.type.startsWith('priority_lanes.') && s.priorityLanes) refreshPriorityLanesSoon();
+  if (e.type === 'priority_lanes.settings_changed') refreshQuestionsSoon();
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
@@ -339,7 +349,7 @@ export async function load(): Promise<boolean> {
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
     get<WebhooksView>('/api/webhooks'),
     get<{ deliveries: WebhookDelivery[] }>('/api/webhooks/deliveries?limit=100'),
-    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+    get<{ questions: QuestionView[] }>('/api/questions?status=open'), get<{ questions: QuestionView[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
     get<{ sources: SourceStatus[] }>('/api/sources'),
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
@@ -353,6 +363,7 @@ export async function load(): Promise<boolean> {
   // Apart, so the server's time is read close to its answer; until it is read the Logins view says so.
   refreshLogins().catch(() => {});
   refreshFailures().catch(() => {});
+  refreshPriorityLanes().catch(() => {});
   return true;
 }
 export const setLoadError = (loadError: string) => set({ loadError });

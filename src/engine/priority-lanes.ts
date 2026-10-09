@@ -8,7 +8,7 @@ import {
   type LaneId, type MachineSnapshot, type PriorityLaneSettings, type PriorityLanesInput, type PriorityLanesView,
 } from '../domain/types.ts';
 import { measure, RUN_EVENTS, runsFrom } from '../reliability/measure.ts';
-import { rank, type LaneSlot, type Ranking } from '../reliability/rank.ts';
+import { rank, SWITCH_MARGIN, type LaneSlot, type Ranking } from '../reliability/rank.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
@@ -95,7 +95,7 @@ export function createPriorityLanes(c: EngineContext): PriorityLanes {
     async view() {
       const machines = await c.machines.list();
       const r = ranking(machines);
-      return { settings: settings(), defaults: DEFAULT_PRIORITY_LANE_SETTINGS, chosen: r.chosen, by: r.by, lanes: r.lanes, measuredAt: measured!.measuredAt };
+      return { settings: settings(), defaults: DEFAULT_PRIORITY_LANE_SETTINGS, chosen: r.chosen, by: r.by, lanes: r.lanes, measuredAt: measured!.measuredAt, switchMargin: SWITCH_MARGIN };
     },
     async setSettings(patch) {
       const machines = await c.machines.list();

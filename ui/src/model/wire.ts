@@ -8,6 +8,7 @@ import type {
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
+  LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -18,6 +19,7 @@ export type {
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
+  LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
 };
 
 export interface Queue {
@@ -36,6 +38,8 @@ export interface Queue {
   gate: QueueGate;
   /** The pre-sort of the waiting jobs not yet accepted. */
   presort: PreSort;
+  /** The high-priority threshold (issue #535): a job at or above it is tagged and listed first. */
+  highPriority: number;
 }
 
 /** GET /api/logins (issue #476): the server's time for the countdowns, the logins settings, the logins newest first. */

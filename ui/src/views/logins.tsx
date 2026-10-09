@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { DeviceCode } from '@/components/device-code';
 import { JobTitle } from '@/components/job';
+import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
@@ -88,6 +89,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
           <span className="shrink-0 text-xs text-muted-foreground">Waiting:</span>
           {job ? <JobTitle job={job} className="flex-1" />
             : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : `the ${l.run} escalation run for a question`}</span>}
+          {!job && l.high && l.priority !== undefined && <HighTag priority={l.priority} />}
         </div>
         {open && (
           <div className={cn('text-center text-sm text-muted-foreground', phase === 'expiring' && 'text-base font-semibold text-warn')}>

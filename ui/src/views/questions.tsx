@@ -5,7 +5,8 @@
 // page (issue #213). Shown, the owner's
 // questions are marked seen (the nav badge clears). The header names the machine that raised the question (issue #485). Only the open questions: the question history and
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
-// notice instead of the box. One order, the API's: oldest first, the longest waiting on top (issue #450).
+// notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
+// first, the longest waiting on top (issue #450).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -19,8 +20,10 @@ import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
-import type { Question, QuestionAttempt } from '@/model/wire';
-import { longestWaitingFirst, unseenByOwner } from '@/model/questions';
+import type { QuestionAttempt, QuestionView } from '@/model/wire';
+import { unseenByOwner } from '@/model/questions';
+import { questionOrder } from '@/model/priority';
+import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
@@ -51,7 +54,7 @@ function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: stri
   );
 }
 
-function QuestionCard({ q }: { q: Question }) {
+function QuestionCard({ q }: { q: QuestionView }) {
   const job = useJobIndex().get(q.jobId);
   const role = useHopper((s) => s.user?.role);
   const canAnswer = useCanOperate();
@@ -89,11 +92,12 @@ function QuestionCard({ q }: { q: Question }) {
   const parked = job?.status === 'parked' && job.questionId === q.id;
   const movedOn = job && !parked && (job.status !== 'waiting_answer' || job.questionId !== q.id);
   return (
-    <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.tier === 'human' ? 'border-question/40' : ''}
+    <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.high ? 'border-warn/60' : q.tier === 'human' ? 'border-question/40' : ''}
       action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)} <RaisedOn raisedBy={q.raisedBy} className="align-bottom" />{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
         {q.tier === 'human' && q.expiresAt && !parked && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}
         {parked && <> · its job is parked: never expires</>}</span>}
       bodyClassName="space-y-3">
+      {!job && q.high && <HighTag priority={q.priority} className="self-start" />}
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
         {parked && <StatusBadge status="parked" label="job parked" title="The answer is kept, and the job resumes with it when it is re-queued." />}
@@ -142,7 +146,7 @@ function QuestionCard({ q }: { q: Question }) {
 
 export function Questions() {
   const questions = useHopper((s) => s.questions);
-  const ordered = useMemo(() => longestWaitingFirst(questions), [questions]);
+  const ordered = useMemo(() => questionOrder(questions), [questions]);
   const list = useRef<HTMLDivElement>(null);
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.

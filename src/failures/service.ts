@@ -20,7 +20,7 @@ import { evidenceOf, machineOf } from './evidence.ts';
 import { createHandoffs } from './handoffs.ts';
 import { createItemCheck } from './item-check.ts';
 import { signatureOf } from './signature.ts';
-import { newerOf, recordRetry, releasable, viewOf } from './view.ts';
+import { highestFirst, newerOf, recordRetry, releasable, viewOf } from './view.ts';
 
 export interface FailuresOptions {
   store: UserStore;
@@ -244,9 +244,7 @@ export function createFailures(o: FailuresOptions): Failures {
         assessBacklog(JUST_FAILED_MS);
         if (!stopped) { handoffs.supersede(); handoffs.settle(); }
         // High-priority jobs run again first (issue #535): by their live priority, then as due.
-        const priorityOf = (r: FailureRecord): number => store.jobs.get(r.jobId)?.priority ?? 0;
-        const due = store.failures.due(now().toISOString()).map((r, i) => ({ r, i })).sort((a, b) => priorityOf(b.r) - priorityOf(a.r) || a.i - b.i).map((x) => x.r);
-        for (const r of due) {
+        for (const r of highestFirst(store, store.failures.due(now().toISOString()))) {
           if (stopped) return;
           await runPending(r);
         }

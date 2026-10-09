@@ -16,6 +16,12 @@ const no = (why: string): Allowed => ({ ok: false, why });
 
 type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs'>;
 
+/** Records by their job's live priority, highest first, each priority in the order given (issue #535). */
+export function highestFirst(store: Pick<UserStore, 'jobs'>, records: FailureRecord[]): FailureRecord[] {
+  const priorityOf = (r: FailureRecord): number => store.jobs.get(r.jobId)?.priority ?? 0;
+  return records.map((r, i) => ({ r, i })).sort((a, b) => priorityOf(b.r) - priorityOf(a.r) || a.i - b.i).map((x) => x.r);
+}
+
 /** The newer job of its item, when the job is not its item's newest. */
 export function newerOf(store: Pick<UserStore, 'jobs'>, job: Job): string | undefined {
   const newest = job.source ? store.jobs.getBySourceKey(job.source.key) : undefined;

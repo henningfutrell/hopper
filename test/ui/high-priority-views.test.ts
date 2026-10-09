@@ -23,7 +23,7 @@ const lane = (laneId: string, over: Record<string, unknown>) => ({
 });
 const settings = { highPriority: 75, count: 1, whenIdle: 'keep-free', windowDays: 14, minRuns: 5 };
 const priorityLanes = {
-  settings, defaults: settings, chosen: ['desk/lane-2'], by: 'reliability', measuredAt: T,
+  settings, defaults: settings, chosen: ['desk/lane-2'], by: 'reliability', measuredAt: T, switchMargin: 0.1,
   lanes: [
     lane('desk/lane-1', { runs: 12, finished: 9, failed: 3, laneFaults: 3, score: 0.75, successRate: 0.75, medianStartMs: 20_000, rank: 2, reason: 'rank 2: the priority lane is more reliable' }),
     lane('desk/lane-2', { runs: 10, finished: 10, score: 1, successRate: 1, medianStartMs: 8_000, rank: 1, priority: true, reason: 'priority lane: rank 1, 100% of 10 runs without a lane fault' }),
@@ -44,6 +44,10 @@ function fakeDaemon(role: Role) {
     '/api/accounts': { accounts: [] }, '/api/usage': { readings: [], sources: [], machines: [], limits: { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false } },
     '/api/logins': { now: T, settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
     '/api/priority-lanes': priorityLanes,
+    '/api/machines/config': {
+      version: 'v1', executors: ['test'], defaults: { lanes: 2, executors: ['test'] }, ssh: { targets: [], notes: [], here: [] },
+      machines: [{ name: 'desk', plugin: 'local', options: { lanes: 2 } }],
+    },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const [path] = String(input).split('?') as [string];
@@ -120,7 +124,7 @@ describe('the priority lanes on Machines', () => {
     expect(rows[0]!.querySelector('[data-slot="priority-lane"]')).not.toBeNull();
     expect(rows[1]!.querySelector('[data-slot="priority-lane"]')).toBeNull();
     expect(document.querySelector('[data-slot="priority-lanes-summary"]')!.textContent)
-      .toBe('High priority: 75 and above (hopper:high is 75). 1 priority lane, chosen by reliability; kept free while no high-priority job waits.');
+      .toBe('High priority: 75 and above. 1 priority lane, chosen by reliability; kept free while no high-priority job waits.');
   });
 
   it('an admin saves a setting; Save posts only what changed', async () => {

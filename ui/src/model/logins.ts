@@ -37,19 +37,23 @@ export function phaseOf(l: LoginView, now: number, settings: LoginSettings): Log
 
 export const isOpen = (p: LoginPhase): boolean => p === 'pending' || p === 'expiring';
 
-/** The nav badge and the header: how many logins wait on the user, and whether one is about to expire. */
-export function loginsBadge(logins: LoginView[], now: number, settings: LoginSettings): { n: number; warn: boolean } {
-  const phases = logins.map((l) => phaseOf(l, now, settings)).filter(isOpen);
-  return { n: phases.length, warn: phases.includes('expiring') };
+/**
+ * The nav badge and the header: how many logins wait on the user, whether one is about to expire, and how many of
+ * them a high-priority job waits on (issue #535).
+ */
+export function loginsBadge(logins: LoginView[], now: number, settings: LoginSettings): { n: number; warn: boolean; high: number } {
+  const open = logins.map((l) => ({ l, phase: phaseOf(l, now, settings) })).filter((x) => isOpen(x.phase));
+  return { n: open.length, warn: open.some((x) => x.phase === 'expiring'), high: open.filter((x) => x.l.high === true).length };
 }
 
-/** Open logins first, the least time left on top; then the rest, the latest end first. */
+/** Open logins first — a high-priority job's first (issue #535), then the least time left —; then the rest, the latest end first. */
 export function sortByTimeLeft(logins: LoginView[], now: number, settings: LoginSettings): LoginView[] {
   const endOf = (l: LoginView) => Date.parse(l.endedAt ?? l.expiresAt);
   return [...logins].sort((a, b) => {
     const oa = isOpen(phaseOf(a, now, settings));
     const ob = isOpen(phaseOf(b, now, settings));
     if (oa !== ob) return oa ? -1 : 1;
+    if (oa && a.high !== b.high) return a.high ? -1 : 1;
     return oa ? Date.parse(a.expiresAt) - Date.parse(b.expiresAt) : endOf(b) - endOf(a);
   });
 }

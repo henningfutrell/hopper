@@ -105,4 +105,6 @@ export interface PriorityLanesView {
   lanes: PriorityLaneView[];
   /** When the lanes were last measured. */
   measuredAt: string;
+  /** How much more reliable (score, 0..1) a lane must be to take a priority lane's place: no flapping. */
+  switchMargin: number;
 }
