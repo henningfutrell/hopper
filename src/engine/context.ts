@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobCredentials, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import { jobPriorityTag, type DeciderPolicy, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock } from '../domain/types.ts';
+import { jobPriorityTag, type DeciderPolicy, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -38,8 +38,8 @@ export interface EngineOptions {
   reconnectGraceMs: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
-  /** Why a job that ended done is not complete, asked of its source (JobSource.notComplete, issues #171, #187). */
-  notComplete: (job: Job) => Promise<string | undefined>;
+  /** Whether a job that ended done is done, partly done or not, asked of its source (`judge`, issues #171, #187, #579). */
+  verdict: (job: Job) => Promise<Verdict>;
   /** What a job's processes act with, from its source's connection (JobSource.credentials, issues #214, #441). */
   credentials: (job: Job) => Promise<JobCredentials | undefined>;
   /** What a job on this machine asks the hopper's GitHub proxy with (issue #563); undefined: the machine cannot reach the hopper. Absent: none. */

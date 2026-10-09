@@ -39,6 +39,14 @@ export interface OpenPullRequest {
   conflicting: boolean;
 }
 
+/** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */
+export interface ReferencingPullRequest extends OpenPullRequest {
+  state: 'open' | 'closed' | 'merged';
+  body: string;
+  /** owner/repo of the pull request. */
+  repo: string;
+}
+
 export interface GitHubComment {
   /** Numeric and increasing: the order of comments on an issue. */
   id: number;
@@ -79,6 +87,8 @@ export interface GitHubApi {
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */
   openClosingPullRequests(repo: string, number: number): Promise<OpenPullRequest[]>;
+  /** The pull requests that mention the issue, newest 100, any state (issue #579); none is []. */
+  referencingPullRequests(repo: string, number: number): Promise<ReferencingPullRequest[]>;
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one

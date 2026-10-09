@@ -56,7 +56,7 @@ describe('app mode identity', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished', result: 'done' }, REPO, 'github-app') });
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
   });
 
   it('the job context excludes bot comments, marker or not', async () => {

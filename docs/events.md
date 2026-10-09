@@ -157,11 +157,12 @@ Version 1 (`docs/schemas/job.progressed.v1.json`). An executor reported progress
 
 ## `job.finished`
 
-Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully.
+Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully. `partlyDone` (issue #579): it ended partly done — the URL of its own pull request that ships part of its item ("Part of #N"); the next part runs once that is merged.
 
 | field | type | required |
 |---|---|---|
 | `result` | any | yes |
+| `partlyDone` | string | no |
 
 ```json
 {
@@ -2373,6 +2374,38 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
     }
   },
   "by": "owner"
+}
+```
+
+## `job.pull_request_merged`
+
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/12",
+  "part": false
+}
+```
+
+## `job.pull_request_closed`
+
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/13",
+  "part": true
 }
 ```
 
