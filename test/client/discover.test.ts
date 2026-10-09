@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AWS_ADMIN_ACTIONS, AWS_WRITE_ACTIONS, KUBE_CHECKS, discoverArgv, readDiscovery } from '../../src/client/discover.ts';
+import { AWS_ADMIN_ACTIONS, AWS_WRITE_ACTIONS, KUBE_CHECKS, discoverArgv } from '../../src/client/discover.ts';
+import { readDiscovery } from '../../src/blast-radius/read.ts';
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -101,7 +102,7 @@ describe('the discovery script', () => {
 
     // Every call a read: versions, config reads, identity, simulation, can-i.
     const calls = readFileSync(log, 'utf8').trim().split('\n');
-    const read = /^(aws (--profile \S+ )?(--version|configure (list-profiles|get region)|sts get-caller-identity|iam simulate-principal-policy) |aws --version$|kubectl (version --client|config (current-context|get-contexts|view)|--context \S+ auth can-i) ?)/;
+    const read = /^(aws (--profile \S+ )?(--version|configure (list-profiles|get region)|sts get-caller-identity|iam simulate-principal-policy)|kubectl (version --client|config (current-context|get-contexts|view)|--context \S+ auth can-i))( |$)/;
     expect(calls.filter((c) => !read.test(c))).toEqual([]);
   });
 
