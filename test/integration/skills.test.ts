@@ -135,10 +135,10 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(github.stdout).toContain(PROXY_HELP);
     expect(eventsOf(a, 'skill.loaded')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'github', machine: 'desk' }) })]);
 
-    const render = await skill(a, job, ['render']);
-    expect(render.code).toBe(1);
-    expect(render.stdout).toMatch(/^no: the hopper has no skill render\. It has: github, kube-diagnostics, aws-diagnostics\. Find another way\./);
-    expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'render', reason: expect.stringContaining('no skill render') }) })]);
+    const flyio = await skill(a, job, ['flyio']);
+    expect(flyio.code).toBe(1);
+    expect(flyio.stdout).toMatch(/^no: the hopper has no skill flyio\. It has: github, kube-diagnostics, aws-diagnostics, render\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" flyio --credential "<what it takes>"\. Else find another way\./);
+    expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'flyio', reason: expect.stringContaining('no skill flyio') }) })]);
   });
 
   it('a box gets a clear no with Access\'s reason; once Access allows it, the skill and its link for that box, never a value', async () => {
