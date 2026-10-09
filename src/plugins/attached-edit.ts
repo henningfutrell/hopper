@@ -152,7 +152,7 @@ async function addThisMachine(e: MachineEdit, ctx: MachineEditContext, target?: 
 }
 
 /** A machine joining (issue #308): its machine key, and the name it asks for. */
-export interface MachineJoin { key: string; name: string }
+export interface MachineJoin { key: string; name: string; template?: string }
 
 /** A machine name as the plugins config takes it: letters, digits, `_` and `-`. */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/;
@@ -170,7 +170,7 @@ export function applyMachineJoin(j: MachineJoin, ctx: Pick<MachineEditContext, '
   const taken = new Set(machines.map((m) => m.name));
   let name = j.name;
   for (let n = 2; taken.has(name); n++) name = `${j.name}-${n}`;
-  const options = { key: j.key, lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
+  const options = { key: j.key, ...(j.template ? { template: j.template } : {}), lanes: ctx.defaults.lanes, executors: [...ctx.defaults.executors] };
   const parsed = parseOptions(client, options);
   if (!parsed.ok) return refuse('invalid', parsed.error);
   const r = writePlugins(ctx.config, ctx.config.version(PLUGINS), (doc) => list(doc, 'machine-source', name, { name, plugin: client.id, options }, ctx.configured));

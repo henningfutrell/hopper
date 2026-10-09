@@ -30,6 +30,11 @@ export class SecretUnreadable extends Error {
   }
 }
 
+/**
+ * The key provider (issue #558): the one seam a vault secret, a webhook signing secret and anything else sealed reach
+ * their key through. The sealer below, under the runtime's token key, is the local default and the only one built; a key
+ * service (KMS) would be another implementation, never a requirement (design.md "The key provider").
+ */
 export interface Sealer {
   /** The current master key's id: 16 hex digits of HMAC-SHA256(key, a fixed label). */
   readonly keyId: string;

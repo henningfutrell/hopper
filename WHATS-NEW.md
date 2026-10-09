@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The Vault now has box templates: an image and the secrets its boxes may use. A sandbox box you add from Machines can be one of a template, and it gets that template's secrets only once you approve the template, and again whenever you add a secret or change its image.
 - Settings → Access: before a job is given a credential, the hopper now asks OpenFGA whether the job's template is approved for that operation on that asset. See each template's approvals and why they allow what they do, revoke one so the next request is denied, try a check, and see every decision. When OpenFGA cannot be asked, nothing is given, and the page says why.
 - Settings has a Vault for the secrets your jobs need: set each one once, with a note of what it reaches, and it is kept encrypted. No page shows it again, to anyone: you see its name, who set it and when, and you can replace or remove it.
 - A proposal or research forked off a question now shows on that question's card: what it is about, how far it is, and a link to it. The question gets no "still unanswered" reminders while it runs, and only one fork of each kind runs at a time. If you answer the question yourself meanwhile, the forked job is given your answer, the job that asked is told the fork still runs, and the review says that accepting it no longer answers anything.

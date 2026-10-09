@@ -28,10 +28,10 @@ describe('the attached-machine plugins', () => {
     expect(BUILTIN_PLUGINS.filter((p) => p.role === 'machine-source').map((p) => p.id).sort()).toEqual(['client', 'docker', 'local', 'ssh']);
   });
 
-  it('what reaches the machine is command-bearing; lanes, executors and label are not', () => {
+  it('what reaches the machine, and what of the vault it may be given (its box template, issue #558), is command-bearing; lanes, executors and label are not', () => {
     expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh', 'workTree']);
     expect(commandBearing('docker')).toEqual(['docker']);
-    expect(commandBearing('client')).toEqual(['key', 'workTree']);
+    expect(commandBearing('client')).toEqual(['key', 'template', 'workTree']);
     expect(commandBearing('local')).toEqual(['workTree']);
   });
 });

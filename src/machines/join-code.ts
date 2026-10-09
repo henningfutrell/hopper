@@ -9,15 +9,15 @@ export const JOIN_CODE_MINUTES = 10;
 
 const hash = (code: string): string => createHash('sha256').update(code).digest('hex');
 
-/** A fresh code for `userId`, stored (hashed) until it is used or expires. */
-export function mintJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, userId: string): { code: string; expiresAt: string } {
+/** A fresh code for `userId` — naming the box template the machine joins as, if any (issue #558) —, stored (hashed) until it is used or expires. */
+export function mintJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, userId: string, template?: string): { code: string; expiresAt: string } {
   const code = randomBytes(32).toString('hex');
   const expiresAt = new Date(clock.now().getTime() + JOIN_CODE_MINUTES * 60_000).toISOString();
-  store.joinCodes.create(hash(code), expiresAt, userId);
+  store.joinCodes.create(hash(code), expiresAt, userId, template);
   return { code, expiresAt };
 }
 
-/** The user of `code`, and the code is spent, when it was minted and has not expired; undefined else. */
-export function useJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, code: string): string | undefined {
+/** The user of `code` (and its box template), and the code is spent, when it was minted and has not expired; undefined else. */
+export function useJoinCode(store: Pick<InstanceStore, 'joinCodes'>, clock: Clock, code: string): { userId: string; template?: string } | undefined {
   return /^[0-9a-f]{64}$/.test(code) ? store.joinCodes.take(hash(code), clock.now().toISOString()) : undefined;
 }

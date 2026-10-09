@@ -316,6 +316,13 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
     sealed TEXT NOT NULL,
     body TEXT NOT NULL
   )`,
+  // 29: Box templates (issue #558): an image and the vault secrets its boxes may ask for, with its last approval, in its
+  // body. A table only: the build before runs on it.
+  `CREATE TABLE box_templates (
+    seq BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    body TEXT NOT NULL
+  )`,
 ];
 
 /** A user schema's version once migrated. */

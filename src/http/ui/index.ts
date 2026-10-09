@@ -157,6 +157,9 @@ const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: U
   return reply.code(403).send(needs ? { error: why, needs } : { error: why });
 };
 
+
+/** Add machine's join code: for a sandbox box of a box template, the template (issue #558). */
+export const machineJoinBody = z.strictObject({ template: z.string().min(1).max(40).optional() });
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
@@ -314,7 +317,10 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/machines/join', admin, async (req) => {
     const id = userIdOf(req);
     if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
-    return mintJoinCode(o.instance, o.clock, id);
+    // A sandbox box of a box template (issue #558): the code names it, so the box joins as an instance of it.
+    const { template } = parseWith(machineJoinBody, req.body ?? {});
+    if (template !== undefined && !o.tenant(req).vault.view().templates.some((t) => t.name === template)) throw new HttpError(404, `no box template ${template}`);
+    return mintJoinCode(o.instance, o.clock, id, template);
   });
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.

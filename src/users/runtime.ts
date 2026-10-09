@@ -354,8 +354,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub),
-    vault: openVault({ store, keys, clock, logger }), // issue #558: under the same token key, sealed again at start
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, keys, clock, logger, templateOf: (m) => host.targets().flatMap((t) => ('client' in t && t.name === m ? [t.client.template] : []))[0] }), // issue #558: under the same token key, sealed again at start
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

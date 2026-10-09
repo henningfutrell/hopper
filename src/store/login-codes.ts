@@ -23,14 +23,14 @@ export function createLoginCodeRepository(c: StoreContext): LoginCodeRepository 
 /** Join codes (issue #308): the same shape as login codes, a machine's instead of a browser's. */
 export function createJoinCodeRepository(c: StoreContext): JoinCodeRepository {
   return {
-    create(codeHash, expiresAt, userId) {
-      c.db.run('INSERT INTO join_codes (code_hash, expires_at, user_id) VALUES (?, ?, ?)', codeHash, expiresAt, userId);
+    create(codeHash, expiresAt, userId, template) {
+      c.db.run('INSERT INTO join_codes (code_hash, expires_at, user_id, template) VALUES (?, ?, ?, ?)', codeHash, expiresAt, userId, template ?? null);
     },
     take(codeHash, now) {
       return c.tx(() => {
         c.db.run('DELETE FROM join_codes WHERE expires_at <= ?', now);
-        const r = c.db.get('DELETE FROM join_codes WHERE code_hash = ? RETURNING user_id', codeHash);
-        return r ? String(r.user_id) : undefined;
+        const r = c.db.get('DELETE FROM join_codes WHERE code_hash = ? RETURNING user_id, template', codeHash);
+        return r ? { userId: String(r.user_id), ...(r.template ? { template: String(r.template) } : {}) } : undefined;
       });
     },
   };

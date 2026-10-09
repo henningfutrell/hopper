@@ -60,11 +60,12 @@ const header = (req: IncomingMessage, name: string): string => {
 export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): void {
   app.post(JOIN_PATH, async (req) => {
     const b = parseWith(joinBody, req.body);
-    const userId = useJoinCode(o.instance, o.clock, b.code);
-    if (userId === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
+    const taken = useJoinCode(o.instance, o.clock, b.code);
+    if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
+    const { userId, template } = taken;
     const tenant = o.tenants.user(userId);
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
-    const r = await tenant.machineLink.join({ key: b.key, name: b.name });
+    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };
   });

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "string"
+    },
+    "image": {
+      "type": "string"
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "template",
+    "image",
+    "secrets",
+    "by"
+  ],
+  "additionalProperties": false
+}
