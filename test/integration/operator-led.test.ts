@@ -84,7 +84,7 @@ describe('operator-led work', () => {
     await a.sync();
     const done = await a.waitForStatus(job.id, 'finished');
     expect(done.finishedAt).toBeDefined();
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:claimed');
   });
 

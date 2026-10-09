@@ -9,7 +9,8 @@
 // and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
 // A started job whose item is no longer assigned to its account is flagged, never ended (issue #387).
 // A person's resolution of a hand-off (issue #551) is told to its job's item on the job's report chain, after the job's
-// own end, when it is recorded and again at each sync until the source took it.
+// own end, when it is recorded and again at each sync until the source took it. After done (issue #579, `after-done.ts`): a
+// finished job's pull request is followed to its merge or close, and a job that failed only for want of a merge is judged again.
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
@@ -19,6 +20,7 @@ import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
+import { createAfterDone } from './after-done.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -267,6 +269,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
+      await afterDone.catchUp(slot.source, jobsOf(slot));
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -322,6 +325,13 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const writeBacks = createWriteBacks({
     store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: (jobId) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined),
+  });
+
+  const afterDone = createAfterDone({
+    store, host, enqueue, finalReported: (j) => flagsOf(j).finalReported === true,
+    setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
+    reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
+    failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); },
   });
 
   const rerunning = createRerun({

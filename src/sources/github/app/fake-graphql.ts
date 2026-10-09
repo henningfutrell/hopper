@@ -21,6 +21,10 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   }
   const issue = repo.issues.get(Number(b.variables?.number));
   if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
+  if (/CROSS_REFERENCED_EVENT/.test(b.query ?? '')) {
+    const nodes = issue.mentionedBy.map(({ repo: nameWithOwner, ...m }) => ({ source: { __typename: 'PullRequest', ...m, repository: { nameWithOwner } } }));
+    return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };
+  }
   if (/closedByPullRequestsReferences/.test(b.query ?? '')) {
     const open = issue.openPullRequests.map((p) => ({ ...p, state: 'OPEN' }));
     return { status: 200, body: { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: open } } } } } };

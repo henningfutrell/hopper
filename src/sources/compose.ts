@@ -132,6 +132,14 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.closedAsComplete ? s.closedAsComplete(job) : Promise.reject(new Error(why()));
     },
+    partlyDone(job) {
+      const s = current();
+      return s?.partlyDone ? s.partlyDone(job) : Promise.reject(new Error(why()));
+    },
+    follow(job) {
+      const s = current();
+      return s?.follow ? s.follow(job) : Promise.reject(new SourceError(why(), false));
+    },
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));

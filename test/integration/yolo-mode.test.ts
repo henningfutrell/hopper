@@ -92,7 +92,7 @@ describe('yolo mode', () => {
     await app.sync();
     const job = await jobFor(app, issue.url);
     await app.waitForStatus(job.id, 'finished');
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'the end label' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'the end label' });
     expect(gh.issue(REPO, issue.number).state).toBe('open');
   });
 });
