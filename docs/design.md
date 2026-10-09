@@ -48,6 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -1633,7 +1634,7 @@ The `hopper:p0`..`hopper:p3` labels are gone: removed from the issues and the wa
 `label:hopper:high` or `default`. **Re-sorted on every poll:** discovery recomputes the
 priority of every eligible item. When a waiting (`queued`/`held`) job's priority changed,
 the sync loop updates it and emits `job.reprioritized { from, to, reason }`, then
-triggers a decision. Running jobs keep their priority.
+triggers a decision. A started job's priority follows too, since issue #535 ("High priority everywhere"): the live priority.
 
 **Full issue context into the job** (owner request, phase 3 addition). The prompt is the issue
 body, then a block:
@@ -8363,3 +8364,79 @@ one `usage.limits_changed`; soft ≥ hard, out of 0..1 and a missing limit refus
 limits outlive a restart), `test/ui/usage-limits.test.ts` (the model), `test/ui/usage-limits-view.test.ts` (the
 Usage view: band and lane cap follow a draft before saving, Save posts it, soft ≥ hard refused in place with
 nothing posted, a viewer reads only).
+
+## High priority everywhere (issue #535, 2026-10-09)
+
+Owner requirement: a high-priority item (`hopper:high`) is tracked through the whole system and raised in every part
+of it, not only in the queue order; some lanes are **priority lanes** that high-priority jobs get first; the priority
+lanes are the most reliable lanes, measured from the hopper's own history.
+
+**High priority.** A job is high priority when its live priority is at or above the user's **high-priority threshold**
+(`highPriority`, default 75 — what `hopper:high` gives; `isHighPriority`, `src/domain/priority.ts`). The *live*
+priority: each sync's `refresh` now updates the priority of every job not ended, a started one too (before: only a
+waiting one), with `job.reprioritized`, so a label change moves it everywhere at the next sync, without a restart.
+
+| where | what high priority does |
+|---|---|
+| `GET /api/questions` (`QuestionView`), `/api/questions/:id`, the question routes' answers | `priority`, `high`; the open questions high first, then oldest first |
+| `GET /api/logins` (`LoginView`) | `priority`, `high` (its job, or its question's job); the open ones high first |
+| `GET /api/failures` (`HandoffView`, `FailureRecordView`) | `priority`, `high`; the open hand-offs (Needs a person) high first |
+| `GET /api/queue` | `highPriority` (the threshold); running, on a question, operator-led and parked jobs high first (waiting jobs are in queue order, priority first already; locked entries highest priority first) |
+| events | `priority`, `high` (additive, same versions) on `job.failed`, `question.asked`, `question.escalated`, `question.escalated_to_human`, `auth.pending`, `job.assessed`, `handoff.opened` — webhooks deliver them as they are |
+| Grok Bot routine | the question body's `high` (beside `priority`); Send open questions sends high-priority ones first |
+| failure assessor | the due runs again, high priority first |
+| decider step 8 | under a usage limit the lowest-priority busy lane drains first (then the newest): high-priority work is the last scaled down |
+| UI | one tag (`HighTag`) on every job title, question card, login and hand-off; Questions, Logins and Needs a person list them first; the Questions, Logins and Failures nav badges are marked and say how many are high priority |
+
+**Priority lanes.** A lane number of a machine (`desk/lane-2`). The decider reads `DecisionInputs.priorityLanes`
+(`{ lanes, highPriority, whenIdle }`, `src/decider/priority-lanes.ts`):
+
+- A high-priority job goes to the machine holding the best free priority lane, and takes it — an idle one, or opens it
+  (`StartPlan.opens`: with `laneId` null, the lane the engine opens; `LaneRepository.open(machineId, id)`). With every
+  priority lane busy it takes any other free lane: it never waits for one.
+- `whenIdle: keep-free` (default): a job that is not high priority leaves the free priority lanes — its room on the
+  machine is its room less them — and waits with `waiting for a lane: machine m keeps priority lane m/lane-1 free for
+  high-priority jobs, the other K are in use`; the lane plan's idle reason says the same. `share`: a default job takes a
+  priority lane only when no other lane of the machine (up to its lane count) is free; a low job (below 50) never does.
+- Nothing is preempted: a running job is never stopped or parked for a high-priority one (owner decision D2 left open;
+  the hopper never preempts, "Usage pacing"). A job on a non-priority lane opens the lowest number not a priority lane.
+
+**Lane reliability** (`src/reliability/`, pure). Runs are read from the event log over the window (`EventLog.between`:
+`job.claimed`, `job.started`, and the end on that lane — `job.finished`, `job.failed`, `question.asked`;
+`job.cancelled` does not count). Per lane: runs, finished, failed, **lane faults** (`isLaneFault`: the failure
+assessor's known causes `machine-offline`, `link-closed`, `start-race`, `socket-path-too-long`, `disk-full`, and the
+executors' start failures — `claude exited at startup`, `blocked at startup`, `never reached claude`, a work tree not
+usable, `herdr:` errors), lane faults in the last day, success rate, median claim-to-start time. The **score** is the
+share of runs without a lane fault, each run weighing half as much per quarter of the window it is old.
+
+**Choosing** (`rank.ts`). Every lane number up to each machine's lane count is listed. A lane is ranked when its machine
+is online and it has `minRuns` runs in the window: by score, then success, then quicker start, then id. The `count`
+best are the priority lanes; one already chosen stays until a lane scores more than `SWITCH_MARGIN` (0.1) better, or
+it drops out (machine offline, too few runs), so one failure does not move it. `manual` (an admin's lanes) wins over
+the ranking. Each lane carries its `reason`. The choice is kept in the user's settings (`priorityLaneChoice`), so a
+restart keeps it and its hysteresis; it is measured again at most every 30 s (`MEASURE_MS`) and at once after a
+settings change. A change of the choice is `priority_lanes.changed { from, to, by }`.
+
+**Settings** (`priorityLanes` in the user's settings, all live; `PriorityLaneSettings`): `highPriority` 1..100 (75),
+`count` 0..32 (1), `whenIdle` `keep-free` | `share` (`keep-free`), `windowDays` 1..90 (14), `minRuns` 1..1000 (5),
+`manual` (absent). `POST /ui/api/priority-lanes/settings` (admin) takes any of them, `manual: null` back to reliability;
+saving is `priority_lanes.settings_changed { from, to }`, one of the engine's TRIGGERS. `GET /api/priority-lanes`
+answers `PriorityLanesView`: the settings and defaults, `chosen`, `by` (`reliability`, `manual`, `none`), every lane
+with its figures, rank and reason, `measuredAt`, `switchMargin`.
+
+**UI.** Machines: the Priority lanes panel — a sentence of the settings, every lane's reliability, start time, last
+day, rank and why, the priority lanes marked; an admin edits the settings, ticks lanes and Use these lanes, or Choose
+by reliability. Overview: the Lanes panel marks the priority lanes and names those not open.
+
+**Owner decisions taken as defaults** (all settings, changed live on Machines): D1 a fixed count, 1; D2 keep-free, with
+share as the other choice — no park-and-yield; D3 a low job never takes a priority lane, and lanes are not otherwise
+handed out by reliability; D4 14 days, 5 runs.
+
+**Verification:** `test/decider/priority-lanes.test.ts` (keep-free and its wait reason; a high job ahead of an older
+default job; an idle priority lane; the machine holding it; busy priority lanes; share; a low job; drain order under
+a usage limit), `test/reliability/measure.test.ts`, `test/reliability/rank.test.ts` (best lanes, minimum runs, offline,
+no flapping on one fault, a lane better by more than the margin, an admin's choice), `test/integration/high-priority.test.ts`
+(question and login first and tagged in the API and events, failure and hand-off tags, a label change re-sorts a job on a
+question at the next sync), `test/integration/priority-lanes.test.ts` (the API, reliability choice and its event, a high
+job takes the free priority lane ahead of waiting default jobs, share, bounds, roles, restart),
+`test/ui/high-priority.test.ts`, `test/ui/high-priority-views.test.ts`, `test/plugins/grokbot-payload.test.ts`.
