@@ -1662,7 +1662,7 @@ Version 1 (`docs/schemas/research.revision_requested.v1.json`). A research repor
 
 ## `research.accepted`
 
-Version 1 (`docs/schemas/research.accepted.v1.json`). A research report was accepted (issue #543), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the research settings let it. A job that also asks for a proposal is re-queued to write it, in the same session; any other ends finished, with the decision as its result.
+Version 1 (`docs/schemas/research.accepted.v1.json`). A research report was accepted (issue #543), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the research settings let it. A job that also asks for a proposal is re-queued to write it, in the same session; a job that was not asked for research (its own item asked for it within wider work) is re-queued in the same session, told it was accepted, and goes on with the rest of its work or ends done by itself (issue #538); any other ends finished, with the decision as its result.
 
 | field | type | required |
 |---|---|---|

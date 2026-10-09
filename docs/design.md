@@ -8778,7 +8778,13 @@ else is per section.
 settings name reviewer levels (D1: the same settings as proposals, default none); the job keeps its session meanwhile and
 can be parked and resumed on it, as a proposal's. Accepted (D2), the job moves on to the next section it asks for —
 research before the proposal — or ends `finished` with its decisions as its result (`{ research: { id, version,
-decision } }`, plus `proposal` when it went on to one).
+decision } }`, plus `proposal` when it went on to one). **A job not asked for research** (no `spec.research`: its agent
+researched because its own item asked for research within wider work) is not ended by the decision (issue #538, D2 as
+the owner settled it): it is re-queued in the same session, told the report was accepted (with the notes) and to go on
+with what else its item asks, or, asking nothing more, to end with `HOPPER_DONE`; it then ends by its own outcome, the
+completion check included, its result the executor's. `job.requeued { reason: 'research report accepted: the job goes
+on' }`. Declared on the type (`ReviewSectionType.goesOn`: research `true`, proposal `false` — how an accepted proposal
+becomes work is #537's open D1, so its decision still ends the job).
 
 **Special jobs from the structure.** A source item asks for research or a proposal by its label or by a heading of that
 section in its body (`asksOf`, at intake: `## Research`, `## Proposal`, any heading level; a word in the text is not a

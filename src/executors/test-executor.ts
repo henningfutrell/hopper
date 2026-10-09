@@ -65,6 +65,8 @@ export function createTestExecutor(): Executor {
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'fail-after-answer') return { kind: 'failed', error: `failed after answer: ${answer}` };
       if (op === 'propose') return { kind: 'report', review: 'proposal', report: { text: `${message ?? 'Goal: something'}\nRevised after: ${answer}`, recentOutput: '' } };
+      // Accepted research it was not asked for (issue #538): told to go on, it ends done.
+      if (op === 'research' && answer.includes('HOPPER_DONE')) return { kind: 'finished', result: { answer } };
       if (op === 'research' && answer.includes('HOPPER_PROPOSAL')) return { kind: 'report', review: 'proposal', report: { text: 'Goal: act on the research', recentOutput: '' } };
       if (op === 'research') return { kind: 'report', review: 'research', report: { text: `${message ?? 'Findings: something'}\nRound after: ${answer}`, recentOutput: '' } };
       return { kind: 'finished', result: { answer } };

@@ -171,6 +171,11 @@ export interface ReviewSectionType {
   brief(item: ReviewItem, from: string, decision: ReviewDecisionId, notes: string): string;
   /** What a reviewer level is asked to check, in its prompt. */
   check: string;
+  /**
+   * Accepted, whether a job that was not asked for one goes on in its session with the rest of its own work, or ends
+   * done (issue #538: research); false: the decision ends the job (a proposal, issue #537).
+   */
+  goesOn: boolean;
 }
 
 const PROPOSAL_PARTS: readonly ReviewPart[] = [
@@ -202,6 +207,7 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       'Continue the same research in this session, then write the whole report again, as before, and end with HOPPER_RESEARCH_REPORT.',
     ].join('\n'),
     check: 'Check whether the research report answers the question the job asks: are the findings backed by the sources and evidence it names, is the confidence it states earned, are the open threads the real ones, and does the next step follow.',
+    goesOn: true,
   },
   proposal: {
     kind: 'proposal', section: 'proposals', noun: 'proposal', prefix: 'proposal', idField: 'proposalId', jobField: 'proposalId', specFlag: 'proposal',
@@ -220,6 +226,7 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       'Write the revised proposal in full, as before, and end with HOPPER_PROPOSAL.',
     ].join('\n'),
     check: 'Check whether the proposal makes sense for the job: does it serve the goal the job states, is the approach sound and the smallest that does it, were the real alternatives weighed, are the risks named and the effort believable, and does the context it relied on hold up.',
+    goesOn: false,
   },
 };
 
