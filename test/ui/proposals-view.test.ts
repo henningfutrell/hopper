@@ -24,6 +24,15 @@ const proposal = (id: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const SETTINGS = { reviewers: ['opus'], signOff: 'owner', levelRevisions: 1, levels: ['opus', 'fable'] };
+// The section type as the server declares it (issue #543): the UI offers exactly these parts and decisions.
+const TYPE = {
+  parts: [['goal', 'Goal'], ['approach', 'Approach'], ['alternatives', 'Alternatives considered'], ['risks', 'Risks'], ['effort', 'Effort'], ['context', 'Context']],
+  decisions: [
+    { id: 'accept', route: 'accept', label: 'Accept', effect: 'accept', notes: 'optional' },
+    { id: 'request_changes', route: 'request-changes', label: 'Request changes', effect: 'send_back', notes: 'required' },
+    { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'required' },
+  ],
+};
 
 type Role = 'viewer' | 'operator' | 'admin';
 interface Daemon { proposals: Record<string, unknown>[]; jobs: Record<string, unknown>[]; role?: Role }
@@ -49,7 +58,7 @@ function fakeDaemon(d: Daemon) {
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: d.role ?? 'operator', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/api/proposals') {
       const open = !query.includes('status=all');
-      return json(200, { proposals: open ? d.proposals.filter((p) => p.status === 'open' || p.status === 'revising') : d.proposals, settings: SETTINGS });
+      return json(200, { items: open ? d.proposals.filter((p) => p.status === 'open' || p.status === 'revising') : d.proposals, settings: SETTINGS, type: TYPE });
     }
     if (path.startsWith('/ui/api/')) {
       posts.push({ path, body: init.body ? JSON.parse(String(init.body)) : undefined });
@@ -91,7 +100,7 @@ async function settle() {
   for (let i = 0; i < 10; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 }
 
-const card = (id: string) => document.querySelector(`[data-proposal="p-${id}"]`) as HTMLElement | null;
+const card = (id: string) => document.querySelector(`[data-item="p-${id}"]`) as HTMLElement | null;
 const navBadge = () => document.querySelector('a[href="#proposals"] [data-slot="nav-badge"]');
 const button = (within: Element, text: string) => [...within.querySelectorAll('button')].find((b) => b.textContent?.includes(text)) as HTMLButtonElement | undefined;
 async function type(el: HTMLTextAreaElement, value: string) {
@@ -128,7 +137,7 @@ describe('the Proposals view', () => {
 
   it('a high-priority job\'s proposal is tagged and first, and the badge marks it', async () => {
     await boot('#proposals', { proposals: [proposal('j1'), proposal('j2', { priority: 80, high: true })], jobs: [job('j1'), job('j2', 80)] });
-    const order = [...document.querySelectorAll('[data-proposal]')].map((e) => e.getAttribute('data-proposal'));
+    const order = [...document.querySelectorAll('[data-item]')].map((e) => e.getAttribute('data-item'));
     expect(order).toEqual(['p-j2', 'p-j1']);
     expect(navBadge()!.getAttribute('data-high')).toBe('1');
   });
@@ -157,7 +166,7 @@ describe('the Proposals view', () => {
 
   it('an admin\'s settings offer only the escalation levels the server names, and save the reviewers', async () => {
     await boot('#proposals', { proposals: [], jobs: [], role: 'admin' });
-    const panel = document.querySelector('[data-slot="proposal-settings"]')!;
+    const panel = document.querySelector('[data-slot="review-settings"][data-section="proposals"]')!;
     const boxes = [...panel.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[];
     expect(boxes.map((b) => b.name)).toEqual(['opus', 'fable']);
     expect(boxes.map((b) => b.checked)).toEqual([true, false]);

@@ -2,7 +2,7 @@
 // (and, resumed, a revision), reviewer levels are doubles at the EscalationLevel seam, and a person decides through
 // the UI session routes. A proposal is apart from the questions: its own routes, events and settings.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, Job, ProposalView, ReviewVerdict } from '../../src/domain/types.ts';
+import type { DomainEvent, Job, ReviewItemView, ReviewVerdict } from '../../src/domain/types.ts';
 import type { EscalationLevel, ReviewRequest } from '../../src/domain/ports.ts';
 import { createFakeLevel } from '../../src/questions/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -53,16 +53,16 @@ function reviewer(name: string, verdicts: ReviewVerdict[], seen: ReviewRequest[]
   });
 }
 
-const proposalsOf = async (a: TestApp, jobId: string): Promise<ProposalView[]> =>
-  (await a.api<{ proposals: ProposalView[] }>('GET', '/api/proposals?status=all')).body.proposals.filter((p) => p.jobId === jobId);
-const waitForProposal = (a: TestApp, jobId: string, ok: (p: ProposalView) => boolean) => waitFor(async () => {
+const proposalsOf = async (a: TestApp, jobId: string): Promise<ReviewItemView[]> =>
+  (await a.api<{ items: ReviewItemView[] }>('GET', '/api/proposals?status=all')).body.items.filter((p) => p.jobId === jobId);
+const waitForProposal = (a: TestApp, jobId: string, ok: (p: ReviewItemView) => boolean) => waitFor(async () => {
   const p = (await proposalsOf(a, jobId))[0];
   return p && ok(p) ? p : undefined;
 }, { what: `a matching proposal on job ${jobId}` });
 const ofJob = (events: DomainEvent[], jobId: string) => events.filter((e) => e.jobId === jobId);
 const settings = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, unknown>>('/ui/api/proposals/settings', body, { token });
 const decide = (a: TestApp, token: string, id: string, how: 'accept' | 'reject' | 'request-changes', body: Record<string, unknown> = {}) =>
-  a.ui<ProposalView>(`/ui/api/proposals/${id}/${how}`, body, { token });
+  a.ui<ReviewItemView>(`/ui/api/proposals/${id}/${how}`, body, { token });
 
 describe('a job that comes back with a proposal', () => {
   it('waits on it; the proposal has its parts, is apart from the questions, and reaches a person with no reviewer levels', async () => {
@@ -244,7 +244,7 @@ describe('the job and its proposal', () => {
     await waitForProposal(a, plain.id, (x) => x.stage === 'human');
     const urgent = await a.pull(propose(), { priority: 80, priorityReason: 'label:hopper:high' });
     await waitForProposal(a, urgent.id, (x) => x.stage === 'human');
-    const open = (await a.api<{ proposals: ProposalView[] }>('GET', '/api/proposals?status=open')).body.proposals;
+    const open = (await a.api<{ items: ReviewItemView[] }>('GET', '/api/proposals?status=open')).body.items;
     expect(open.map((p) => [p.jobId, p.priority, p.high])).toEqual([[urgent.id, 80, true], [plain.id, 50, false]]);
   });
 
