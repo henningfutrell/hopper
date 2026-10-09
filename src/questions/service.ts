@@ -1,12 +1,15 @@
 // The question pipeline (design.md "Question pipeline"): the escalation levels, lowest first. Each
 // level answers the question or escalates it to the next level up; above the top level is the
 // owner. An answer is typed into the job unless a risk rule matches, which sends the question to
-// the owner whatever level answered. The levels are looked up per question (a live role), and every
+// the owner whatever level answered. Before the levels, a question that lists its options is a minor decision
+// (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
 import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
-import { jobPriorityTag, type Question, type QuestionAttempt } from '../domain/types.ts';
+import { jobPriorityTag, type MinorDecisionTier, type Question, type QuestionAttempt } from '../domain/types.ts';
+import { emitQuestionEvent, type QuestionEventType } from './events.ts';
+import { askJevFirst, JEV } from './jev-first.ts';
 import { openOnEndedJobs } from './stale.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
@@ -32,6 +35,8 @@ export interface QuestionServiceOptions {
   onDismissed: (q: Question) => void;
   /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
   logins?: Logins;
+  /** The Jev tier (issue #550), asked first about a question that lists its options, and whether the blast-radius gate keeps a machine. Absent: the levels only. */
+  minorDecisions?: { tier: MinorDecisionTier; gated(machineId: string): boolean };
 }
 
 export const HUMAN = 'human';
@@ -52,14 +57,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   let stopped = false;
   const iso = () => clock.now().toISOString();
 
-  function emit(q: Question, type: 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired' | 'question.lapsed', data: Record<string, unknown>) {
-    // The raising machine (issue #485) rides on every question event: subject and data, from the question's snapshot.
-    const r = q.raisedBy;
-    store.events.append({
-      type, jobId: q.jobId, questionId: q.id, ...(r ? { machineId: r.machineId, ...(r.laneId ? { laneId: r.laneId } : {}) } : {}),
-      data: { questionId: q.id, ...data, ...(r ? { raisedBy: r } : {}) },
-    });
-  }
+  const emit = (q: Question, type: QuestionEventType, data: Record<string, unknown>) => emitQuestionEvent(store, q, type, data);
 
   function clearTimers(id: string) {
     const t = timers.get(id);
@@ -244,8 +242,13 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     });
   }
 
+  /** The Jev tier first (issue #550): true when nothing is left for the levels. */
+  const answeredByJev = (q: Question) => { emit(q, 'question.answered', { by: JEV, answer: q.answer! }); o.onAnswered(q); };
+  const jevFirst = (id: string) => (o.minorDecisions ? askJevFirst({ store, ...o.minorDecisions, iso, stopped: () => stopped, answered: answeredByJev }, id) : Promise.resolve(false));
+
   async function run(id: string, reason: string): Promise<void> {
     if (stopped) return;
+    if (await jevFirst(id)) return;
     const levels = [...o.levels()];
     let why: string | undefined = reason;
     for (const [i, level] of levels.entries()) {

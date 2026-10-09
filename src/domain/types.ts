@@ -401,12 +401,12 @@ export interface WebhookDelivery {
 /** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
 export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'cancelled';
 
-/** Who made an attempt: an escalation level, or the human. */
-export type AttemptRole = 'level' | 'human';
+/** Who made an attempt: an escalation level, Jev (a minor decision, issue #550), or the human. */
+export type AttemptRole = 'level' | 'jev' | 'human';
 
 /** One entry in a question's trail: an escalation level's reply, or the human's answer. Human attempts carry only the answer. */
 export interface QuestionAttempt {
-  /** Who: the level's instance name, or `human`. */
+  /** Who: the level's instance name, `jev`, or `human`. */
   tier: string;
   role: AttemptRole;
   /** The model that ran, as the level reports it, else the configured one. */
@@ -502,6 +502,7 @@ export * from './sections.ts';
 export * from './failures.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
+export * from './minor-decisions.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

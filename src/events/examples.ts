@@ -106,5 +106,12 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     to: { gateAt: 'high', pass: { labels: ['hopper:actor'], repos: [] }, rules: { prodPatterns: ['prod', 'production', 'prd'], prodAccounts: [], unconfirmed: 'write' }, actors: [{ machineId: 'deploy-box', purpose: 'production deploys', expected: 'high' }], everyMinutes: 60 },
   },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
+  'minor_decision.picked': {
+    pickId: 'p1', point: 'question-answer', by: 'jev', options: [{ id: '1', label: 'Yes, proceed' }, { id: '2', label: 'No' }],
+    pick: '1', confidence: 0.91, mode: 'shadow', threshold: 0.85, applied: false, notApplied: 'shadow', questionId: 'q1',
+  },
+  'minor_decision.compared': { pickId: 'p1', point: 'question-answer', pick: '1', actual: '1', agreed: true, decidedBy: 'level-1' },
+  'minor_decision.overridden': { pickId: 'p1', point: 'failure-assessment', pick: 'retry', actual: 'person' },
+  'minor_decision.settings_changed': { point: 'question-answer', from: { mode: 'shadow', threshold: 0.85 }, to: { mode: 'active', threshold: 0.9 } },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

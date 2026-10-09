@@ -12,6 +12,7 @@ import { loginSettingsBody } from './ui/logins.ts';
 import { priorityLaneSettingsBody } from './ui/priority-lanes.ts';
 import { blastRadiusSettingsBody, discoverBody } from './ui/blast-radius.ts';
 import { failureCauseBody, failureForgetBody, failureSettingsBody } from './ui/failures.ts';
+import { decisionPointBody, overrideBody } from './ui/minor-decisions.ts';
 import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
@@ -26,7 +27,7 @@ import { notesBody, optionalNotesBody, reviewSettingsBody } from './ui/reviews.t
 import { deliveriesQuery } from './webhooks.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Minor decisions' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -122,6 +123,9 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/failures/settings', tag: 'Failures', summary: 'Change the failures settings', description: 'Any of them; one left out keeps its value. `maxAttempts` (0 to 10, default 3): retries per job. `backoffSec` (default 60), `backoffFactor` (default 2), `backoffMaxSec` (default 1800): the wait before each retry. `groupThreshold` (default 3) items failed with one signature within `groupWindowMin` minutes (default 60) flag it as a general cause. `auto.retry`, `auto.hold`, `auto.redirect` (default on): whether each decision acts by itself; off, it waits for a person, and with `auto.hold` off no job is held for a problem. `retentionDays` (default 90): how long failure records and resolved problems are kept. `handoffRetentionDays` (default 30): how long a closed hand-off is kept; an open one is never dropped. `handoffNotify` (default on): whether a job handed off to a person tells the webhooks (`handoff.opened` `notify`). Applies without a restart.', role: 'admin', body: failureSettingsBody, returns: '`FailureSettings`' },
   { method: 'post', path: '/ui/api/failures/causes', tag: 'Failures', summary: 'Name a cause', description: 'Names the cause of a signature, with a description and its default decision (`retry`, `hold`, `redirect` or `person`): the next failure with that signature follows it, before any built-in cause. Naming it again replaces it.', role: 'admin', body: failureCauseBody, returns: 'the `KnownCause`' },
   { method: 'post', path: '/ui/api/failures/causes/forget', tag: 'Failures', summary: 'Forget a named cause', description: 'The signature\'s failures follow the built-in causes again. 404: no cause is named for it.', role: 'admin', body: failureForgetBody, returns: '`{ forgotten }`', errors: [404] },
+  { method: 'get', path: '/api/minor-decisions', tag: 'Minor decisions', summary: 'Minor decisions: Jev\'s picks and agreement rates', description: 'Minor decisions through Jev first (issue #550): `jev` — whether Jev can be asked now (`available`, `why` not: no `TYPESAFE_API_KEY`); `points` — each decision point (`question-answer`, `failure-assessment`) with its `mode` (`off`, `shadow`: recorded only, `active`: a pick at or above `threshold` that nothing makes consequential is applied), its label and description, and over the last `windowDays` days how often Jev was `asked`, `picked`, how often its pick was `applied`, `compared` with what was decided after, `agreed`, the `agreement` rate (null with nothing compared) and how many were `overridden`; `recent` — the newest picks, each with its options, pick, confidence, whether it was applied and why not, and what was decided.', returns: '`MinorDecisionsView`' },
+  { method: 'post', path: '/ui/api/minor-decisions/points/:point', tag: 'Minor decisions', summary: 'Change a decision point\'s settings', description: '`mode` (`off`, `shadow`, `active`; default `shadow`) and `threshold` (0 to 1, default 0.85: the confidence a pick needs to be applied, active); one left out keeps its value. Applies from the next decision (`minor_decision.settings_changed`). 404: no such decision point.', role: 'admin', body: decisionPointBody, returns: 'the point\'s `DecisionPointSettings`', errors: [404] },
+  { method: 'post', path: '/ui/api/minor-decisions/picks/:id/override', tag: 'Minor decisions', summary: 'Override a pick', description: 'What the decision should have been: `actual`, one of the pick\'s option ids (`minor_decision.overridden`). Counts in the agreement rate in place of what was compared. It changes nothing already done. 404: no such pick in the window; 400: not one of its options.', role: 'operator', body: overrideBody, returns: 'the `MinorDecisionPickView`', errors: [404] },
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },
   { method: 'get', path: '/api/machines/config', tag: 'Machines and usage', summary: 'What the Machines view edits', returns: 'every machine (name, connection, options), the executors, the machine defaults, the detected ssh targets and which of them are this machine, the hopper\'s own public ssh key, why this machine cannot be added (in a container), the plugins config version' },
@@ -186,6 +190,7 @@ const TAGS: Record<Tag, string> = {
   Research: 'Research reports a job wrote instead of doing the work: accepted, dug deeper on or steered by a person, each round kept. A review section, as Proposals is. Never a question.',
   Logins: 'Logins a job or run waits on (a CLI showing a device code): never a question.',
   Failures: 'What the failure assessor made of the failed jobs: problems grouped from shared causes, assessed failures, the failure profile, and its settings.',
+  'Minor decisions': 'Bounded choices Jev makes first, before a model or a person: each decision point\'s mode, threshold and agreement rate, and every pick.',
   'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',

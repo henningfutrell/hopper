@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pickId": {
+      "type": "string"
+    },
+    "point": {
+      "type": "string",
+      "enum": [
+        "question-answer",
+        "failure-assessment"
+      ]
+    },
+    "by": {
+      "type": "string",
+      "const": "jev"
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pick": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "error": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "off",
+        "shadow",
+        "active"
+      ]
+    },
+    "threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "applied": {
+      "type": "boolean"
+    },
+    "notApplied": {
+      "type": "string",
+      "enum": [
+        "shadow",
+        "below_threshold",
+        "consequential",
+        "no_pick"
+      ]
+    },
+    "consequential": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questionId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "pickId",
+    "point",
+    "by",
+    "options",
+    "mode",
+    "threshold",
+    "applied"
+  ],
+  "additionalProperties": false
+}

@@ -36,6 +36,8 @@ export interface BlastRadius {
   run(): Promise<void>;
   /** Let a job held at the gate through (a person): it may run on a gated machine. */
   letThrough(jobId: string): Job;
+  /** Whether the gate keeps this machine now (issue #550: a minor decision there is consequential). */
+  gates(machineId: string): boolean;
 }
 
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -210,6 +212,10 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
 
   return {
     settings,
+    gates(machineId) {
+      const s = settings();
+      return gateOf(machineId, levelOf(machineId, s)?.level, s) !== undefined;
+    },
     input(machines) {
       const s = settings();
       // A machine online and not yet tried in this run: it attached, or the hopper started.

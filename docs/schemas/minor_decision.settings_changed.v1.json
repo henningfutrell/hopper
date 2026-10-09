@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "point": {
+      "type": "string",
+      "enum": [
+        "question-answer",
+        "failure-assessment"
+      ]
+    },
+    "from": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "shadow",
+            "active"
+          ]
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "mode",
+        "threshold"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "shadow",
+            "active"
+          ]
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "mode",
+        "threshold"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "point",
+    "from",
+    "to"
+  ],
+  "additionalProperties": false
+}

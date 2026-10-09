@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -159,6 +159,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setFailureSettings(settings) {
       write('failureSettings', JSON.stringify(settings));
+    },
+    getMinorDecisionSettings() {
+      const text = read('minorDecisions');
+      return text === undefined ? {} : JSON.parse(text) as Partial<MinorDecisionSettings>;
+    },
+    setMinorDecisionSettings(settings) {
+      write('minorDecisions', JSON.stringify(settings));
     },
     getNamedCauses() {
       const text = read('failureCauses');

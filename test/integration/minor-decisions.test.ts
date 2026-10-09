@@ -129,7 +129,9 @@ describe('a question, active', () => {
     const a = await start({ jev, levels: [l.level] });
     await setPoint(a, await a.login(), 'question-answer', { mode: 'active' });
     const job = await a.pull(ask('The old branch is merged. What now?\n1. Delete the branch\n2. Leave it'));
-    await a.waitForStatus(job.id, 'finished');
+    // The level is asked; the risk rules then send the question to a person, as they always did.
+    const [q] = await waitFor(async () => { const qs = await a.questionsOf(job.id); return qs[0]?.tier === 'human' ? qs : undefined; }, { what: 'the question with a person' });
+    expect(q!.status).toBe('open');
     expect(l.calls).toHaveLength(1);
     const [picked] = await ofType(a, 'minor_decision.picked', job.id);
     expect(picked!.data).toMatchObject({ applied: false, notApplied: 'consequential', consequential: ['delete'] });
