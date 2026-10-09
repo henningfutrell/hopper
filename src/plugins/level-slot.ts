@@ -25,8 +25,8 @@ export async function buildLevel(spec: InstanceSpec, deps: SlotDeps): Promise<Bu
       name: spec.name,
       ...(inner.model ? { model: inner.model } : {}),
       answer: (req: AnswerRequest, signal: AbortSignal) => inner.answer(req, signal),
-      // A plugin that cannot review (issue #537): every proposal it gets escalates.
-      review: (req: ReviewRequest, signal: AbortSignal) => (inner.review ? inner.review(req, signal) : Promise.resolve({ error: `${spec.plugin} cannot review proposals` })),
+      // A plugin that cannot review (issue #537): every proposal or research report it gets escalates.
+      review: (req: ReviewRequest, signal: AbortSignal) => (inner.review ? inner.review(req, signal) : Promise.resolve({ error: `${spec.plugin} cannot review proposals or research reports` })),
     };
     return { spec, level, detection: built.detection, plugin: built.plugin };
   }

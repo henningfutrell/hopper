@@ -27,6 +27,8 @@ export const jobSpec = strict({
   }).optional(),
   // Asked for a proposal (issue #537; additive).
   proposal: z.literal(true).optional(),
+  // Asked to research (issue #543; additive).
+  research: z.literal(true).optional(),
 });
 
 // What a job's source and routing rules give its spec (issue #375). `defaultCwd` only in events recorded before issue #361.

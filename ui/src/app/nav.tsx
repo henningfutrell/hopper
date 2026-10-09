@@ -1,22 +1,23 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
-// sections after a slash (#settings/routing): the view is the part before it.
-import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
+// sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
+// Research, Logins, Failures; issue #543) is a view whose badge follows the one section rule (useSectionBadges).
+import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
-import { useAwaitingOwner, useAwaitingSort, useLoginsBadge, useProposalsBadge } from '@/store/selectors';
-import { openHandoffs, openProblems, plural } from '@/model/failures';
-import { highHandoffs, highQuestions } from '@/model/priority';
+import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
+import { SECTION_KINDS } from '@/model/sections';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'queue', 'questions', 'proposals', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', ...SECTION_KINDS, 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   queue: { label: 'Queue', icon: ListOrdered },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   proposals: { label: 'Proposals', icon: FileCheck },
+  research: { label: 'Research', icon: Telescope },
   logins: { label: 'Logins', icon: KeyRound },
   failures: { label: 'Failures', icon: OctagonAlert },
   decisions: { label: 'Decisions', icon: Scale },
@@ -35,23 +36,13 @@ const readSection = (): string => window.location.hash.slice(1).split('/')[1] ??
 export const useSection = (): string => useSyncExternalStore(subscribe, readSection);
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
-  const questions = useAwaitingOwner();
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const sorting = useAwaitingSort();
-  const logins = useLoginsBadge();
-  const proposals = useProposalsBadge();
-  const problems = useHopper((s) => openProblems(s.failures));
-  const handoffs = useHopper((s) => openHandoffs(s.failures));
-  // A high-priority item waiting (issue #535): its badge is marked and says how many.
-  const highQ = useHopper((s) => highQuestions(s.questions));
-  const highH = useHopper((s) => highHandoffs(s.failures));
-  const highOf = (n: number): string => (n > 0 ? `; ${n} high priority` : '');
+  // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
+  const sections = useSectionBadges();
   const badge: Partial<Record<View, { n: number; cls: string; title?: string; high?: number }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
-    questions: { n: questions, cls: 'bg-question text-background', title: `${questions} ${questions === 1 ? 'question waits' : 'questions wait'} on you${highOf(highQ)}`, high: highQ },
-    proposals: { n: proposals.n, cls: 'bg-question text-background', title: `${proposals.n} ${proposals.n === 1 ? 'proposal waits' : 'proposals wait'} on you${highOf(proposals.high)}`, high: proposals.high },
-    logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}${highOf(logins.high)}`, high: logins.high },
-    failures: { n: problems + handoffs, cls: 'bg-bad text-background', title: `${plural(problems, 'open problem')}, ${plural(handoffs, 'job needs', 'jobs need')} a person${highOf(highH)}`, high: highH },
+    ...sections,
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   return (

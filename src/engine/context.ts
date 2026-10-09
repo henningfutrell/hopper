@@ -1,5 +1,5 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, ProposalService, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
+  Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
 import { jobPriorityTag, type DeciderPolicy, type Job, type PriorityTag, type ProblemBlock } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
@@ -28,8 +28,8 @@ export interface EngineOptions {
   sweepCheckMs?: number;
   /** The answer chain. Its onAnswered/onExpired/onDismissed must call the engine's (see main.ts). */
   questions: QuestionService;
-  /** The proposal review (issue #537). Its onDecided/onRevise must call the engine's; swept on each tick. */
-  proposals: ProposalService;
+  /** Each review section's review (issues #537, #543). Their onDecided/onRevise must call the engine's; swept on each tick. */
+  reviews: ReviewServices;
   /** The logins (issue #476): a login a job waits on; swept on each tick. */
   logins: Logins;
   /** At most this many questions per job; the next one fails it (design.md B6). */

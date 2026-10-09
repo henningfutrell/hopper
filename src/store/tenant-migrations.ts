@@ -272,6 +272,18 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX proposals_job ON proposals (job_id);
   CREATE INDEX proposals_status ON proposals (status, created_at)`,
+  // 25: Research reports (issue #543): the Research section's items, the same shape as the proposals'. A table only:
+  // the build before runs on it.
+  `CREATE TABLE research_reports (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX research_reports_job ON research_reports (job_id);
+  CREATE INDEX research_reports_status ON research_reports (status, created_at)`,
 ];
 
 /** A user schema's version once migrated. */

@@ -1,14 +1,14 @@
 // Recording an executor's outcome: one transaction that ends the job (finished / failed /
-// cancelled) or pauses it on a question or a proposal (waiting_answer), and frees its lane either way.
+// cancelled) or pauses it on a question, a proposal or a research report (waiting_answer), and frees its lane either way.
 // design.md "Questions" lifecycle and "Question budget (B6)".
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
-import type { Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
+import type { Job, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
-import { recordProposal } from './proposals.ts';
+import { recordReport } from './reviews.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
-export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'proposal'; proposalId: string };
+export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string };
 
 const TERMINAL: Recorded = { kind: 'terminal' };
 
@@ -69,8 +69,9 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });
     } else if (outcome.kind === 'failed') {
       fail(c, job, laneId, outcome.error, at, outcome.tail);
-    } else if (outcome.kind === 'proposal') {
-      recorded = { kind: 'proposal', proposalId: recordProposal(c, job, lane, laneId, machine, outcome.proposal, at) };
+    } else if (outcome.kind === 'report') {
+      const r = recordReport(c, job, lane, laneId, machine, outcome.review, outcome.report, at);
+      recorded = { kind: 'report', review: r.kind, itemId: r.itemId };
     } else {
       recorded = ask(c, job, lane, laneId, machine, outcome.question, at);
     }

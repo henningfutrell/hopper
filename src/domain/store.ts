@@ -3,7 +3,7 @@
 
 import type { IntakeMigration } from './intake.ts';
 import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, Proposal, ProposalReview, ProposalSettings, ProposalStatus, ProposalVersion,
+  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
@@ -107,16 +107,16 @@ export interface QuestionRepository {
   addAttempt(id: string, attempt: QuestionAttempt): Question;
 }
 
-/** Proposals (issue #537): one per job's proposal, its versions and review trail in it. */
-export interface ProposalRepository {
-  create(input: { jobId: JobId; stage: string; version: ProposalVersion; raisedBy?: RaisedBy; source?: Proposal['source'] }): Proposal;
-  get(id: string): Proposal | undefined;
+/** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
+export interface ReviewItemRepository {
+  create(input: { jobId: JobId; stage: string; version: ReviewVersion; raisedBy?: RaisedBy; source?: ReviewItem['source'] }): ReviewItem;
+  get(id: string): ReviewItem | undefined;
   /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open ones, the longest waiting first). */
-  list(filter?: { status?: ProposalStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Proposal[];
+  list(filter?: { status?: ReviewStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): ReviewItem[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
-  update(id: string, patch: Partial<Omit<Proposal, 'id' | 'jobId' | 'createdAt' | 'reviews' | 'versions'>>): Proposal;
-  addReview(id: string, review: ProposalReview): Proposal;
-  addVersion(id: string, version: ProposalVersion): Proposal;
+  update(id: string, patch: Partial<Omit<ReviewItem, 'id' | 'kind' | 'jobId' | 'createdAt' | 'reviews' | 'versions'>>): ReviewItem;
+  addReview(id: string, review: ReviewEntry): ReviewItem;
+  addVersion(id: string, version: ReviewVersion): ReviewItem;
 }
 
 /** Logins (issue #476): what the hopper keeps of each, never its URL or code. */
@@ -216,9 +216,9 @@ export interface UserSettingsRepository {
   /** How long before a login's code runs out the Logins view warns, in seconds (issue #477); absent: never chosen. */
   getLoginWarnSec(): number | undefined;
   setLoginWarnSec(seconds: number): void;
-  /** The proposal settings (issue #537); absent: never saved. */
-  getProposalSettings(): ProposalSettings | undefined;
-  setProposalSettings(settings: ProposalSettings): void;
+  /** A review section's settings (issues #537, #543); absent: never saved. */
+  getReviewSettings(kind: ReviewKind): ReviewSettings | undefined;
+  setReviewSettings(kind: ReviewKind, settings: ReviewSettings): void;
   /** The failure assessor's settings (issue #509); absent: never set. */
   getFailureSettings(): FailureSettings | undefined;
   setFailureSettings(settings: FailureSettings): void;
@@ -450,7 +450,8 @@ export interface UserStore {
   events: EventLog;
   webhooks: WebhookRepository;
   questions: QuestionRepository;
-  proposals: ProposalRepository;
+  /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
+  reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
   logins: LoginRepository;
   failures: FailureRepository;
   problems: ProblemRepository;

@@ -83,7 +83,7 @@ const anthropicApi: PluginDefinition<'escalation-level', AnthropicApiOptions> = 
       name: 'anthropic-api',
       model: o.model,
       answer: (req, signal): Promise<(LevelReply & { model?: string }) | { error: string }> => ask(buildLevelPrompt(req), REPLY, signal),
-      // A proposal's review (issue #537): one request with the reviewer's prompt.
+      // A review item's review — a proposal, a research report (issues #537, #543): one request with the reviewer's prompt.
       review: (req, signal): Promise<(ReviewReply & { model?: string }) | { error: string }> => ask(buildReviewPrompt(req), REVIEW, signal),
     };
   },

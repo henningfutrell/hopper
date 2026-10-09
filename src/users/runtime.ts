@@ -6,10 +6,10 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, ProposalService, QuestionService, SourceRegistry,
+  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -32,7 +32,7 @@ import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugi
 import { splitSources } from './job-sources.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, type Logins } from '../logins/index.ts';
-import { createProposalService } from '../proposals/index.ts';
+import { createReviewServices } from '../review/index.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
@@ -98,9 +98,9 @@ export interface UserRuntime {
   plugins: PluginsView;
   host: PluginHost;
   questions: QuestionService;
-  /** The proposal review (issue #537). */
-  proposals: ProposalService;
-  /** The escalation levels' names now: what may review proposals (issue #537). */
+  /** Each review section's review: proposals (issue #537), research (issue #543). */
+  reviews: ReviewServices;
+  /** The escalation levels' names now: what may review a review section's items (issues #537, #543). */
   levelNames(): string[];
   /** The logins a job or run waits on (issue #476). */
   logins: Logins;
@@ -268,8 +268,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onExpired: (q: Question) => engine.onExpired(q),
     onDismissed: (q: Question) => engine.onDismissed(q),
   });
-  // The proposal review (issue #537): the escalation levels the proposal settings name review; the engine ends or re-queues the job.
-  const proposals = createProposalService({
+  // Each review section's review (issues #537, #543): the escalation levels its settings name review; the engine ends,
+  // moves on or re-queues the job.
+  const reviews = createReviewServices({
     store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config,
     onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
   });
@@ -278,7 +279,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   const engine: Engine = createEngine({
-    store, clock, executors, router, questions, proposals, logins, queueSorter: host.queueSorter,
+    store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
@@ -325,7 +326,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, proposals, logins, failures, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name),
     connectedAccounts,
     usageHistory,
@@ -352,7 +353,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         usageHistory.stop();
         connectedAccounts.stop();
         await questions.stop();
-        await proposals.stop();
+        await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
         await dispatcher.stop();
         await host.stopNotifiers();

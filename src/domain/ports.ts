@@ -6,10 +6,10 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
-import type { ExecutionProposal } from './escalation-ports.ts';
+import type { ExecutionReport } from './escalation-ports.ts';
 export type * from './escalation-ports.ts';
 
 // ---- Execution -----------------------------------------------------------------------
@@ -92,8 +92,11 @@ export type ExecutionOutcome =
   | { kind: 'failed'; error: string; tail?: string }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
-  /** The job is paused on its proposal (issue #537), as on a question: its executor state must allow resume. */
-  | { kind: 'proposal'; proposal: ExecutionProposal };
+  /**
+   * The job is paused on a document it wrote for a review section — a proposal, a research report (issues #537, #543)
+   * — as on a question: its executor state must allow resume.
+   */
+  | { kind: 'report'; review: ReviewKind; report: ExecutionReport };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.

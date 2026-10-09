@@ -4,7 +4,7 @@ import { EVENT_EXAMPLES } from './examples.ts';
 import { exportJsonSchemas } from './export.ts';
 import { LEGACY_EVENT_SCHEMAS } from './legacy.ts';
 
-const WHEN: Record<EventType, string> = {
+export const EVENT_DOCS: Record<EventType, string> = {
   'job.queued': 'A job was created from a source item; it waits at the queue gate until accepted (`job.accepted`).',
   'job.prioritized': 'The router\'s advice arrived for a job; once per job, whatever its status then.',
   'job.held': 'A Decision held a job and its hold reason changed.',
@@ -74,10 +74,18 @@ const WHEN: Record<EventType, string> = {
   'proposal.escalated': 'A proposal entered a stage of its review (issue #537): `target` is the reviewer level (an escalation level named in the proposal settings) or `human`, and `reason` why it climbed.',
   'proposal.escalated_to_human': 'A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version.',
   'proposal.reviewed': 'A reviewer level gave its verdict on a proposal (issue #537): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.',
-  'proposal.revision_requested': 'A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person): `notes` is what to change. The job is re-queued with it and writes the next version.',
+  'proposal.revision_requested': 'A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person; `decision` `request_changes`): `notes` is what to change. The job is re-queued with it and writes the next version.',
   'proposal.accepted': 'A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. Its job ends finished, with the decision as its result; the proposal stays linked to the job and its item.',
   'proposal.rejected': 'A person rejected a proposal (issue #537), with why (`notes`). Its job ends finished, with the decision as its result.',
   'proposal.cancelled': 'A proposal waiting on a decision was cancelled because its job ended or is gone (issue #537).',
+  'research.asked': 'A person asked a job that has not started to research (issue #543): when it starts, its agent is told to research and write a research report instead of doing the work. A job from an item labelled `hopper:research`, or with a Research heading in its body, is asked from the start, with no event.',
+  'research.submitted': 'A job came back with a research report (issue #543): its agent ended with HOPPER_RESEARCH_REPORT instead of doing the work. Round 1 (`version`), or the next round after a dig deeper or a steer. The job waits on it, keeping its session. `question`: its Question part; `missing`: the parts it left out.',
+  'research.escalated': 'A research report entered a stage of its review (issue #543): `target` is the reviewer level (an escalation level named in the research settings) or `human`, and `reason` why it climbed.',
+  'research.escalated_to_human': 'A research report reached a person (issue #543): every reviewer level passed it up, there are none (the default), or they asked for changes more often than the settings allow. Once per round.',
+  'research.reviewed': 'A reviewer level gave its verdict on a research report (issue #543): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.',
+  'research.revision_requested': 'A research report was sent back for another round (issue #543): `decision` `dig_deeper` (a person: deeper on the whole report, or on the open threads `notes` names), `steer` (a person: `notes` is the new direction) or `request_changes` (a reviewer level). The job is re-queued with it, in the same session, and its next report is the next round.',
+  'research.accepted': 'A research report was accepted (issue #543), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the research settings let it. A job that also asks for a proposal is re-queued to write it, in the same session; any other ends finished, with the decision as its result.',
+  'research.cancelled': 'A research report waiting on a decision was cancelled because its job ended or is gone (issue #543).',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 
@@ -132,7 +140,7 @@ export function renderEventsMarkdown(): string {
   ];
   for (const t of EVENT_TYPES) {
     const v = EVENT_SCHEMA_VERSIONS[t];
-    out.push('', `## \`${t}\``, '', `Version ${v} (\`docs/schemas/${t}.v${v}.json\`). ${WHEN[t]}`, '',
+    out.push('', `## \`${t}\``, '', `Version ${v} (\`docs/schemas/${t}.v${v}.json\`). ${EVENT_DOCS[t]}`, '',
       fieldRows(files[`${t}.v${v}.json`] as Prop), '', '```json', JSON.stringify(EVENT_EXAMPLES[t], null, 2), '```');
   }
   return `${out.join('\n')}\n`;

@@ -1,5 +1,5 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
-import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, X } from 'lucide-react';
+import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -8,7 +8,8 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { canRequeue, laneRows, machineName, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
-import type { Job } from '@/model/wire';
+import { REVIEW_UI } from '@/model/reviews';
+import type { Job, ReviewKind } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { useJobBoard } from '@/store/selectors';
 import { cn } from '@/lib/utils';
@@ -79,14 +80,18 @@ export function OperatorLedButton({ job }: { job: Job }) {
   );
 }
 
-/** Ask a job that has not started for a proposal (issue #537): its agent writes one instead of doing the work. */
-export function ProposeButton({ job }: { job: Job }) {
+/**
+ * Ask a job that has not started for a review section's special job (issues #537, #543): its agent writes a proposal,
+ * or researches and writes a research report, instead of doing the work.
+ */
+export function AskButton({ job, kind }: { job: Job; kind: ReviewKind }) {
   const authed = useCanOperate();
-  if (!authed || job.spec.proposal || (job.status !== 'queued' && job.status !== 'held')) return null;
+  const ui = REVIEW_UI[kind];
+  if (!authed || job.spec[kind] || (job.status !== 'queued' && job.status !== 'held')) return null;
   return (
-    <Confirm title="Ask this job for a proposal?" action="Ask for a proposal" onConfirm={() => act(`/ui/api/jobs/${job.id}/propose`, {}, 'The job will write a proposal')}
-      description={<>When “{goalOf(job)}” starts, its agent writes a proposal — goal, approach, alternatives, risks, effort, the context it relied on — instead of doing the work. It is reviewed and comes to Proposals for a decision.</>}>
-      <Button size="xs" variant="outline" aria-label={`Ask ${goalOf(job)} for a proposal`} title="Ask for a proposal instead of the work"><FileCheck />Propose</Button>
+    <Confirm title={`Ask this job for a ${ui.noun}?`} action={`Ask for a ${ui.noun}`} onConfirm={() => act(`/ui/api/jobs/${job.id}/${ui.askPath}`, {}, `The job will write a ${ui.noun}`)}
+      description={<>When “{goalOf(job)}” starts, its agent writes a {ui.noun} — {ui.parts} — instead of doing the work. It comes to {ui.label} for a decision.</>}>
+      <Button size="xs" variant="outline" aria-label={`Ask ${goalOf(job)} for a ${ui.noun}`} title={`Ask for a ${ui.noun} instead of the work`}>{kind === 'research' ? <Telescope /> : <FileCheck />}{ui.ask}</Button>
     </Confirm>
   );
 }

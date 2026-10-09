@@ -129,7 +129,7 @@ describe('the Research view', () => {
   });
 
   it('the badge stays up while a report is open, seen or not', async () => {
-    await boot('#overview', { reports: [report('j1', { seenAt: T0 })], jobs: [job('j1')] });
+    await boot('#questions', { reports: [report('j1', { seenAt: T0 })], jobs: [job('j1')] });
     expect(navBadge()!.textContent).toBe('1');
   });
 

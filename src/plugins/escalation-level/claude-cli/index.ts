@@ -6,7 +6,7 @@
 // its own claude with the same lockdown (`POST /level`, issue #482); never a container target (`docker
 // exec` passes no stdin). Named, never a default (issue #174) — but a
 // level stored with none (a fresh plugins config, issue #259) picks one per question, in a set order, and
-// the trail says which and why; none can: it escalates, saying so plainly (issue #442). It reviews proposals too
+// the trail says which and why; none can: it escalates, saying so plainly (issue #442). It reviews proposals and research reports too
 // (issue #537): approve, request changes, or escalate.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -135,7 +135,7 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
       name: 'claude-cli',
       model: o.model,
       answer: (req, signal) => ask({ prompt: buildLevelPrompt(req), jsonSchema: JSON_SCHEMA, schema: REPLY }, req, signal, (why) => ({ escalate: true, reason: why })),
-      // A proposal's review (issue #537): the same claude, locked down the same way, with the reviewer's prompt.
+      // A review item's review — a proposal, a research report (issues #537, #543): the same claude, locked down the same way, with the reviewer's prompt.
       review: (req, signal) => ask({ prompt: buildReviewPrompt(req), jsonSchema: REVIEW_JSON_SCHEMA, schema: REVIEW }, req, signal, (why) => ({ verdict: 'escalate', notes: why })),
     };
   },

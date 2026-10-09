@@ -71,6 +71,10 @@
         "proposal": {
           "type": "boolean",
           "const": true
+        },
+        "research": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

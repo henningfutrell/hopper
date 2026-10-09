@@ -64,6 +64,11 @@ export interface JobSpec {
   routedBy?: RoutedBy;
   /** Asked for a proposal (issue #537): its agent writes one instead of doing the work, and is told so after the job rules. */
   proposal?: true;
+  /**
+   * Asked to research (issue #543, #538): its agent writes a research report instead of doing the work. With `proposal`
+   * too, it researches first and, once the research is accepted, writes the proposal (src/domain/review.ts REVIEW_KINDS).
+   */
+  research?: true;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
@@ -110,6 +115,8 @@ export interface Job {
   questionId?: string;
   /** Its proposal (issue #537): while it is open, the job waits on it (status waiting_answer, no question). */
   proposalId?: string;
+  /** Its research report (issue #543): while it is open, the job waits on it, as on its proposal. */
+  researchId?: string;
   /** An answer to deliver on the next claim: the job resumes instead of starting fresh. */
   pendingAnswer?: string;
   /** Machine a resuming job must return to (its pane lives there, or its parked work tree and agent session). */
@@ -482,7 +489,8 @@ export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES, type GateActor, type PreSort, typ
 // ---- Logins (issue #476): src/domain/logins.ts (re-exported here) ----------------------
 
 export * from './logins.ts';
-export * from './proposals.ts';
+export * from './review.ts';
+export * from './sections.ts';
 export * from './failures.ts';
 export * from './priority.ts';
 

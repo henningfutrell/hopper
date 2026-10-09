@@ -1,7 +1,7 @@
 // The SSE connection: replays after the newest event already loaded, then live. EventSource
 // reconnects by itself (with Last-Event-ID); every (re)open refreshes what may have changed.
 import { readToken } from '@/lib/api';
-import { refreshProposals } from './proposals';
+import { refreshAllReviews } from './reviews';
 import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
 import { onDelivery, onDomainEvent, onSource, onUsageRecorded, refreshFailures, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
@@ -16,7 +16,7 @@ export function connect(): () => void {
     refreshLive().catch(() => {});
     refreshQuestions().catch(() => {});
     refreshLogins().catch(() => {});
-    refreshProposals().catch(() => {});
+    refreshAllReviews();
     refreshFailures().catch(() => {});
     refreshUpdate().catch(() => {});
   };

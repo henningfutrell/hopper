@@ -6,6 +6,7 @@
 import type { Job, Question } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
+import { openItemOf } from './reviews.ts';
 
 export interface Recovered {
   /** Jobs whose external work the caller must clean up, after the commit. */
@@ -69,8 +70,9 @@ export async function recover(c: EngineContext): Promise<Recovered> {
       else requeue(job, job.status, 'daemon restart');
     }
     for (const job of store.jobs.list({ status: ['waiting_answer'] })) {
-      // On its proposal (issue #537): it waits on; ProposalService.recover re-drives a review, and a decision ends it.
-      if (!job.questionId && job.proposalId && store.proposals.get(job.proposalId)?.status === 'open') continue;
+      // On its proposal or research report (issues #537, #543): it waits on; ReviewService.recover re-drives a review, and
+      // a decision ends it or moves it on.
+      if (!job.questionId && openItemOf(c, job)) continue;
       byQuestion(job, job.questionId ? store.questions.get(job.questionId) : undefined);
     }
     for (const lane of store.lanes.list()) {

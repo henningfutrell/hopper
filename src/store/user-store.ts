@@ -12,7 +12,7 @@ import { createLaneRepository } from './lanes.ts';
 import { createFailureRepository, createProblemRepository } from './failures.ts';
 import { createHandoffRepository } from './handoffs.ts';
 import { createLoginRepository } from './logins.ts';
-import { createProposalRepository } from './proposals.ts';
+import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
 import { migrateTenant } from './tenant-migrations.ts';
@@ -46,7 +46,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     events,
     webhooks: createWebhookRepository(ctx),
     questions: createQuestionRepository(ctx),
-    proposals: createProposalRepository(ctx),
+    reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),
     failures: createFailureRepository(ctx),
     problems: createProblemRepository(ctx),

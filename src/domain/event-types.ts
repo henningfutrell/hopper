@@ -16,6 +16,8 @@ export const EVENT_TYPES = [
   'usage.limits_changed', 'priority_lanes.changed', 'priority_lanes.settings_changed',
   'proposal.asked', 'proposal.submitted', 'proposal.escalated', 'proposal.escalated_to_human', 'proposal.reviewed',
   'proposal.revision_requested', 'proposal.accepted', 'proposal.rejected', 'proposal.cancelled',
+  'research.asked', 'research.submitted', 'research.escalated', 'research.escalated_to_human', 'research.reviewed',
+  'research.revision_requested', 'research.accepted', 'research.cancelled',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -40,4 +42,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'usage.limits_changed': 1, 'priority_lanes.changed': 1, 'priority_lanes.settings_changed': 1,
   'proposal.asked': 1, 'proposal.submitted': 1, 'proposal.escalated': 1, 'proposal.escalated_to_human': 1, 'proposal.reviewed': 1,
   'proposal.revision_requested': 1, 'proposal.accepted': 1, 'proposal.rejected': 1, 'proposal.cancelled': 1,
+  'research.asked': 1, 'research.submitted': 1, 'research.escalated': 1, 'research.escalated_to_human': 1, 'research.reviewed': 1,
+  'research.revision_requested': 1, 'research.accepted': 1, 'research.cancelled': 1,
 };
