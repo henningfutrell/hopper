@@ -1,5 +1,5 @@
 // The GitHub Pages site (issue #382): `npm run build:site` → site/dist, which .github/workflows/pages.yml
-// publishes. Two pages, index.html and install.html, styled by site.css (the UI's own stylesheet). The
+// publishes. Three pages, index.html, install.html and guide.html (the user guide, issue #556), styled by site.css (the UI's own stylesheet). The
 // pages mark where the shared parts go with comments — <!--story:headline-->, <!--story:steps-->,
 // <!--tour--> and the like — and the build renders them from ui/src/app/story.ts and site/tour.ts. The build also
 // publishes what the site served before it had one: scripts/get.sh as install.sh, compose.yaml, the logo.
@@ -57,6 +57,6 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     assetsInlineLimit: 0,
-    rollupOptions: { input: { index: at('./index.html'), install: at('./install.html') } },
+    rollupOptions: { input: { index: at('./index.html'), install: at('./install.html'), guide: at('./guide.html') } },
   },
 });
