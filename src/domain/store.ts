@@ -252,7 +252,8 @@ export interface UiSessionRow {
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
 export interface UiSessionRepository {
-  create(row: UiSessionRow): void;
+  /** `expiresAt`: the session's absolute end as it is now, for the build before store migration 27 to read (issue #527); never read back. */
+  create(row: UiSessionRow, expiresAt: string): void;
   /** The session with this hash, ended or not, or undefined. */
   get(tokenHash: string): UiSessionRow | undefined;
   /** Every stored session, ended or not. */

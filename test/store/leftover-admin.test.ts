@@ -52,7 +52,7 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
   octo.connectedAccounts.put({ provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
   octo.close();
 
-  instance.uiSessions.create({ tokenHash: 'octo-session', startedAt: NOW, lastSeenAt: NOW, checkedAt: NOW, role: 'admin', identity, userId: 'octo' });
+  instance.uiSessions.create({ tokenHash: 'octo-session', startedAt: NOW, lastSeenAt: NOW, checkedAt: NOW, role: 'admin', identity, userId: 'octo' }, NOW);
   instance.loginCodes.create('admin-code', FUTURE, 'admin');
   if (o.recordAdmin !== false) {
     const store = instance.signInConfig;

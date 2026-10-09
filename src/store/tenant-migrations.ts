@@ -19,6 +19,7 @@ import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
+import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
 
@@ -292,6 +293,8 @@ export function migrateTenant(db: Db, to = TENANT_SCHEMA_VERSION): void {
     db.run('DELETE FROM schema_version');
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
-  if (version() === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));
+  const from = version();
+  if (from > TENANT_SCHEMA_VERSION) throw new Error(newerStore(`a user schema is at version ${from}`, TENANT_SCHEMA_VERSION));
+  if (from === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));
   for (let v = version(); v < to; v++) step(db, TENANT_MIGRATIONS[v - TENANT_BASE_VERSION]!, record(v + 1));
 }

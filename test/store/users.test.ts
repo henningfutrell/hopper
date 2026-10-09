@@ -116,7 +116,7 @@ describe('identity links, sessions and login codes belong to a user', () => {
     const bea = instance.users.add('bea');
     const identity = { realm: 'local', subject: 'local', groups: [] };
     const at = '2026-10-02T10:00:00.000Z';
-    instance.uiSessions.create({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: bea.id });
+    instance.uiSessions.create({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: bea.id }, at);
     expect(instance.uiSessions.get('h')).toEqual({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: 'bea' });
     instance.close();
   });

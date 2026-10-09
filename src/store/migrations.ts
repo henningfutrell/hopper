@@ -9,7 +9,7 @@ import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
-import { sessionsRenew } from './migration-session-lifetime.ts';
+import { sessionsRenew, sessionsTheBuildBeforeReads } from './migration-session-lifetime.ts';
 import { attachedMachinesToInstances } from './migration-attached-machines.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
@@ -166,6 +166,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 27: sessions renew (issue #439): no fixed expiry; when a session started, was last used and its gateway
   // token last checked out, and the sign-in config's session lengths decide when it ends.
   sessionsRenew,
+  // 28: the UI sessions table as the build before 27 reads and writes it, beside this build's (issue #527): 27 dropped
+  // `expires_at`, and that build, rolled back to on a migrated store, failed every session it made or looked up.
+  sessionsTheBuildBeforeReads,
 ];
 
 /**
@@ -338,6 +341,15 @@ function webhooksDocumentToRows(db: Db): void {
   db.run("DELETE FROM config_documents WHERE name = 'webhooks.yaml'");
 }
 
+/**
+ * Why a build stops on a store a newer build migrated (issue #527): it would run on a schema it does not know
+ * (AGENTS.md "Persisted state is the user's"). Nothing is changed; the newer build, or a backup of the store
+ * from before it, runs again.
+ */
+export const newerStore = (what: string, known: number): string =>
+  `${what}, newer than this build's ${known}: a newer hopper migrated it. Run that release or a newer one again`
+  + ' (docs/deploy.md "Update channels and promotion"), or restore a backup of the database taken before it.';
+
 /** The instance schema's version once migrated. */
 export const INSTANCE_SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;
 
@@ -363,6 +375,7 @@ export function migrateInstance(db: Db, to = INSTANCE_SCHEMA_VERSION): void {
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
   const from = version();
+  if (from > INSTANCE_SCHEMA_VERSION) throw new Error(newerStore(`the database's instance schema is at version ${from}`, INSTANCE_SCHEMA_VERSION));
   if (from === 0) step(db, BASE, from, record(BASE_VERSION));
   for (let v = version(); v < to; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, from, record(v + 1));
 }

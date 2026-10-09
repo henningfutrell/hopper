@@ -10,9 +10,9 @@ const rowOf = (r: Record<string, unknown>): UiSessionRow => ({
 
 export function createUiSessionRepository(c: StoreContext): UiSessionRepository {
   return {
-    create(s) {
-      c.db.run('INSERT INTO ui_sessions (token_hash, started_at, last_seen_at, checked_at, ends_at, role, identity, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        s.tokenHash, s.startedAt, s.lastSeenAt, s.checkedAt, s.endsAt ?? null, s.role, JSON.stringify(s.identity), s.userId);
+    create(s, expiresAt) {
+      c.db.run('INSERT INTO ui_sessions (token_hash, started_at, last_seen_at, checked_at, ends_at, expires_at, role, identity, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        s.tokenHash, s.startedAt, s.lastSeenAt, s.checkedAt, s.endsAt ?? null, expiresAt, s.role, JSON.stringify(s.identity), s.userId);
     },
     get(tokenHash) {
       const r = c.db.get('SELECT * FROM ui_sessions WHERE token_hash = ?', tokenHash);
