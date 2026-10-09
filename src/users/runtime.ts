@@ -107,7 +107,7 @@ export interface UserRuntime {
   logins: Logins;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
-  /** The Jev tier of the minor decisions (issue #550). */
+  /** Minor decisions, Jev first (issue #550). */
   minorDecisions: MinorDecisions;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
@@ -127,7 +127,7 @@ export interface UserRuntime {
 }
 
 const SEAM_SOURCE_POLL_MS = 1000;
-/** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the next tier decides. */
+/** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
 const JEV_TIMEOUT_MS = 30_000;
 
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
@@ -265,7 +265,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   const logins = createLogins({ store, clock });
-  // The Jev tier (issue #550): minor decisions go through Jev first, through TypeSafe with the runtime's key.
+  // Minor decisions (issue #550) go through Jev first, through TypeSafe with the runtime's key.
   const minorDecisions: MinorDecisions = createMinorDecisions({
     store, clock, logger, timeoutMs: JEV_TIMEOUT_MS,
     jev: seams.jev ?? createJev({
@@ -276,7 +276,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
-    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { tier: minorDecisions, gated },
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { first: minorDecisions, gated },
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: o.answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
@@ -325,7 +325,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, logger, sweepMs: config.tickMs,
     rerun: (jobId, by) => sync.rerun(jobId, by), dismiss: (jobId) => { engine.dismiss(jobId); },
     machines: () => host.machines().list(), itemClosed: async (job) => sourceOf(job)?.itemClosed?.(job),
-    trigger: (reason) => engine.trigger(reason), minorDecisions: { tier: minorDecisions, gated },
+    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.

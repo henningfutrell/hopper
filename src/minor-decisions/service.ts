@@ -1,16 +1,16 @@
-// The Jev tier (issue #550, design.md "Minor decisions"): the first tier of every decision point. A point hands it a
+// Jev first (issue #550, design.md "Minor decisions"): asked before anything else at every decision point. A point hands it a
 // minor decision — its options, the facts, and what makes it consequential —; per the point's settings (in the
 // database, read on every decision) Jev is not asked (off), asked and only recorded (shadow), or asked and its pick
 // applied when it meets the point's threshold and nothing makes it consequential (active). Every pick is an event on
-// its job. What the next tier decides for a pick that was not applied is compared with it — a question's answer, a
+// its job. What is decided after a pick that was not applied is compared with it — a question's answer, a
 // person's action on a hand-off —, and a person may override any pick: the agreement rates a person flips a point to
-// active on. Without Jev (no TypeSafe key) nothing is asked and nothing recorded: the next tier decides, as before.
+// active on. Without Jev (no TypeSafe key) nothing is asked and nothing recorded: each decision is made as before.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
   DECISION_POINTS, DEFAULT_MINOR_DECISION_SETTINGS, MINOR_DECISION_WINDOW_DAYS, type DecisionPoint, type DecisionPointPatch, type DecisionPointSettings,
   type DomainEvent, type JevChooser, type JevPick, type MinorDecisionInput, type MinorDecisionOutcome, type MinorDecisionPickView,
-  type MinorDecisionSettings, type MinorDecisionTier, type MinorDecisionsView, type NotApplied,
+  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied,
 } from '../domain/types.ts';
 import { optionNamed } from './options.ts';
 import { picksOf, viewOf, VIEW_EVENT_TYPES } from './view.ts';
@@ -26,8 +26,8 @@ export interface MinorDecisionsOptions {
 
 export type OverrideResult = { ok: true; value: MinorDecisionPickView } | { ok: false; reason: 'not_found' | 'invalid'; message: string };
 
-export interface MinorDecisions extends MinorDecisionTier {
-  /** Follow what the next tiers decide. Once. */
+export interface MinorDecisions extends JevFirst {
+  /** Follow what is decided after a pick. Once. */
   start(): void;
   stop(): void;
   view(): MinorDecisionsView;
@@ -101,7 +101,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     };
   }
 
-  /** What the next tier decided, compared with the open pick it follows: one not applied, not compared yet. */
+  /** What was decided after a pick, compared with the open pick it follows: one not applied, not compared yet. */
   function compare(find: (p: MinorDecisionPickView) => boolean, actualOf: (p: MinorDecisionPickView) => string | undefined, decidedBy: string): void {
     const p = picks().filter((x) => !x.applied && x.pick !== undefined && x.actual === undefined && find(x)).at(-1);
     if (!p) return;

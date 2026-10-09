@@ -1,6 +1,6 @@
 // Minor decisions through Jev first (issue #550), end to end: the real daemon and database, Jev as a double at its
 // seam (`seams.jev`), escalation levels as doubles. A question that lists its options and a failure no rule explains
-// ask Jev first. In shadow (the default) Jev's pick is recorded and compared with what the next tier decided; active,
+// ask Jev first. In shadow (the default) Jev's pick is recorded and compared with what was decided after it; active,
 // a confident pick that nothing makes consequential is applied, and anything else goes on as before. Every pick is an
 // event on its job; a person overrides one; the agreement rates show per decision point. Without Jev nothing is asked.
 import { afterEach, describe, expect, it } from 'vitest';

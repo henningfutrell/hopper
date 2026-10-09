@@ -1,4 +1,4 @@
-// A question's listed options (issue #550): the numbered lines a job's question lists, which the Jev tier offers as
+// A question's listed options (issue #550): the numbered lines a job's question lists, which Jev first offers as
 // the options of the decision; and which option an answer names — its number, or its words.
 import { describe, expect, it } from 'vitest';
 import { optionNamed, questionOptions } from '../../src/minor-decisions/options.ts';

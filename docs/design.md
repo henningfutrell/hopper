@@ -49,6 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
@@ -8803,3 +8804,66 @@ marker on the screen and in print mode; what a source item asks for by label and
 `test/integration/research.test.ts` (Research over the real server: rounds, dig deeper, steer, accept, no reject,
 reviewer levels, priority, stale cleanup, ask a job; an item with Research and Proposal headings researched then
 proposed in one job; `GET /api/sections`), `test/ui/research-view.test.ts`, and the proposal tests on the shared contract.
+
+## Minor decisions (issue #550, 2026-10-09)
+
+Hopper and its jobs make many small decisions. A **minor decision** is a bounded choice with a known option set and a
+low blast radius. Jev picks it first — before an escalation level, a model or a person — and the decision goes on as
+before when Jev's pick is not applied. Jev is not the router (that is the gate router, "Gate router"): it is asked
+before anything else at each **decision point**.
+
+**Jev at its seam** (`src/minor-decisions/jev.ts`, `jev_pick.py`): one TypeSafe `Choice` named `decision` over the
+point's options (`criteria`: option id → what it means), with the point's instructions and the facts as `state`, model
+`jev-latest` (grok-bot-jev's own default) — the call grok-bot-jev's `jev_client` makes, through the `typesafe_sdk` the
+image installs (0.7.4). The key is the runtime's `TYPESAFE_API_KEY` (under the user's secret prefix), read on every
+call. No key: Jev is off, nothing is asked and nothing recorded, and every point decides as it did before (an
+escalation level, the rules, a person). Every failure — no SDK, TypeSafe refusing, 30 s without a pick, a pick outside
+the options — is no pick, never a throw. Not a plugin and not a setting: no option of it is something a person setting
+up the hopper knows (issue #217). Tests put a double at the seam (`UserSeams.jev`).
+
+**Decision points.** Each declares its options; the settings are per point, in the database (`minorDecisions`, a user
+setting), edited in Settings → Minor decisions (admin), read at every decision:
+
+| point | asked | options | applied |
+|---|---|---|---|
+| `question-answer` | a question whose text lists at least two numbered options (`1. …`, `2) …`, a dialog's cursor and border aside; the last run of them, numbered from 1), before the first escalation level | each listed option, by its number | the number is the answer (`answeredBy: jev`), typed as a level's answer is |
+| `failure-assessment` | a failure the rules hand to a person with no known cause, not superseded, not stale, within the retry limit — after the rules | `retry`, `person` | `retry`: the job runs again by the assessor (`job.rerun`, `by: assessor`; its record `retried`, note `run again: Jev picked it`); its hand-off, opened by the rules, closes as for any run again |
+
+Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other minor
+decisions the issue names — the queue gate and pre-sort, priority and lane choice, phase shifts, stale cleanup, client
+repair — are not decision points yet; each one is a new row here.
+
+**Modes.** `off`: Jev is not asked. `shadow` (the default for every point): Jev's pick is recorded next to what was
+decided, and nothing else changes. `active`: a pick whose confidence is at or above the point's `threshold` (default
+0.85) is applied; below it, the decision goes on as before.
+
+**Never for consequential actions** (`guard.ts`). A decision is consequential when its text matches the question
+pipeline's risk rules (delete, deploy and publish, force-push, spend, credentials, sending a message) or names a
+permission change (permissions, chmod, chown, grant, revoke, sudo, access to), or when its job's machine is one the
+blast-radius gate keeps (`BlastRadius.gates`, issue #542). For a question the text is the question with its options;
+for a failure, the job's goal. A consequential pick is recorded (`notApplied: consequential`, with what made it so) and
+never applied, whatever its confidence.
+
+**Visible.** Every pick is a `minor_decision.picked` event on its job (and its question): the options, the pick and its
+confidence or the error, the mode and threshold, whether it was applied, and why not (`shadow`, `below_threshold`,
+`consequential`, `no_pick`). A question's pick is also the first entry of its trail (`role: jev`, outcome `accepted`
+when applied). The event stream shows it as one line.
+
+**Agreement.** What is decided after a pick that was not applied is compared with it (`minor_decision.compared`): a
+question's accepted answer — a level's or a person's —, read as the option it names (its number or its words; a typed
+answer naming none is a disagreement), and a person's end of a failure's hand-off — Run again is `retry`, Clear is
+`person` (a hand-off closed by anything else is not compared). A person may override any pick, applied or not
+(`POST /ui/api/minor-decisions/picks/:id/override`, operator; `minor_decision.overridden`): what it should have been,
+one of its options. It changes nothing already done; it replaces the comparison in the agreement rate. An applied pick
+is compared only through an override: what follows it is its own doing. `GET /api/minor-decisions` gives, per point
+over the last 30 days, how often Jev was asked, picked, applied, compared, agreed, the agreement rate and the overrides,
+and the newest 50 picks; the figures are read from the events, so no table and no migration. An admin flips a point to
+active once its rate holds; `minor_decision.settings_changed` records each change.
+
+Open decisions taken as defaults, each one entry to change: every point starts in shadow; threshold 0.85; the
+consequential rules are the question risk rules plus permissions; an active failure pick opens the hand-off first and
+closes it when it runs the job again (a webhook told of the hand-off sees it close).
+
+Tests: `test/minor-decisions/` (options, the guard, the view from events, Jev through the fake `typesafe_sdk`),
+`test/integration/minor-decisions.test.ts` (shadow, active, below the threshold, consequential, Jev failing, a failure
+in shadow and active, a known cause, overrides, settings, off, no key), `test/ui/minor-decisions.test.ts`.

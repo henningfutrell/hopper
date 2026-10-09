@@ -1,7 +1,7 @@
 // Minor decisions (issue #550, design.md "Minor decisions"): bounded choices with a known option set and a low blast
 // radius, which Jev picks first — before an escalation level, a model or a person. Each decision point declares its
 // options; Jev picks one with a confidence. In shadow the pick is only recorded, next to what was decided; active, a
-// pick at or above the point's threshold is applied, and below it the decision goes on to the next tier as before.
+// pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a minor decision. */
 export const DECISION_POINTS = ['question-answer', 'failure-assessment'] as const;
@@ -57,7 +57,7 @@ export type JevPick = { ok: true; pick: string; confidence: number } | { ok: fal
 export const NOT_APPLIED = ['shadow', 'below_threshold', 'consequential', 'no_pick'] as const;
 export type NotApplied = typeof NOT_APPLIED[number];
 
-/** Who settled a decision Jev picked for: the tier that decided it after Jev. */
+/** A pick and what was decided after it. */
 export interface MinorDecisionPickView {
   pickId: string;
   at: string;
@@ -124,7 +124,7 @@ export interface JevChooser {
   pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick>;
 }
 
-/** A minor decision as a decision point hands it to the Jev tier. */
+/** A minor decision as a decision point hands it to Jev first. */
 export interface MinorDecisionInput extends MinorDecisionAsk {
   jobId?: string;
   questionId?: string;
@@ -132,12 +132,12 @@ export interface MinorDecisionInput extends MinorDecisionAsk {
   consequential: readonly string[];
 }
 
-/** What the Jev tier did: not asked (off, or Jev unavailable), or its pick and whether it is applied. */
+/** What Jev first did: not asked (off, or Jev unavailable), or its pick and whether it is applied. */
 export type MinorDecisionOutcome =
   | { asked: false }
   | { asked: true; pickId: string; pick?: string; confidence?: number; applied: boolean; notApplied?: NotApplied };
 
-/** The Jev tier: the first tier of every decision point. Never throws. */
-export interface MinorDecisionTier {
+/** Jev first: asked before anything else at every decision point. Never throws. */
+export interface JevFirst {
   decide(input: MinorDecisionInput): Promise<MinorDecisionOutcome>;
 }

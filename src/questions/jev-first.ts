@@ -1,13 +1,13 @@
-// The Jev tier of the question pipeline (issue #550, design.md "Minor decisions"): a question that lists its options
+// Jev first in the question pipeline (issue #550, design.md "Minor decisions"): a question that lists its options
 // is a minor decision, and Jev is asked before any escalation level. Its pick goes on the question's trail; it is the
 // answer only when the decision point is active, Jev is sure enough, and nothing makes it consequential — the risk
 // rules, permissions, a machine the blast-radius gate keeps. Anything else goes on to the levels, as before.
 import type { UserStore } from '../domain/ports.ts';
-import type { MinorDecisionTier, Question, QuestionAttempt } from '../domain/types.ts';
+import type { JevFirst, Question, QuestionAttempt } from '../domain/types.ts';
 import { consequentialOf } from '../minor-decisions/guard.ts';
 import { questionOptions } from '../minor-decisions/options.ts';
 
-/** The Jev tier's name on a question's trail and as `answeredBy`. */
+/** Jev's name on a question's trail and as `answeredBy`. */
 export const JEV = 'jev';
 const INSTRUCTIONS = 'A coding agent running a job unattended asks this question and lists its options. Pick the option a careful engineer on the job would choose; when unsure, the safest, most reversible one.';
 const OUTPUT_TAIL = 2000;
@@ -18,7 +18,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 export interface JevFirstDeps {
   store: UserStore;
-  tier: MinorDecisionTier;
+  first: JevFirst;
   iso(): string;
   stopped(): boolean;
   gated(machineId: string): boolean;
@@ -36,7 +36,7 @@ export async function askJevFirst(d: JevFirstDeps, id: string): Promise<boolean>
   const machine = job?.resumeOn ?? job?.spec.machineId ?? q.raisedBy?.machineId;
   const gatedMachine = machine !== undefined && d.gated(machine) ? machine : undefined;
   const startedAt = d.iso();
-  const out = await d.tier.decide({
+  const out = await d.first.decide({
     point: 'question-answer', jobId: q.jobId, questionId: q.id, instructions: INSTRUCTIONS, options,
     state: { question: q.text, goal: job?.spec.goal ?? '', recentOutput: q.recentOutput.slice(-OUTPUT_TAIL) },
     consequential: consequentialOf([q.text], gatedMachine ? { gatedMachine } : {}),

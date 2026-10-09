@@ -1,10 +1,10 @@
-// The Jev tier of the failure assessor (issue #550, design.md "Minor decisions"): a failure no known cause explains,
+// Jev first in the failure assessor (issue #550, design.md "Minor decisions"): a failure no known cause explains,
 // which the rules hand to a person, is a minor decision. Jev picks: run it again, or a person. Grouping stays the
 // rules' own, from failures on several items. The pick runs the job again only when the decision point is active,
 // Jev is sure enough, and nothing makes it consequential — a goal that deletes, sends, publishes, pays or changes
 // permissions, or a machine the blast-radius gate keeps. Otherwise the hand-off to a person stands.
 import type { RerunBy } from '../domain/ports.ts';
-import type { Job, MinorDecisionOption, MinorDecisionTier } from '../domain/types.ts';
+import type { Job, MinorDecisionOption, JevFirst } from '../domain/types.ts';
 import { consequentialOf } from '../minor-decisions/guard.ts';
 
 const OPTIONS: MinorDecisionOption[] = [
@@ -18,7 +18,7 @@ const TEXT_MAX = 2000;
 export interface JevCase { recordId: string; job: Job; error: string; attempt: number; ranMs?: number; machineId?: string }
 
 export interface JevStepDeps {
-  tier: MinorDecisionTier;
+  first: JevFirst;
   live(): boolean;
   logger: { warn(line: string): void };
   gated(machineId: string): boolean;
@@ -28,7 +28,7 @@ export interface JevStepDeps {
 
 export async function askJev(d: JevStepDeps, c: JevCase): Promise<void> {
   const gatedMachine = c.machineId !== undefined && d.gated(c.machineId) ? c.machineId : undefined;
-  const out = await d.tier.decide({
+  const out = await d.first.decide({
     point: 'failure-assessment', jobId: c.job.id, instructions: INSTRUCTIONS, options: OPTIONS,
     state: {
       error: c.error.slice(0, TEXT_MAX), output: (c.job.errorTail ?? '').slice(-TEXT_MAX), goal: c.job.spec.goal ?? '', executor: c.job.spec.executor,

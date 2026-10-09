@@ -7,7 +7,7 @@
 // answers.
 import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
-import { jobPriorityTag, type MinorDecisionTier, type Question, type QuestionAttempt } from '../domain/types.ts';
+import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt } from '../domain/types.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
 import { openOnEndedJobs } from './stale.ts';
@@ -35,8 +35,8 @@ export interface QuestionServiceOptions {
   onDismissed: (q: Question) => void;
   /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
   logins?: Logins;
-  /** The Jev tier (issue #550), asked first about a question that lists its options, and whether the blast-radius gate keeps a machine. Absent: the levels only. */
-  minorDecisions?: { tier: MinorDecisionTier; gated(machineId: string): boolean };
+  /** Jev first (issue #550), asked first about a question that lists its options, and whether the blast-radius gate keeps a machine. Absent: the levels only. */
+  minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
 }
 
 export const HUMAN = 'human';
@@ -242,7 +242,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     });
   }
 
-  /** The Jev tier first (issue #550): true when nothing is left for the levels. */
+  /** Jev first (issue #550): true when nothing is left for the levels. */
   const answeredByJev = (q: Question) => { emit(q, 'question.answered', { by: JEV, answer: q.answer! }); o.onAnswered(q); };
   const jevFirst = (id: string) => (o.minorDecisions ? askJevFirst({ store, ...o.minorDecisions, iso, stopped: () => stopped, answered: answeredByJev }, id) : Promise.resolve(false));
 

@@ -13,7 +13,7 @@
 // is active and it is sure.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type MinorDecisionTier, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
+  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type Handoff, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
@@ -42,8 +42,8 @@ export interface FailuresOptions {
   logger: { warn(line: string): void };
   /** How often the sweep runs. */
   sweepMs: number;
-  /** The Jev tier (issue #550), asked about a failure no known cause explains, and whether the blast-radius gate keeps a machine. Absent: the rules only. */
-  minorDecisions?: { tier: MinorDecisionTier; gated(machineId: string): boolean };
+  /** Jev first (issue #550), asked about a failure no known cause explains, and whether the blast-radius gate keeps a machine. Absent: the rules only. */
+  minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
 }
 
 export type FailureAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };

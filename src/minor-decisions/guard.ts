@@ -1,6 +1,6 @@
 // Never for consequential actions (issue #550): a minor decision that deletes, sends, publishes, pays, changes
 // permissions or touches a machine the blast-radius gate keeps (issue #542) is never applied, whatever Jev says: it
-// goes on to the next tier. The question pipeline's risk rules, plus permissions, which they do not name. Pure.
+// goes on as before. The question pipeline's risk rules, plus permissions, which they do not name. Pure.
 import { riskRules } from '../questions/risk.ts';
 
 const PERMISSIONS = /\b(permissions?|chmod|chown|grant|revoke|access (to|for)|admin rights|sudo|role (to|for))\b/i;
