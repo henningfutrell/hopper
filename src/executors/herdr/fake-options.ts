@@ -50,6 +50,17 @@ export interface FakeHerdrOptions {
    */
   lateDialog?: { lines: string[]; after: number };
   /**
+   * Claude's config in the home of the pane's machine (issue #533): `absent` until the hopper's seed writes it (shared
+   * by every pane, as a home is), `present` (default) the user's, which the seed keeps, or `unwritable`.
+   */
+  claudeConfig?: 'absent' | 'present' | 'unwritable';
+  /** The first-run screens Claude shows, in order, while its home has no config; before the trust dialog. Default theme, then login. */
+  firstRun?: ('theme' | 'login' | 'apiKey' | 'notice')[];
+  /** Claude has no credential on the machine: its prompt shows "Not logged in · Run /login" until `signIn()` (issue #533). */
+  notSignedIn?: boolean;
+  /** herdr's agent start answers ok and calls Claude idle at its startup screens, as seen live at the first-run theme picker (issue #533). */
+  idleAtStartupScreens?: boolean;
+  /**
    * Before Claude draws anything, the pane shows `lines` — its launch line echoed (a Windows shell's
    * `-EncodedCommand`), or a setup command still on screen (issue #527) — and herdr calls the agent blocked, for
    * `polls` looks at it (Infinity: Claude never comes up); then Claude starts. `started`: herdr's agent start
@@ -121,11 +132,15 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly texts: { paneId: string; text: string }[];
   readonly closed: string[];
   readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
+  /** Each seed of Claude's config the shell ran (issue #533): its arguments, the work tree, trust and yolo. */
+  readonly seeds: string[][];
   /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
   readonly reaps: { jobId: string; scratch?: string }[];
   /** Each credential file kept on the machine through its connection (issue #441), in order. */
   readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
   addTurns(...turns: FakeTurn[]): void;
+  /** Claude is signed in on the machine from now on (`notSignedIn`). */
+  signIn(): void;
   /** The next N prompts never reach Claude, as `dropsPrompts`. */
   dropPrompts(n: number): void;
   /** Claude denies its dialog by itself, its countdown run out (issue #376): it goes on with the next scripted turn, nothing typed. */

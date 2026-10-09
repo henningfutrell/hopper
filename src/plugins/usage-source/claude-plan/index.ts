@@ -48,7 +48,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
     dockerBin: z.string().min(1).default('docker').meta({ commandBearing: true, description: 'the docker CLI, for a container target' }),
     // The built-in Claude Code executor instance; name the others that run Claude.
-    executors: z.array(z.string().min(1)).min(1).default(['herdr-claude']).meta({ description: EXECUTORS_DESCRIPTION }),
+    executors: z.array(z.string().min(1)).min(1).default(['herdr-claude', 'claude']).meta({ description: EXECUTORS_DESCRIPTION }),
   }),
   // claude runs on the machine, whichever it is: never a call to claude here. Whether it runs shows in the source's state.
   detect: async (_sys, o) => ({ status: 'available', detail: o.machine ? `claude on machine ${o.machine}` : 'claude on the only machine there is' }),

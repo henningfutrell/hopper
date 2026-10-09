@@ -1,8 +1,14 @@
 // The environment every child process of an executor starts with.
 
-/** process.env without CLAUDECODE and CLAUDE_CODE_*: a child-session marker must not leak into panes. */
+/**
+ * The credential the claude CLI signs in with where its login is not on the machine (docs/deploy.md): a hopper in a
+ * container is given it, and its jobs' Claude reads it (issue #533). Not a child-session marker.
+ */
+const CLAUDE_CREDENTIAL = 'CLAUDE_CODE_OAUTH_TOKEN';
+
+/** process.env without CLAUDECODE and CLAUDE_CODE_* but the claude CLI's credential: a child-session marker must not leak into panes. */
 export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_')));
+  return Object.fromEntries(Object.entries(env).filter(([k]) => k === CLAUDE_CREDENTIAL || (k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_'))));
 }
 
 /** What a user added later keeps of the daemon's environment: the machine's variables, never a secret the runtime gives admin. */
