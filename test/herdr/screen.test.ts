@@ -37,12 +37,13 @@ const PROTOCOL = '[hopper protocol] When you need an answer from the user, ask e
   + 'If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.\n'
   + 'When you are asked to research, do not do the work: research, then write a research report, each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.\n'
   + 'When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.\n'
+  + 'Never log in to GitHub yourself: no gh auth login, no device code. When a GitHub operation needs a login you lack (filing an issue, opening a pull request from your pushed branch, reading an issue or pull request, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how.\n'
   + 'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.\n'
   + 'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE\n'
   + 'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.';
 
 describe('protocol footer', () => {
-  it('is the design text verbatim: the default job rules (publishing rule, parallel work), the work tree, then the seven protocol lines', () => {
+  it('is the design text verbatim: the default job rules (publishing rule, parallel work), the work tree, then the eight protocol lines', () => {
     expect(protocolFooter('/w/repo')).toBe(
       PUBLISHING_RULE + '\n'
       + '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.\n'

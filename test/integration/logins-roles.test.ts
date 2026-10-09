@@ -13,7 +13,7 @@ let cleanup: (() => void) | undefined;
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100 } }];
 const CODE = 'WDJB-MJHT';
 const AUTH: FakeTurn = {
-  output: ['● gh waits for a login.', '  HOPPER_AUTH_PENDING', '  tool: gh', '  url: https://github.com/login/device', `  code: ${CODE}`, '  expires_in: 900'],
+  output: ['● codex waits for a login.', '  HOPPER_AUTH_PENDING', '  tool: codex', '  url: https://auth.openai.com/codex/device', `  code: ${CODE}`, '  expires_in: 900'],
   background: { work: '1 shell', polls: 1_000_000 },
 };
 
@@ -40,12 +40,12 @@ describe('the logins as the Logins view reads them', () => {
     await a.pull({}, { executor: 'herdr-claude', prompt: 'Push the branch' });
     const admin = await a.login();
     await waitFor(async () => (await loginsOf(a, admin)).logins.some((l) => l.status === 'pending'), { timeoutMs: 8000 });
-    expect((await loginsOf(a, admin)).logins[0]).toMatchObject({ userCode: CODE, verificationUrl: 'https://github.com/login/device' });
+    expect((await loginsOf(a, admin)).logins[0]).toMatchObject({ userCode: CODE, verificationUrl: 'https://auth.openai.com/codex/device' });
 
     const viewer = ((await a.ui('/ui/auth/none', {})).body as { token: string }).token;
     expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-session': viewer })).body).toMatchObject({ user: { role: 'viewer' } });
     const seen = await loginsOf(a, viewer);
-    expect(seen.logins[0]).toMatchObject({ status: 'pending', tool: 'gh', codeKept: true });
+    expect(seen.logins[0]).toMatchObject({ status: 'pending', tool: 'codex', codeKept: true });
     expect(seen.logins[0]).not.toHaveProperty('userCode');
     expect(seen.logins[0]).not.toHaveProperty('verificationUrl');
     const one = (await a.api('GET', `/api/logins/${String(seen.logins[0]!.id)}`, undefined, { 'x-hopper-session': viewer })).body;
