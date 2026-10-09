@@ -6,6 +6,7 @@ import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
+import type { ResourceReading } from './machine-history.ts';
 import type { JobAssessment, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
@@ -250,6 +251,8 @@ export interface MachineSnapshot {
   client?: { release?: string; current?: boolean; update?: { problem: string } };
   /** The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410). Absent: not read (a container target, a client older than this). */
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
+  /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
+  resources?: ResourceReading;
   /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. */
   sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number };
 }
@@ -418,6 +421,7 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type ClientMachine, type
 export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
+export * from './machine-history.ts';
 export type { CleanupDue } from './cleanup.ts';
 export * from './plugins.ts';
 

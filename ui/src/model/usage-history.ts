@@ -11,7 +11,7 @@ export type LineDash = 'solid' | 'dashed' | 'dotted';
 export const DASH_ARRAY: Record<LineDash, string | undefined> = { solid: undefined, dashed: '5 3', dotted: '1.5 3' };
 
 /** One colour per account, in the order accounts first appear; past the last, they repeat. */
-const ACCOUNT_COLORS = ['var(--busy)', 'var(--ok)', 'var(--warn)', 'var(--question)', 'var(--operator)', 'var(--bad)'] as const;
+export const ACCOUNT_COLORS = ['var(--busy)', 'var(--ok)', 'var(--warn)', 'var(--question)', 'var(--operator)', 'var(--bad)'] as const;
 
 export interface GraphPoint { t: number; v: number }
 

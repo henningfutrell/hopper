@@ -32,6 +32,7 @@ import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
+import { machineHistoryRoutes } from './machine-history.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { webhookRoutes } from './webhooks.ts';
@@ -108,6 +109,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   userRoutes(app, { tenants: o.tenants, instanceAdmin });
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
+  machineHistoryRoutes(app, { ...tenant, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });

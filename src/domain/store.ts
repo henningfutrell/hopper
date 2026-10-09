@@ -7,7 +7,7 @@ import type {
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, MinorDecisionSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
-import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, PriorityLaneSettings, UsageLimitPair } from './types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, MachineSample, PriorityLaneSettings, ResourceSeries, UsageLimitPair } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -264,6 +264,21 @@ export interface UsageHistoryRepository {
   prune(before: Date): number;
 }
 
+/** The resource graph's query (issue #560): the usage graph's, and the one machine when it asks for one. */
+export interface MachineHistoryQuery extends UsageHistoryQuery {
+  machineId?: string;
+}
+
+/** Machine resources over time (issue #560): machine samples in the user schema. */
+export interface MachineHistoryRepository {
+  /** Keep machine samples; one already kept (same machine and time) is kept once. How many were new. */
+  record(samples: readonly MachineSample[]): number;
+  /** The resource graph's lines over [from, to), ordered by machine and resource. */
+  series(q: MachineHistoryQuery): ResourceSeries[];
+  /** Delete the samples older than `before`; how many. */
+  prune(before: Date): number;
+}
+
 /** The instance's settings (in the instance schema): self-update, the plugin store and its store installs. */
 export interface InstanceSettingsRepository {
   /** Self-update settings an admin chose; absent fields were never set. */
@@ -471,6 +486,7 @@ export interface UserStore {
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
+  machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */

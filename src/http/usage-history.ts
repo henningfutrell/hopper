@@ -36,7 +36,7 @@ export const usageHistoryQuery = z.object({
   .refine((q) => q.from === undefined || Date.parse(q.from) < Date.parse(q.to!), 'from must be before to');
 
 /** Steps count from a Monday midnight in the viewer's time: a week step is Monday to Monday. */
-const MONDAY = Date.parse('2000-01-03T00:00:00.000Z');
+export const MONDAY = Date.parse('2000-01-03T00:00:00.000Z');
 
 /** The view a request asks: the range the query names, else the saved view's (else the default's). */
 function viewOf(q: z.infer<typeof usageHistoryQuery>, saved: UsageGraphView | undefined): UsageGraphView {

@@ -248,7 +248,7 @@ export function clientUpdateLine(client: MachineSnapshot['client'], origin: stri
   return client?.update ? `curl -fsSL '${origin}/client/install' | sh -s -- '${origin}'` : null;
 }
 
-const gb = (bytes: number): string => {
+export const gb = (bytes: number): string => {
   const n = bytes / 1e9;
   return `${n >= 10 ? Math.round(n) : n.toFixed(1)} GB`;
 };

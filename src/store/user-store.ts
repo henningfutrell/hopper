@@ -17,6 +17,7 @@ import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
 import { migrateTenant } from './tenant-migrations.ts';
 import { createUsageHistoryRepository } from './usage-history.ts';
+import { createMachineHistoryRepository } from './machine-history.ts';
 import { createWebhookRepository } from './webhooks.ts';
 
 /** The database URL with `?schema=<schema>`: the user schema, created when absent. */
@@ -54,6 +55,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),
+    machineHistory: createMachineHistoryRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     tx: ctx.tx,
     close: () => db.close(),

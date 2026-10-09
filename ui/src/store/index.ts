@@ -88,15 +88,18 @@ export interface HopperState {
   update: UpdateStatus | null;
   /** The installed commit when this page loaded: another one later means the daemon restarted on an update. */
   loadedCommit: string | undefined;
-  /** How many times the stream said new usage samples were kept (SSE usage.recorded): the usage graphs read again on each. */
-  usageRecorded: number;
+  /**
+   * How many times the stream said new samples were kept: usage samples (SSE usage.recorded) and machine samples (SSE
+   * machine.recorded, issue #560). The usage graphs and the resource graphs read again on each.
+   */
+  recorded: Readonly<Record<'usage' | 'machine', number>>;
 }
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
-  usageRecorded: 0,
+  recorded: { usage: 0, machine: 0 },
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -343,7 +346,7 @@ export function onDomainEvent(e: DomainEvent) {
 }
 export const onDelivery = (d: WebhookDelivery) => set({ deliveries: upsert(state().deliveries, d, (x) => x.id === d.id, CAP.deliveries) });
 export const onSource = (src: SourceStatus) => set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
-export const onUsageRecorded = () => set({ usageRecorded: state().usageRecorded + 1 });
+export const onRecorded = (k: 'usage' | 'machine') => set({ recorded: { ...state().recorded, [k]: state().recorded[k] + 1 } });
 export const setConn = (conn: Conn) => set({ conn });
 
 /** True when the page must show only the landing page, with the ways to sign in: logged out (issues #167, #213). */

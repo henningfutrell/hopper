@@ -43,8 +43,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
@@ -334,7 +334,8 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 ## SSE
 
 `GET /api/events/stream`. Replays events after `Last-Event-ID`, else `?after=`, then live (a reconnecting EventSource reuses its first URL, so the header wins).
-Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. Delivery updates
+Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. New usage samples (`usage.recorded`,
+issue #502) and new machine samples (`machine.recorded`, issue #560), `data: { added }`, no `id`. Delivery updates
 (not domain events, never persisted or webhooked, so a delivery cannot trigger a delivery):
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat
 `: ping` every 15 s.
@@ -8971,3 +8972,60 @@ Tests: `test/integration/phase-shifts.test.ts` (switch and back to work; researc
 a switched phase; fork, its link, priority and accepted result answering the parent; a rejected forked proposal; the
 settings live; refusals; suggestions by a job and by levels, allowed and not), `test/ui/phase-shifts.test.ts`,
 `test/plugins/claude-cli-prompt.test.ts` (the level may suggest).
+
+## Machine resources over time (issue #560, 2026-10-09)
+
+Owner request: the same kind of over-time graph the usage history has, for machine conditions — CPU and memory as well
+as disk. Before, the hopper read only plan usage and a machine's disk (for the low-disk hold, issue #410).
+
+**Reading on the machine.** A machine's snapshot carries `resources` (`ResourceReading`, `src/domain/machine-history.ts`):
+cores, CPU busy (share of CPU time busy since the read before; none at a first read), load averages (none on Windows),
+memory total and available (available, not free), and swap total and used where it is read. Who reads it:
+- **this machine**: the meter `src/client/resources.ts` at every list; a read less than a second after the last keeps the
+  last CPU busy, so a burst of Decisions is not noise. Linux reads /proc/meminfo; Windows and macOS the OS (Node's
+  `os`), with no swap.
+- **a client target**: its client, with the same meter, in its `/release` answer (`resources`), checked by
+  `resourcesOf` (`src/machines/resources.ts`) before it is believed. CPU busy is over the time between two probes
+  (30 s). A client older than this says none; its next update loads the meter like any client file.
+- **an ssh target**: its probe prints two `/proc/stat` cpu lines a second apart, `/proc/loadavg`, the memory lines and
+  the core count, each marked `hopper-res ` (`RESOURCES_COMMAND`); a machine with no /proc prints none. The second's
+  wait is in the probe's background call, never in a Decision.
+- **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
+  the page cache it could drop (`inactive_file`); a CPU quota is its cores, and CPU busy is its own `usage_usec` against
+  the quota. `container: true` says so; the card says "container limit". A container target (docker exec) is not read,
+  as its disk is not.
+- Per lane (an agent's process tree): not built.
+
+**Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
+(`createRecordLoop`, `src/usage/history.ts`): every minute it lists the user's machines and keeps a **machine sample**
+of each one online with a reading — CPU busy, load (1 min), cores, memory, swap, disk, its lanes in use and its lane cap
+— in the user schema (tenant migration 26, `machine_samples`, unique per machine and time; a table only, so the build
+before runs on it). An offline machine adds nothing; the graph shows the stretch as a gap. New samples are told on the
+stream (`machine.recorded`, `{ added }`). The **history retention** is the usage history's: one setting, both pruned
+every hour, both at once when it is lowered (`POST /ui/api/usage-history/retention`). At one sample a minute, four
+machines for 90 days are about 520 000 rows, aggregated in SQL per step.
+
+**The resource graph** (`GET /api/machines/history`, every machine; `GET /api/machines/:id/history`, one). The query is
+the usage graph's (`range` or `from`/`to`, `tz`); no saved view, default the last day. Its **resource step** is finer
+than the usage graph's, since a machine is read every minute (`resourceStepMs`): 15 minutes up to a day, an hour up to
+4, 6 hours up to 14, a day up to 60, else a week. Per machine and step, each resource's peak share: CPU busy, memory
+used (1 − available / total), swap used, disk used, lanes in use / lane cap. Gaps by the usage history's rule: a
+stretch with no sample longer than 3 × the machine's usual spacing (at least 5 minutes).
+
+**UI.** The usage graph card (`ui/src/components/usage-graph-card.tsx`) draws it, with its own lines (`linesOf`,
+`ui/src/model/machine-history.ts`) and redrawn on `machine.recorded`. On Machines, each card says CPU and memory now,
+draws a CPU sparkline of the last day, and *Resources over time* opens its graph: CPU, memory, swap, disk and lanes in
+use, one colour each (lanes dashed). On the Usage page, *Machine resources over time* sits under the usage limits, at
+the same day range as their usage line: every machine one colour, CPU solid, memory dashed, disk dotted; swap and lanes
+hidden until shown from the legend.
+
+**Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
+fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
+sensible levels.
+
+Tests: `test/client/resources.test.ts` (CPU busy between reads, memory available, swap, Windows and macOS, cgroup
+limits, the host when a cgroup sets none), `test/adapters/machine-resources.test.ts` (the ssh probe's lines, a client's
+answer checked), `test/adapters/ssh-machine.test.ts` (the probe answers them), `test/integration/machine-history.test.ts`
+(the snapshot carries them, one sample per online machine, none offline, per-step peak, gaps, the finer step, every
+machine and one, `machine.recorded`, the shared retention), `test/ui/machine-history.test.ts` (the lines, colours and
+dashes, the sparkline, the card's text).

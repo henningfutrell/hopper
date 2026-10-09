@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -42,7 +42,7 @@ import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources
 import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
-import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
+import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
@@ -120,6 +120,8 @@ export interface UserRuntime {
   machineLink: UserMachineLink;
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
+  /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
+  machineHistory: ResourceRecorder;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -336,10 +338,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority });
-  const usageHistory = createUsageRecorder({
-    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
-    // Read at every prune: a retention set in the UI applies without a restart (issue #356).
-    retentionDays: () => store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS,
+  // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
+  const history = createHistoryRecorders({
+    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
   let started = false;
   let stopped: Promise<void> | undefined;
@@ -347,7 +348,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name),
     connectedAccounts,
-    usageHistory,
+    ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub),
     machineLink: {
@@ -360,7 +361,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       started = true;
       await engine.start();
       sync.start();
-      usageHistory.start();
+      history.start();
       minorDecisions.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
@@ -370,7 +371,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await failures.stop();
         minorDecisions.stop();
         await sync.stop();
-        usageHistory.stop();
+        history.stop();
         connectedAccounts.stop();
         await questions.stop();
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
