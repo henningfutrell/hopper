@@ -4,7 +4,9 @@
 import { homedir, hostname } from 'node:os';
 import type { MachineSource } from '../domain/ports.ts';
 import type { DiskReading, DiskThresholds, SweepSettings } from '../domain/machines.ts';
+import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskAt, judged } from './disk.ts';
+import { createResourceMeter } from '../client/resources.ts';
 import { DEFAULT_WORK_TREE, makeWorkTree } from '../client/work-tree.ts';
 
 /** How often this machine's herdr session is checked, and started when it is not running. */
@@ -28,12 +30,15 @@ export function createLocalMachineSource(o: {
   now?: () => number;
   /** Its disk (issue #401); default the filesystem of this process's home, read at every list(). */
   disk?: () => DiskReading | undefined;
+  /** Its CPU, memory and swap (issue #560); default this process's meter (src/client/resources.ts), read at every list(). */
+  resources?: () => ResourceReading | undefined;
   /** When its disk is low (issue #410), read at every list(); default 5 GiB and 10% free. */
   diskLow?: () => DiskThresholds | undefined;
   /** How the sweep treats it (issue #410), read at every list(); default every 10 minutes, scratch dirs after 24 hours. */
   sweep?: () => SweepSettings | undefined;
 }): MachineSource {
   const disk = o.disk ?? (() => diskAt(homedir()));
+  const resources = o.resources ?? createResourceMeter();
   const now = o.now ?? Date.now;
   // Issue #361: the work tree is made here before a job is routed here; what is wrong with it is said.
   let checkedAt = -Infinity;
@@ -70,6 +75,7 @@ export function createLocalMachineSource(o: {
       ensure();
       const read = disk();
       const d = read && judged(read, o.diskLow?.());
+      const res = resources();
       const sweep = o.sweep?.();
       check();
       return [
@@ -83,6 +89,7 @@ export function createLocalMachineSource(o: {
           ...(o.session ? { herdr: { session: o.session } } : {}),
           ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
           ...(d ? { disk: d } : {}),
+          ...(res ? { resources: res } : {}),
           ...(sweep ? { sweep } : {}),
           ...(workTreeProblem ? { workTreeProblem } : {}),
         },

@@ -3,7 +3,8 @@
 // toggles it. Zoom in and out by the buttons, a pinch, Ctrl/⌘ + scroll, or a drag across; Reset goes back
 // to the preset. New samples redraw it as the stream tells of them (SSE usage.recorded), and once a minute
 // besides. The Overview's shows the user's own accounts and saves the preset for them; Settings → Users
-// shows the instance admin the lines summed over every user.
+// shows the instance admin the lines summed over every user. The resource graphs (issue #560) use it too, with
+// their own lines (`linesOf`), redrawn as the stream tells of new machine samples (SSE machine.recorded).
 import { useCallback, useMemo, useState } from 'react';
 import { LineChart, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,7 +14,7 @@ import { LineSwatch, UsageGraph } from '@/charts/usage-history';
 import { usePoll } from '@/hooks/use-poll';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { GRAPH_PRESETS, graphLines, hiddenLines, zoomed, type Stretch } from '@/model/usage-history';
+import { GRAPH_PRESETS, graphLines, hiddenLines, zoomed, type GraphLine, type Stretch } from '@/model/usage-history';
 import type { UsageGraphView, UsageSeries } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -35,15 +36,20 @@ function queryOf(path: string, view: UsageGraphView | undefined, zoom: Stretch |
   return `${path}?${q}`;
 }
 
-/** The graph step as people read it: `per hour`, `per 6 hours`, `per day`, `per week`. */
+/** The graph step as people read it: `per 15 minutes`, `per hour`, `per 6 hours`, `per day`, `per week`. */
 function stepText(ms: number): string {
   const h = ms / 3_600_000;
-  return h === 1 ? 'per hour' : h < 24 ? `per ${h} hours` : h === 24 ? 'per day' : h === 168 ? 'per week' : `per ${h / 24} days`;
+  return h < 1 ? `per ${Math.round(ms / 60_000)} minutes` : h === 1 ? 'per hour' : h < 24 ? `per ${h} hours` : h === 24 ? 'per day' : h === 168 ? 'per week' : `per ${h / 24} days`;
 }
 
-export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, title, empty }: {
-  path: string; seriesOf: (data: T) => UsageSeries[]; save?: (view: UsageGraphView) => void; title: string; empty: string;
-}) {
+export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, save, title, empty, what = 'usage history', recordedBy = 'usage', className }: {
+  path: string; save?: (view: UsageGraphView) => void; title: string; empty: string;
+  /** What it reads, as its loading and error lines name it. */
+  what?: string;
+  /** Which stream count reads it again: new usage samples, or new machine samples. */
+  recordedBy?: 'usage' | 'machine';
+  className?: string;
+} & ({ seriesOf: (data: T) => UsageSeries[]; linesOf?: never } | { linesOf: (data: T) => GraphLine[]; seriesOf?: never })) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The saved view: undefined until the first read answers it.
@@ -52,7 +58,7 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, titl
   const [zoom, setZoom] = useState<Stretch | null>(null);
   // Lines the legend toggled: hidden (true) or shown (false); the rest as by default (informational ones hidden).
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const recorded = useHopper((s) => s.usageRecorded);
+  const recorded = useHopper((s) => s.recorded[recordedBy]);
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +71,7 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, titl
   }, [path, view, zoom, recorded]); // eslint-disable-line react-hooks/exhaustive-deps
   usePoll(load, 60_000);
 
-  const lines = useMemo(() => graphLines(data ? seriesOf(data) : []), [data, seriesOf]);
+  const lines = useMemo(() => (!data ? [] : linesOf ? linesOf(data) : graphLines(seriesOf!(data))), [data, seriesOf, linesOf]);
   const hidden = useMemo(() => hiddenLines(lines, toggled), [lines, toggled]);
   const toggle = (key: string) => setToggled((t) => new Map(t).set(key, !hidden.has(key)));
 
@@ -78,7 +84,7 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, titl
   const rangeTab = zoom ? '' : current && 'preset' in current.range ? current.range.preset : '';
 
   return (
-    <Panel title={title} icon={LineChart} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''}>
+    <Panel title={title} icon={LineChart} {...(className ? { className } : {})} count={lines.length ? `${lines.length - hidden.size} of ${lines.length}` : ''}>
       {current && (
         <div data-slot="usage-graph-controls" className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <Tabs value={rangeTab} onValueChange={(v) => choose({ range: { preset: v as typeof GRAPH_PRESETS[number] } })}>
@@ -94,8 +100,8 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, save, titl
           {data && <span data-slot="usage-graph-step" className="text-muted-foreground">{stepText(data.stepMs)}</span>}
         </div>
       )}
-      {error && !data ? <Empty>usage history unavailable: {error}</Empty>
-        : !data || !shown ? <Empty>reading the usage history…</Empty>
+      {error && !data ? <Empty>{what} unavailable: {error}</Empty>
+        : !data || !shown ? <Empty>reading the {what}…</Empty>
           : !lines.length ? <Empty>{empty}</Empty>
             : <>
               <UsageGraph lines={lines} hidden={hidden} from={shown.from} to={shown.to} stepMs={data.stepMs} maxMs={maxMs} onZoom={setZoom} />

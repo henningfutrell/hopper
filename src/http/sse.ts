@@ -1,5 +1,6 @@
 // GET /api/events/stream (design.md "SSE"): replay after a seq, then live; delivery updates, source status
-// updates (`source.updated`) and new usage samples (`usage.recorded`, issue #502) interleaved without an id;
+// updates (`source.updated`), new usage samples (`usage.recorded`, issue #502) and new machine samples
+// (`machine.recorded`, issue #560) interleaved without an id;
 // a comment ping every 15 s.
 import type { ServerResponse } from 'node:http';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -27,7 +28,7 @@ export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     // where it actually is, so the header wins.
     const header = req.headers['last-event-id'];
     const after = (typeof header === 'string' && header !== '' ? parseWith(seq, header) : undefined) ?? q.after;
-    const { store, dispatcher, registry, usageHistory } = o.tenant(req);
+    const { store, dispatcher, registry, usageHistory, machineHistory } = o.tenant(req);
 
     reply.hijack();
     const res = reply.raw;
@@ -57,6 +58,9 @@ export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     const offUsage = usageHistory.onRecorded((added) => {
       res.write(`event: usage.recorded\ndata: ${JSON.stringify({ added })}\n\n`);
     });
+    const offMachine = machineHistory.onRecorded((added) => {
+      res.write(`event: machine.recorded\ndata: ${JSON.stringify({ added })}\n\n`);
+    });
     if (after !== undefined) {
       for (let page = store.events.since(lastSeq, REPLAY_PAGE); page.length > 0; page = store.events.since(lastSeq, REPLAY_PAGE)) {
         for (const e of page) send(e);
@@ -72,6 +76,7 @@ export function sseRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
       offDelivery();
       offSource();
       offUsage();
+      offMachine();
       open.delete(res);
     });
   });

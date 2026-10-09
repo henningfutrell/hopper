@@ -209,7 +209,9 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { store } = o.tenant(req);
     store.settings.setHistoryRetentionDays(days);
     // Applied at once (issue #356): what is now past it goes.
-    const pruned = store.usageHistory.prune(new Date(o.clock.now().getTime() - days * 86_400_000));
+    const before = new Date(o.clock.now().getTime() - days * 86_400_000);
+    // The machine samples share it (issue #560).
+    const pruned = store.usageHistory.prune(before) + store.machineHistory.prune(before);
     return { retentionDays: days, pruned };
   });
   // The usage limits (issue #522): read at every Decision, so they apply without a restart; the change wakes the engine.

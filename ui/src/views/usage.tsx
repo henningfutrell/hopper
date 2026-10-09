@@ -17,6 +17,7 @@ import { accountFacts, executorEffectLines, laneEffectText, orderReadings, servi
 import { bandAt, capAt, limitsProblem, throttleLine, type LimitBand } from '@/model/usage-limits';
 import type { MachineLaneEffect, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
+import { MachinesResourcesPanel } from './machine-resources';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted' };
@@ -122,7 +123,7 @@ function LimitInput({ id, label, value, disabled, onChange }: { id: string; labe
  */
 function UsageLimits({ usage }: { usage: UsageReport }) {
   const canSet = useHopper((s) => allows(s.user, 'admin'));
-  const recorded = useHopper((s) => s.usageRecorded);
+  const recorded = useHopper((s) => s.recorded.usage);
   const clock = useNow();
   const saved = usage.limits;
   // The daemon's limits, until the admin starts an edit.
@@ -235,6 +236,7 @@ export function Usage() {
   return (
     <div className="grid gap-3 lg:grid-cols-2">
       {usage && <UsageLimits usage={usage} />}
+      <MachinesResourcesPanel className="lg:col-span-2" />
       <div className="space-y-3">
         <Accounts accounts={accounts} />
         {usage && <LaneEffect usage={usage} />}

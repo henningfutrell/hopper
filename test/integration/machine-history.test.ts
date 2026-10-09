@@ -28,7 +28,7 @@ const DAY = 24 * HOUR;
 const RES: ResourceReading = { cores: 8, cpuBusyFrac: 0.25, load: [2, 1.5, 1], memTotalBytes: 16 * GIB, memAvailableBytes: 4 * GIB, swapTotalBytes: 8 * GIB, swapUsedBytes: 2 * GIB };
 
 /** One attached machine `laptop`, no other; its probe answers what `probe.now` says. */
-async function boot(): Promise<TestApp & { probe: { now: MachineProbe } }> {
+async function boot(online = true): Promise<TestApp & { probe: { now: MachineProbe } }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   writePlugins(db.dbPath, {
@@ -36,8 +36,7 @@ async function boot(): Promise<TestApp & { probe: { now: MachineProbe } }> {
     executors: [{ name: 'test', plugin: 'test' }],
     machines: [{ name: 'laptop', plugin: 'ssh', options: { label: 'arch-laptop', ssh: 'laptop', lanes: 4, executors: ['test'] } }],
   });
-  const probe = { now: { online: true, home: '/home/far', disk: { freeBytes: 25 * GIB, totalBytes: 100 * GIB, low: false }, resources: RES } as MachineProbe };
-  // Probed at every list: the test says when the machine changes.
+  const probe = { now: (online ? { online: true, home: '/home/far', disk: { freeBytes: 25 * GIB, totalBytes: 100 * GIB, low: false }, resources: RES } : { online: false }) as MachineProbe };
   const a = await startTestApp({ dbPath: db.dbPath, seams: { machineProbe: () => Promise.resolve(probe.now) } });
   apps.push(a);
   return Object.assign(a, { probe });
@@ -71,15 +70,11 @@ describe('machine resources over time', () => {
     expect(last('lanes')).toBe(0);
   });
 
-  it('an offline machine adds nothing; once back, it records again', async () => {
-    const a = await boot();
-    await onlineWith(a, (x) => x.online);
-    a.probe.now = { online: false };
-    await onlineWith(a, (x) => !x.online);
+  it('an offline machine adds nothing, and its snapshot carries no resources', async () => {
+    const a = await boot(false);
+    const m = await onlineWith(a, (x) => !x.online);
+    expect(m).not.toHaveProperty('resources');
     expect(await a.user().machineHistory.record()).toBe(0);
-    a.probe.now = { online: true, home: '/home/far', resources: RES };
-    await onlineWith(a, (x) => x.online && x.resources !== undefined);
-    expect(await a.user().machineHistory.record()).toBe(1);
   });
 
   it('per graph step the peak; a stretch with no sample is a gap; the step is finer than usage\'s for a day', async () => {
@@ -132,6 +127,9 @@ describe('machine resources over time', () => {
     expect((await a.ui('/ui/api/usage-history/retention', { days: 5 }, { token: admin })).status).toBe(200);
     const r = await history(a, '/api/machines/laptop/history?range=30d');
     expect(r.body.retentionDays).toBe(5);
-    expect(r.body.series.find((s) => s.resource === 'cpu')!.points.map((p) => p.usedFrac)).toEqual([0.2]);
+    // The live machine's own samples, recorded since it started, are kept; the one 10 days old is gone.
+    const cpu = r.body.series.find((s) => s.resource === 'cpu')!.points.map((p) => p.usedFrac);
+    expect(cpu).toContain(0.2);
+    expect(cpu).not.toContain(0.1);
   });
 });

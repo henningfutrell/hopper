@@ -63,7 +63,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       return { online: true, client: { current: false } };
     }
     const running = answer.release;
-    const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}) };
+    const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}) };
     if (running === ours) {
       tries.delete(t.machine);
       say(t.machine, `hopper: client ${t.machine}: runs the hopper's release ${ours}`);
