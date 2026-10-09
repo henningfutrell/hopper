@@ -1,9 +1,9 @@
 // How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
-// (issue #548), and ticking times.
+// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, and ticking times.
 import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
-import { goalOf, issueRef } from '@/model/job';
+import { afterDone, goalOf, issueRef } from '@/model/job';
 import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,7 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
   const ref = issueRef(job);
   const routed = routedByLabel(job);
   const high = useIsHigh(job);
+  const after = afterDone(job);
   return (
     <div className={cn('min-w-0', className)} title={`${goalOf(job)}\njob ${job.id}`}>
       <div className="truncate text-sm font-medium text-foreground">{goalOf(job)}</div>
@@ -38,6 +39,11 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
           <span data-phase={job.phase} className="rounded border border-question/40 px-1 text-[10px] text-question" title={job.forkOf ? 'a fork of another job\'s question' : `in its ${job.phase} phase`}>
             {job.forkOf ? `fork: ${job.phase}` : job.phase}
           </span>
+        )}
+        {after && (
+          <GhLink url={after.url} className={cn('rounded border px-1 text-[10px] no-underline', after.tone === 'warn' ? 'border-warn/40 text-warn' : 'border-ok/40 text-ok')}>
+            <span data-after-done={after.label} title={after.title}>{after.label}</span>
+          </GhLink>
         )}
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}

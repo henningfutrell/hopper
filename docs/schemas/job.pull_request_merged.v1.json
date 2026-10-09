@@ -2,13 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "result": {},
-    "partlyDone": {
+    "pullRequest": {
       "type": "string"
+    },
+    "part": {
+      "type": "boolean"
     }
   },
   "required": [
-    "result"
+    "pullRequest",
+    "part"
   ],
   "additionalProperties": false
 }

@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -313,8 +313,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
-    // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
-    notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
+    // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
+    verdict: (job) => judge(sourceOf(job), job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     // A fork (issue #548) acts through its parent's source's connection.
     credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),

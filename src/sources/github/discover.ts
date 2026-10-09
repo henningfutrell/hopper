@@ -19,7 +19,7 @@ import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import {
-  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel,
+  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
 } from './labels.ts';
 
 /** A rejection with no assignee (a job taken before assignment intake) leaves its issue to its labels, as then. */
@@ -29,6 +29,9 @@ export const NOT_ASSIGNED = 'not assigned to you';
 export const BACKBURNER = 'on the backburner';
 export const FAILED = 'failed: hopper:failed is on the issue';
 export const DONE_OPEN = 'done, but the issue is still open';
+export const PR_READY = 'done: its pull request waits for review';
+export const PARTLY_DONE = 'partly done: the rest runs once its pull request merges';
+export const PR_CLOSED = 'its pull request was closed without a merge: hopper:pr-closed is on the issue';
 export const REJECTED_LABEL = 'rejected: hopper:rejected is on the issue';
 export const REJECTED_BY_YOU = 'rejected by you: not taken until assigned to you again';
 export const ADDRESSED_ELSEWHERE = 'addressed to another hopper';
@@ -99,6 +102,9 @@ export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): 
 /** Why the issue's labels keep it out, before assignment and claims are asked; undefined when they do not. */
 export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null): string | undefined {
   if (i.labels.includes(LABEL_DONE)) return DONE_OPEN;
+  if (i.labels.includes(LABEL_PR_READY)) return PR_READY;
+  if (i.labels.includes(LABEL_PARTLY_DONE)) return PARTLY_DONE;
+  if (i.labels.includes(LABEL_PR_CLOSED)) return PR_CLOSED;
   if (i.labels.includes(LABEL_FAILED)) return FAILED;
   if (i.labels.includes(LABEL_REJECTED)) return REJECTED_LABEL;
   if (i.labels.includes(LABEL_BACKBURNER)) return BACKBURNER;

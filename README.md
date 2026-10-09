@@ -248,8 +248,10 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
    **Reject** a waiting job (Queue, or the Overview's Waiting list), with a reason if you like: the issue is
    left alone and not taken again until it is assigned to you again, or you run it again.
-3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
-   `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
+3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:pr-ready`
+   (its pull request waits for your review), `hopper:partly-done` (it shipped a part; the rest runs once
+   that pull request merges), `hopper:done` (merged), `hopper:pr-closed` (its pull request was closed
+   without a merge), `hopper:failed`. Remove `hopper:failed` or `hopper:pr-closed` to run it again. `hopper:high` and
    `hopper:low` set the priority; `hopper:backburner` keeps an issue out
    ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
    `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a

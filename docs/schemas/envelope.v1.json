@@ -128,6 +128,8 @@
         "vault.delivered",
         "vault.refused",
         "yolo_mode.changed",
+        "job.pull_request_merged",
+        "job.pull_request_closed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

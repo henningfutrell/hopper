@@ -1,9 +1,9 @@
 // report(): what happened to a job, written to its issue. The hopper's only issue writes are
 // labels; it posts no comment at all (owner decision, 2026-10-04: a finished issue needs no
-// comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished → `hopper:done` — only a job whose work reached
-// its completion is finished (completion.ts, issues #171, #187), and the merge of its pull request
-// closes the issue, never the hopper (with completion `pull-request` the issue stays open until a
-// person merges); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
+// comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished — only a job
+// whose work is done or partly done is finished (completion.ts, issues #171, #187, #579) — → `hopper:pr-ready` while its
+// pull request waits for review, `hopper:partly-done` for a part, `hopper:done` once the issue is closed as complete; the
+// merge of its pull request closes the issue, never the hopper, and `follow.ts` follows it after; failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
 // away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
@@ -20,7 +20,8 @@ import type { SourceReport } from '../../domain/ports.ts';
 import type { HandoffResolution, Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
-import { HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
+import { isOwnPullRequest } from './completion.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import type { GitHubIssue } from './api.ts';
 
@@ -40,20 +41,42 @@ function issueOf(job: Job): { repo: string; number: number } {
   return { repo, number };
 }
 
-async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
+export async function ensureLabels(ctx: ReportContext, repo: string): Promise<void> {
   if (ctx.labelledRepos.has(repo)) return;
   for (const l of HOPPER_LABELS) await ctx.api.ensureLabel(repo, l.name, l.color, l.description);
   if (ctx.holder) await ctx.api.ensureLabel(repo, holderLabel(ctx.holder), HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION);
   ctx.labelledRepos.add(repo);
 }
 
-/** End of a job on its issue: drop `hopper:claimed` and its holder label, add the outcome label. */
-async function settle(ctx: ReportContext, repo: string, number: number, add: string[]): Promise<void> {
-  await ctx.api.removeLabels(repo, number, claimLabels(ctx.holder));
+/** End of a job on its issue: drop `hopper:claimed`, its holder label and `also`, add the outcome label. */
+async function settle(ctx: ReportContext, repo: string, number: number, add: string[], also: string[] = []): Promise<void> {
+  await ctx.api.removeLabels(repo, number, [...claimLabels(ctx.holder), ...also]);
   if (add.length) {
     await ensureLabels(ctx, repo);
     await ctx.api.addLabels(repo, number, add);
   }
+}
+
+/**
+ * A done job's end on its issue (issue #579). A part: `hopper:partly-done`, its pull request kept to follow. The issue
+ * closed as complete already: `hopper:done`. Else its pull request waits for review: `hopper:pr-ready`, the job's own
+ * open pull request kept to follow (`follow.ts`). `hopper:failed` goes too: a failed job found done later ends here.
+ */
+async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
+  const issue = await ctx.api.getIssue(repo, number);
+  const also = issue.labels.includes(LABEL_FAILED) ? [LABEL_FAILED] : [];
+  if (job.partlyDone) {
+    await settle(ctx, repo, number, [LABEL_PARTLY_DONE], also);
+    return { ...state, pullRequest: job.partlyDone, follow: 'open', part: true };
+  }
+  if (issue.state === 'closed') {
+    await settle(ctx, repo, number, [LABEL_DONE], also);
+    return state;
+  }
+  const own = (await ctx.api.openClosingPullRequests(repo, number)).filter((pr) => !pr.isDraft && isOwnPullRequest(pr, job))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  await settle(ctx, repo, number, [LABEL_PR_READY], also);
+  return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
 }
 
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
@@ -65,8 +88,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       await ctx.api.addLabels(repo, number, claimLabels(ctx.holder));
       return state;
     case 'finished':
-      await settle(ctx, repo, number, [LABEL_DONE]);
-      return state;
+      return finished(ctx, job, repo, number, state);
     case 'failed':
       await settle(ctx, repo, number, [LABEL_FAILED]);
       return state;
@@ -99,7 +121,7 @@ export async function takeBack(ctx: ReportContext, label: string, job: Job, assi
       throw new RerunRefused(`its issue is not assigned to the connected account ${assignee}: assign it (Sources, Assign to me) and run it again`);
     }
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
-    await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, ...claimLabels(ctx.holder)]);
+    await ctx.api.removeLabels(repo, number, [...END_LABELS, ...claimLabels(ctx.holder)]);
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
