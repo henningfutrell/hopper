@@ -18,6 +18,7 @@
 //   Scenario: an AWS role session, read only, through STS
 //   Scenario: after a revoke in Settings → Access, the next renewal is denied
 //   Scenario: a minting credential is never given out, and a profile the template does not declare is refused
+//   Scenario: with the vault in a container of its own (issue #586), Access decides in the hopper and the vault mints
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -256,4 +257,23 @@ describe('the vault mints short-lived credentials only through Access', () => {
     mintingCredentialsNowhere(a, dir);
   });
 
+  it('with the vault in a container of its own, Access decides in the hopper and the vault mints; a revoke still denies the next', async () => {
+    const { a, session, kube } = await boot({ container: true });
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
+    const { dir, job, token } = await boxWithJob(a, session);
+    const minted = await helper(dir, ['kube', 'read', 'namespace/lab/web'], token);
+    expect(minted.code).toBe(0);
+    expect(JSON.parse(minted.stdout).status).toEqual({ token: MINTED_TOKEN, expirationTimestamp: EXPIRES });
+    expect(kube.seen[0]).toMatchObject({ url: '/api/v1/namespaces/web/serviceaccounts/hopper-read/token', authorization: `Bearer ${KUBE_MINTING_TOKEN}` });
+    const event = (await a.events()).find((e) => e.type === 'vault.minted');
+    expect(event).toMatchObject({ jobId: job, data: { kind: 'kube', decision: expect.any(String), renewal: false } });
+
+    const approval = (await accessOf(a, session)).templates.find((x) => x.template === 'kube')!.approvals.find((p) => p.profile.operation === 'read' && p.profile.asset.kind === 'namespace')!;
+    await a.ui('/ui/api/access', { action: 'revoke', approval: approval.id }, { token: session });
+    const revoked = await helper(dir, ['kube', 'read', 'namespace/lab/web'], token);
+    expect(revoked.code).not.toBe(0);
+    expect(revoked.stderr).toMatch(/waits for a person's approval/);
+    expect(kube.seen).toHaveLength(1);
+    mintingCredentialsNowhere(a, dir);
+  });
 });
