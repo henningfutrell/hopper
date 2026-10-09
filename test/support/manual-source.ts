@@ -10,6 +10,8 @@ export interface ManualSource extends JobSource {
   remove(key: string): void;
   /** Raise a signal on the next sync's check. */
   signal(s: SourceSignal): void;
+  /** Close the item at the source, as an issue closed on GitHub (issue #529): `itemClosed` answers true. */
+  close(key: string): void;
   readonly reports: SourceReport[];
 }
 
@@ -27,6 +29,7 @@ export function manualItem(o: Partial<SourceItem> = {}): SourceItem {
 export function createManualSource(name = 'manual'): ManualSource {
   const items = new Map<string, SourceItem>();
   const ended = new Map<string, SourceItem>();
+  const closed = new Set<string>();
   let signals: SourceSignal[] = [];
   const reports: SourceReport[] = [];
   return {
@@ -37,6 +40,8 @@ export function createManualSource(name = 'manual'): ManualSource {
     add(item) { items.set(item.key, item); },
     remove(key) { items.delete(key); },
     signal(s) { signals.push(s); },
+    close(key) { closed.add(key); items.delete(key); },
+    async itemClosed(job) { return closed.has(job.source!.key); },
     async discover() { return [...items.values()]; },
     async check(active) {
       const ids = new Set(active.map((j) => j.id));

@@ -84,14 +84,16 @@ describe('a job that waits on a device login', () => {
     expect(JSON.stringify(await a.job(job.id))).not.toContain(CODE);
   });
 
-  it('expiry with no word from the machine fails the job, its reason the expiry', async () => {
+  it('expiry with no word from the machine fails the job, its reason the expiry; the expired login then ends with it (issue #529)', async () => {
     const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), DONE] }));
     const job = await a.pull({}, item());
     const failed = await a.waitForStatus(job.id, 'failed', 8000);
     expect(failed.error).toMatch(/the gh login expired at .* before it was completed/);
+    // Nothing waits on it any more: it leaves the open logins, so no Cancel or New code is offered that does nothing.
+    const login = await waitFor(async () => { const l = (await loginsOf(a)).logins[0]!; return l.status === 'failed' ? l : undefined; }, { timeoutMs: 8000 });
+    expect(login.reason).toMatch(/^the job ended/);
     const types = (await a.events()).filter((e) => e.jobId === job.id).map((e) => e.type).filter((x) => x.startsWith('auth.'));
-    expect(types).toEqual(['auth.pending', 'auth.expired']);
-    expect((await loginsOf(a)).logins[0]).toMatchObject({ status: 'expired' });
+    expect(types).toEqual(['auth.pending', 'auth.expired', 'auth.failed']);
   });
 
   it('with onExpiry hold, the expired login waits for a new code, which the same login takes', async () => {
