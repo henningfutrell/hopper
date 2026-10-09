@@ -5,10 +5,15 @@
 import type { Duplex } from 'node:stream';
 
 export interface MachineLinks {
-  /** A machine's new link: an older one of the same machine is closed. */
-  accept(user: string, key: string, socket: Duplex): void;
+  /**
+   * A machine's new link: an older one of the same machine is closed. `url`: the hopper's URL as the machine
+   * dialled it — what its jobs reach the hopper at (the GitHub proxy, issue #563).
+   */
+  accept(user: string, key: string, socket: Duplex, url?: string): void;
   /** The machine's link now; undefined while it is not dialled in. */
   link(user: string, key: string): Duplex | undefined;
+  /** The hopper's URL as the machine last dialled it; undefined: it has not dialled in since this daemon started. */
+  urlOf(user: string, key: string): string | undefined;
   /** When the machine last dialled in (ms since the epoch); 0: never since this daemon started. */
   dialledAt(user: string, key: string): number;
   /** Closes every link (the daemon stops). */
@@ -18,18 +23,21 @@ export interface MachineLinks {
 export function createMachineLinks(): MachineLinks {
   const links = new Map<string, Duplex>();
   const at = new Map<string, number>();
+  const urls = new Map<string, string>();
   const id = (user: string, key: string): string => `${user}\0${key}`;
   return {
-    accept(user, key, socket) {
+    accept(user, key, socket, url) {
       const k = id(user, key);
       const old = links.get(k);
       links.set(k, socket);
       at.set(k, Date.now());
+      if (url) urls.set(k, url);
       old?.destroy();
       socket.once('close', () => { if (links.get(k) === socket) links.delete(k); });
     },
     link: (user, key) => links.get(id(user, key)),
     dialledAt: (user, key) => at.get(id(user, key)) ?? 0,
+    urlOf: (user, key) => urls.get(id(user, key)),
     closeAll() {
       for (const s of links.values()) s.destroy();
       links.clear();

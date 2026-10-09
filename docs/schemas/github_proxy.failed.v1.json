@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "own": {
+      "type": "boolean"
+    },
+    "forUser": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "op": {
+      "type": "string",
+      "enum": [
+        "issue.create",
+        "issue.comment",
+        "issue.view",
+        "pr.create",
+        "pr.view"
+      ]
+    },
+    "repo": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "own",
+    "op",
+    "repo",
+    "error"
+  ],
+  "additionalProperties": false
+}

@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
+import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
@@ -13,6 +14,9 @@ const decisionPoint = z.enum(DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
+/** Who asked the GitHub proxy (issue #563): the request, the job's machine, whether the job is the hopper's own user's. */
+const proxyAsked = { requestId: z.string(), machine: z.string().optional(), own: z.boolean(), forUser: z.string().optional(), job: z.string().optional() };
+const proxyOp = z.enum(PROXY_OPS);
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
@@ -256,6 +260,11 @@ export const EVENT_SCHEMAS = {
   }),
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
+  // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
+  // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
+  'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
+  'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), reason: z.string() }),
+  'github_proxy.failed': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), error: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

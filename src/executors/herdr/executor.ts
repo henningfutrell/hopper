@@ -142,7 +142,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * Nudges so far in a row, and when the turn they belong to began; lost sends of the text in flight; `quiet`
    * once the nudges stopped (issue #491), until Claude works again by itself.
    */
-  interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean; unreadable?: number }
+  interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean; unreadable?: number; steered?: boolean }
 
   /**
    * Sends `text` as a new turn and watches it, once Claude is ready for it (before-send.ts `readyFor`: a dialog of
@@ -180,9 +180,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     if ('authPending' in result) {
       // A login (issue #476): to the logins, never a question; the job waits, no nudge, for Claude to go on by itself.
       const unreadable = (notes.unreadable ?? 0) + 1;
-      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable);
+      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true);
       if ('failed' in taken) return { kind: 'failed', error: taken.failed };
-      if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, unreadable });
+      // A GitHub login steered to the hopper (issue #563): the same login reported next goes to the user.
+      if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, ...(taken.steered ? { steered: true } : { unreadable }) });
       const waiting = { ...s, turn, login: taken.login, parkedSeq: undefined, lapsesAt: undefined };
       ctx.saveState(waiting);
       return watch(ctx, waiting, p, turn, { count: 0, startedAt: notes.startedAt, quiet: true }, taken.login);

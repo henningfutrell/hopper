@@ -4,7 +4,8 @@
 // (`<scratch>/credentials`), through the machine's own connection — never typed into a pane — and its
 // variables point there; every renewal of the connection rewrites them for each job in flight. A machine
 // whose connection takes no files runs the job with the token as it is at its start, said in its progress.
-import type { Executor, JobCredentials, MachineShell } from '../domain/ports.ts';
+// Beside them, the job's GitHub proxy files (issue #563): its proxy token and `hopper-gh`, only where files are kept.
+import type { Executor, JobCredentials, JobProxyCredentials, MachineShell } from '../domain/ports.ts';
 import type { Job, JobStatus, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
@@ -14,28 +15,35 @@ const AT_WORK: JobStatus[] = ['running', 'waiting_answer'];
 /** The job's credentials dir under its scratch dir. */
 export const credentialsDirOf = (scratch: string): string => `${scratch}/credentials`;
 
-const keep = async (shell: MachineShell, job: Job, dir: string, creds: JobCredentials, make = false): Promise<void> => {
+const keep = async (shell: MachineShell, job: Job, dir: string, creds: Pick<JobCredentials, 'files'>, make = false): Promise<void> => {
   for (const [file, content] of Object.entries(creds.files)) await shell.keepCredential(job.id, dir, file, content, make);
 };
 
 const same = (a: JobCredentials, b: JobCredentials | undefined): boolean => JSON.stringify(a.files) === JSON.stringify(b?.files);
 
+const pathsUnder = (dir: string, paths: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(paths).map(([name, path]) => [name, `${dir}/${path}`]));
+
 /**
  * The variables a job runs with: its credential files kept under `scratch` on its machine first, and the
  * dir recorded on the job before they are written, so a renewal meanwhile finds it. Written again when a
- * renewal came between asking and writing. `note` says why a job runs with the token of its start.
+ * renewal came between asking and writing. `note` says why a job runs with the token of its start, or
+ * without the GitHub proxy (issue #563), whose files go only where files are kept.
  */
 export async function placeCredentials(
-  c: Pick<EngineContext, 'credentials' | 'store' | 'stopping'>, job: Job, shell: MachineShell | undefined, scratch: string, make: boolean, note: (line: string) => void,
+  c: Pick<EngineContext, 'credentials' | 'jobProxy' | 'store' | 'stopping'>, job: Job, machine: MachineSnapshot, shell: MachineShell | undefined, scratch: string, make: boolean,
+  note: (line: string) => void,
 ): Promise<Record<string, string>> {
   let creds = await c.credentials(job);
-  if (!creds) return {};
-  if (Object.keys(creds.files).length === 0) return creds.env;
+  const proxy: JobProxyCredentials | undefined = shell ? c.jobProxy(job, machine) : undefined;
+  const keepsFiles = creds !== undefined && Object.keys(creds.files).length > 0;
+  if (!proxy && !keepsFiles) return creds?.env ?? {};
   const dir = credentialsDirOf(scratch);
   try {
     if (!shell) throw new Error('its machine\'s connection keeps no files');
     if (!c.stopping()) c.store.jobs.update(job.id, { credentialsDir: dir });
-    for (let tries = 0; ; tries++) {
+    if (proxy) await keep(shell, job, dir, proxy, make);
+    for (let tries = 0; creds && keepsFiles; tries++) {
       await keep(shell, job, dir, creds, make);
       const now = await c.credentials(job);
       if (!now || same(creds, now) || tries === 2) break;
@@ -43,10 +51,13 @@ export async function placeCredentials(
     }
   } catch (e) {
     if (!c.stopping()) c.store.jobs.update(job.id, { credentialsDir: undefined });
-    note(`its connection's token is the one of its start, not renewed while it runs: ${(e as Error).message}`);
-    return creds.env;
+    note(keepsFiles
+      ? `its connection's token is the one of its start, not renewed while it runs: ${(e as Error).message}`
+      : `it runs without the hopper's GitHub proxy: ${(e as Error).message}`);
+    return creds?.env ?? {};
   }
-  return Object.fromEntries(Object.entries(creds.paths).map(([name, path]) => [name, `${dir}/${path}`]));
+  const own = keepsFiles ? pathsUnder(dir, creds!.paths) : creds?.env ?? {};
+  return { ...own, ...(proxy ? { ...pathsUnder(dir, proxy.paths), ...proxy.vars } : {}) };
 }
 
 /**

@@ -94,6 +94,8 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nupgrade: ${LINK_PROTOCOL}\r\nconnection: Upgrade\r\n\r\n`);
     if (head.length) socket.unshift(head);
     if ('setTimeout' in socket && typeof socket.setTimeout === 'function') socket.setTimeout(0);
-    o.links.accept(user, key, socket);
+    // Where the machine reached the hopper: its jobs ask the hopper there (issue #563). Behind the public URL the
+    // scheme is the public URL's; on loopback or the LAN, plain http to the Host it named.
+    o.links.accept(user, key, socket, reach.reach === 'public' ? o.lan.publicUrl : `http://${req.headers.host ?? ''}`);
   });
 }

@@ -559,6 +559,18 @@ export interface JobCredentials {
   env: Record<string, string>;
 }
 
+/**
+ * What a job asks the hopper's GitHub proxy with (issue #563): its proxy token and the `hopper-gh` script,
+ * kept as files in its credentials dir (by path under it, `paths` the variables pointing there), and `vars`
+ * — the hopper's URL as the job's machine reaches it. Only where its machine keeps files: never in an
+ * environment variable.
+ */
+export interface JobProxyCredentials {
+  files: Record<string, string>;
+  paths: Record<string, string>;
+  vars: Record<string, string>;
+}
+
 export class SourceError extends Error {
   readonly permanent: boolean;
   readonly status?: number;

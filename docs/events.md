@@ -2094,3 +2094,85 @@ Version 1 (`docs/schemas/phase_shifts.settings_changed.v1.json`). An admin saved
   }
 }
 ```
+
+## `github_proxy.done`
+
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `pr.create`, `pr.view`) on `repo`, `number` and `url` where it is. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `own` | boolean | yes |
+| `forUser` | string | no |
+| `job` | string | no |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `pr.create` \| `pr.view` | yes |
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "requestId": "r1",
+  "machine": "desk",
+  "own": true,
+  "op": "issue.create",
+  "repo": "octo/tools",
+  "number": 42,
+  "url": "https://github.com/octo/tools/issues/42"
+}
+```
+
+## `github_proxy.refused`
+
+Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection. Fields as `github_proxy.done`; `op` and `repo` when the request named them.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `own` | boolean | yes |
+| `forUser` | string | no |
+| `job` | string | no |
+| `op` | string | no |
+| `repo` | string | no |
+| `reason` | string | yes |
+
+```json
+{
+  "requestId": "r2",
+  "machine": "box",
+  "own": false,
+  "forUser": "u2",
+  "job": "j7",
+  "op": "issue.comment",
+  "repo": "octo/tools",
+  "reason": "a job of another user may only file an issue through the hopper (issue.create), not issue.comment"
+}
+```
+
+## `github_proxy.failed`
+
+Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused a GitHub operation the hopper did for a running job (issue #563): `error` is what GitHub answered, as the job was told. Fields as `github_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `own` | boolean | yes |
+| `forUser` | string | no |
+| `job` | string | no |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `pr.create` \| `pr.view` | yes |
+| `repo` | string | yes |
+| `error` | string | yes |
+
+```json
+{
+  "requestId": "r3",
+  "machine": "desk",
+  "own": true,
+  "op": "pr.create",
+  "repo": "octo/tools",
+  "error": "GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)"
+}
+```
