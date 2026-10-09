@@ -1,7 +1,7 @@
 // Settings → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
 // why not (every credential is denied meanwhile); each template's approvals, each with the relationship chain from
-// the template to the target and Revoke (the next check is denied); a check tried for a template, an operation and a
-// target, answered with its path; the newest decisions; and the access model, saved against the version read. The
+// the template to the asset and Revoke (the next check is denied); a check tried for a template, an operation and a
+// asset, answered with its path; the newest decisions; and the access model, saved against the version read. The
 // instance admin's alone: anyone else is told so.
 import { KeySquare } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -17,13 +17,13 @@ import { usePoll } from '@/hooks/use-poll';
 import { get, post } from '@/lib/api';
 import { chainText } from '@/model/access';
 import { clock } from '@/model/format';
-import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, Operation, TargetKind } from '@/model/wire';
+import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, Operation, AssetKind } from '@/model/wire';
 
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
-const TARGET_KINDS: TargetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
 
-const profileText = (a: Pick<Approval, 'profile'>) => `${a.profile.operation} on ${a.profile.target.kind} ${a.profile.target.name}`;
+const profileText = (a: Pick<Approval, 'profile'>) => `${a.profile.operation} on ${a.profile.asset.kind} ${a.profile.asset.name}`;
 
 function Status({ status }: { status: AccessStatus }) {
   const text = status.state === 'connected' ? `OpenFGA is connected: every approval is pushed${status.syncedAt ? ` (${clock(status.syncedAt)})` : ''}.`
@@ -64,7 +64,7 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
                       <div className="text-xs text-muted-foreground">approved by {a.approvedBy} at {clock(a.approvedAt)}</div>
                     </div>
                     <Confirm title={`Revoke ${t.template}: ${profileText(a)}?`} action="Revoke" onConfirm={() => void revoke(a)}
-                      description={`Jobs from ${t.template} get no new ${a.profile.operation} credential for ${a.profile.target.kind} ${a.profile.target.name} from the next request. Approving it again takes a new approval.`}>
+                      description={`Jobs from ${t.template} get no new ${a.profile.operation} credential for ${a.profile.asset.kind} ${a.profile.asset.name} from the next request. Approving it again takes a new approval.`}>
                       <Button size="xs" variant="outline" disabled={busy}>Revoke</Button>
                     </Confirm>
                   </li>
@@ -91,7 +91,7 @@ function DecisionLine({ d }: { d: AccessDecisionRecord }) {
     <div className="space-y-0.5">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <StatusBadge status={d.allowed ? 'allowed' : 'denied'} tone={d.allowed ? 'ok' : 'bad'} />
-        <span className="font-medium">{d.template}: {d.operation} on {d.target.kind} {d.target.name}</span>
+        <span className="font-medium">{d.template}: {d.operation} on {d.asset.kind} {d.asset.name}</span>
       </div>
       <div className="break-words">{d.reason}</div>
       {d.path && <div className="break-words text-muted-foreground">{chainText(d.path)}</div>}
@@ -102,14 +102,14 @@ function DecisionLine({ d }: { d: AccessDecisionRecord }) {
 function Check() {
   const [template, setTemplate] = useState('');
   const [operation, setOperation] = useState<Operation>('read');
-  const [kind, setKind] = useState<TargetKind>('cluster');
-  const [target, setTarget] = useState('');
+  const [kind, setKind] = useState<AssetKind>('cluster');
+  const [asset, setAsset] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AccessDecisionRecord | undefined>();
   const check = async () => {
     setBusy(true);
     try {
-      setResult(await post<AccessDecisionRecord>('/ui/api/access', { action: 'check', template, operation, target: { kind, name: target } }));
+      setResult(await post<AccessDecisionRecord>('/ui/api/access', { action: 'check', template, operation, asset: { kind, name: asset } }));
     } catch (e) { toast.error((e as Error).message); }
     setBusy(false);
   };
@@ -124,13 +124,13 @@ function Check() {
             <select name="operation" className={`${FIELD} w-28`} value={operation} disabled={busy} onChange={(e) => setOperation(e.target.value as Operation)}>
               {OPERATIONS.map((o) => <option key={o} value={o}>{o}</option>)}
             </select></label>
-          <label className="grid gap-1"><span className="text-xs text-muted-foreground">Target kind</span>
-            <select name="kind" className={`${FIELD} w-48`} value={kind} disabled={busy} onChange={(e) => setKind(e.target.value as TargetKind)}>
-              {TARGET_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+          <label className="grid gap-1"><span className="text-xs text-muted-foreground">Asset kind</span>
+            <select name="kind" className={`${FIELD} w-48`} value={kind} disabled={busy} onChange={(e) => setKind(e.target.value as AssetKind)}>
+              {ASSET_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
             </select></label>
-          <label className="grid gap-1"><span className="text-xs text-muted-foreground">Target</span>
-            <Input name="target" className="h-8 w-44" value={target} disabled={busy} onChange={(e) => setTarget(e.target.value)} /></label>
-          <Button size="sm" disabled={busy || template === '' || target === ''} onClick={() => void check()}>Check</Button>
+          <label className="grid gap-1"><span className="text-xs text-muted-foreground">Asset</span>
+            <Input name="asset" className="h-8 w-44" value={asset} disabled={busy} onChange={(e) => setAsset(e.target.value)} /></label>
+          <Button size="sm" disabled={busy || template === '' || asset === ''} onClick={() => void check()}>Check</Button>
         </div>
         {result && <div data-check-result={result.allowed ? 'allowed' : 'denied'} className="rounded-lg border p-2 text-xs"><DecisionLine d={result} /></div>}
       </div>
@@ -153,7 +153,7 @@ function Model({ view, onChanged }: { view: AccessView; onChanged: (v: AccessVie
     <Panel title="Access model" icon={KeySquare}>
       <div className="space-y-2 text-sm">
         <p className="text-muted-foreground">
-          OpenFGA's model language. It may change how a job reaches a target; it must keep every relation the hopper writes or asks. Saved by {view.model.writtenBy} at {clock(view.model.writtenAt)}.
+          OpenFGA's model language. It may change how a job reaches an asset; it must keep every relation the hopper writes or asks. Saved by {view.model.writtenBy} at {clock(view.model.writtenAt)}.
         </p>
         <Textarea name="access-model" className="min-h-64 font-mono text-xs" value={dsl} disabled={busy} onChange={(e) => setDsl(e.target.value)} />
         <Button size="sm" disabled={busy || dsl === view.model.dsl} onClick={() => void save()}>Save model</Button>
@@ -176,7 +176,7 @@ export function Access() {
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
             Before a job is given a credential, the hopper asks OpenFGA whether the job's template is approved for that operation on that
-            target. Revoking an approval denies the next request; nothing already given is widened.
+            asset. Revoking an approval denies the next request; nothing already given is widened.
           </p>
           <Status status={view.status} />
         </div>

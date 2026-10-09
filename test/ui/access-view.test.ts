@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // Settings → Access (issue #559), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
-// template to the target, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
-// operation and a target, with its answer and path; the newest decisions; and the model, saved against its version.
+// template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
+// operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -10,16 +10,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chainText, tupleText } from '../../ui/src/model/access.ts';
 
 const read = { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' };
-const grant = { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'target:cluster/x' };
+const grant = { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'asset:cluster/x' };
 const running = { subject: 'job:trial/t1', relation: 'running', object: 'template:kubectl-diag' };
 const VIEW = {
   status: { state: 'connected', syncedAt: '2026-10-09T12:00:00.000Z', storeId: 's1', modelId: 'm1' },
   model: { version: 3, dsl: 'model\n  schema 1.1\n', writtenBy: 'hopper', writtenAt: '2026-10-09T11:00:00.000Z' },
-  templates: [{ template: 'kubectl-diag', approvals: [{ id: 7, template: 'kubectl-diag', profile: { operation: 'read', target: { kind: 'cluster', name: 'x' } }, approvedBy: 'alice', approvedAt: '2026-10-09T11:30:00.000Z', chain: [read, grant] }] }],
+  templates: [{ template: 'kubectl-diag', approvals: [{ id: 7, template: 'kubectl-diag', profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, approvedBy: 'alice', approvedAt: '2026-10-09T11:30:00.000Z', chain: [read, grant] }] }],
   revoked: [],
   decisions: [
-    { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', target: { kind: 'cluster', name: 'x' }, job: { userId: 'admin', jobId: 'j1' } },
-    { id: 'd1', at: '2026-10-09T12:00:30.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', target: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] },
+    { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', asset: { kind: 'cluster', name: 'x' }, job: { userId: 'admin', jobId: 'j1' } },
+    { id: 'd1', at: '2026-10-09T12:00:30.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] },
   ],
 };
 
@@ -42,7 +42,7 @@ function fakeDaemon(view: unknown) {
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/ui/api/access' && body?.action === 'check') {
-      return json(200, { id: 'd3', at: '2026-10-09T12:02:00.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', target: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] });
+      return json(200, { id: 'd3', at: '2026-10-09T12:02:00.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] });
     }
     if (path === '/ui/api/access') return json(200, view);
     if (path in routes) return json(200, routes[path]);
@@ -132,16 +132,16 @@ describe('Settings → Access', () => {
     await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'revoke', approval: 7 }));
   });
 
-  it('Check asks for a template, an operation and a target, and shows the answer with its path', async () => {
+  it('Check asks for a template, an operation and an asset, and shows the answer with its path', async () => {
     const daemon = await boot();
     const form = panel()!.querySelector('[data-slot="access-check"]')!;
     await set(form.querySelector<HTMLInputElement>('input[name="template"]')!, 'kubectl-diag');
     await set(form.querySelector<HTMLSelectElement>('select[name="operation"]')!, 'read');
     await set(form.querySelector<HTMLSelectElement>('select[name="kind"]')!, 'cluster');
-    await set(form.querySelector<HTMLInputElement>('input[name="target"]')!, 'x');
+    await set(form.querySelector<HTMLInputElement>('input[name="asset"]')!, 'x');
     await click(button('Check', form));
     await vi.waitFor(() => expect(form.querySelector('[data-check-result]')?.getAttribute('data-check-result')).toBe('allowed'));
-    expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'check', template: 'kubectl-diag', operation: 'read', target: { kind: 'cluster', name: 'x' } });
+    expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'check', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' } });
     expect(form.textContent).toContain('template kubectl-diag is approved for read on cluster x');
   });
 

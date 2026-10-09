@@ -16,8 +16,8 @@ describe.skipIf(!URL_)('OpenFGA, for real (opt-in)', () => {
     expect(await server.store(storeId, 'ignored')).toBe(storeId);
     const modelId = await server.writeModel(storeId, compileAccessModel(DEFAULT_ACCESS_MODEL));
     const role = { kind: 'aws-role', name: '123456789012/read-only' } as const;
-    const read = approvalTuples('aws-diag', { operation: 'read', target: role });
-    const writeGrant = approvalTuples('aws-diag', { operation: 'write', target: role }).grant;
+    const read = approvalTuples('aws-diag', { operation: 'read', asset: role });
+    const writeGrant = approvalTuples('aws-diag', { operation: 'write', asset: role }).grant;
     await server.write(storeId, modelId, { writes: [read.grant, read.approval, writeGrant], deletes: [] });
     expect((await server.tuples(storeId)).length).toBe(3);
 

@@ -5,12 +5,12 @@
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
 import {
-  OPERATIONS, TARGET_KINDS, TARGET_NAME, TEMPLATE_NAME,
+  OPERATIONS, ASSET_KINDS, ASSET_NAME, TEMPLATE_NAME,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
-  type OperationProfile, type RevokedApproval, type Target,
+  type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
 import { compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, type ModelJson } from './model.ts';
-import { approvalTuples, jobObject, profileOf, relationshipPath, runningTuple, targetObject } from './objects.ts';
+import { approvalTuples, jobObject, profileOf, relationshipPath, runningTuple, assetObject } from './objects.ts';
 
 /** A job is live while it is claimed, running or waiting on an answer: parked, operator-led, ended or not yet started, it gets nothing. */
 export const LIVE_JOB_STATUSES: readonly string[] = ['claimed', 'running', 'waiting_answer'];
@@ -64,14 +64,14 @@ const SYSTEM = 'hopper';
 
 const tupleKey = (t: RelationshipTuple) => `${t.subject} ${t.relation} ${t.object}`;
 const plain = (t: StoredTuple): RelationshipTuple => ({ subject: t.subject, relation: t.relation, object: t.object });
-const describeTarget = (t: Target) => `${t.kind} ${t.name}`;
+const describeAsset = (t: Asset) => `${t.kind} ${t.name}`;
 
-/** Why a request names no template, operation or target the model can hold, or undefined. */
-export function requestProblem(r: { template: string; operation: string; target: { kind: string; name: string } }): string | undefined {
+/** Why a request names no template, operation or asset the model can hold, or undefined. */
+export function requestProblem(r: { template: string; operation: string; asset: { kind: string; name: string } }): string | undefined {
   if (!TEMPLATE_NAME.test(r.template)) return `template ${JSON.stringify(r.template)} is not a template name (lowercase letters, digits, . _ -)`;
   if (!(OPERATIONS as readonly string[]).includes(r.operation)) return `operation ${JSON.stringify(r.operation)} is not one of ${OPERATIONS.join(', ')}`;
-  if (!(TARGET_KINDS as readonly string[]).includes(r.target.kind)) return `target kind ${JSON.stringify(r.target.kind)} is not one of ${TARGET_KINDS.join(', ')}`;
-  if (!TARGET_NAME.test(r.target.name)) return `target name ${JSON.stringify(r.target.name)} has a character a target name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
+  if (!(ASSET_KINDS as readonly string[]).includes(r.asset.kind)) return `asset kind ${JSON.stringify(r.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
+  if (!ASSET_NAME.test(r.asset.name)) return `asset name ${JSON.stringify(r.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
   return undefined;
 }
 
@@ -152,13 +152,13 @@ export function createAccess(o: AccessOptions): Access {
     if (dirty) { await running; await sync(); }
     if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
     const pushed = pushedModel()!;
-    const profile = { operation: r.operation, target: r.target };
+    const profile = { operation: r.operation, asset: r.asset };
     try {
       const allowed = await server.check(pushed.storeId, pushed.modelId,
-        { subject: job, relation: `can_${r.operation}`, object: targetObject(r.target) }, [runningTuple(job, r.template)]);
-      if (!allowed) return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is not approved to ${r.operation} on ${describeTarget(r.target)}` };
+        { subject: job, relation: `can_${r.operation}`, object: assetObject(r.asset) }, [runningTuple(job, r.template)]);
+      if (!allowed) return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is not approved to ${r.operation} on ${describeAsset(r.asset)}` };
       const path = relationshipPath(o.repo.liveTuples().map(plain), job, r.template, profile);
-      return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is approved to ${r.operation} on ${describeTarget(r.target)}`, ...(path ? { path } : {}) };
+      return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is approved to ${r.operation} on ${describeAsset(r.asset)}`, ...(path ? { path } : {}) };
     } catch (e) {
       dirty = true;
       down((e as Error).message);
@@ -177,8 +177,8 @@ export function createAccess(o: AccessOptions): Access {
 
   return {
     async decideMint(request) {
-      const { job, template, operation, target } = request;
-      const base = { job: { userId: job.userId, jobId: job.jobId }, template, operation, target };
+      const { job, template, operation, asset } = request;
+      const base = { job: { userId: job.userId, jobId: job.jobId }, template, operation, asset };
       const problem = requestProblem(request);
       if (problem) return record({ ...base, allowed: false, reason: `not a request the model can hold: ${problem}` });
       const jobStatus = o.jobStatus(job.userId, job.jobId);
@@ -190,8 +190,8 @@ export function createAccess(o: AccessOptions): Access {
     async tryCheck(request, by) {
       const problem = requestProblem(request);
       if (problem) throw new AccessEditError(400, problem);
-      const { template, operation, target } = request;
-      return record({ trial: { by }, template, operation, target, ...await ask(`job:trial/${randomUUID()}`, request) });
+      const { template, operation, asset } = request;
+      return record({ trial: { by }, template, operation, asset, ...await ask(`job:trial/${randomUUID()}`, request) });
     },
     async approve(template, profile, by) {
       const problem = requestProblem({ template, ...profile });

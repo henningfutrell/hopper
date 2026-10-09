@@ -1,26 +1,26 @@
 // Access (issue #559, design.md "Access: OpenFGA decides each mint"): before the vault (issue #558) mints or renews a
 // credential for a job, the hopper asks OpenFGA whether the job's template is approved for that operation on that
-// target. The types the model needs, kept minimal for the vault to adopt or extend: a template by name, an operation,
-// a target, and the operation profile that is an operation on a target. The approvals and the model are the hopper's,
+// asset. The types the model needs, kept minimal for the vault to adopt or extend: a template by name, an operation,
+// an asset, and the operation profile that is an operation on an asset. The approvals and the model are the hopper's,
 // rows in its database, pushed to OpenFGA; every decision is recorded.
 
-/** What a credential lets a job do on its target. Write and apply are the high blast-radius ones (#542, #544). */
+/** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
 export const OPERATIONS = ['read', 'write', 'sync', 'apply'] as const;
 export type Operation = (typeof OPERATIONS)[number];
 
 /** What a credential is for: a cluster, a namespace (`<cluster>/<namespace>`), an Argo CD app, a Terraform workspace, an AWS account, an AWS role (`<account>/<role>`). */
-export const TARGET_KINDS = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'] as const;
-export type TargetKind = (typeof TARGET_KINDS)[number];
+export const ASSET_KINDS = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'] as const;
+export type AssetKind = (typeof ASSET_KINDS)[number];
 
-export interface Target { kind: TargetKind; name: string }
+export interface Asset { kind: AssetKind; name: string }
 
-/** An operation on a target: what an approval lets a template's jobs do (`read/cluster/x`). */
-export interface OperationProfile { operation: Operation; target: Target }
+/** An operation on an asset: what an approval lets a template's jobs do (`read/cluster/x`). */
+export interface OperationProfile { operation: Operation; asset: Asset }
 
 /** A template's name: lowercase letters, digits, `.`, `_` and `-`. The vault (issue #558) registers templates; here a name is enough. */
 export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-/** A target's name: letters, digits and `. _ / + = , -`. OpenFGA takes no `:`, `@`, `#` or space in an id, so an AWS role is `<account>/<role>`, not its ARN. */
-export const TARGET_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
+/** An asset's name: letters, digits and `. _ / + = , -`. OpenFGA takes no `:`, `@`, `#` or space in an id, so an AWS role is `<account>/<role>`, not its ARN. */
+export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
 
 /** One relationship, as OpenFGA keeps it: `subject` is `relation` of `object` (OpenFGA's user, relation, object). */
 export interface RelationshipTuple { subject: string; relation: string; object: string }
@@ -30,7 +30,7 @@ export interface MintRequest {
   job: { userId: string; jobId: string };
   template: string;
   operation: Operation;
-  target: Target;
+  asset: Asset;
 }
 
 /** The answer to a mint request: allowed or not, why, and the relationship path that allowed it when the hopper can name it. */
@@ -39,7 +39,7 @@ export interface MintDecision {
   at: string;
   allowed: boolean;
   reason: string;
-  /** From the job to the target, when the approval rows explain the allow; absent on a deny, or when a model edit allowed it another way. */
+  /** From the job to the asset, when the approval rows explain the allow; absent on a deny, or when a model edit allowed it another way. */
   path?: RelationshipTuple[];
   /** The OpenFGA authorization model asked. */
   modelId?: string;
@@ -51,7 +51,7 @@ export interface AccessDecisionRecord extends MintDecision {
   trial?: { by: string };
   template: string;
   operation: Operation;
-  target: Target;
+  asset: Asset;
 }
 
 /** Whether OpenFGA can be asked: not set up, connected (everything pushed), or not reachable (or it refused what the hopper pushed). */
@@ -67,7 +67,7 @@ export interface AccessStatus {
   modelId?: string;
 }
 
-/** A template approved for an operation profile: who approved it, when, and the chain from the template to the target. */
+/** A template approved for an operation profile: who approved it, when, and the chain from the template to the asset. */
 export interface Approval {
   /** The approval's row: Revoke names it. */
   id: number;
@@ -101,9 +101,9 @@ export interface AccessView {
 
 /** POST /ui/api/access: approve (what the vault's gate, issue #558, writes), revoke, try a check, or save the model. */
 export type AccessEdit =
-  | { action: 'approve'; template: string; operation: Operation; target: Target }
+  | { action: 'approve'; template: string; operation: Operation; asset: Asset }
   | { action: 'revoke'; approval: number }
-  | { action: 'check'; template: string; operation: Operation; target: Target }
+  | { action: 'check'; template: string; operation: Operation; asset: Asset }
   | { action: 'model'; dsl: string; version: number };
 
 // ---- Ports ---------------------------------------------------------------------------

@@ -9032,7 +9032,7 @@ already minted is widened, and minted credentials are short-lived. This builds t
 minting and no first-time human gate (both #558's). The dependency runs #558 → #559.
 
 **The entry point** — `Access.decideMint(request)` (`src/authz/service.ts`, the app's `access`), with
-`MintRequest` (`src/domain/access.ts`): the job (`userId`, `jobId`), its template, the operation and the target.
+`MintRequest` (`src/domain/access.ts`): the job (`userId`, `jobId`), its template, the operation and the asset.
 It answers a `MintDecision` — `allowed`, `reason`, the relationship `path` when the hopper can name it, the
 OpenFGA model asked — and records it. The vault calls it before every mint and every renewal, and mints nothing
 unless `allowed`; the template comes from the machine's registration, never from the job's prompt.
@@ -9043,9 +9043,11 @@ unless `allowed`; the template comes from the machine's registration, never from
 |---|---|---|
 | template | a kind of machine a job runs on, by name (`TEMPLATE_NAME`) | `template:kubectl-diag` |
 | operation | `read`, `write`, `sync`, `apply` | — |
-| target | `cluster`, `namespace` (`<cluster>/<namespace>`), `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role` (`<account>/<role>`), and a name (`TARGET_NAME`: OpenFGA takes no `:`, `@`, `#` or space in an id, so not an ARN) | `target:cluster/x` |
-| operation profile | an operation on a target | `operation_profile:read/cluster/x` |
+| asset | `cluster`, `namespace` (`<cluster>/<namespace>`), `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role` (`<account>/<role>`), and a name (`ASSET_NAME`: OpenFGA takes no `:`, `@`, `#` or space in an id, so not an ARN) | `asset:cluster/x` |
+| operation profile | an operation on an asset | `operation_profile:read/cluster/x` |
 | job | one run of a job: the issue's *session* (*UI session* is taken, glossary) | `job:<user>/<job>` |
+
+The issue's *target* is an **asset** here: *target* is an attached machine (glossary).
 
 **The model** (`src/authz/model.ts`, `DEFAULT_ACCESS_MODEL`, OpenFGA DSL):
 
@@ -9053,11 +9055,11 @@ unless `allowed`; the template comes from the machine's registration, never from
 type job
 type template            running: [job]
 type operation_profile   approved_for: [template]; running_job: running from approved_for
-type target              grants_<op>: [operation_profile]; can_<op>: running_job from grants_<op>
+type asset              grants_<op>: [operation_profile]; can_<op>: running_job from grants_<op>
 ```
 
-An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the target, and the template is
-`approved_for` the profile. A check asks `job:<user>/<job>` `can_<op>` `target:…` with one **contextual tuple**,
+An approval is two tuples (`approvalTuples`): the profile `grants_<op>` the asset, and the template is
+`approved_for` the profile. A check asks `job:<user>/<job>` `can_<op>` `asset:…` with one **contextual tuple**,
 `job running template` — told only while the job is live (`claimed`, `running`, `waiting_answer`), never stored. So
 a job that ended, failed or was parked gets nothing, with no tuple to delete; a job not live is denied before
 OpenFGA is asked. The user, machine and admin relations the issue sketches are not in the model yet: nothing asks
@@ -9074,13 +9076,13 @@ and an OpenFGA come back is found. One push at a time.
 
 **Fail closed.** Every mint is denied, and recorded, when: no OpenFGA is set up; OpenFGA cannot be reached or
 refused what was pushed; a change is not pushed yet (a revoke OpenFGA has not taken: the next check pushes first,
-and denies when it cannot); the job is not live; the request names no template, operation or target the model can
+and denies when it cannot); the job is not live; the request names no template, operation or asset the model can
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
 shown in Settings → Access.
 
 **The relationship path.** OpenFGA's check answers only allowed or not. On an allow, the path is the hopper's
 reading of its own live tuples: the job runs from the template → the template is approved for the profile → the
-profile grants the operation on the target. When a model edit allowed it another way, no path is given.
+profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
 status; each template's approvals with the chain and **Revoke** (asked once); the revoked ones; **Try a check** (a

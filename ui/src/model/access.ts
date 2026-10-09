@@ -4,14 +4,14 @@ import type { RelationshipTuple } from './wire.ts';
 
 const OPERATION_WORD = /^grants_(read|write|sync|apply)$/;
 
-/** `operation_profile:read/cluster/x` → `read on cluster x`; `target:cluster/x` → `cluster x`; `template:t` → `template t`. */
+/** `operation_profile:read/cluster/x` → `read on cluster x`; `asset:cluster/x` → `cluster x`; `template:t` → `template t`. */
 function objectText(object: string): string {
   const colon = object.indexOf(':');
   const type = object.slice(0, colon);
   const id = object.slice(colon + 1);
   const first = id.indexOf('/');
   if (type === 'template') return `template ${id}`;
-  if (type === 'target' && first > 0) return `${id.slice(0, first)} ${id.slice(first + 1)}`;
+  if (type === 'asset' && first > 0) return `${id.slice(0, first)} ${id.slice(first + 1)}`;
   if (type === 'operation_profile') {
     const second = id.indexOf('/', first + 1);
     if (first > 0 && second > first) return `${id.slice(0, first)} on ${id.slice(first + 1, second)} ${id.slice(second + 1)}`;

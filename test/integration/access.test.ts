@@ -1,6 +1,6 @@
 // Issue #559: access through the real daemon, store and HTTP server, with OpenFGA as a double at the
 // AuthorizationServer seam. Before every credential the vault (issue #558) mints or renews, the hopper asks
-// OpenFGA whether the job's template is approved for that operation on that target (`decideMint`); the
+// OpenFGA whether the job's template is approved for that operation on that asset (`decideMint`); the
 // approvals and the model are the hopper's, in its database, pushed to OpenFGA. Settings → Access shows each
 // template's approvals with the relationship chain, revokes one, tries a check, and edits the model. Every
 // decision is recorded. When OpenFGA cannot be asked, or has not taken a change yet, nothing is allowed.
@@ -35,12 +35,12 @@ async function boot(o: { server?: FakeAuthorizationServer | null; dbPath?: strin
 const view = async (a: TestApp, token: string) => (await a.api<AccessView>('GET', '/api/access', undefined, { 'x-hopper-session': token })).body;
 const edit = <T = AccessView>(a: TestApp, token: string, body: unknown) => a.ui<T>('/ui/api/access', body, { token });
 const approve = (a: TestApp, token: string, operation = 'read', template = 'kubectl-diag') =>
-  edit(a, token, { action: 'approve', template, operation, target: CLUSTER_X });
+  edit(a, token, { action: 'approve', template, operation, asset: CLUSTER_X });
 const check = (a: TestApp, token: string, operation: string, template = 'kubectl-diag') =>
-  edit<AccessDecisionRecord>(a, token, { action: 'check', template, operation, target: CLUSTER_X });
+  edit<AccessDecisionRecord>(a, token, { action: 'check', template, operation, asset: CLUSTER_X });
 
 describe('access: OpenFGA decides each mint (issue #559)', () => {
-  it('allows a read through an approved rule with its relationship path, denies a write on the same target, and records both', async () => {
+  it('allows a read through an approved rule with its relationship path, denies a write on the same asset, and records both', async () => {
     const { a, token } = await boot();
     expect((await approve(a, token)).status).toBe(200);
 
@@ -50,7 +50,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(read.body.path).toEqual([
       { subject: expect.stringMatching(/^job:/), relation: 'running', object: 'template:kubectl-diag' },
       { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' },
-      { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
+      { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'asset:cluster/x' },
     ]);
 
     const write = await check(a, token, 'write');
@@ -61,10 +61,10 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     const v = await view(a, token);
     expect(v.status.state).toBe('connected');
     expect(v.templates).toEqual([{ template: 'kubectl-diag', approvals: [expect.objectContaining({
-      profile: { operation: 'read', target: CLUSTER_X }, approvedBy: expect.any(String),
+      profile: { operation: 'read', asset: CLUSTER_X }, approvedBy: expect.any(String),
       chain: [
         { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' },
-        { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'target:cluster/x' },
+        { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'asset:cluster/x' },
       ],
     })] }]);
     expect(v.decisions.map((d) => [d.operation, d.allowed])).toEqual([['write', false], ['read', true]]);
@@ -94,7 +94,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     await approve(a, token);
     const job = await a.pull({ op: 'sleep', ms: 1500 });
     await a.waitForStatus(job.id, 'running');
-    const request = { job: { userId: 'admin', jobId: job.id }, template: 'kubectl-diag', operation: 'read', target: CLUSTER_X } as const;
+    const request = { job: { userId: 'admin', jobId: job.id }, template: 'kubectl-diag', operation: 'read', asset: CLUSTER_X } as const;
 
     const live: MintDecision = await a.app.access.decideMint(request);
     expect(live.allowed).toBe(true);
@@ -155,7 +155,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     const before = await view(a, token);
     expect(before.model.dsl).toBe(DEFAULT_ACCESS_MODEL);
 
-    // Reading is allowed to anything approved for write on the same target too: a model change, no restart.
+    // Reading is allowed to anything approved for write on the same asset too: a model change, no restart.
     const widened = DEFAULT_ACCESS_MODEL.replace('define can_read: running_job from grants_read', 'define can_read: running_job from grants_read or running_job from grants_write');
     expect(widened).not.toBe(DEFAULT_ACCESS_MODEL);
     await edit(a, token, { action: 'revoke', approval: before.templates[0]!.approvals[0]!.id });
@@ -172,7 +172,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(stale.status).toBe(409);
     const gap = await edit(a, token, { action: 'model', dsl: widened.replace(/\n {4}define can_apply: .*\n/, '\n'), version: before.model.version + 1 });
     expect(gap.status).toBe(400);
-    expect(JSON.stringify(gap.body)).toMatch(/target#can_apply/);
+    expect(JSON.stringify(gap.body)).toMatch(/asset#can_apply/);
     const broken = await edit(a, token, { action: 'model', dsl: 'model\n  schema 1.1\ntype', version: before.model.version + 1 });
     expect(broken.status).toBe(400);
     server.refuseModels = 'the relation type definitions contain a cycle';
@@ -197,7 +197,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     const tuples = second.server.storeTuples(storeId!);
     for (const t of [
       { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:write/cluster/x' },
-      { subject: 'operation_profile:write/cluster/x', relation: 'grants_write', object: 'target:cluster/x' },
+      { subject: 'operation_profile:write/cluster/x', relation: 'grants_write', object: 'asset:cluster/x' },
     ]) tuples.set(`${t.subject} ${t.relation} ${t.object}`, t);
     expect((await check(second.a, second.token, 'write')).body.allowed).toBe(true);
     await second.a.app.access.sync();
@@ -209,14 +209,14 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     const bob = await a.addUser('bob');
     const bobToken = await a.login(bob.id);
     expect((await a.api('GET', '/api/access', undefined, { 'x-hopper-session': bobToken })).status).toBe(403);
-    expect((await a.ui('/ui/api/access', { action: 'approve', template: 'kubectl-diag', operation: 'read', target: CLUSTER_X }, { token: bobToken })).status).toBe(403);
+    expect((await a.ui('/ui/api/access', { action: 'approve', template: 'kubectl-diag', operation: 'read', asset: CLUSTER_X }, { token: bobToken })).status).toBe(403);
     expect((await view(a, token)).templates).toEqual([]);
   });
 
-  it('refuses names that are not a template, an operation or a target', async () => {
+  it('refuses names that are not a template, an operation or an asset', async () => {
     const { a, token } = await boot();
-    expect((await edit(a, token, { action: 'approve', template: 'Bad Name', operation: 'read', target: CLUSTER_X })).status).toBe(400);
-    expect((await edit(a, token, { action: 'approve', template: 'kubectl-diag', operation: 'delete', target: CLUSTER_X })).status).toBe(400);
-    expect((await edit(a, token, { action: 'approve', template: 'kubectl-diag', operation: 'read', target: { kind: 'cluster', name: 'a#b' } })).status).toBe(400);
+    expect((await edit(a, token, { action: 'approve', template: 'Bad Name', operation: 'read', asset: CLUSTER_X })).status).toBe(400);
+    expect((await edit(a, token, { action: 'approve', template: 'kubectl-diag', operation: 'delete', asset: CLUSTER_X })).status).toBe(400);
+    expect((await edit(a, token, { action: 'approve', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'a#b' } })).status).toBe(400);
   });
 });
