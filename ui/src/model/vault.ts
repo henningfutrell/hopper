@@ -18,12 +18,13 @@ const when = (iso: string): string => new Date(iso).toLocaleString([], { dateSty
 
 export interface Fact { label: string; value: string }
 
-/** The card's facts: the scope when said, who set it, and who changed it when that came later. */
+/** The card's facts: the scope when said, who set it, who changed it when that came later, and its last delivery. */
 export function secretFacts(s: VaultSecret): Fact[] {
   return [
     ...(s.scope ? [{ label: 'Scope', value: s.scope }] : []),
     { label: 'Set by', value: `${s.setBy} · ${when(s.createdAt)}` },
     ...(s.changedAt !== s.createdAt ? [{ label: 'Changed by', value: `${s.changedBy} · ${when(s.changedAt)}` }] : []),
+    ...(s.lastUsed ? [{ label: 'Last delivered', value: `${s.lastUsed.machine} · job ${s.lastUsed.job.slice(0, 8)} · ${when(s.lastUsed.at)}` }] : []),
   ];
 }
 

@@ -7,6 +7,10 @@
 //   GET  /client/connect   an HTTP/1.1 upgrade to `hopper-client/1`, signed with the client token: the
 //                          machine's link. Refused unless a client target holds the machine key and the
 //                          signature is its token's. Answered 101, the socket goes to the links.
+//   POST /client/vault     a machine's ask for one vault secret (issue #558, design.md "The vault"), signed with its
+//                          client token over its user, its machine key and the body, and carrying the job's proxy token
+//                          (issue #563): the value answered only sealed to that one request under the client token,
+//                          never cached. It changes no job, question or setting: it records the delivery or refusal.
 //   GET  /client/install   the install script a computer's line pipes to sh (scripts/client-install.sh)
 //   GET  /client/release   the hopper's client release, {id, files}: what that script installs
 //
@@ -17,7 +21,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { CONNECT_PATH, JOIN_PATH, LINK_PROTOCOL, MACHINE_KEY_HEADER, USER_HEADER } from '../client/link.ts';
 import type { ClientRelease } from '../client/release.ts';
-import { createNonceCache, verifyConnect } from '../client/signature.ts';
+import { REQUEST_HEADER, createNonceCache, nonceOf, verifyConnect, verifyVault } from '../client/signature.ts';
+import { askOf, sealAnswer, VAULT_CONTENT_TYPE, VAULT_PATH } from '../client/vault.ts';
 import type { Clock, InstanceStore } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
 import type { MachineLinks } from '../machines/links.ts';
@@ -68,6 +73,32 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };
+  });
+
+  // The body is the bytes the machine signed: kept as text, parsed only after the signature holds.
+  app.addContentTypeParser(VAULT_CONTENT_TYPE, { parseAs: 'string' }, (_req, body, done) => { done(null, body); });
+  const vaultNonces = createNonceCache();
+  app.post(VAULT_PATH, async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const user = header(req.raw, USER_HEADER);
+    const key = header(req.raw, MACHINE_KEY_HEADER);
+    const body = typeof req.body === 'string' ? req.body : '';
+    const tenant = o.tenants.user(user);
+    const token = tenant?.machineLink.tokenFor(key);
+    const signature = header(req.raw, REQUEST_HEADER);
+    const verdict = token === undefined ? { ok: false as const, why: 'no machine holds that key' } : verifyVault(token, signature, user, key, body, vaultNonces);
+    if (!verdict.ok || !tenant || token === undefined) {
+      const why = verdict.ok ? 'no such user' : verdict.why;
+      console.warn(`hopper: refused a vault ask from ${req.socket.remoteAddress}: ${why}`);
+      throw new HttpError(401, `refused: ${why}`);
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(body); } catch { throw new HttpError(400, 'the ask must be JSON'); }
+    const ask = askOf(parsed);
+    if (typeof ask === 'string') throw new HttpError(400, ask);
+    const r = tenant.vault.deliver(ask, key);
+    if ('refused' in r) throw new HttpError(403, r.refused);
+    return sealAnswer(token, nonceOf(signature), ask, r.value);
   });
 
   app.get('/client/install', async (_req, reply) => reply.type('text/x-shellscript; charset=utf-8').header('cache-control', 'no-cache').send(o.installScript));

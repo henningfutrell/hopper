@@ -20,6 +20,8 @@ export interface VaultSecret {
   /** Who last set its value or scope, and when. */
   changedBy: string;
   changedAt: string;
+  /** When it was last delivered, to which machine, for which job (issue #558, slice 3). */
+  lastUsed?: { at: string; machine: string; job: string };
 }
 
 /** `GET /api/vault`: never a value. */

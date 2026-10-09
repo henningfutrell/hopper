@@ -2272,3 +2272,45 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
   "by": "Ada"
 }
 ```
+
+## `vault.delivered`
+
+Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client's own request, never in an environment or a file. The secret's name, the template, the machine and the job; never the value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `template` | string | yes |
+| `machine` | string | yes |
+| `job` | string | yes |
+
+```json
+{
+  "name": "KUBE_TOKEN",
+  "template": "kube",
+  "machine": "hopper-sandbox-kube",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001"
+}
+```
+
+## `vault.refused`
+
+Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give. `reason` says which; never a value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `machine` | string | yes |
+| `template` | string | no |
+| `job` | string | no |
+| `reason` | string | yes |
+
+```json
+{
+  "name": "PROD_KEY",
+  "machine": "hopper-sandbox-kube",
+  "template": "kube",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "reason": "kube is not approved for PROD_KEY: a person adds it to the template and approves it"
+}
+```

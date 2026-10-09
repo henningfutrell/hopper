@@ -56,6 +56,8 @@ export interface ClientOptions {
   installDir: string;
   /** A release was loaded into installDir: restart to run it. Called after the answer is sent. */
   onLoaded?: (release: string) => void;
+  /** The vault's helper (vault.ts, issue #558): said in `/release` as `vault`, so the hopper gives each job its path as HOPPER_SECRET. */
+  vaultHelper?: string;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -131,7 +133,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources() });
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}) });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.

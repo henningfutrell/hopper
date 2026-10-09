@@ -63,18 +63,19 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       return { online: true, client: { current: false } };
     }
     const running = answer.release;
+    const vault = answer.vault ? { vault: answer.vault } : {};
     const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}) };
     if (running === ours) {
       tries.delete(t.machine);
       say(t.machine, `hopper: client ${t.machine}: runs the hopper's release ${ours}`);
-      return { online: true, client: { release: running, current: true }, ...home };
+      return { online: true, client: { release: running, current: true, ...vault }, ...home };
     }
     let tried = tries.get(t.machine);
     if (tried?.from !== running) tries.set(t.machine, tried = { from: running, loads: 0 });
     if (tried.loads >= MAX_LOADS) {
       const problem = tried.failed ?? `its client still runs release ${running} after ${tried.loads} loads of the hopper's ${ours}: whatever runs it did not start the new files`;
       say(t.machine, `hopper: client ${t.machine}: cannot update: ${problem}; reinstall it (Machines shows the line)`, true);
-      return { online: true, client: { release: running, current: false, update: { problem } }, ...home };
+      return { online: true, client: { release: running, current: false, update: { problem }, ...vault }, ...home };
     }
     if (busy()) {
       say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
@@ -93,7 +94,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
         say(t.machine, `hopper: client ${t.machine}: loading release ${ours} failed: ${tried.failed}`, true);
       }
     }
-    return { online: true, client: { release: running, current: false }, ...home };
+    return { online: true, client: { release: running, current: false, ...vault }, ...home };
   };
 }
 

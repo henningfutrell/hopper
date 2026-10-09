@@ -38,7 +38,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
   `docs/design.md` "GitHub through the hopper"): `POST /job/github`, with the job's proxy token — derived, never stored,
   honoured only while the job is at work — asks the hopper to act on GitHub with its own connection; it changes no job,
-  question, webhook or setting, only records what it did. Every other mutation is the UI's
+  question, webhook or setting, only records what it did. A box's vault ask (issue #558, `docs/design.md` "The vault"):
+  `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
+  sealed to that request; it records only the delivery or refusal. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and

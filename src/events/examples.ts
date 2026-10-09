@@ -127,4 +127,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'template.saved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
   'template.removed': { template: 'kube', by: 'Ada' },
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
+  'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
+  'vault.refused': { name: 'PROD_KEY', machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'kube is not approved for PROD_KEY: a person adds it to the template and approves it' },
 };
