@@ -9157,11 +9157,21 @@ is given.
 status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
 (issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
-decisions; **Who may do what** — the permission matrix's rows (issue #581): every user, each live job (its machine and
-template) and each box, each asset an approval names a column, each cell the operations the requester may do, with the
-path on hover, the hopper's reading of its own rows (`AccessView.requesters`); and the model, saved against its version. An edit must keep every relation the hopper writes or asks
+decisions; a link to the **permission matrix** (below); and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
 API for the vault's gate (#558) to write; the UI offers no approve, since that is the gate.
+
+**Settings → Permission matrix** (`#settings/permissions`, the instance admin's alone): the same `GET /api/access`,
+as a table of who may do what on which asset. Rows: each template — with its blast radius — followed by its boxes, then
+every user; switched, the live jobs (with their machine and template). The rows besides the templates are the
+**requesters** (issue #581, `AccessView.requesters`), each with the profiles it reaches and the path. Columns: the assets an
+approval names or a template waits on, grouped by kind. A cell holds the approved operations, and apart (dashed) the
+declared operation profiles of the row's template that wait for approval (issue #584). A click on a cell opens why: the
+relationship path (for a job, its owner first), who approved it and when, and **Revoke** (asked once, the same `revoke` as
+Settings → Access: the next check is denied). Filters: asset kind, operation, a name, only the rows with access; the header
+rows and the first column stay in place on scroll. A cell is the hopper's reading of its own rows, as the requesters are: a
+model edit can allow more. The matrix model is pure (`ui/src/model/permission-matrix.ts`). It replaced the hover-only
+"Who may do what" table of #581 on Settings → Access.
 
 **OpenFGA itself** is `HOPPER_OPENFGA_URL`, with the preshared key `HOPPER_OPENFGA_KEY` (or `_FILE`) from the
 runtime, read at each call (`src/authz/openfga.ts`, `@openfga/sdk`, no retries). Recommended, and in `compose.yaml`:
@@ -9476,8 +9486,7 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   the highest.
 
 **Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
-discovered rating only. The permission matrix (#559): its rows are the requesters (issue #581, `AccessView.requesters`); a click on a
-cell to explain it and revoke from there is not built yet. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
+discovered rating only. The permission matrix (#559, Settings → Permission matrix) shows each template's rating next to its row. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
 
 Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
 not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a

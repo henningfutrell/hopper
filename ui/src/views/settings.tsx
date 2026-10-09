@@ -1,15 +1,16 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
 // risk rules), the question history, the minor decisions (issue #550), the job rules (issue #172), yolo mode (issue #579), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
-// sign-in (issue #185) and access (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
+// sign-in (issue #185), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version.
-import { History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
+import { Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
 import { Access } from '@/views/access';
 import { JobRules } from '@/views/job-rules';
 import { MinorDecisions } from '@/views/minor-decisions';
+import { PermissionMatrix } from '@/views/permission-matrix';
 import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
@@ -21,7 +22,7 @@ import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { YoloMode } from '@/views/yolo-mode';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'minor-decisions', 'job-rules', 'yolo-mode', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'minor-decisions', 'job-rules', 'yolo-mode', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -38,6 +39,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
   access: { label: 'Access', icon: KeySquare, view: Access },
+  permissions: { label: 'Permission matrix', icon: Grid3x3, view: PermissionMatrix },
 };
 
 function Version() {
