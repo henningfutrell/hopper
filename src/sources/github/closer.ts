@@ -1,10 +1,11 @@
 // The pull requests of an issue, over GraphQL, shared by the App and the connected account adapters: what
 // closed it (the last ClosedEvent's closer — only a merged pull request counts; a person, a commit
 // or a project closing it is undefined), and the open pull requests whose merge will close it
-// (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch).
+// (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch), and the pull
+// requests that mention it in any state (the issue's cross-references, issue #579: a part says "Part of #N").
 
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, OpenPullRequest } from './api.ts';
+import type { ClosingPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -16,15 +17,25 @@ export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!
 
 export const OPEN_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
-    closedByPullRequestsReferences(first: 50, includeClosedPrs: false) { nodes { url createdAt isDraft state } }
+    closedByPullRequestsReferences(first: 50, includeClosedPrs: false) { nodes { url createdAt isDraft state mergeable } }
+  } }
+}`;
+
+export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) {
+    timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: 100) { nodes { ... on CrossReferencedEvent {
+      source { __typename ... on PullRequest { url createdAt isDraft state mergeable body repository { nameWithOwner } } }
+    } } }
   } }
 }`;
 
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
-interface Referenced { url?: string; createdAt?: string; isDraft?: boolean; state?: string }
+interface Referenced { url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string }
+interface Source extends Referenced { __typename?: string; body?: string; repository?: { nameWithOwner?: string } }
+const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
   data?: { repository?: { issue?: {
-    timelineItems?: { nodes?: ({ closer?: Closer | null } | null)[] };
+    timelineItems?: { nodes?: ({ closer?: Closer | null; source?: Source | null } | null)[] };
     closedByPullRequestsReferences?: { nodes?: (Referenced | null)[] };
   } | null } | null };
   errors?: { type?: string; message?: string }[];
@@ -52,5 +63,18 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
 export function openPullRequestsFrom(body: unknown, what: string): OpenPullRequest[] {
   const nodes = response(body, what).data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt
-    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true }] : []);
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING' }] : []);
+}
+
+/** Each pull request that mentions the issue, once (the newest mention), any state. */
+export function referencingPullRequestsFrom(body: unknown, what: string): ReferencingPullRequest[] {
+  const nodes = response(body, what).data?.repository?.issue?.timelineItems?.nodes ?? [];
+  const byUrl = new Map<string, ReferencingPullRequest>();
+  for (const n of nodes) {
+    const s = n?.source;
+    const state = PR_STATES[s?.state ?? ''];
+    if (s?.__typename !== 'PullRequest' || !s.url || !s.createdAt || !state || !s.repository?.nameWithOwner) continue;
+    byUrl.set(s.url, { url: s.url, createdAt: s.createdAt, isDraft: s.isDraft === true, conflicting: s.mergeable === 'CONFLICTING', state, body: s.body ?? '', repo: s.repository.nameWithOwner });
+  }
+  return [...byUrl.values()];
 }

@@ -160,6 +160,8 @@ export interface JobSourceContext {
   connectedAccounts: ConnectedAccountTokens;
   /** For the source of this instance name: claim holders, the intake migration and intake events (issue #440); undefined: none kept. */
   intake(sourceName: string): IntakeContext | undefined;
+  /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
+  yoloMode(repo: string): boolean;
 }
 
 export type { OptionChoice };

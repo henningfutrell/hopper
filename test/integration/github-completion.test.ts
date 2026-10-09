@@ -1,5 +1,5 @@
-// The GitHub source's completion end to end (issue #187): where a job's work must get before the
-// job is finished — the merge, or a pull request left open for review. Real daemon, in-memory fake
+// The GitHub source's done-check end to end (issues #187, #579): a job is finished when its own pull request is open
+// and ready for review — no merge needed — or merged. Real daemon, in-memory fake
 // GitHub at the GitHubApi seam; issues carry a scripted-executor op as their first body line.
 // A job whose issue closed as complete is finished, not failed (issue #350).
 import { afterEach, describe, expect, it } from 'vitest';
@@ -19,11 +19,11 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function boot(gh: FakeGitHub, o: { config?: Record<string, unknown> } = {}) {
+async function boot(gh: FakeGitHub) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-    enabled: true, pollSeconds: 3600, executor: 'scripted', ...o.config,
+    enabled: true, pollSeconds: 3600, executor: 'scripted',
   } }] };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
@@ -36,31 +36,31 @@ const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
 const bodies = (gh: FakeGitHub, n: number) => gh.commentsOn(REPO, n).map((c) => c.body);
 
-describe('GitHub completion: merge or a pull request open for review', () => {
-  it('completion pull-request: a job that opens a ready pull request is finished; the issue stays open for the merge (issue #187)', async () => {
-    const gh = createFakeGitHub();
-    const a = await boot(gh, { config: { completion: 'pull-request' } });
-    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
-    a.scripted.ships(opensPullRequest(gh));
-    await a.sync();
-    const job = (await jobFor(a, issue.url))!;
-    await a.waitForStatus(job.id, 'finished');
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
-    expect(gh.issue(REPO, issue.number).state).toBe('open');
-    expect(bodies(gh, issue.number)).toEqual([]);
-    await a.sync();
-    expect(await a.events('types=job.queued')).toHaveLength(1);
-  });
-
-  it('completion merge: an open pull request is not done, the job ends failed (issue #187)', async () => {
+describe('GitHub done-check: a pull request ready for review', () => {
+  it('a job that opens a ready pull request is finished; the issue stays open for the merge (issues #187, #579)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     a.scripted.ships(opensPullRequest(gh));
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+    expect(gh.issue(REPO, issue.number).state).toBe('open');
+    expect(bodies(gh, issue.number)).toEqual([]);
+    await a.sync();
+    expect(await a.events('types=job.queued')).toHaveLength(1);
+  });
+
+  it('a draft pull request is not done: the job ends failed, saying why (issue #579)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships((j) => { gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString(), isDraft: true }); });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no merged pull request opened by this job closes ${issue.url}`);
+    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}`);
   });
 
   it('a job that closes its issue as completed with a commit, no pull request, is finished (issue #350)', async () => {

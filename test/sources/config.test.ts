@@ -19,7 +19,6 @@ const SHARED_DEFAULTS = {
   model: null,
   recentComments: 10,
   projects: {},
-  completion: 'merge',
 };
 
 const ok = (r: ReturnType<typeof parseOptions>) => {
@@ -51,16 +50,11 @@ describe('the GitHub sources\' shared options', () => {
     });
   });
 
-  it.each(['merge', 'pull-request'] as const)('completion: %s is accepted (issue #187)', (v) => {
-    expect(ok(parseOptions(githubApp, { ...AUTHORS, completion: v })).completion).toBe(v);
-  });
-
   it.each([
     ['field mode without a field name', { projects: { 'o/r': { owner: 'o', number: 1, mode: 'field' } } }, /field/],
     ['an unknown key (typo)', { lable: 'hopper' }, /lable|Unrecognized/],
     ['a wrong type', { pollSeconds: 'soon' }, /pollSeconds/],
     ['enabled: maybe', { enabled: 'maybe' }, /enabled/],
-    ['completion: commit (a local commit is never complete)', { completion: 'commit' }, /completion/],
   ])('%s is an error naming the path', (_n, raw, why) => {
     const r = parseOptions(githubApp, { ...AUTHORS, ...raw });
     expect(r.ok).toBe(false);
@@ -97,5 +91,18 @@ describe('authors: gone (issue #387) — intake is by label and assignee', () =>
   it('authors is no option the Plugins form offers', () => {
     const schema = optionsJsonSchema(githubApp) as { properties: Record<string, unknown> };
     expect(Object.keys(schema.properties)).not.toContain('authors');
+  });
+});
+
+describe('completion: gone (issue #579) — done is always a pull request ready for review', () => {
+  it.each(['merge', 'pull-request'])('an instance still carrying completion: %s loads; the option is dropped', (v) => {
+    const o = ok(parseOptions(githubApp, { completion: v, label: 'work' }));
+    expect(o).not.toHaveProperty('completion');
+    expect(o.label).toBe('work');
+  });
+
+  it('completion is no option the Plugins form offers', () => {
+    const schema = optionsJsonSchema(githubApp) as { properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties)).not.toContain('completion');
   });
 });

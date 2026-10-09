@@ -248,16 +248,18 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
    **Reject** a waiting job (Queue, or the Overview's Waiting list), with a reason if you like: the issue is
    left alone and not taken again until it is assigned to you again, or you run it again.
-3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
-   `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
+3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:pr-ready`
+   (its pull request waits for your review), `hopper:partly-done` (it shipped a part; the rest runs once
+   that pull request merges), `hopper:done` (merged), `hopper:pr-closed` (its pull request was closed
+   without a merge), `hopper:failed`. Remove `hopper:failed` or `hopper:pr-closed` to run it again. `hopper:high` and
    `hopper:low` set the priority; `hopper:backburner` keeps an issue out
    ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
    `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
    proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
-   A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
-   an open pull request for you to review and merge, set the source's `completion` to
-   `pull-request` in the Plugins view; `hopper:complete-at-pr` or `hopper:complete-at-merge` on an
-   issue sets it for that issue alone.
+   A job is done when its pull request is open and ready for review; you review and merge it, and the
+   merge closes the issue. To let jobs merge their own pull requests once the checks pass, turn on
+   yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read
+   its warning first.
 
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's

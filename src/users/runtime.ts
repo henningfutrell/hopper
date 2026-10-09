@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type TemplateApprovals, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -92,6 +92,8 @@ export interface UserRuntimeOptions {
    * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
    */
   proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
+  /** Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584). */
+  access?: TemplateApprovals;
 }
 
 
@@ -313,8 +315,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions,
     keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
-    // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
-    notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
+    // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
+    verdict: (job) => judge(sourceOf(job), job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     // A fork (issue #548) acts through its parent's source's connection.
     credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
@@ -354,7 +356,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p) }), // issues #558, #586
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p) }), // issues #558, #586
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

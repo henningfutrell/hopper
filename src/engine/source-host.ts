@@ -224,6 +224,15 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
+    finishComplete(jobId, partlyDone) {
+      return store.tx(() => {
+        if (store.jobs.get(jobId)?.status !== 'failed') return false;
+        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c), ...(partlyDone ? { partlyDone } : {}) });
+        store.events.append({ type: 'job.finished', jobId, data: { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) } });
+        return true;
+      });
+    },
+
     setSourceState(jobId, state) {
       store.tx(() => {
         if (store.jobs.get(jobId)) store.jobs.update(jobId, { sourceState: state });

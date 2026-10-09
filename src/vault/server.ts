@@ -2,8 +2,9 @@
 // — of its own, run by `node src/vault/main.ts` from the hopper's image. It holds the vault's key (the token key, or the
 // data key a KMS opens), reads and writes the vault's tables in each user's schema, and answers the hopper's edits and
 // asks with the same vault service the hopper runs in-process: the write-only rule and every check of a delivery stay
-// in it. It answers only a request with the preshared key, and only on the compose network (no host port). The events
-// it would append it answers instead: the hopper keeps the event log.
+// in it. The templates and their approvals stay in the hopper, with access (issue #584); a delivery reads a template's
+// approved scope from the user's store. It answers only a request with the preshared key, and only on the compose
+// network (no host port). The events it would append it answers instead: the hopper keeps the event log.
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import type { Clock, UserStore } from '../domain/ports.ts';
@@ -66,7 +67,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
       const events: NewEvent[] = [];
       const deliver = op === 'deliver' ? vaultOps.deliver.parse(body) : undefined;
       const vault = createVaultService({
-        store: { vault: store.vault, jobs: store.jobs, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; } } as never },
+        store: { vault: store.vault, jobs: store.jobs, settings: store.settings, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; } } as never },
         keys: await keysOf(user.id, store), clock, idGen: randomUUID, logger,
         targets: () => (deliver?.machine ? [deliver.machine] : []),
         holds: () => deliver?.holds === true,
@@ -76,7 +77,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
         const n = vault.resealAll();
         if (n > 0) logger.warn(`hopper vault: ${n} vault secret(s) sealed again under the current key`);
       }
-      return { result: run(vault, op, body), events };
+      return { result: run(vault, op, body) ?? null, events };
     } finally {
       store.close();
     }
@@ -94,16 +95,13 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   };
 }
 
-/** One op on the vault service, its body already parsed. */
+/** One op on the vault service, its body already parsed. `status`: why no secret can be stored now, or nothing. */
 function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unknown {
-  const body = b as never as { by: string; name: string; secret: { name: string; scope?: string; value: string }; template: { name: string; image: string; secrets: string[] }; ask: { name: string; token: string }; machine?: { key: string } };
+  const body = b as never as { by: string; name: string; secret: { name: string; scope?: string; value: string }; ask: { name: string; token: string }; machine?: { key: string } };
   switch (op) {
-    case 'view': return vault.view();
+    case 'status': return vault.view().problem;
     case 'set': return vault.set(body.secret, body.by);
     case 'remove': return vault.remove(body.name, body.by);
-    case 'save-template': return vault.saveTemplate(body.template, body.by);
-    case 'remove-template': return vault.removeTemplate(body.name, body.by);
-    case 'approve-template': return vault.approveTemplate(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
   }
 }

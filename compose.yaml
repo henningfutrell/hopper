@@ -143,8 +143,9 @@ services:
       - secrets:/run/hopper-secrets:ro
 
   # Optional (profile `vault`, issue #586): the vault in a container of its own, from the hopper's image. It holds the
-  # vault's key — the token key, or the data key the KMS opens — and keeps the vault's tables in the hopper's Postgres;
-  # the hopper asks it at HOPPER_VAULT_URL with the preshared key. On no host port: only the hopper reaches it.
+  # vault's key — the token key, or the data key the KMS opens — and the secret values, in the hopper's Postgres; the
+  # templates stay in the hopper. The hopper asks it at HOPPER_VAULT_URL with the preshared key. On no host port: only
+  # the hopper reaches it.
   vault:
     profiles: [vault]
     image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}

@@ -64,15 +64,32 @@ describe('App adapter: issues and comments', () => {
     expect(asked.every((r) => r.auth === 'token')).toBe(true);
   });
 
-  it('openClosingPullRequests reads the open pull requests that close the issue on merge over GraphQL (issue #187)', async () => {
+  it('openClosingPullRequests reads the open pull requests that close the issue on merge over GraphQL, and whether each has merge conflicts (issues #187, #579)', async () => {
     const pr = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false };
+    const conflicted = { url: 'https://github.com/owner/a/pull/10', createdAt: '2026-10-02T10:40:00Z', isDraft: false, mergeable: 'CONFLICTING' };
+    const unknown = { url: 'https://github.com/owner/a/pull/11', createdAt: '2026-10-02T10:50:00Z', isDraft: false, mergeable: 'UNKNOWN' };
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [
-      issue(1, { openPullRequests: [pr] }), issue(2),
+      issue(1, { openPullRequests: [pr, conflicted, unknown] }), issue(2),
     ] }] }] });
-    expect(await h.api.openClosingPullRequests('owner/a', 1)).toEqual([pr]);
+    expect(await h.api.openClosingPullRequests('owner/a', 1)).toEqual([
+      { ...pr, conflicting: false },
+      { url: conflicted.url, createdAt: conflicted.createdAt, isDraft: false, conflicting: true },
+      { url: unknown.url, createdAt: unknown.createdAt, isDraft: false, conflicting: false },
+    ]);
     expect(await h.api.openClosingPullRequests('owner/a', 2)).toEqual([]);
     const asked = h.fake.state.requests.filter((r) => r.path === '/graphql');
     expect(asked.every((r) => r.auth === 'token')).toBe(true);
+  });
+
+  it('referencingPullRequests reads the pull requests that mention the issue, any state, over GraphQL (issue #579)', async () => {
+    const part = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false, state: 'OPEN' as const, body: 'Part of #1', repo: 'owner/a' };
+    const merged = { url: 'https://github.com/owner/a/pull/10', createdAt: '2026-10-02T10:40:00Z', isDraft: false, state: 'MERGED' as const, body: 'Closes #1', repo: 'owner/a', mergeable: 'UNKNOWN' };
+    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, { mentionedBy: [part, merged] }), issue(2)] }] }] });
+    expect(await h.api.referencingPullRequests('owner/a', 1)).toEqual([
+      { url: part.url, createdAt: part.createdAt, isDraft: false, conflicting: false, state: 'open', body: 'Part of #1', repo: 'owner/a' },
+      { url: merged.url, createdAt: merged.createdAt, isDraft: false, conflicting: false, state: 'merged', body: 'Closes #1', repo: 'owner/a' },
+    ]);
+    expect(await h.api.referencingPullRequests('owner/a', 2)).toEqual([]);
   });
 
   it('lists every comment oldest first across pages', async () => {

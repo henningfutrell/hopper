@@ -59,7 +59,7 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   }),
   cause({
     id: 'not-complete', name: 'Not complete', cls: 'job', decision: 'person', scope: 'machine',
-    description: 'The job said it was done, but its source says the work did not land.',
+    description: 'The job said it was done, but its source found no pull request of its own ready for review — not a draft, no merge conflicts — that closes its item or ships part of it. A pull request waiting for its merge is never this: it is done.',
     pattern: /^not complete:|could not confirm the work is complete/i,
   }),
 ];

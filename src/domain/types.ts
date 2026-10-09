@@ -102,6 +102,8 @@ export interface Job extends JobPhaseFields {
   progress?: number; // 0..1
   progressMessage?: string;
   result?: unknown;
+  /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
+  partlyDone?: string;
   error?: string;
   createdAt: string; // ISO
   updatedAt: string;
@@ -437,6 +439,8 @@ export * from './review.ts';
 export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
+export * from './yolo-mode.ts';
+export * from './pull-requests.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';

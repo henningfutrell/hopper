@@ -73,3 +73,8 @@ export const mergesPullRequest = (gh: FakeGitHub) => (job: Job): void => {
 export const opensPullRequest = (gh: FakeGitHub) => (job: Job): void => {
   gh.openPullRequest(job.source!.repo!, job.source!.number!, { createdAt: new Date().toISOString() });
 };
+
+/** For `ships`: the job's pull request that ships part of its issue ("Part of #N"), opened now and ready for review. */
+export const opensPartPullRequest = (gh: FakeGitHub) => (job: Job): void => {
+  gh.openPartPullRequest(job.source!.repo!, job.source!.number!, { createdAt: new Date().toISOString() });
+};

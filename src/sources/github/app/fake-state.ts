@@ -20,9 +20,13 @@ export interface FakeIssueInput {
   /** The merged pull request that closed it (GraphQL ClosedEvent closer). */
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
   /** Open pull requests whose merge will close it (GraphQL closedByPullRequestsReferences). */
-  openPullRequests?: { url: string; createdAt: string; isDraft: boolean }[];
+  openPullRequests?: { url: string; createdAt: string; isDraft: boolean; mergeable?: string }[];
+  /** Pull requests that mention it, any state (GraphQL CrossReferencedEvent sources; issue #579). */
+  mentionedBy?: FakeMention[];
   comments?: FakeCommentInput[];
 }
+
+export interface FakeMention { url: string; createdAt: string; isDraft: boolean; state: 'OPEN' | 'CLOSED' | 'MERGED'; body: string; repo: string; mergeable?: string }
 
 export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[] }
 
@@ -66,7 +70,8 @@ export interface FakeIssue {
   closedAt?: string;
   stateReason?: string;
   closedByPullRequest?: { url: string; createdAt: string; mergedAt: string };
-  openPullRequests: { url: string; createdAt: string; isDraft: boolean }[];
+  openPullRequests: { url: string; createdAt: string; isDraft: boolean; mergeable?: string }[];
+  mentionedBy: FakeMention[];
   updatedAt: string;
   comments: FakeComment[];
 }
@@ -122,7 +127,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
           ...(i.closedAt ? { closedAt: i.closedAt } : {}),
           ...(i.stateReason ? { stateReason: i.stateReason } : {}),
           ...(i.closedByPullRequest ? { closedByPullRequest: { ...i.closedByPullRequest } } : {}),
-          openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), updatedAt: now, comments,
+          openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), mentionedBy: (i.mentionedBy ?? []).map((m) => ({ ...m })), updatedAt: now, comments,
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {

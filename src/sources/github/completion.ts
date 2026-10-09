@@ -1,23 +1,18 @@
-// The GitHub source's definition of done (issues #171, #187, #350). A job that ended done is complete
-// when its issue reached its completion: `merge`, the issue is **closed as complete** — by the merge
-// of the job's own pull request, opened at or after the job's createdAt (a merge closes an issue only
-// on the default branch, `dev`), or, no pull request closing it, closed as
-// completed at or after the job's createdAt: by a commit, or with no code at all (issue #350: a job
-// may end its issue without a pull request); `pull-request`, that, or the job's own pull request is
-// open, not a draft, and closes the issue when merged. The completion is the source's `completion`
-// option unless a completion label on the issue sets it; both labels: merge, the stricter. Anything
-// else — a local commit, a branch, an issue closed as not planned or before the job, an older pull
-// request — is not complete; an error asking GitHub throws. A failed job whose issue is closed as
-// complete is finished too (`closedAsComplete`, asked by the sync loop before it reports the
-// failure): its work landed, and its pane ended after.
+// The GitHub source's definition of done (issues #171, #187, #350, #579). A job that ended done is complete when
+// its issue is **closed as complete** — by the merge of the job's own pull request, opened at or after the job's
+// createdAt (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, closed as
+// completed at or after the job's createdAt: by a commit, or with no code at all (issue #350) — or when the job's
+// own pull request is open, ready for review (not a draft) and free of merge conflicts, and closes the issue when
+// merged. A merge is never needed (issue #579: a pull request is done; a merge is only allowed, by yolo mode).
+// Anything else — a local commit, a branch, a draft, an issue closed as not planned or before the job, an older pull
+// request — is not complete; an error asking GitHub throws. A failed job whose issue is closed as complete is
+// finished too (`closedAsComplete`, asked by the sync loop before it reports the failure): its work landed, and its
+// pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
+// not complete, and not failed either.
 
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, GitHubApi, GitHubIssue } from './api.ts';
-import type { GitHubSourceConfig } from '../config.ts';
-import { LABEL_COMPLETE_AT_MERGE, LABEL_COMPLETE_AT_PR } from './labels.ts';
-
-export type Completion = GitHubSourceConfig['completion'];
+import type { ClosingPullRequest, GitHubApi, GitHubIssue, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
 export const isOwnPullRequest = <P extends { createdAt: string }>(pr: P | undefined, job: Job): pr is P =>
@@ -33,25 +28,32 @@ export function isClosedAsComplete(issue: GitHubIssue, closer: ClosingPullReques
   return issue.stateReason === 'completed' && issue.closedAt !== undefined && Date.parse(issue.closedAt) >= Date.parse(job.createdAt);
 }
 
-/** The issue's completion: a completion label, else the configured one. */
-export function completionOf(labels: string[], configured: Completion): Completion {
-  if (labels.includes(LABEL_COMPLETE_AT_MERGE)) return 'merge';
-  if (labels.includes(LABEL_COMPLETE_AT_PR)) return 'pull-request';
-  return configured;
-}
-
-export async function notComplete(api: GitHubApi, job: Job, configured: Completion): Promise<string | undefined> {
+export async function notComplete(api: GitHubApi, job: Job): Promise<string | undefined> {
   const { repo, number, url } = job.source ?? {};
   if (!repo || !number) return `job ${job.id} has no GitHub issue reference`;
   const closer = await api.closingPullRequest(repo, number);
   if (isOwnPullRequest(closer, job)) return undefined;
   const found = await api.getIssue(repo, number);
   if (isClosedAsComplete(found, closer, job)) return undefined;
-  const issue = url ?? `${repo}#${number}`;
-  if (completionOf(found.labels, configured) === 'merge') return `no merged pull request opened by this job closes ${issue}`;
   const open = await api.openClosingPullRequests(repo, number);
-  if (open.some((pr) => !pr.isDraft && isOwnPullRequest(pr, job))) return undefined;
-  return `no pull request opened by this job, ready for review, closes ${issue}`;
+  if (open.some((pr) => !pr.isDraft && !pr.conflicting && isOwnPullRequest(pr, job))) return undefined;
+  return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}`;
+}
+
+/** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */
+export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): boolean =>
+  pr.repo.toLowerCase() === repo.toLowerCase() && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
+
+/**
+ * The job's own pull request that ships part of its issue (issue #579): open, ready for review and free of merge
+ * conflicts, or merged (yolo mode). Its URL, the newest first; undefined: none.
+ */
+export async function partlyDone(api: GitHubApi, job: Job): Promise<string | undefined> {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) return undefined;
+  const parts = (await api.referencingPullRequests(repo, number))
+    .filter((pr) => isPartOf(pr, repo, number) && isOwnPullRequest(pr, job) && (pr.state === 'merged' || (pr.state === 'open' && !pr.isDraft && !pr.conflicting)));
+  return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
 }
 
 /**

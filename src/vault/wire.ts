@@ -20,14 +20,14 @@ const user = z.string().min(1).max(100);
 const by = z.string().max(200);
 const name = z.string().max(64);
 
-/** Each op's body; the answer is `{ result, events }`. */
+/**
+ * Each op's body; the answer is `{ result, events }`. Only what needs the vault's key crosses: whether it can be used
+ * (`status`), a secret set or removed, a delivery. The templates and their approvals stay in the hopper, with access.
+ */
 export const vaultOps = {
-  view: z.strictObject({ user }),
+  status: z.strictObject({ user }),
   set: z.strictObject({ user, by, secret: z.strictObject({ name, scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }) }),
   remove: z.strictObject({ user, by, name }),
-  'save-template': z.strictObject({ user, by, template: z.strictObject({ name, image: z.string().max(300), secrets: z.array(name).max(256) }) }),
-  'remove-template': z.strictObject({ user, by, name }),
-  'approve-template': z.strictObject({ user, by, name }),
   deliver: z.strictObject({
     user,
     ask: z.strictObject({ name, token: z.string().max(1000) }),

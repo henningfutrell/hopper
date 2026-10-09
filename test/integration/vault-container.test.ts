@@ -87,7 +87,7 @@ describe('the vault in a container of its own (issue #586)', () => {
     expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(VALUE);
     expect(logged.join('\n')).not.toContain(VALUE);
 
-    // The rest of the vault's edits go through the container too.
+    // The templates stay in the hopper, with access (issue #584); their edits work beside the vault container.
     const saved = await edit(a, session, { action: 'save-template', name: 'kube', image: 'localhost/box:1', secrets: ['DEPLOY_KEY'] });
     expect(saved.body.error).toBeUndefined();
     expect(saved.status).toBe(200);

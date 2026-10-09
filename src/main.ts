@@ -129,10 +129,19 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const reachable = (): string | undefined => config.publicUrl ?? (config.lanNames[0] ? `http://${config.lanNames[0]}:${port}` : undefined);
   const proxyUrl = (m: MachineSnapshot, dialled: string | undefined): string | undefined =>
     dialled ?? (m.client ? reachable() : !m.ssh && !m.docker ? `http://127.0.0.1:${port}` : reachable());
+  // Access (issue #559): the instance's. A job is live by its status in its user's store; a template is rated from every
+  // user's vault templates of its name (issue #584). Made before the runtimes: each user's vault approves profiles in it.
+  const fgaKey = runtimeSecrets(env);
+  const access = createAccess({
+    repo: instance.access, clock, logger,
+    server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
+    jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
+    templates: () => runtimes.all().flatMap((rt) => rt.vault.templateScopes()),
+  });
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl,
+      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl, access,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -189,13 +198,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     // A restart would lose the running jobs of every user.
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
-  });
-  // Access (issue #559): the instance's. A job is live by its status in its user's store.
-  const fgaKey = runtimeSecrets(env);
-  const access = createAccess({
-    repo: instance.access, clock, logger,
-    server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
-    jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);

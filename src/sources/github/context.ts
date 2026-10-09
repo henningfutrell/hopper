@@ -7,7 +7,6 @@
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
-import type { Completion } from './completion.ts';
 import { truncate } from './markers.ts';
 import type { Priority } from './priority.ts';
 
@@ -37,14 +36,15 @@ export function contextComments(comments: GitHubComment[], assignee: string | un
 }
 
 /**
- * What done means to the job, by its issue's completion (issues #171, #187). JobSource.notComplete
- * holds the job to it (completion.ts); the rest — checks, push, verifying where it runs — is the
- * job's to do and nothing the hopper can see.
+ * What done means to the job (issues #171, #187, #579): always its pull request, ready for review. JobSource.notComplete
+ * holds the job to the part GitHub can show (completion.ts); the rest — checks, push — is the job's to do. With yolo
+ * mode on for the repo the job may merge too, once the checks pass; the merge is never needed for done.
  */
-export function doneLine(n: number, completion: Completion): string {
-  return completion === 'merge'
-    ? `done (completion: merge): only once the change ships — the repo's own checks pass, the change is pushed, a pull request this job opens with "Closes #${n}" in its body is merged to the default branch, and the merged change is verified where the product runs. A local commit, an unpushed branch or an open pull request is not done; a job that ends done without the merge ends failed. One exception: when the issue needs no code change, close it as completed and end done`
-    : `done (completion: pull-request): once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open and not a draft. Do not merge it: a person reviews and merges it. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed`;
+export function doneLine(n: number, yoloMode: boolean): string {
+  const done = `done: once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #${n}" in its body in place of "Closes #${n}", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged`;
+  return yoloMode
+    ? `${done}. Yolo mode is on for this repo: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done`
+    : `${done}. Do not merge it: a person reviews and merges it`;
 }
 
 function commentLine(c: GitHubComment): string {
@@ -52,14 +52,14 @@ function commentLine(c: GitHubComment): string {
   return `- ${c.author} at ${c.createdAt}: ${body}`;
 }
 
-export function contextBlock(issue: GitHubIssue, p: Priority, completion: Completion, comments: GitHubComment[], limit: number, mode: SourceMode = 'account'): string {
+export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean, comments: GitHubComment[], limit: number, mode: SourceMode = 'account'): string {
   const head = [
     '[hopper issue context]',
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `title: ${oneLine(issue.title)}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
-    doneLine(issue.number, completion),
+    doneLine(issue.number, yoloMode),
   ].join('\n');
   const lines = comments.map(commentLine);
   const build = (kept: string[]) => kept.length === 0

@@ -125,8 +125,15 @@
         "template.saved",
         "template.removed",
         "vault.approved",
+        "template.profile_approved",
         "vault.delivered",
         "vault.refused",
+        "yolo_mode.changed",
+        "job.pull_request_merged",
+        "job.pull_request_closed",
+        "skill.listed",
+        "skill.loaded",
+        "skill.refused",
         "jev.mode_changed",
         "router.mode_changed"
       ]

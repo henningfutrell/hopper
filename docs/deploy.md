@@ -209,7 +209,7 @@ and `kms` as running. To turn a service off, remove its lines and run `podman co
 ### The vault container (`vault`)
 
 The vault runs in its own container, from the hopper's image (`node src/vault/main.ts`). It holds the vault's key and
-keeps the vault's tables in the hopper's Postgres. The hopper holds none of the vault's keys: it asks the vault at
+the secret values, in the hopper's Postgres. Templates and their approvals stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at
 `HOPPER_VAULT_URL` with the preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
 (`vault_key` in the `secrets` volume). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
 recreates `postgres` once.

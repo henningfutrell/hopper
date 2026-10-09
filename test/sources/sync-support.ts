@@ -104,6 +104,12 @@ export function createWorld(): World {
       emit('job.finished', id, { result: 'issue closed as complete' });
       return true;
     },
+    finishComplete(id, partlyDone) {
+      if (jobs.get(id)?.status !== 'failed') return false;
+      patchJob(id, { status: 'finished', error: undefined, ...(partlyDone ? { partlyDone } : {}) });
+      emit('job.finished', id, { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) });
+      return true;
+    },
     setSourceState(id, state) {
       const cur = jobs.get(id)!.sourceState ?? {};
       patchJob(id, { sourceState: { ...cur, ...state } });
