@@ -13,12 +13,13 @@
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
+import { RerunRefused } from '../../domain/rerun-refused.ts';
 import type { SourceReport } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
-import { claimLabels } from './discover.ts';
+import { claimLabels, isAssignedTo } from './discover.ts';
 import type { GitHubIssue } from './api.ts';
 
 export interface ReportContext {
@@ -85,18 +86,22 @@ function sourceError(err: unknown): SourceError {
  * Give an ended job's issue back for Run again (issues #313, #354): a closed issue is reopened — the new
  * job is cancelled while it is closed, and its pull request's merge closes it again —, the end labels
  * (`hopper:failed`, `hopper:done`, `hopper:rejected`) and `hopper:claimed` go, and the source label comes
- * back if it was taken off. Answers the issue as it stands after.
+ * back if it was taken off. Answers the issue as it stands after. An issue no longer assigned to `assignee`, the
+ * connected account, is refused before anything is written (issue #527): its new job would be cancelled at once.
  */
-export async function takeBack(ctx: ReportContext, label: string, job: Job): Promise<GitHubIssue> {
+export async function takeBack(ctx: ReportContext, label: string, job: Job, assignee: string | undefined): Promise<GitHubIssue> {
   try {
     const { repo, number } = issueOf(job);
     const issue = await ctx.api.getIssue(repo, number);
+    if (assignee !== undefined && !isAssignedTo(issue, assignee)) {
+      throw new RerunRefused(`its issue is not assigned to the connected account ${assignee}: assign it (Sources, Assign to me) and run it again`);
+    }
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
     await ctx.api.removeLabels(repo, number, [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, ...claimLabels(ctx.holder)]);
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
-    throw sourceError(err);
+    throw err instanceof RerunRefused ? err : sourceError(err);
   }
 }
 

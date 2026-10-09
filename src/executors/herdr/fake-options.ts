@@ -1,6 +1,7 @@
 // What the fake herdr client simulates (fake-client.ts): Claude's turns and startup dialogs, the pane's shell,
-// and herdr's own ways. Test support only.
+// and herdr's own ways, and what a test reads and drives of it. Test support only.
 import type { Survey } from '../../domain/ports.ts';
+import type { HerdrClient } from './client.ts';
 import type { FakeTurn } from './fake-client.ts';
 
 export interface FakeHerdrOptions {
@@ -20,6 +21,13 @@ export interface FakeHerdrOptions {
   importsDialog?: string;
   /** Startup blocks on some other screen. */
   startupBlockedBy?: string[];
+  /**
+   * Before Claude draws anything, the pane shows `lines` — its launch line echoed (a Windows shell's
+   * `-EncodedCommand`), or a setup command still on screen (issue #527) — and herdr calls the agent blocked, for
+   * `polls` looks at it (Infinity: Claude never comes up); then Claude starts. `started`: herdr's agent start
+   * answered ok all the same, else `notReady`.
+   */
+  startupEcho?: { lines: string[]; polls: number; started?: boolean };
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
   /** The first N job worktree commands are lost (issue #518, seen live in a zsh whose start-up files were busy). */
@@ -76,4 +84,31 @@ export interface FakeHerdrOptions {
   session?: string;
   /** Column width the prompt echo is wrapped at. Default 100. */
   width?: number;
+}
+
+export interface FakeHerdrClient extends HerdrClient {
+  readonly calls: { method: string; args: unknown[] }[];
+  readonly prompts: { name: string; text: string }[];
+  readonly keys: { paneId: string; keys: string[] }[];
+  readonly texts: { paneId: string; text: string }[];
+  readonly closed: string[];
+  readonly agentStarts: { name: string; paneId: string; args: string[]; timeoutMs: number }[];
+  /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
+  readonly reaps: { jobId: string; scratch?: string }[];
+  /** Each credential file kept on the machine through its connection (issue #441), in order. */
+  readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
+  addTurns(...turns: FakeTurn[]): void;
+  /** The next N prompts never reach Claude, as `dropsPrompts`. */
+  dropPrompts(n: number): void;
+  /** Claude denies its dialog by itself, its countdown run out (issue #376): it goes on with the next scripted turn, nothing typed. */
+  lapseDialog(name: string): void;
+  /** Claude disappears from its pane (crashed, closed by hand). */
+  killAgent(name: string): void;
+  /** Claude goes on with the next scripted turn by itself, nothing sent: a background notification, or a person typing in its pane. */
+  wake(name: string): void;
+  /** The next call of `method` rejects with a HerdrError of this code. */
+  failNext(method: keyof HerdrClient, code: string): void;
+  /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
+  setUnreachable(on: boolean): void;
+  screen(paneId: string): string;
 }

@@ -12,16 +12,18 @@ import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, checkoutOf, checkoutWorktreeOf
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
-import { SCRATCH_DIR, isBypassDialog, isImportsDialog, isTrustDialog, windowsShellOf } from './screen.ts';
+import { SCRATCH_DIR, isBypassDialog, isImportsDialog, isTrustDialog, showsDialog, windowsShellOf } from './screen.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
+/** How long Claude has to come up once started, its startup dialogs answered (issue #527: a Windows machine's PowerShell launch is slow). */
+const SETTLE_TIMEOUT_MS = 2 * START_TIMEOUT_MS;
 const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */
-const SCRATCH_READY = 'hopper-scratch-ready';
+export const SCRATCH_READY = 'hopper-scratch-ready';
 /** What it prints instead when the shell cannot enter the work tree or make the scratch dir (issue #323). */
-const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
+export const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
 const SCRATCH_WAIT_MS = 1000;
 /** How long the job worktree command may take: it fetches first (issue #379), or clones the job's repository (issue #361). */
 const JOB_WORKTREE_WAIT_MS = 10 * 60000;
@@ -188,13 +190,15 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
  * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
  * folder-trust dialog naming the job's cwd and the external CLAUDE.md imports dialog (issue #518; both when
  * `trustWorkdir`: the work tree is trusted, the CLAUDE.md that imports is its own or above it), and the
- * bypass permissions warning (when yolo). Any other dialog fails the job with the screen. A dialog is judged once per state
- * change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
- * ready, so anything but a dialog is; else herdr found it held at one. Null when ready (or aborted),
- * else the failure.
+ * bypass permissions warning (when yolo). Any other dialog Claude shows fails the job with the screen. A dialog is judged
+ * once per state change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
+ * ready, so anything but a dialog is; else herdr found it held at one. A screen that shows no dialog is not one
+ * (issue #527): what stood on the pane before Claude drew — its launch line echoed (a Windows shell's
+ * `-EncodedCommand`), a setup command — is looked at again until Claude is up, or the start times out, to be
+ * tried again in a new pane. Null when ready (or aborted), else the failure.
  */
 async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
-  const until = d.clock.now().getTime() + START_TIMEOUT_MS;
+  const until = d.clock.now().getTime() + SETTLE_TIMEOUT_MS;
   let answeredAt = -1;
   let answered = 0;
   while (d.clock.now().getTime() < until) {
@@ -208,13 +212,15 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
       const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
         : d.trustWorkdir && isImportsDialog(screen) ? 'allowed the external CLAUDE.md imports of the trusted work tree'
           : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
-      if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
-      // Each dialog opens on its refusing option; the next one down accepts.
-      await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
-      ctx.progress(0, dialog);
-      answeredAt = agent.stateChangeSeq;
-      answered++;
-      continue;
+      if (dialog && answered < MAX_STARTUP_DIALOGS) {
+        // Each dialog opens on its refusing option; the next one down accepts.
+        await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
+        ctx.progress(0, dialog);
+        answeredAt = agent.stateChangeSeq;
+        answered++;
+        continue;
+      }
+      if (dialog || showsDialog(screen)) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
     }
     await d.sleep(d.pollMs, ctx.signal);
   }

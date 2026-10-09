@@ -55,10 +55,14 @@ export const sessionUser = (s: UiSession, userName: string, superAdmin: boolean,
   id: s.userId, name: userName, role: s.role, realm: s.identity.realm, identity: identityName(s.identity), superAdmin, instanceAdmin,
 });
 
+/** When the session ends however much it is used. */
+const absoluteEnd = (r: UiSessionRow, lengths: SessionLengths): number =>
+  Math.min(Date.parse(r.startedAt) + lengths.maxHours * HOUR, r.endsAt === undefined ? Infinity : Date.parse(r.endsAt));
+
 /** When the session ends if nothing renews it, and why it would. */
 function endOf(r: UiSessionRow, lengths: SessionLengths): { at: number; reason: SessionEndReason } {
   const idle = Date.parse(r.lastSeenAt) + lengths.idleHours * HOUR;
-  const max = Math.min(Date.parse(r.startedAt) + lengths.maxHours * HOUR, r.endsAt === undefined ? Infinity : Date.parse(r.endsAt));
+  const max = absoluteEnd(r, lengths);
   return idle < max ? { at: idle, reason: 'expired-idle' } : { at: max, reason: 'expired-absolute' };
 }
 
@@ -115,7 +119,7 @@ export function createUiSessions(o: {
         tokenHash: hashOf(token), startedAt: at, lastSeenAt: at, checkedAt: at, role, identity, userId,
         ...(lastsMs === undefined ? {} : { endsAt: new Date(now() + lastsMs).toISOString() }),
       };
-      o.repo.create(row);
+      o.repo.create(row, new Date(absoluteEnd(row, lengths())).toISOString());
       return view(token, row);
     },
     find(token) {

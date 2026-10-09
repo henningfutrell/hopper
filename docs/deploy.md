@@ -386,7 +386,10 @@ which can be older than the build that already migrated its database. So a migra
 the build before it still runs on: add tables, columns and values; never drop, rename or reshape what the
 older build reads, until that older build is on no channel any more (it has been promoted past `stable`).
 A value an older build does not know is skipped by it, as an unknown update channel is. Promote such a
-change one step at a time, and check each step's hopper starts and runs a job before the next.
+change one step at a time, and check each step's hopper starts and runs a job before the next. A build stops at
+the start on a store whose schema version is above its own, naming both versions (issue #527): run that newer
+release again, or restore a backup of the database from before it. Builds from before that check run on such a
+store without a word, which is why the rule above holds.
 
 What each push publishes: `.github/workflows/image.yml` builds the image tag of the branch's name
 (`stable` also moves `latest`); `.github/workflows/pages.yml` publishes the Pages site, its `install.sh` and

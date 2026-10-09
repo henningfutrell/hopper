@@ -4,6 +4,7 @@
 // hands it the job's report chain.
 
 import type { JobSource, RerunBy, RerunResult, SourceHost } from '../domain/ports.ts';
+import { RerunRefused } from '../domain/rerun-refused.ts';
 import type { Job } from '../domain/types.ts';
 
 export interface RerunContext {
@@ -48,7 +49,7 @@ export function createRerun(c: RerunContext) {
         try {
           item = await source.rerun!(store.jobs.get(jobId)!);
         } catch (e) {
-          result = { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
+          result = e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
           return;
         }
         result = { ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by) };

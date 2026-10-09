@@ -527,8 +527,8 @@ lane:** the executor refuses to map a pane already held by another lane (job `fa
 pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
 dialog names the job's cwd** and `HOPPER_TRUST_WORKDIR` is true → send `down enter`,
-log it via progress message `trusted workdir <cwd>`, wait for `idle`. Anything else blocking
-startup → `failed` with the screen text.
+log it via progress message `trusted workdir <cwd>`, wait for `idle`. Another dialog of Claude's
+blocking startup → `failed` with the screen text; a screen that shows none is looked at again ("Startup dialogs").
 
 **Yolo** (issue #267). Whether Claude has every permission is the herdr-claude instance's own
 option `yolo` (default on, command-bearing), never an argument in its `args`; it is picked like the
@@ -556,9 +556,19 @@ dialog ("Allow external CLAUDE.md file imports?", options `No, disable external 
 external imports`, the refusing one first and focused) with `trustWorkdir` → `down enter`, `allowed the
 external CLAUDE.md imports of the trusted work tree` (issue #518: a job worktree lies inside the work tree,
 so the work tree's `CLAUDE.md` importing its `AGENTS.md` imports a file outside the job's cwd; the owner
-trusts the work tree, and nothing is written into Claude's own files). Anything else, the warning on an
+trusts the work tree, and nothing is written into Claude's own files). Any other dialog of Claude's (`showsDialog`:
+its cursor on a numbered option, or its key hints "Enter to confirm" / "Esc to cancel"), the warning on an
 instance that is not yolo, the imports dialog without `trustWorkdir`, or more than 4 dialogs → `failed`,
-`claude blocked at startup: <screen>`.
+`claude blocked at startup: <screen>`. **A screen with no dialog is not one** (issue #527): on a Windows machine
+every job failed "blocked", the screen the base64 `-EncodedCommand` of the launch line herdr's agent start typed;
+on a wsl one, the dependency-sharing command still on screen. Such a screen — the launch or a setup command
+echoed, Claude still drawing — is looked at again at each poll until Claude is up, for up to 120 s
+(`SETTLE_TIMEOUT_MS`, twice the start deadline: a Windows launch is slow); then the start times out, `claude not
+ready at startup: <screen>`, and is tried again in a new pane. The screen is not cleared before the launch:
+herdr's agent start types the launch line after anything the hopper could clear, so only the positive
+markers above decide. **No marker is in the command that prints it** (issues #518, #527): each command typed
+into a pane builds the marker it is waited on for when it runs (`printf 'hopper-%s-%s' …`), so the echo of the
+command never answers herdr's `wait-output`; `test/herdr/markers-not-echoed.test.ts` checks every one.
 
 **Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
 of its options — its number, or its own words, case and spacing aside (`dialogOption` in
@@ -1494,7 +1504,12 @@ queue gate; priority and lane caps apply as to any job), with `rerunOf` the ende
 `job.rerun { by: "user" }` on the ended job; the route answers the new job, and the UI's toast says where
 it is (waiting for acceptance, held and why, queued, or failed at intake with its reason). A sync that
 offered the item in between already made the job: that one is answered. The ended job is kept as it
-ended. A source that cannot give the item back → 502 with its error, and nothing is recorded. Before
+ended. A source that cannot give the item back → 502 with its error, and nothing is recorded. **An issue no
+longer assigned to the connected account is refused** (issue #527): its new job was cancelled `unassigned` at
+once while Run again answered success (22 such jobs in one day). `takeBack` reads the issue first and throws
+`RerunRefused` before any write — 409, `job <id> cannot run again: its issue is not assigned to the connected
+account <login>: assign it (Sources, Assign to me) and run it again`; nothing is reopened, relabelled or
+recorded, and the failure assessor records it as not retried. Before
 issue #354 Run again only cleared the labels and waited for a sync, and a closed issue was refused (409,
 issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
 Run again or a human clearing the marker made it.
@@ -5814,7 +5829,15 @@ keys; `ON CONFLICT … DO UPDATE` for upserts. A BIGINT seq comes back as a numb
 is the `schema_version` table: a new store is created at `BASE` (version 6 — versions 1-6 were the
 SQLite history, gone with it), and every later migration is appended to `MIGRATIONS` (7 session role
 and identity, 8 config documents, 9 login codes, …). A Postgres sequence is not transactional, so a
-rolled-back append can leave a gap in `seq`: seq only rises.
+rolled-back append can leave a gap in `seq`: seq only rises. **A store newer than the build is refused**
+(issue #527): when the instance schema's version, or a user schema's, is above what the build knows, the
+migration stops before it changes anything and the daemon exits with `the database's instance schema is at
+version <n>, newer than this build's <m>: a newer hopper migrated it. Run that release or a newer one again
+…, or restore a backup of the database taken before it.` A build from before this check runs on such a store
+regardless, so a migration still leaves a store the build before it runs on (AGENTS.md "Persisted state is the
+user's"); store migration 28 brought back the `ui_sessions.expires_at` that 27 dropped, a session's absolute end
+when made, which the build before 27 sweeps by and this build only writes, with defaults for the columns that
+build does not know.
 
 **Tests and local development** run against Postgres too: `npm test` starts a throwaway container
 through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own

@@ -298,7 +298,7 @@ describe('herdr-claude executor: run', () => {
   });
 
   it('fails with the screen on any other startup block', async () => {
-    const { executor } = setup({ startupBlockedBy: ['Claude Code needs to update. Press enter.'] });
+    const { executor } = setup({ startupBlockedBy: ['─'.repeat(40), ' Claude Code needs to update', '', ' ❯ 1. Update now', '   2. Exit', '', ' Enter to confirm · Esc to cancel'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out.kind === 'failed' && out.error).toContain('needs to update');
   });

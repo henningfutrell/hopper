@@ -81,4 +81,27 @@ describe('Run again on a GitHub job', () => {
     await a.sync();
     expect((await jobsFor()).map((j) => j.status)).toEqual(['failed', 'failed']);
   });
+  it('Run again on a job whose issue is no longer assigned to the connected account is refused, the issue left as it is (issue #527)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: '{"op":"fail","message":"boom"}', labels: ['hopper'] });
+    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
+    await a.sync();
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    const [first] = await jobsFor();
+    gh.unassign(REPO, issue.number, 'owner');
+    gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
+
+    const r = await a.ui<{ error: string }>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/not assigned to the connected account owner/);
+    // Nothing was made only to be cancelled, and the issue was not reopened or relabelled.
+    expect((await jobsFor()).map((j) => j.id)).toEqual([first!.id]);
+    expect(await a.events('types=job.rerun')).toEqual([]);
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'closed', labels: expect.arrayContaining(['hopper:failed']) });
+
+    gh.assign(REPO, issue.number, 'owner');
+    expect((await a.ui(`/ui/api/jobs/${first!.id}/rerun`, {}, { token })).status).toBe(200);
+  });
 });
