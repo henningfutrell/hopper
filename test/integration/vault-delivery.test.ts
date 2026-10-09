@@ -16,31 +16,23 @@
 //   Scenario: a job that ended, or a token the hopper did not derive, gets nothing
 //   Scenario: a computer of no template gets nothing
 //   Scenario: an ask not signed by the machine's link is refused
-import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { joinHopper, readLink } from '../../src/client/join.ts';
+import { readLink } from '../../src/client/join.ts';
 import { MACHINE_KEY_HEADER, USER_HEADER, linkToken, mintLinkKey } from '../../src/client/link.ts';
-import { startLinkedClient } from '../../src/client/main.ts';
-import type { Client } from '../../src/client/server.ts';
 import { REQUEST_HEADER, signVault } from '../../src/client/signature.ts';
-import { HELPER_FILE, VAULT_CONTENT_TYPE, VAULT_PATH } from '../../src/client/vault.ts';
+import { VAULT_CONTENT_TYPE, VAULT_PATH } from '../../src/client/vault.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { testInstallDir } from '../support/client.ts';
-import { waitFor } from '../support/wait.ts';
+import { boxes, helper, runningJob } from '../support/vault-box.ts';
 import { KEY } from '../support/webhooks.ts';
 
-const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
-chmodSync(HERDR, 0o755);
 const VALUE = 'k3s-token-0123456789abcdef-never-on-disk';
 const PROD = 'prod-key-fedcba9876543210-never-on-disk';
 
 let t: TestApp | undefined;
-const clients: Client[] = [];
+const box = boxes();
 const cleanups: (() => void)[] = [];
 const saved = { ...process.env };
 let logged: string[] = [];
@@ -53,19 +45,13 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  for (const c of clients.splice(0)) await c.stop();
+  await box.end();
   await t?.stop();
   t = undefined;
   for (const c of cleanups.splice(0)) c();
   process.env = { ...saved };
   vi.restoreAllMocks();
 });
-
-const temp = (prefix: string): string => {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-};
 
 async function boot(): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
@@ -81,38 +67,8 @@ async function boot(): Promise<{ a: TestApp; session: string }> {
   return { a: t, session };
 }
 
-/** A machine joined — as a box of `template`, when given — and its client started: its client dir. */
-async function joinMachine(a: TestApp, session: string, name: string, template?: string): Promise<string> {
-  const dir = temp('hopper-machine-');
-  const code = (await a.ui<{ code: string }>('/ui/api/machines/join', template ? { template } : {}, { token: session })).body.code;
-  await joinHopper({ line: `${a.url}#${code}`, name, dir });
-  clients.push(startLinkedClient({ dir, herdrBin: HERDR, session: 'hopper', installDir: testInstallDir(), backoffMs: [50] }));
-  await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === name && m.online), { timeoutMs: 10000, what: `${name} online` });
-  return dir;
-}
-
-/** A job that runs a while, on the one machine there is. */
-async function runningJob(a: TestApp, machine: string): Promise<string> {
-  const job = await a.pull({ op: 'sleep', ms: 60000 });
-  expect((await a.waitForStatus(job.id, 'running', 10000)).laneId).toBe(`${machine}/lane-1`);
-  return job.id;
-}
-
-/** The job's proxy token as the hopper derives it (issue #563), in a file of the job's. */
-function tokenFileOf(a: TestApp, job: string, token?: string): string {
-  const file = join(temp('job-credentials-'), 'token');
-  writeFileSync(file, `${token ?? proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job)}\n`, { mode: 0o600 });
-  return file;
-}
-
-/** The helper, run as a job runs it: its token file, and nothing of the vault in its environment. */
-function helper(dir: string, args: string[], tokenFile: string, env: Record<string, string> = {}): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    execFile(join(dir, HELPER_FILE), args, { env: { PATH: process.env.PATH, HOPPER_TOKEN_FILE: tokenFile, ...env }, encoding: 'utf8' }, (err, stdout, stderr) => {
-      resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr });
-    });
-  });
-}
+const joinMachine = box.join;
+const tokenFileOf = box.tokenFileOf;
 
 /** Nothing the hopper logged or appended carries `value`, and nothing on the machine's client dir does. */
 function nowhere(a: TestApp, dir: string, value: string): void {

@@ -4,13 +4,12 @@
 // on the asset. Every mint and every renewal asks Access again. A deny mints nothing: the profile waits at the
 // first-time gate (Settings → Vault) when the template declares it, else it is refused; the reason is on the job's
 // timeline. The audit (`vault.minted`) carries Access's decision id beside each mint. The minting credential is opened
-// here, in memory, for the one call, and never leaves the hopper.
+// (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { expiryOf, mintingCredentialOf, mintTarget, profileInWords, type MintKind, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
-import { SecretUnreadable, type Sealer } from '../secrets/sealer.ts';
-import { boxAsk, type BoxAskOptions } from './box.ts';
+import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 
 export interface MintAsk { mint: MintKind; operation: string; asset: string; token: string }
 
@@ -18,15 +17,11 @@ export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
   /** The vault's user: Access names a job by its user and id. */
   userId: string;
-  sealer: Sealer | undefined;
-  /** Why no secret can be opened now (no token key). */
-  unavailable(): string;
+  /** A secret's value now: opened by the key provider, or read in its vault backend (issue #585); or why not. */
+  read(secret: VaultSecret): Promise<{ value: string } | { refused: string }>;
   access?: VaultAccess;
   minter?: CredentialMinter;
   clock: Clock;
-  logger: { warn(line: string): void };
-  /** Where a minting credential's value is sealed (`vault:<id>/value`). */
-  context(id: string): string;
 }
 
 /** `namespace/lab/web` as an asset; undefined when it names no kind the model has. */
@@ -94,19 +89,15 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const { mintsFor } = target;
     const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
     if (!credential) return refuse(`no minting credential mints for ${mintsFor.kind} ${mintsFor.name}: a person adds one on Settings → Vault`, decision);
-    if (!o.sealer) return refuse(o.unavailable(), decision);
     if (!o.minter) return refuse('this hopper has no minter', decision);
-    let value: string;
-    try {
-      value = o.sealer.open(vault.sealed(credential.id) ?? '', o.context(credential.id));
-    } catch (e) {
-      if (!(e instanceof SecretUnreadable)) throw e;
-      o.logger.warn(`hopper: vault minting credential ${credential.name}: ${e.message}`);
-      return refuse(`the minting credential ${credential.name} cannot be opened: set it again`, decision);
-    }
+    const read = await o.read(credential);
+    if ('refused' in read) return refuse(`the minting credential ${credential.name}: ${read.refused}`, decision);
+    // A vault backend's read (issue #585) takes a while: the job must still be at work now.
+    const still = o.store.jobs.get(job.id)?.status;
+    if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): the vault mints only while it runs`, decision);
     let out;
     try {
-      out = await mintWith(target, value, job.id);
+      out = await mintWith(target, read.value, job.id);
     } catch (e) {
       return refuse(`minting from ${credential.name} failed: ${(e as Error).message}`, decision);
     }
@@ -116,8 +107,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const at = o.clock.now().toISOString();
     o.store.tx(() => {
       const now = vault.get(credential.name);
-      const sealed = now ? vault.sealed(now.id) : undefined;
-      if (now && sealed !== undefined) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, sealed);
+      if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
       events.append({
         type: 'vault.minted', jobId: job.id, machineId: machine.name,
         data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal },

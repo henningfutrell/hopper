@@ -1,7 +1,7 @@
 // Issue #558: the Vault settings page's pure model. A secret is only its metadata: the page says what it is, who set
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
-import { approvalText, explicitApprovals, mintsOf, profileText, radiusText, nameProblem, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, explicitApprovals, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -14,6 +14,23 @@ describe('a vault secret on the page', () => {
   it('without a scope or a change since it was set: only who set it', () => {
     const facts = secretFacts({ id: 'a', name: 'X', setBy: 'Ada', createdAt: '2026-10-09T10:00:00Z', changedBy: 'Ada', changedAt: '2026-10-09T10:00:00Z' });
     expect(facts.map((f) => f.label)).toEqual(['Set by']);
+  });
+});
+
+describe('a vault secret kept in a vault backend (issue #585)', () => {
+  const kept = { id: 'a', name: 'DB_PASS', setBy: 'Ada', createdAt: '2026-10-09T10:00:00Z', changedBy: 'Ada', changedAt: '2026-10-09T10:00:00Z', backend: { name: 'my-vault', reference: 'apps/db#password' } };
+
+  it('says where it is kept and that it is read there at each use; the hopper holds no value', () => {
+    expect(secretFacts(kept).find((f) => f.label === 'Kept in')!.value).toBe('my-vault · apps/db#password');
+    expect(keptText(kept)).toBe('kept in my-vault · read at each use');
+    expect(keptText({ ...kept, backend: undefined })).toBe('value set · write-only');
+  });
+
+  it('the reference field shows the form each backend reads', () => {
+    expect(referenceHint('hashicorp-vault')).toBe('apps/db#password');
+    expect(referenceHint('1password')).toBe('op://Infra/db/password');
+    expect(referenceHint('bitwarden')).toMatch(/^[0-9a-f-]{36}$/);
+    expect(referenceHint('a-custom-plugin')).toBe('');
   });
 });
 

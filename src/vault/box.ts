@@ -7,7 +7,7 @@ import type { Job } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 
 /** The statuses a job is given vault secrets or minted credentials in: it holds its pane. Ended, failed or parked: nothing. */
-const AT_WORK = ['running', 'waiting_answer'];
+export const AT_WORK: readonly string[] = ['running', 'waiting_answer'];
 
 export interface BoxAskOptions {
   /** The attached machines now: a client target's key and the template it joined as. */

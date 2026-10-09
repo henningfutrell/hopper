@@ -44,7 +44,7 @@ const PLUGINS = {
   instances: LEVELS.map((instance) => ({ role: 'escalation-level', instance })),
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
-  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
+  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] }, vaultBackends: { instances: [] },
   plugins: [
     { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { model: MODELS, machine: MACHINES } },
   ],

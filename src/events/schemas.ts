@@ -272,14 +272,14 @@ export const EVENT_SCHEMAS = {
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean() }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
-  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), mints: asset.optional() }),
+  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), backend: z.string().optional(), mints: asset.optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
-  'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string() }),
-  'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string() }),
+  'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
+  'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
   'vault.minted': strict({
     kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(),
     decision: z.string(), expiresAt: z.string(), renewal: z.boolean(),

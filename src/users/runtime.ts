@@ -359,7 +359,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, userId: user.id, access: o.access, ...(o.minter ? { minter: o.minter } : {}), keys, clock, logger, targets: () => host.targets(), holds: (p) => proxy.githubProxy.user.holds(p) }), // issue #558: under the same token key, sealed again at start
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, userId: user.id, access: o.access, ...(o.minter ? { minter: o.minter } : {}), keys, clock, logger, targets: () => host.targets(), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), // issue #558: under the same token key, sealed again at start
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),
