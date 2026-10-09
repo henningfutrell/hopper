@@ -6,6 +6,7 @@ import { userIdOf, type TenantParts } from './tenants.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
+import { yoloModeView } from './ui/yolo-mode.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
   if (!s) return undefined;
@@ -65,6 +66,8 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/blast-radius', async (req) => o.tenant(req).engine.blastRadius.view());
   // Phase shifts (issue #548): the default mode, what a parent does while its fork runs, the levels that may shift.
   app.get('/api/phase-shifts', async (req) => { const t = o.tenant(req); return t.engine.phaseShifts.view(t.levelNames()); });
+  // Yolo mode (issue #579): whether jobs may merge their own pull requests, and the job repositories to set it per repository.
+  app.get('/api/yolo-mode', async (req) => yoloModeView(o.tenant(req)));
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));

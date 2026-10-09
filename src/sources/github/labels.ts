@@ -1,14 +1,11 @@
 // The labels the hopper owns on an issue, with the colour/description it creates them with,
-// and the ones a person sets: `hopper:backburner` keeps an issue out (never picked up);
-// `hopper:complete-at-merge` / `hopper:complete-at-pr` set the issue's completion (issue #187).
+// and the one a person sets: `hopper:backburner` keeps an issue out (never picked up).
 // An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159).
 
 export const LABEL_CLAIMED = 'hopper:claimed';
 export const LABEL_DONE = 'hopper:done';
 export const LABEL_FAILED = 'hopper:failed';
 export const LABEL_BACKBURNER = 'hopper:backburner';
-export const LABEL_COMPLETE_AT_MERGE = 'hopper:complete-at-merge';
-export const LABEL_COMPLETE_AT_PR = 'hopper:complete-at-pr';
 export const LABEL_REJECTED = 'hopper:rejected';
 /** `hopper@<name>`: the issue is for the hopper whose source has `hopperName: <name>`. */
 export const ADDRESS_PREFIX = 'hopper@';

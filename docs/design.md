@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status), ports (`ports.ts`, re-exporting the store's from `store.ts` and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563) | http, decider |
@@ -1651,7 +1651,6 @@ github:
   progressCommentSeconds: 300
   recentComments: 10    # comments passed into the job's context
   projects: {}          # per repo, optional — see "Priority"
-  completion: merge     # or pull-request: when a job's work is done — see "Done means complete"
   # projects:
   #   owner/hopper-sandbox:
   #     owner: owner
@@ -1703,7 +1702,7 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
-done (completion: merge|pull-request): what done means for this issue's completion ("Done means complete" below)
+done: …: done is the job's pull request, ready for review; with yolo mode on for the repo, it may also merge it ("Done is a pull request" below)
 recent comments (oldest first, up to recentComments; only the assignee's, no hopper-marked comments — anyone else's text never reaches the job; issue #387):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
@@ -1749,9 +1748,8 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 
 **Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at all
 (owner decision, 2026-10-04: a finished issue needs no comment). It never closes an issue (issue
-#187): the merge of the job's own pull request does, which is what completion `merge` requires
-before the job is finished, and with completion `pull-request` the issue stays open, labelled
-`hopper:done`, until a person merges. (Issue #38 had the hopper close a finished job's issue; once
+#187): the merge of the job's own pull request does — a person's, or the job's own with yolo mode on (issue #579) —;
+until then the issue stays open, labelled `hopper:done`. (Issue #38 had the hopper close a finished job's issue; once
 done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open.
 The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
@@ -1765,36 +1763,51 @@ Comments the hopper posted before this rule start with a hidden marker line (`<!
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
 `<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
-**Done means complete** (issues #171, #187). A job that ends done (`HOPPER_DONE`, or any
-executor's `finished` outcome) is not recorded finished until its source has said its work reached
-the item's **completion** (`JobSource.notComplete(job)`, asked by the engine's runner before
-`recordOutcome`). The GitHub sources (`src/sources/github/completion.ts`) know two completions,
-set by the `completion` option (default `merge`) or, for one issue, by the labels
-`hopper:complete-at-merge` / `hopper:complete-at-pr` (both: `merge`, the stricter; read when the
-job is judged, and when its prompt is built):
+**Done is a pull request** (issues #171, #187, #579). A job that ends done (`HOPPER_DONE`, or any
+executor's `finished` outcome) is not recorded finished until its source has said its work is **complete**
+(`JobSource.notComplete(job)`, asked by the engine's runner before `recordOutcome`). For the GitHub sources
+(`src/sources/github/completion.ts`) complete is one rule, for every issue: the job's own pull request — opened at
+or after the job's `createdAt` — is open, not a draft, has no merge conflicts (GraphQL `mergeable` is not
+`CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), and its merge will close the issue
+(`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch); or the issue is
+**closed as complete** — its last close event's closer a merged pull request opened at or after the job's
+`createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, closed as
+completed (`state_reason`) at or after the job's `createdAt`, by a commit or with no code (issue #350). **A merge
+is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). Before it, a
+source's `completion` option (default `merge`) and the labels `hopper:complete-at-merge` /
+`hopper:complete-at-pr` held a job to the merge, and a job whose pull request was open and waiting for review ended
+failed; tenant migration 30 removes the option from the stored config, and the labels mean nothing now.
 
-| completion | complete when | the job's prompt says |
-|------------|---------------|-----------------------|
-| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
-| `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
+**Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
+repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
+settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
+job repository, and per repository (`repos`, `owner/repo` lowercased), which wins. The source reads it each time it
+builds a job's prompt (`JobSourceContext.yoloMode(repo)`), so a change applies to the next job without a restart; a
+running job keeps what it was told. It never changes what done is. Off by default because a merge with nobody
+reviewing it is a merge nothing else stops where a repository has no branch protection, and a merge to the default
+branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
+Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above).
 
-The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
-checks, verifying where the product runs — so a job is told everything done means, and the gate
-holds it to the part GitHub can show. Anything short of the completion — a local commit, a branch,
-a draft, the issue closed as not planned, closed before the job, or closed by an older pull request — fails the job with
-`not complete: no merged pull request opened by this job closes <issue url>` (`merge`) or `not
-complete: no pull request opened by this job, ready for review, closes <issue url>`
-(`pull-request`); an error asking GitHub (transient or not) fails it with `could not confirm the
-work is complete: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
-`hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
-source, take every done job as complete. Before issue #171, a job that said it was done was closed
-as completed with nothing on the default branch.
+| yolo mode | the job's prompt says |
+|-----------|-----------------------|
+| off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
+| on for the repo | the same, then: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done |
+
+The prompt's `done:` line carries the parts the hopper cannot see — the repo's own checks, verifying where the
+product runs — so a job is told everything done means, and the gate holds it to the part GitHub can show. Anything
+short of it — a local commit, a branch, a draft, a pull request with merge conflicts, the issue closed as not
+planned, closed before the job, or closed by an older pull request — fails the job with `not complete: no pull
+request opened by this job, ready for review, closes <issue url>`; an error asking GitHub (transient or not) fails
+it with `could not confirm the work is complete: <error>`. Fail closed: a failed job's issue stays open with
+`hopper:failed`, never `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job
+of no source, take every done job as complete. Before issue #171, a job that said it was done was closed as
+completed with nothing on the default branch.
 
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
 expires while it waits on a question, or it closes its issue with a commit and then trips. Before
-the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: the rule in
-the `merge` row above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
+the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: closed as complete,
+above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
 ends the job `finished` (its `error` cleared; `job.finished` with result `issue closed as complete`,
 after the `job.failed` already logged), and the report labels the issue `hopper:done`, never
 `hopper:failed`. Any failure path is covered — the runner's outcome, restart recovery, an expired
@@ -2181,7 +2194,7 @@ Manifest:
 
 - `issues: write` now covers only labels (write criteria).
   Reading which pull request closed an issue needs nothing more (verified against the live app,
-  2026-10-04). The open pull requests that close an issue (completion `pull-request`) are read
+  2026-10-04). The open pull requests that close an issue (the done-check, "Done is a pull request") are read
   the same way, over GraphQL with the installation token; not yet verified against the live app. The
   app could later drop to fewer permissions; not changed here.
 
@@ -3349,7 +3362,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 2. **Enforcement belongs to what the hopper runs.** The sandbox confines the jobs the hopper dispatches
    to an executor; it never reaches into an operator's IDE. An operator-led job runs nothing of the
    hopper's, so there is nothing to confine — and nothing to wait for but its source.
-3. **One check-in for both.** The closing pull request reaching its completion ("Done means complete").
+3. **One check-in for both.** The closing pull request being done ("Done is a pull request").
    No shape has its own gate, and none needs a hopper IDE plugin ("Work by hand in an IDE: how it checks
    in", settled there).
 4. **One claim per issue, either shape.** `hopper:claimed` holds an issue against dispatch whichever shape
@@ -3629,7 +3642,7 @@ that makes it a part of the hopper:
 3. **States are events.** Each new history entry becomes an event on the job (a state, its note, its
    time from the box); `stale` is the hopper's own reading, an event too, never a state the box writes;
    `waiting` could raise a question for the owner the way a pane's question does.
-4. **Done stays the closing pull request** (#316's recommendation, "Done means complete"). `finished` is
+4. **Done stays the closing pull request** (#316's recommendation, "Done is a pull request"). `finished` is
    the operator's word, as `HOPPER_DONE` is an agent's: the job is finished only when the source says the
    work reached its completion, else it fails as any job does. `released` cancels the job and takes the
    claim off, so the issue is the queue's again.
@@ -3648,7 +3661,7 @@ plugin or another product surface, or git and GitHub alone; how it lives beside 
 jobs. Related: #314, #308, #315; the claim and its timeline designation are #318, the protocol #319.
 
 **What already counts as check-in.** For a GitHub-sourced job, done is git and GitHub: the job's own
-closing pull request reaching its completion ("Done means complete"). Labels carry claim, done and
+closing pull request being done ("Done is a pull request"). Labels carry claim, done and
 failed; a local commit, a branch or a draft is never done. The `cursor-agent` executor is Cursor's CLI
 in print mode on a machine's work tree, not the IDE. A client target serves herdr only; a container
 target runs the command executor only.
@@ -3878,11 +3891,11 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
 - **Never run.** `operator_led` is neither waiting nor running to the decider (`WAITING`/`RUNNING` in
   `src/engine/decision-step.ts`), holds no lane, and restart recovery leaves it as it is.
 - **Done.** The sync loop, after the cancel signals, asks the source of each operator-led job
-  `notComplete(job)` (the same check an agent's `HOPPER_DONE` gets, "Done means complete"); complete →
+  `notComplete(job)` (the same check an agent's `HOPPER_DONE` gets, "Done is a pull request"); complete →
   `SourceHost.finishOperatorLed` ends it `finished` (`job.finished`), and the report labels the issue
   `hopper:done`. An error asking is a report retry; the job stays operator-led. The pull request must be the
   job's own (opened at or after the job was created), as for any job.
-- **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done means complete"), the label removed, or the issue gone cancels it, as for any job
+- **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done is a pull request"), the label removed, or the issue gone cancels it, as for any job
   (`check()`); so does Cancel in the UI, which takes the claim off the issue.
 - **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
   *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a

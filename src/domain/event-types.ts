@@ -23,6 +23,7 @@ export const EVENT_TYPES = [
   'job.phase_changed', 'job.forked', 'job.fork_resolved', 'phase_shifts.settings_changed',
   'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
   'vault.secret_set', 'vault.secret_removed', 'template.saved', 'template.removed', 'vault.approved', 'vault.delivered', 'vault.refused',
+  'yolo_mode.changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -54,4 +55,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
   'vault.secret_set': 1, 'vault.secret_removed': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.delivered': 1, 'vault.refused': 1,
+  'yolo_mode.changed': 1,
 };

@@ -2314,3 +2314,29 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
   "reason": "kube is not approved for PROD_KEY: a person adds it to the template and approves it"
 }
 ```
+
+## `yolo_mode.changed`
+
+Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false,
+    "repos": {}
+  },
+  "to": {
+    "on": false,
+    "repos": {
+      "owner/repo": true
+    }
+  },
+  "by": "owner"
+}
+```

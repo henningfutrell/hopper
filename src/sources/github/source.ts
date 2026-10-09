@@ -14,7 +14,7 @@ import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/typ
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { closedAsComplete, completionOf, issueClosed, notComplete } from './completion.ts';
+import { closedAsComplete, issueClosed, notComplete } from './completion.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
@@ -25,7 +25,7 @@ import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects' | 'completion'
+  'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects'
 >;
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -58,6 +58,8 @@ export interface GitHubSourceOptions {
   appInfo?: () => GitHubAppInfo | undefined;
   /** Claim holders, the intake migration and intake events (issue #440); absent: claims carry no holder and nothing is migrated. */
   intake?: IntakeContext;
+  /** Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never. */
+  yoloMode?: (repo: string) => boolean;
 }
 
 /** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
@@ -109,8 +111,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
     const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
-    const completion = completionOf(issue.labels, config.completion);
-    const context = contextBlock(issue, p, completion, contextComments(comments, assignee, config.recentComments, bot), config.recentComments, mode);
+    const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false, contextComments(comments, assignee, config.recentComments, bot), config.recentComments, mode);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(issue, context), env: issueEnv(issue),
@@ -229,7 +230,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...detail,
         account: account(paused, detail),
         ...(paused ? { paused } : {}),
-        repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, completion: config.completion, projectErrors,
+        repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
         ...(outsideRepos.length ? { outsideRepos } : {}),
         ...(outsideError ? { outsideError } : {}),
@@ -293,7 +294,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return writeResolution({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job, resolution);
     },
     notComplete(job) {
-      return notComplete(api, job, config.completion);
+      return notComplete(api, job);
     },
     closedAsComplete(job) {
       return closedAsComplete(api, job);

@@ -105,6 +105,7 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'phase_shifts.settings_changed': 'An admin saved the phase-shift settings (issue #548): the default mode (`fork` or `switch`), what a parent does while its fork runs (`wait` or `park`), and the escalation levels that may shift a job themselves.',
   'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
+  'yolo_mode.changed': 'An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo\'s checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.',
   'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.',
   'vault.secret_removed': 'A vault secret was removed (issue #558), and who removed it.',
   'template.saved': 'A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).',
