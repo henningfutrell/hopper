@@ -236,6 +236,8 @@ describe('every failed job is processed', () => {
     });
   }
   const recordOf = async (a: TestApp, jobId: string) => (await failuresOf(a)).recent.find((r) => r.jobId === jobId);
+  /** A superseded record is out of Recent failures (issue #529): read where it is kept. */
+  const supersededOf = (a: TestApp, jobId: string) => { const x = a.user().store.failures.forJob(jobId); return x?.outcome === 'superseded' ? x : undefined; };
 
   it('a failed job whose item already ran again is superseded: not for a person, counted as nothing left', async () => {
     const a = await boot();
@@ -246,11 +248,14 @@ describe('every failed job is processed', () => {
     const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
     expect(r.status).toBe(200);
     unassess(a, job.id, new Date(Date.now() - 5 * 60_000).toISOString());
-    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'assessed as superseded' });
+    const record = await waitFor(async () => supersededOf(a, job.id), { what: 'assessed as superseded' });
     expect(record).toMatchObject({ nextJobId: r.body.id });
     expect(record.summary).toMatch(/^Already run again/);
-    expect(record.actions.retry).toEqual({ ok: false, why: 'already run again' });
+    const retry = await a.ui<{ error: string }>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    expect(retry.status).toBe(409);
+    expect(retry.body.error).toMatch(/already run again/);
     const v = await failuresOf(a);
+    expect(v.recent.some((x) => x.jobId === job.id)).toBe(false);
     expect(v.counts).toEqual({ unassessed: 0, needsPerson: 0 });
     expect(v.handoffs.filter((h) => h.jobId === job.id && h.status === 'open')).toEqual([]);
   });
@@ -264,7 +269,7 @@ describe('every failed job is processed', () => {
     expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
     const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
     expect(r.status).toBe(200);
-    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'superseded' });
+    const record = await waitFor(async () => supersededOf(a, job.id), { what: 'superseded' });
     expect(record.nextJobId).toBe(r.body.id);
     expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
   });
@@ -299,7 +304,7 @@ describe('every failed job is processed', () => {
     expect(next.id).not.toBe(job.id);
     const closed = await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.jobId === job.id && h.status === 'closed'), { what: 'the hand-off closed' });
     expect(closed).toMatchObject({ end: 'run_again', nextJobId: next.id });
-    const record = await waitFor(async () => { const x = await recordOf(a, job.id); return x?.outcome === 'superseded' ? x : undefined; }, { what: 'superseded' });
+    const record = await waitFor(async () => supersededOf(a, job.id), { what: 'superseded' });
     expect(record.nextJobId).toBe(next.id);
     expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
   });

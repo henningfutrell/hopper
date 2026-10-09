@@ -30,7 +30,10 @@ export interface Logins {
   cancel(id: string): LoginAction;
   /** The user asked for a new code: the run asks its tool again. */
   newCode(id: string): LoginAction;
-  /** Fail the pending logins whose job is no longer running, and expire those past `expiresAt`. Run on each tick. */
+  /**
+   * Fail the open logins nothing waits on any more — whose job is no longer running, or whose question is no longer
+   * open, an expired one too (issue #529) —, and expire the pending ones past `expiresAt`. Run on each tick.
+   */
   sweep(): void;
   list(filter?: { status?: LoginStatus[]; limit?: number }): Login[];
   get(id: string): Login | undefined;
@@ -157,14 +160,18 @@ export function createLogins(o: LoginsOptions): Logins {
     sweep() {
       const at = clock.now().getTime();
       for (const l of store.logins.list({ status: [...OPEN] })) {
-        if (l.status !== 'pending') continue;
         const job = l.jobId ? store.jobs.get(l.jobId) : undefined;
         if (l.jobId && job?.status !== 'running') {
           const reason = `the job ended${job?.error ? `: ${job.error}` : ''}`;
           end(l, 'failed', { reason }, { reason });
           continue;
         }
-        if (Date.parse(l.expiresAt) > at) continue;
+        if (!l.jobId && l.questionId && store.questions.get(l.questionId)?.status !== 'open') {
+          const reason = 'the question ended';
+          end(l, 'failed', { reason }, { reason });
+          continue;
+        }
+        if (l.status !== 'pending' || Date.parse(l.expiresAt) > at) continue;
         secrets.delete(l.id);
         store.tx(() => {
           const next = store.logins.update(l.id, { status: 'expired', newCodeAskedAt: undefined });

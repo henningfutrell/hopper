@@ -114,6 +114,7 @@ export function createEngine(o: EngineOptions): Engine {
         void paneAnswers.sweep();
         cleanups.retry();
         o.logins.sweep();
+        o.questions.sweep();
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

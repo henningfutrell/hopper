@@ -3,7 +3,7 @@
 // every failed job automatic handling ended for, open until a person runs it again or clears it, with its own
 // count —; then open problems — one shared cause,
 // shown once with the jobs it hit and the ones held for it, with Resolve and Release held —; then the newest
-// assessed failures, each with its decision, its summary and Retry; then the profile and, for an admin, the
+// assessed failures nothing settled (issue #529), each with its decision, its summary and Retry; then the profile and, for an admin, the
 // settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
 // updates live, read again on each assessor event.
 import { Check, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
@@ -161,7 +161,7 @@ export function Failures() {
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{open.map((p) => <ProblemCard key={p.id} p={p} />)}</div>
         : <Panel title="Open problems" icon={OctagonAlert}><Empty>no open problem</Empty></Panel>}
       <Panel title="Recent failures" icon={History} count={failures.recent.length || ''} list bodyClassName="p-0">
-        {failures.recent.length ? <ul className="divide-y">{failures.recent.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure assessed yet</Empty>}
+        {failures.recent.length ? <ul className="divide-y">{failures.recent.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure left to look at</Empty>}
       </Panel>
       {resolved.length > 0 && <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{resolved.map((p) => <ProblemCard key={p.id} p={p} />)}</div>}
       <FailureProfilePanel view={failures} />

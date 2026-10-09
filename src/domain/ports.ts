@@ -434,6 +434,8 @@ export interface QuestionService {
   unparked(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */
   recover(): void;
+  /** Cancel the open questions whose job ended or is gone (issue #529): nothing waits on their answer. Run on each tick and by `recover`. */
+  sweep(): void;
   stop(): Promise<void>;
 }
 
@@ -542,6 +544,12 @@ export interface JobSource {
    * every failed job stays failed.
    */
   closedAsComplete?(job: Job): Promise<boolean>;
+  /**
+   * Whether the job's item is closed at the source, by any means, or gone (issue #529): asked for a failed job handed
+   * off to a person, whose hand-off then closes — nothing waits on it any more. Throws when it cannot tell now: asked
+   * again later. Absent: the source cannot tell, and a hand-off waits on a person.
+   */
+  itemClosed?(job: Job): Promise<boolean>;
   /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
   credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**

@@ -55,6 +55,21 @@ export async function notComplete(api: GitHubApi, job: Job, configured: Completi
 }
 
 /**
+ * Whether the job's issue is closed, by any means, or gone (issue #529): a hand-off of its job waits on nobody. No
+ * access (403) cannot tell: false. A transient error throws, to be asked again.
+ */
+export async function issueClosed(api: GitHubApi, job: Job): Promise<boolean> {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) return false;
+  try {
+    return (await api.getIssue(repo, number)).state === 'closed';
+  } catch (err) {
+    if (err instanceof GitHubApiError && err.permanent) return err.status === 404 || err.status === 410;
+    throw err;
+  }
+}
+
+/**
  * Whether the job's issue is closed as complete. A permanent error (the issue gone, no access) is not:
  * the failure is reported, and meets the same error there; a transient one throws, to be asked again.
  */

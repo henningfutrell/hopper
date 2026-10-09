@@ -4,10 +4,12 @@
 // assessor decided is refused, or when a failed job's locked entry is dismissed with nothing else to end it. It
 // closes when its item runs again — from here, the Queue, the failure's Retry or the source; its record then turns
 // `superseded` unless a run again is recorded on it (issue #517) —, when a person clears it (its locked entry
-// dismissed too: no more work), or when its job ends finished. Each is an event.
+// dismissed too: no more work), or when its job ends finished. Each is an event. Stale data clears itself (issue
+// #529): the sweep, and the start, close an open hand-off nothing waits on any more — a newer job of its item that no
+// `job.queued` closed it for (a store from the build before), its job finished or gone, its item closed at its source.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import type { DomainEvent, FailureOutcome, FailureRecord, FailureSettings, Handoff, HandoffEnd, HandoffReason, Job } from '../domain/types.ts';
-import { handoffReason, RAN_AGAIN } from './handoff.ts';
+import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
 import { handoffView, newerOf, newestOfItem } from './view.ts';
 
 export type HandoffAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
@@ -34,6 +36,13 @@ export interface Handoffs {
    * hand-off closed already, on the new job's `job.queued`.
    */
   supersede(): void;
+  /**
+   * The open hand-offs nothing waits on any more (issue #529), closed: a newer job of its item (`superseded`), its
+   * job finished (`finished`) or gone (`job_gone`). A store from the build before included.
+   */
+  settle(): void;
+  /** Its item is closed at its source (issue #529): the open hand-off closes, its record `item_closed`. */
+  itemClosed(id: string): void;
   /** Follow the job events that open or close a hand-off. */
   onEvent(e: DomainEvent): void;
   runAgain(id: string): Promise<HandoffAction<Job>>;
@@ -99,13 +108,29 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       const job = store.jobs.get(jobId);
       if (job?.status !== 'failed' || store.handoffs.forJob(jobId)) return;
       const r = store.failures.forJob(jobId);
-      if (r && (r.pending || r.handoffId || (r.outcome && RAN_AGAIN.includes(r.outcome)) || (r.outcome === 'held' && r.auto))) return;
+      if (r && (r.pending || r.handoffId || (r.outcome && (RAN_AGAIN.includes(r.outcome) || SETTLED.includes(r.outcome))) || (r.outcome === 'held' && r.auto))) return;
       open(jobId, 'dismissed', r);
     });
   }
 
   function onFinished(jobId: string): void {
     store.tx(() => { const h = openOf(jobId); if (h) close(h, 'finished'); });
+  }
+
+  /** Why an open hand-off waits on nobody now, if it does not: its job gone or finished, or a newer job of its item. */
+  function staleOf(h: Handoff): { end: HandoffEnd; nextJobId?: string } | undefined {
+    const job = store.jobs.get(h.jobId);
+    if (!job) return { end: 'job_gone' };
+    if (job.status === 'finished') return { end: 'finished' };
+    const newer = newerOf(store, job);
+    return newer ? { end: 'superseded', nextJobId: newer } : undefined;
+  }
+
+  /** Its record, still waiting, says what ended it: nothing waits on it any more. */
+  function settleRecord(h: Handoff, outcome: FailureOutcome, note: string, nextJobId?: string): void {
+    const r = h.recordId ? store.failures.get(h.recordId) : store.failures.forJob(h.jobId);
+    if (!r || r.pending || !(r.outcome && SUPERSEDABLE.includes(r.outcome))) return;
+    store.failures.update(r.id, { outcome, outcomeAt: nowIso(), note, ...(nextJobId ? { nextJobId } : {}) });
   }
 
   return {
@@ -130,6 +155,25 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         const newer = job ? newerOf(store, job) : undefined;
         if (newer) store.failures.update(r.id, { outcome: 'superseded', outcomeAt: nowIso(), nextJobId: newer, note: 'a newer job of its item exists' });
       }
+    },
+    settle() {
+      for (const h of store.handoffs.list({ status: 'open', limit: 1_000_000 })) {
+        store.tx(() => {
+          const cur = store.handoffs.get(h.id);
+          const stale = cur?.status === 'open' ? staleOf(cur) : undefined;
+          if (!cur || !stale) return;
+          close(cur, stale.end, stale.nextJobId);
+          if (stale.end === 'superseded') settleRecord(cur, 'superseded', 'a newer job of its item exists', stale.nextJobId);
+        });
+      }
+    },
+    itemClosed(id) {
+      store.tx(() => {
+        const h = store.handoffs.get(id);
+        if (h?.status !== 'open') return;
+        close(h, 'item_closed');
+        settleRecord(h, 'item_closed', 'its item is closed at its source');
+      });
     },
     onEvent(e) {
       const id = e.jobId;

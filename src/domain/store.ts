@@ -121,8 +121,11 @@ export interface FailureRepository {
   get(id: string): FailureRecord | undefined;
   /** The job's newest record. */
   forJob(jobId: JobId): FailureRecord | undefined;
-  /** Newest first: since a time, of a signature, of a problem, with one of the outcomes; at most `limit` (default 1000). */
-  list(filter?: { since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
+  /**
+   * Newest first: since a time, of a signature, of a problem, with one of the outcomes, with none of `notOutcome` (no
+   * outcome yet counts as none); at most `limit` (default 1000).
+   */
+  list(filter?: { since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; notOutcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
   /** The records whose pending run is due at `at`, the earliest first. */
   due(at: string): FailureRecord[];
   /** Shallow-merge; `undefined` clears. */

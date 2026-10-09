@@ -1082,7 +1082,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 
 ## `job.assessed`
 
-Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person — or the job failed more than a day before it was assessed (issue #517). A job whose item already ran again is assessed too, acting on nothing: its `reasons` end `a newer job of its item exists: <job id>: nothing is left to do`. Once per failed job.
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job.
 
 | field | type | required |
 |---|---|---|
@@ -1194,12 +1194,12 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 
 ## `handoff.closed`
 
-Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `cleared` (a person acknowledged it: no more work, its locked entry dismissed too), or `finished` (its job ended finished: its issue closed as complete).
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `cleared` (a person acknowledged it: no more work, its locked entry dismissed too), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone).
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | yes |
-| `end` | `run_again` \| `cleared` \| `finished` | yes |
+| `end` | `run_again` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
 | `nextJobId` | string | no |
 
 ```json

@@ -10,7 +10,10 @@
       "enum": [
         "run_again",
         "cleared",
-        "finished"
+        "finished",
+        "superseded",
+        "item_closed",
+        "job_gone"
       ]
     },
     "nextJobId": {
