@@ -53,6 +53,8 @@ export interface Health {
   router: string;
   fallback: boolean;
   executors: string[];
+  /** The executors that can park a job (issue #530): Park is offered only for their jobs. */
+  parkingExecutors?: string[];
   uptimeS: number;
 }
 

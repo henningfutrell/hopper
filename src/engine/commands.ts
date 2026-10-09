@@ -34,8 +34,11 @@ export interface Commands {
    * agent session, machine and open question are kept. A running job is parked once its executor stepped aside.
    */
   park(id: string): Job;
-  /** Re-queue a parked job (issue #501): pinned to its machine, its claim resumes its agent session; with its question open, it waits on it again. */
-  requeue(id: string): Job;
+  /**
+   * Re-queue a parked job (issue #501): pinned to its machine, its claim resumes its agent session; with its question open, it waits on it again.
+   * A job with no agent session only with `freshSession` (issue #530): its claim starts a fresh one in its kept work tree.
+   */
+  requeue(id: string, o?: { freshSession?: boolean }): Job;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
   /** Tests only: the fake usage source has no HTTP route. */
@@ -113,8 +116,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       return parked;
     },
 
-    requeue(id) {
-      const next = store.tx(() => recordUnpark(c, id));
+    requeue(id, o = {}) {
+      const next = store.tx(() => recordUnpark(c, id, o.freshSession === true));
       if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
       return next;
     },

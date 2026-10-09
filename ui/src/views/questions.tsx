@@ -1,5 +1,6 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer, Close and Dismiss. A level's recommendation on the trail is sent in one click, Use answer, by
+// with Send answer, Close and Dismiss, and Park for the job waiting on it (issue #530: where a person decides the job
+// must wait; or why it cannot be parked). A level's recommendation on the trail is sent in one click, Use answer, by
 // the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
 // questions are marked seen (the nav badge clears). The header names the machine that raised the question (issue #485). Only the open questions: the question history and
@@ -23,6 +24,7 @@ import { longestWaitingFirst, unseenByOwner } from '@/model/questions';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
+import { ParkButton } from '@/views/overview/lanes';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -94,7 +96,8 @@ function QuestionCard({ q }: { q: Question }) {
       bodyClassName="space-y-3">
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
-        {parked && <StatusBadge status="parked" label="job parked" title="The answer is kept, and the job resumes with it when it is re-queued." />}</div>}
+        {parked && <StatusBadge status="parked" label="job parked" title="The answer is kept, and the job resumes with it when it is re-queued." />}
+        {!parked && !movedOn && <ParkButton job={job} />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>

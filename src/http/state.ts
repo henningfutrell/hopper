@@ -56,7 +56,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, uptimeS };
+    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, uptimeS };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));

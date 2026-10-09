@@ -105,7 +105,7 @@ describe('parking a running job', () => {
     expect(done.parked).toBeUndefined();
   });
 
-  it('is refused for a job that is not running or on a question, and for one whose executor recorded no session', async () => {
+  it('is refused for a job that is not running or on a question, and for one whose executor cannot park', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [] });
     const a = await boot(herdr);
     const token = await a.login();
@@ -185,6 +185,95 @@ describe('parking a job on a question', () => {
     await waitFor(() => herdr.reaps.length === 2, { what: 'the cancel reap' });
     expect(herdr.reaps[1]).toEqual({ jobId: job.id, scratch: expect.stringMatching(new RegExp(`/\\.hopper-scratch/${job.id}$`)) });
     expect((await a.questionsOf(job.id))[0]!.status).toBe('cancelled');
+  });
+});
+
+describe('a job whose executor recorded no agent session (issue #530: started before #510)', () => {
+  /** A job on a question, as one started before agent sessions were recorded: no `agentSession`. */
+  async function onQuestionWithoutSession(herdr: FakeHerdrClient) {
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, item);
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    a.user().store.jobs.update(job.id, { agentSession: undefined });
+    expect((await a.job(job.id)).agentSession).toBeUndefined();
+    return { a, token, job, q };
+  }
+
+  it('is parked from its question: the machine stops counting it and takes a new job at once', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK] });
+    const { a, token, job, q } = await onQuestionWithoutSession(herdr);
+    // On its question its pane is live on the machine: the machine keeps it, though it holds no lane.
+    expect(a.user().engine.jobsOnMachine('local')).toContain(job.id);
+    expect((await lanesNow(a)).filter((l) => l.jobId === job.id)).toEqual([]);
+
+    expect((await park(a, token, job.id)).status).toBe(200);
+    const parked = await a.waitForStatus(job.id, 'parked');
+    expect(parked).toMatchObject({ resumeOn: 'local', questionId: q.id, parked: { from: 'waiting_answer' } });
+    await waitFor(() => herdr.closed.length === 1, { what: 'the pane closed' });
+    // Its work tree is kept: the reap names no scratch dir.
+    expect(herdr.reaps).toEqual([{ jobId: job.id }]);
+    expect(a.user().engine.jobsOnMachine('local')).not.toContain(job.id);
+    expect((await a.questionsOf(job.id))[0]!.status).toBe('open');
+
+    const other = await a.pull({ op: 'echo', message: 'next' });
+    await a.waitForStatus(other.id, 'finished');
+    expect((await a.job(job.id)).status).toBe('parked');
+  });
+
+  it('re-queued, it starts fresh only once the person confirms: a new session in the kept work tree, the question and its answer as context', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const { a, token, job, q } = await onQuestionWithoutSession(herdr);
+    await park(a, token, job.id);
+    await a.waitForStatus(job.id, 'parked');
+    await waitFor(() => herdr.closed.length === 1, { what: 'the pane closed' });
+    await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token });
+
+    // Never fresh silently: without the confirmation the re-queue is refused, and the job stays parked.
+    const refused = await requeue(a, token, job.id);
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(refused.body)).toContain('fresh');
+    expect((await a.job(job.id)).status).toBe('parked');
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, { freshSession: true }, { token });
+    expect(r.status).toBe(200);
+    const done = await a.waitForStatus(job.id, 'finished', 8000);
+    expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed blue.') });
+    expect(herdr.agentStarts).toHaveLength(2);
+    expect(herdr.agentStarts[1]!.args).not.toContain('--resume');
+    expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--session-id', done.agentSession!]));
+    // In the kept work tree: the new pane opens where the first one did.
+    const tabs = herdr.calls.filter((x) => x.method === 'createTab').map((x) => (x.args[0] as { cwd: string }).cwd);
+    expect(tabs).toHaveLength(2);
+    expect(tabs[1]).toBe(tabs[0]);
+    const prompt = herdr.prompts[1]!.text;
+    expect(prompt).toContain('Paint the shed');
+    expect(prompt).toContain('Which colour should the shed be?');
+    expect(prompt).toContain('Blue.');
+    expect(prompt).toContain('fresh');
+  });
+
+  it('re-queued with its question still open, it waits on it again; the answer then starts it fresh with the question as context', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const { a, token, job, q } = await onQuestionWithoutSession(herdr);
+    await park(a, token, job.id);
+    await a.waitForStatus(job.id, 'parked');
+    await waitFor(() => herdr.closed.length === 1, { what: 'the pane closed' });
+
+    expect((await requeue(a, token, job.id)).status).toBe(409);
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, { freshSession: true }, { token });
+    expect(r.body.status).toBe('waiting_answer');
+    await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token });
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.agentStarts[1]!.args).not.toContain('--resume');
+    expect(herdr.prompts[1]!.text).toContain('Which colour should the shed be?');
+    expect(herdr.prompts[1]!.text).toContain('Blue.');
+  });
+
+  it('the health read names the executors that can park, so the UI offers Park only where the daemon takes it', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [] });
+    const a = await boot(herdr);
+    expect((await a.api('GET', '/api/health')).body.parkingExecutors).toEqual(['herdr-claude']);
   });
 });
 

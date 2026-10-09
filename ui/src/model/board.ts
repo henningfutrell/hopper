@@ -49,10 +49,20 @@ export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
 }
 
 /**
- * Whether Park is offered (issue #501), as the daemon takes it: a running job or one on a question, whose executor
- * recorded the agent session it resumes. The daemon decides.
+ * Why Park does not apply to a job, as the daemon refuses it (issues #501, #530), or undefined: a running job or one on
+ * a question, its executor one of `parkingExecutors` (GET /api/health). An agent session is not needed. The daemon decides.
  */
-export const canPark = (job: Job): boolean => (job.status === 'running' || job.status === 'waiting_answer') && job.agentSession !== undefined;
+export function parkRefusal(job: Job, parkingExecutors: readonly string[]): string | undefined {
+  if (job.status !== 'running' && job.status !== 'waiting_answer') return `it is ${job.status}: only a running job or one on a question can be parked`;
+  if (!parkingExecutors.includes(job.spec.executor)) return `its executor ${job.spec.executor} cannot park a job`;
+  return undefined;
+}
+
+/** Whether Park is offered (issues #501, #530): where the daemon takes it. */
+export const canPark = (job: Job, parkingExecutors: readonly string[]): boolean => parkRefusal(job, parkingExecutors) === undefined;
+
+/** A parked job with no agent session to resume (issue #530): its re-queue starts a fresh one, and asks first. */
+export const startsFresh = (job: Job): boolean => job.status === 'parked' && job.agentSession === undefined;
 
 /** Whether Re-queue is offered (issue #501): a parked job. */
 export const canRequeue = (job: Job): boolean => job.status === 'parked';

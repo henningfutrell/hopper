@@ -5,7 +5,7 @@ import { Confirm } from '@/components/confirm';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { canPark, canRequeue, laneRows, machineName, type LaneRow } from '@/model/board';
+import { canRequeue, laneRows, machineName, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
 import type { Job } from '@/model/wire';
 import { act, useHopper } from '@/store';
@@ -25,24 +25,41 @@ export function CancelButton({ job }: { job: Job }) {
 }
 
 /**
- * Park a running job or one on a question (issue #501): it leaves its lane now, its pane and agent end, and its work
- * tree, session, machine and question are kept until it is re-queued. Shown only where the daemon takes it.
+ * Park a running job or one on a question (issues #501, #530): it leaves its lane now, its pane and agent end, and its
+ * work tree, session (when it has one), machine and question are kept until it is re-queued. Offered where the daemon
+ * takes it; on a running job or one on a question it cannot park, it says why instead.
  */
 export function ParkButton({ job }: { job: Job }) {
   const authed = useCanOperate();
-  if (!authed || !canPark(job)) return null;
+  const parking = useHopper((s) => s.health?.parkingExecutors);
+  if (!authed || !parking || (job.status !== 'running' && job.status !== 'waiting_answer')) return null;
+  const refused = parkRefusal(job, parking);
+  if (refused) return <span data-slot="park-refusal" className="text-xs text-muted-foreground" title={`Park does not apply: ${refused}`}>cannot park: {refused}</span>;
+  const kept = job.agentSession === undefined ? 'Its work tree and branch stay on its machine' : 'Its work tree, branch and agent session stay on its machine';
   return (
     <Confirm title="Park this job?" action="Park job" onConfirm={() => act(`/ui/api/jobs/${job.id}/park`, {}, 'Job parked')}
-      description={<>“{goalOf(job)}” leaves its lane now{job.status === 'running' ? ', stopped mid-turn' : ''}. Its work tree, branch and agent session stay on its machine{job.status === 'waiting_answer' ? ', and its question stays open and never expires' : ''}, until you re-queue it.</>}>
-      <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane, keep its work and session for later"><Pause />Park</Button>
+      description={<>“{goalOf(job)}” leaves its lane and its machine now{job.status === 'running' ? ', stopped mid-turn' : ''}. {kept}{job.status === 'waiting_answer' ? ', and its question stays open and never expires' : ''}, until you re-queue it.{job.agentSession === undefined ? ' No agent session was recorded for it: re-queued, it starts a fresh one there.' : ''}</>}>
+      <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane and its machine, keep its work for later"><Pause />Park</Button>
     </Confirm>
   );
 }
 
-/** Re-queue a parked job (issue #501): it returns to its machine and resumes its agent session there. */
+/**
+ * Re-queue a parked job (issue #501): it returns to its machine and resumes its agent session there. One with no agent
+ * session (issue #530) starts a fresh one in its kept work tree, told its question and answer: the person confirms
+ * that first, never silently.
+ */
 export function RequeueButton({ job }: { job: Job }) {
   const authed = useCanOperate();
   if (!authed || !canRequeue(job)) return null;
+  if (startsFresh(job)) {
+    return (
+      <Confirm title="Re-queue with a fresh session?" action="Re-queue and start fresh" onConfirm={() => act(`/ui/api/jobs/${job.id}/requeue`, { freshSession: true }, 'Job re-queued: it starts a fresh session')}
+        description={<>No agent session was recorded for “{goalOf(job)}”, so it cannot resume where it stopped. It starts a fresh session in its kept work tree, with its branch and work as they are, and is told its task{job.parked?.from === 'waiting_answer' ? ', its question and the answer' : ''} as context. It has none of the earlier session&apos;s history.</>}>
+        <Button size="xs" variant="outline" title="Re-queue: back to its machine, in a fresh session"><Play />Re-queue</Button>
+      </Confirm>
+    );
+  }
   return (
     <Button size="xs" variant="outline" title="Re-queue: back to its machine, resuming its agent session"
       onClick={() => act(`/ui/api/jobs/${job.id}/requeue`, {}, 'Job re-queued')}><Play />Re-queue</Button>

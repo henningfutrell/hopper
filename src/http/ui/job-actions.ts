@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { rejectBody } from './job-bodies.ts';
+import { rejectBody, requeueBody } from './job-bodies.ts';
 
 const idParams = z.object({ id: z.string() });
 const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
@@ -23,7 +23,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
   app.post('/ui/api/jobs/:id/park', o.operator, async (req) => o.tenant(req).engine.park(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id));
+  app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', o.operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
 }

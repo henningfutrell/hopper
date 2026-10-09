@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canPark, canRequeue, canRerun, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canPark, canRequeue, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -58,10 +58,18 @@ describe('kpis', () => {
 });
 
 describe('Park and Re-queue (issue #501): offered only where the daemon takes them', () => {
-  it('Park: a running job or one on a question, whose executor recorded its agent session', () => {
-    const offered = STATUSES.filter((status) => canPark(job(status, { status, agentSession: 's' })));
+  it('Park: a running job or one on a question, whose executor can park, with or without an agent session (issue #530)', () => {
+    const offered = STATUSES.filter((status) => canPark(job(status, { status, spec: { executor: 'herdr-claude', payload: {} } }), ['herdr-claude']));
     expect(offered.sort()).toEqual(['running', 'waiting_answer']);
-    expect(canPark(job('r', { status: 'running' }))).toBe(false);
+  });
+  it('where Park cannot apply, says why: the status, or an executor that cannot park', () => {
+    expect(parkRefusal(job('t', { status: 'waiting_answer' }), ['herdr-claude'])).toMatch(/executor test cannot park/);
+    expect(parkRefusal(job('q', { status: 'queued', spec: { executor: 'herdr-claude', payload: {} } }), ['herdr-claude'])).toMatch(/queued/);
+    expect(parkRefusal(job('h', { status: 'running', spec: { executor: 'herdr-claude', payload: {} } }), ['herdr-claude'])).toBeUndefined();
+  });
+  it('a parked job with no agent session starts fresh at its re-queue; one with a session resumes it', () => {
+    expect(startsFresh(job('p', { status: 'parked' }))).toBe(true);
+    expect(startsFresh(job('p', { status: 'parked', agentSession: 's' }))).toBe(false);
   });
   it('Re-queue: a parked job only', () => {
     expect(STATUSES.filter((status) => canRequeue(job(status, { status, agentSession: 's' })))).toEqual(['parked']);
