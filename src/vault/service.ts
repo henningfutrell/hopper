@@ -72,11 +72,11 @@ export function createVaultService(o: {
   const backendView = ({ name, plugin, problem, setup }: ConfiguredBackend): VaultBackendView => ({ name, plugin, ...(problem ? { problem } : {}), ...(setup ? { setup } : {}) });
 
   /** Where a secret to set is kept: a sealed value, or a backend and reference with no value; or why not. */
-  function keptOf(s: SetSecret, id: string): { sealed: string | null; backend?: VaultSecret['backend'] } | VaultResult {
+  function keptOf(s: SetSecret, id: string): { id: string; sealed: string | null; backend?: VaultSecret['backend'] } | VaultResult {
     if ('value' in s) {
       if (s.value.length === 0 || s.value.length > VAULT_VALUE_MAX) return fail('invalid', `value must be 1 to ${VAULT_VALUE_MAX} characters`);
       if (!sealer) return fail('unavailable', unavailable());
-      return { sealed: sealer.seal(s.value, vaultContext(id)) };
+      return { id, sealed: sealer.seal(s.value, vaultContext(id)) };
     }
     const b = backendOf(s.backend);
     if (!b) return fail('invalid', `no vault backend ${s.backend}: add it in Settings → Plugins first`);
@@ -84,7 +84,7 @@ export function createVaultService(o: {
     if (s.reference.length === 0 || s.reference.length > VAULT_REFERENCE_MAX) return fail('invalid', `reference must be 1 to ${VAULT_REFERENCE_MAX} characters`);
     const bad = b.backend.check(s.reference);
     if (bad) return fail('invalid', bad);
-    return { sealed: null, backend: { name: b.name, reference: s.reference } };
+    return { id, sealed: null, backend: { name: b.name, reference: s.reference } };
   }
 
   /** The value of a secret kept in a backend, read there now; or why not. */
@@ -119,18 +119,17 @@ export function createVaultService(o: {
       const said = scope?.trim();
       if (said !== undefined && (said.length > VAULT_SCOPE_MAX || /[\n\r]/.test(said))) return fail('invalid', `scope must be one line of at most ${VAULT_SCOPE_MAX} characters`);
       const at = o.clock.now().toISOString();
-      const was = vault.get(name);
-      const id = was?.id ?? o.idGen();
-      const kept = keptOf(s, id);
-      if ('ok' in kept) return kept;
       return o.store.tx(() => {
+        const was = vault.get(name);
+        const kept = keptOf(s, was?.id ?? o.idGen());
+        if ('ok' in kept) return kept;
         const scoped = said ? { scope: said } : {};
         const where = kept.backend ? { backend: kept.backend } : {};
         if (was) {
           const { scope: _old, backend: _was, ...rest } = was;
           vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), ...where, changedBy: by, changedAt: at }, kept.sealed);
         } else {
-          vault.add({ id, name, ...scoped, ...where, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
+          vault.add({ id: kept.id, name, ...scoped, ...where, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
         }
         events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}) } });
         return { ok: true } as const;
@@ -205,6 +204,9 @@ export function createVaultService(o: {
       if (backend) {
         const r = await readBackend({ ...secret, backend });
         if ('refused' in r) return refuse(r.refused, backend.name);
+        // The read took a while: the job must still be at work now.
+        const still = o.store.jobs.get(job.id)?.status;
+        if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): a vault secret is given only while it runs`, backend.name);
         value = r.value;
       } else {
         if (!sealer) return refuse(unavailable());
