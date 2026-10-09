@@ -7,6 +7,7 @@ Claude Code session in a herdr pane on a machine it manages, answers or escalate
 job asks, and keeps every machine inside its usage budget. One daemon, one Postgres database, a
 web UI, and an HTTP API with its reference at `/docs/`.
 Install page, step by step: https://henningfutrell.github.io/hopper/install.html (`site/install.html`).
+User guide, what it does with a job once it runs and what you can do: https://henningfutrell.github.io/hopper/guide.html (`site/guide.html`).
 
 - **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
   allow. No route creates a job.
@@ -249,7 +250,10 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    left alone and not taken again until it is assigned to you again, or you run it again.
 3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:done`,
    `hopper:failed`. Remove `hopper:failed` to run it again. `hopper:high` and
-   `hopper:low` set the priority; `hopper:backburner` keeps an issue out.
+   `hopper:low` set the priority; `hopper:backburner` keeps an issue out
+   ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
+   `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
+   proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
    A job is done when its pull request is merged — the merge closes the issue. To have jobs stop at
    an open pull request for you to review and merge, set the source's `completion` to
    `pull-request` in the Plugins view; `hopper:complete-at-pr` or `hopper:complete-at-merge` on an
@@ -257,7 +261,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
 Fable takes what Opus escalates, and what neither should decide waits for you in the UI's
-Questions view. The levels, their order and each one's model (picked from the models your `claude`
+Questions view ([phase shifts](https://henningfutrell.github.io/hopper/guide.html#phase-shifts) send a question to research or a proposal; small
+questions with listed options can go to [Jev](https://henningfutrell.github.io/hopper/guide.html#jev) first). The levels, their order and each one's model (picked from the models your `claude`
 offers) are yours to change in Settings → Question gates, and so is where each one runs: on this
 machine, on an attached machine you designate (`machine`), or through the Claude API with a key the
 runtime gives (`anthropic-api`, `ANTHROPIC_API_KEY`) — the way a hopper in a container answers.
@@ -502,6 +507,9 @@ authentication".
 Settings holds the rest: the job rules every job's prompt carries, the plugins, the routing, the
 question gates, webhooks, users and sign-in.
 
+What the UI's sections are for — Questions, Proposals, Research, Logins and Failures (with Needs a person), parking,
+priority lanes, the blast-radius gate, usage limits — and what to do in each: the [user guide](https://henningfutrell.github.io/hopper/guide.html).
+
 <img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Settings → Plugins: the shipped plugins, each switched on or off, with what it does.">
 
 The API: `GET /api/*` reads, free on loopback and with a UI session (`x-hopper-session`) from
@@ -512,6 +520,7 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 
 | | |
 |---|---|
+| [User guide](https://henningfutrell.github.io/hopper/guide.html) (`site/guide.html`) | using it: research, proposals, phase shifts, Jev, Needs a person, parking, priority, client updates, usage limits |
 | `docs/deploy.md` | deploy recipes, secrets, mounted secret files |
 | `docs/sign-in.md` | sign-in, roles, reaching the UI across the LAN or a public URL |
 | `docs/plugins.md` | writing a plugin; the plugin store |
