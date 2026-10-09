@@ -546,3 +546,7 @@ npm run screenshots               # about 3 minutes; SHOTS=queue,job for some
 
 It needs Postgres as `npm test` does (Docker, or `HOPPER_TEST_POSTGRES_URL`). `scripts/screenshots/` holds
 the demo's data (`demo.ts`) and the shots (`capture.ts`).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
