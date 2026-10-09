@@ -16,11 +16,13 @@ describe('herdr-claude executor: the external CLAUDE.md imports dialog', () => {
     expect(herdr.prompts).toHaveLength(1);
   });
 
-  it('the external CLAUDE.md imports dialog, the work tree not trusted: failed with the screen, nothing answered', async () => {
+  // Issue #534: a dialog the hopper may not answer goes to a person, never fails the job.
+  it('the external CLAUDE.md imports dialog, the work tree not trusted: asked as a question, nothing answered', async () => {
     const { herdr, executor } = setup({ importsDialog: '/home/dev/work/AGENTS.md', turns: [DONE] }, { trustWorkdir: false });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toContain('claude blocked at startup');
-    expect(out.kind === 'failed' && out.error).toContain('Allow external CLAUDE.md file imports?');
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'blocked' } });
+    expect(out.kind === 'question' && out.question.text).toContain('Allow external CLAUDE.md file imports?');
+    expect(herdr.closed).toEqual([]);
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
   });

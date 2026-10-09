@@ -19,8 +19,14 @@ export interface FakeHerdrOptions {
    * bypass permissions warning. Either answer goes on to the next.
    */
   importsDialog?: string;
-  /** Startup blocks on some other screen. */
+  /** Startup blocks on some other screen. Its option picked by number, Claude comes up; esc leaves it up. */
   startupBlockedBy?: string[];
+  /**
+   * Claude comes up ready, then, `after` looks later, shows `lines`, a dialog of its own, and blocks there (issue #534,
+   * seen live just after the trust dialog was answered): before the hopper sent anything. Its option picked by number,
+   * Claude is ready again; esc leaves it up, and herdr refuses a prompt while it is.
+   */
+  lateDialog?: { lines: string[]; after: number };
   /**
    * Before Claude draws anything, the pane shows `lines` — its launch line echoed (a Windows shell's
    * `-EncodedCommand`), or a setup command still on screen (issue #527) — and herdr calls the agent blocked, for
