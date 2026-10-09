@@ -60,6 +60,9 @@ describe('loginSignalIn', () => {
     expect(loginSignalIn('Successfully logged in')).toBe('completed');
     expect(loginSignalIn('● gh is now authenticated; pushing the branch.')).toBe('completed');
     expect(loginSignalIn('● The login completed, going on.')).toBe('completed');
+    // The line the job rules ask for once it goes through.
+    expect(loginSignalIn('● Logged in.')).toBe('completed');
+    expect(loginSignalIn('  Logged in')).toBe('completed');
   });
 
   it('reads expired on the code running out, denied on the user refusing', () => {

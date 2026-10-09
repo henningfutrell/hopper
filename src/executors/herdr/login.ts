@@ -3,6 +3,7 @@
 import type { ExecutionContext } from '../../domain/ports.ts';
 import { LOGIN_KINDS, type LoginCheck, type LoginKind, type LoginReport } from '../../domain/types.ts';
 import { DEFAULT_EXPIRES_IN_SEC } from '../../logins/recognise.ts';
+import type { LoginSignal } from '../../logins/signals.ts';
 import type { LoginWait } from './monitor.ts';
 import { readTurn, type AuthFields } from './screen.ts';
 
@@ -69,18 +70,22 @@ export function loginReportOf(f: AuthFields, now: Date): LoginReport | { problem
 /**
  * A turn that ended on a login: reported to the logins (the job then waits), or said back to the job when it
  * cannot be taken, `unreadable` times in a row at most before the job fails. A GitHub login is steered to the
- * hopper's GitHub proxy instead (`steered`, issue #563), unless the job was steered the turn before and reports it again.
+ * hopper's GitHub proxy instead (`steered`, issue #563), unless the job was steered the turn before and reports it again,
+ * or already waits on it. The login it already waits on, reported again (a script polling, Claude checking on it,
+ * issue #567), is the same login and says nothing new.
  */
-export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false): { login: LoginRef } | { say: string; steered?: true } | { failed: string } {
+export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false, waitsOn?: LoginRef): { login: LoginRef } | { say: string; steered?: true } | { failed: string } {
   const report = loginReportOf(fields, now);
-  if (!('problem' in report) && !steered && isGitHubLogin(report)) {
+  if (!('problem' in report) && !steered && !waitsOn && isGitHubLogin(report)) {
     ctx.progress(0, `the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
     return { say: githubLoginNote(report.tool), steered: true };
   }
   let problem = 'problem' in report ? report.problem : ctx.logins ? undefined : 'this hopper takes no logins';
   if (!problem && !('problem' in report)) {
     try {
-      const login = { id: ctx.logins!.report(report, { renewable: true }), tool: report.tool };
+      const id = ctx.logins!.report(report, { renewable: true });
+      if (id === waitsOn?.id) return { login: waitsOn };
+      const login = { id, tool: report.tool };
       ctx.progress(0, `waiting for the ${login.tool} login: the user completes it (Logins)`);
       return { login };
     } catch (e) { problem = (e as Error).message; }
@@ -89,20 +94,29 @@ export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, 
   return { say: loginUnreadableNote(problem ?? 'unknown') };
 }
 
-/** The login as the monitor waits on it: what the user did, and Claude going on completes it. */
+/**
+ * The login as the monitor waits on it: what the user did, and a login signal on screen (issue #567) — completed,
+ * expired, or denied at the provider. Only a signal ends it; Claude going on by itself never does.
+ */
 export function loginWait(ctx: ExecutionContext, login: LoginRef, cleared: () => void): LoginWait {
   return {
     check: () => ctx.logins?.check(login.id) ?? { act: 'wait' },
-    wentOn: () => {
-      ctx.logins?.completed(login.id);
+    signal: (s: LoginSignal) => {
+      if (s === 'expired') {
+        ctx.logins?.expired(login.id);
+        ctx.progress(0, `the ${login.tool} code expired before the login was completed`);
+        return;
+      }
+      if (s === 'completed') ctx.logins?.completed(login.id);
+      else ctx.logins?.failed(login.id, `the ${login.tool} login was denied at the provider`);
       cleared();
-      ctx.progress(0, `the ${login.tool} login went through: claude goes on`);
+      ctx.progress(0, s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
     },
   };
 }
 
 /** What the user did with the login, as the job hears it: it fails, or a note typed in. A new code keeps the login open. */
-export function afterLoginAct(said: Exclude<LoginCheck, { act: 'wait' }>, tool: string): { failed: string } | { say: string; progress: string } {
+export function afterLoginAct(said: Exclude<LoginCheck, { act: 'wait' } | { act: 'ended' }>, tool: string): { failed: string } | { say: string; progress: string } {
   if (said.act === 'fail') return { failed: said.reason };
   if (said.act === 'cancelled') return { say: loginCancelledNote(tool), progress: `the user cancelled the ${tool} login: told claude` };
   return { say: loginNewCodeNote(tool), progress: `the user asked for a new ${tool} code: told claude` };

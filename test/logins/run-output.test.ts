@@ -34,6 +34,7 @@ function recorder() {
     report: (report, o) => { reports.push({ report, renewable: o.renewable }); return 'l1'; },
     check: () => ({ act: 'wait' }),
     completed: (id) => { ends.push(`${id} completed`); },
+    expired: (id) => { ends.push(`${id} expired`); },
     failed: (id, reason) => { ends.push(`${id} failed: ${reason}`); },
   };
   return { logins, reports, ends };

@@ -4,8 +4,9 @@
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { LoginCheck } from '../../domain/types.ts';
 import { hideCodes } from '../../logins/recognise.ts';
+import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, type AuthFields } from './screen.ts';
+import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -27,13 +28,16 @@ export type StatusNote = { statusNote: string };
 export type AuthPending = { authPending: AuthFields };
 
 /** The user acted on the login the job waits on (issue #476): a new code, a cancel, or the job fails. */
-export type LoginActed = { login: Exclude<LoginCheck, { act: 'wait' }> };
+export type LoginActed = { login: Exclude<LoginCheck, { act: 'wait' } | { act: 'ended' }> };
 
-/** The login a watch waits on (issue #476): what the user did with it, and the hook for when Claude goes on. */
+/**
+ * The login a watch waits on (issue #476): what the user did with it, and a login signal on screen (issue #567).
+ * Claude going on by itself is no signal: a device-flow script that polls wakes it again and again.
+ */
 export interface LoginWait {
   check(): LoginCheck;
-  /** Claude works again: the tool went on. Called once. */
-  wentOn(): void;
+  /** A login signal shown after the login's report: once per signal shown. `completed` and `denied` end the wait. */
+  signal(s: LoginSignal): void;
 }
 
 /**
@@ -114,8 +118,9 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
   /** The background work last reported as waited on, so it is reported once. */
   let waitedOn: string | undefined;
   let errors = 0;
-  /** The login this watch waits on, until Claude goes on. */
+  /** The login this watch waits on, until a signal ends it; the last signal it was given. */
   let login = w.login;
+  let signalled: LoginSignal | undefined;
   for (;;) {
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
     const now = clock.now().getTime();
@@ -138,10 +143,16 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       }
       atStart ??= { text: turn.assistantText, lines: turn.outputLines };
       if (agent.status === 'working' || turn.assistantText !== atStart.text || turn.outputLines !== atStart.lines) worked = true;
-      if (login && worked) { login.wentOn(); login = undefined; }
       if (login) {
         const said = login.check();
-        if (said.act !== 'wait') return { login: said };
+        if (said.act === 'ended') login = undefined;
+        else if (said.act !== 'wait') return { login: said };
+      }
+      const signal = login ? loginSignalIn(afterLoginReport(recent, w.anchor)) : undefined;
+      if (login && signal && signal !== signalled) {
+        signalled = signal;
+        login.signal(signal);
+        if (signal !== 'expired') login = undefined;
       }
       const moved = agent.stateChangeSeq > w.seqAtSend;
       const ready = agent.status === 'idle' || agent.status === 'done';

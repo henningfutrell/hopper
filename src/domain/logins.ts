@@ -84,5 +84,8 @@ export interface LoginView extends Login {
   userCode?: string;
 }
 
-/** What a run waiting on a login does next: wait, ask its tool for a new code, stop waiting (cancelled), or fail. */
-export type LoginCheck = { act: 'wait' } | { act: 'new-code' } | { act: 'cancelled' } | { act: 'fail'; reason: string };
+/**
+ * What a run waiting on a login does next: wait, ask its tool for a new code, stop waiting (cancelled), or fail.
+ * `ended`: the login ended with nothing to tell the run (a login signal, the sweep): it waits on it no more.
+ */
+export type LoginCheck = { act: 'wait' } | { act: 'new-code' } | { act: 'cancelled' } | { act: 'fail'; reason: string } | { act: 'ended' };

@@ -53,7 +53,7 @@ export const PROTOCOL_LINES: readonly string[] = [
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
   // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
   GITHUB_PROXY_LINE,
-  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.',
+  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];

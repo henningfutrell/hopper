@@ -8119,10 +8119,25 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   run that waits on one reports it with the question (`questionId`, the level as `run`); the run ending
   in an error still climbs the question, as any error does.
 - **The logins** (`src/logins/service.ts`, the `RunLogins` port). One open login per job (or question)
-  and tool: a second code for the same tool updates it (`auth.pending` again, same `loginId`,
-  `renewed: true`), never a duplicate. The run asks `check` on each poll for what the user did: wait, a
-  new code, cancelled, or fail. `completed` when Claude goes on by itself (the tool proceeded, or ended:
-  the hopper cannot tell which), or a print-mode run succeeds; `failed` when the run ends first. The tick
+  and prompt: a report with the same tool, the same code, or (no code) the same URL is that login (issue
+  #567). The same code again changes nothing — no event, its expiry kept from when it was first shown —, so
+  a device-flow script that polls, or a job that reports its login again each time it checks on it, is one
+  login however often; a new code updates it (`auth.pending` again, same `loginId`, `renewed: true`), never
+  a duplicate. The run asks `check` on each poll for what the user did: wait, a new code, cancelled, fail,
+  or `ended` (it ended with nothing to tell: the run stops waiting on it).
+- **Login signals** (issue #567, `src/logins/signals.ts`). A herdr job's login ends only on a **login
+  signal** the turn shows after its `HOPPER_AUTH_PENDING`: a token obtained, the CLI or Claude saying it is
+  logged in or the authentication went through (`completed`); the code expired (`expired`, at once, as at
+  `expiresAt`, `onExpiry` applies); the user denied it at the provider (`failed`). The protocol line asks the
+  job to report a login once per code and, when it goes through, to say so in a line `Logged in.`. Polling output
+  (`authorization_pending`, `slow_down`, "waiting for authorization", the same code printed again), Claude
+  going on by itself, and the screen changing are no signal: before issue #567 Claude going on completed the
+  login, and the same report still on screen made a new one on the next poll, every few seconds. A line
+  that says not, never, yet, still, waiting or pending is no signal either. A job that ends with no signal
+  leaves its login to the sweep (`failed`, `the job ended`), never `completed`. A print-mode run's login
+  is `completed` when the run succeeds; `failed` when the run ends first. Tenant migration 27 collapsed the
+  logins the flood made: one of a job's (or question's) tool reported before the kept one's `expiresAt` is
+  that login again, and the kept one took its last status. The tick
   sweeps: an open login whose job no longer runs fails (`the job ended`), an expired one too (issue #529: nothing
   waits on it, so no Cancel or New code is offered that does nothing), and so does an escalation level's login
   whose question is no longer open (`the question ended`); a pending one past `expiresAt` expires, with or without
@@ -8156,7 +8171,7 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   fifth of the code's life from its last report, whichever is longer — the card and the badge amber, the
   countdown larger, and a polite live region says it once; `expired` at `expiresAt` by the browser's clock,
   before the server's `auth.expired` arrives (the code no longer shown, the card says what happens to the
-  job by `onExpiry`); then the server's status is final: `completed` (Signed in, the time, the job goes on),
+  job by `onExpiry`); then the server's status is final: `completed` (Signed in, the time, the job goes on: a login signal said so),
   `cancelled`, `failed` with its reason. **Server time:** `GET /api/logins` answers `now`; the UI keeps
   server time less its own clock and counts down on the shared 1 s clock plus that offset, so a skewed
   browser clock does not move the countdown. **Live:** each `auth.*` event refreshes the logins, as each

@@ -7,7 +7,7 @@ import { HerdrError, type HerdrClient } from './client.ts';
 import { RECENT_LINES, abortReason, tail, watchTurn } from './monitor.ts';
 import { afterStatusNote, nudgeGapMs } from './nudge.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
-import { afterLoginAct, loginWait, restoreLogin, takeLogin, type LoginRef } from './login.ts';
+import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter } from './screen.ts';
@@ -169,7 +169,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * with Enter when it sits in the input box, else sent again, at most MAX_SENDS times in all; then the
    * job fails, so it never stays running on a waiting Claude.
    */
-  async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }, login?: LoginRef): Promise<ExecutionOutcome | Interrupt> {
+  // The login the job waits on stays with it through every turn until a login signal or the user ends it (issue #567).
+  async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }, login = s.login): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
@@ -180,13 +181,13 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     if ('authPending' in result) {
       // A login (issue #476): to the logins, never a question; the job waits, no nudge, for Claude to go on by itself.
       const unreadable = (notes.unreadable ?? 0) + 1;
-      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true);
+      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true, login);
       if ('failed' in taken) return { kind: 'failed', error: taken.failed };
       // A GitHub login steered to the hopper (issue #563): the same login reported next goes to the user.
       if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, ...(taken.steered ? { steered: true } : { unreadable }) });
       const waiting = { ...s, turn, login: taken.login, parkedSeq: undefined, lapsesAt: undefined };
       ctx.saveState(waiting);
-      return watch(ctx, waiting, p, turn, { count: 0, startedAt: notes.startedAt, quiet: true }, taken.login);
+      return watch(ctx, waiting, p, turn, { count: 0, startedAt: notes.startedAt, quiet: true });
     }
     if ('login' in result) {
       // The user acted on the login the job waits on (issue #476).
@@ -369,7 +370,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         if (state.login) {
           // It waited on a login (issue #476): it waits on, its URL and code read back from the screen.
           restoreLogin(ctx, await herdrOn(state).read(state.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES }), state.turn.anchor, state.login, clock.now());
-          return watch(ctx, state, p, state.turn, { count: 0, startedAt: clock.now().getTime(), quiet: true }, state.login);
+          return watch(ctx, state, p, state.turn, { count: 0, startedAt: clock.now().getTime(), quiet: true });
         }
         return watch(ctx, state, p, state.turn);
       });
