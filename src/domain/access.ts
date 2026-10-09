@@ -127,6 +127,11 @@ export interface TemplateApprovals {
   revokeProfile(template: string, profile: OperationProfile, by: string): Promise<void>;
 }
 
+/** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
+export interface VaultAccess extends TemplateApprovals {
+  decideMint(request: MintRequest): Promise<MintDecision>;
+}
+
 // ---- Ports ---------------------------------------------------------------------------
 
 /**

@@ -2182,13 +2182,14 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 
 ## `vault.secret_set`
 
-Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.
+Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value; `mints` when it is a minting credential, and the AWS account or cluster it mints for (issue #580). Its name and who set it; never its value.
 
 | field | type | required |
 |---|---|---|
 | `name` | string | yes |
 | `by` | string | yes |
 | `replaced` | boolean | yes |
+| `mints` | object | no |
 
 ```json
 {
@@ -2348,6 +2349,72 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
   "template": "kube",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
   "reason": "kube is not approved for PROD_KEY: a person adds it to the template and approves it"
+}
+```
+
+## `vault.minted`
+
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. Never the credential.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `aws` \| `kube` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `asset` | object | yes |
+| `template` | string | yes |
+| `machine` | string | yes |
+| `job` | string | yes |
+| `credential` | string | yes |
+| `decision` | string | yes |
+| `expiresAt` | string | yes |
+| `renewal` | boolean | yes |
+
+```json
+{
+  "kind": "kube",
+  "operation": "read",
+  "asset": {
+    "kind": "namespace",
+    "name": "lab/web"
+  },
+  "template": "kube",
+  "machine": "hopper-sandbox-kube",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "credential": "KUBE_LAB",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000002",
+  "expiresAt": "2026-10-09T12:10:00.000Z",
+  "renewal": false
+}
+```
+
+## `vault.mint_refused`
+
+Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to mint a credential and got none (issue #580): Access denied it — the profile waits at the first-time gate on Settings → Vault, or the template does not declare it —, or no minting credential covers the asset, or the outside service refused. `decision` when Access answered; never a value.
+
+| field | type | required |
+|---|---|---|
+| `mint` | object | yes |
+| `machine` | string | yes |
+| `template` | string | no |
+| `job` | string | no |
+| `reason` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "mint": {
+    "kind": "kube",
+    "operation": "write",
+    "asset": {
+      "kind": "namespace",
+      "name": "lab/web"
+    }
+  },
+  "machine": "hopper-sandbox-kube",
+  "template": "kube",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Settings → Vault (the first-time gate)",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000003"
 }
 ```
 

@@ -15,6 +15,7 @@ import type { FollowsPullRequests } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
+export type { CredentialMinter } from './minting.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 

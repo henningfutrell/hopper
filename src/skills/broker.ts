@@ -9,7 +9,7 @@ import { ASSET_KINDS, ASSET_NAME, type Asset, type AssetKind, type MintDecision,
 import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
-import { catalogText, kindsInWords, linkText, skillOf, SKILLS, type Skill } from './catalog.ts';
+import { catalogText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill } from './catalog.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
@@ -22,6 +22,8 @@ export interface SkillUser {
   record(event: NewEvent): void;
   /** The template `machine` joined as, and the vault secrets it may be given now (metadata, never a value). */
   box(machine: string): { template?: string; secrets: { name: string; scope?: string }[] };
+  /** Whether the vault holds a minting credential for the account or cluster `asset` is in (issue #580): then the link is minted. */
+  mintsFor(form: LinkForm, asset: Asset): boolean;
 }
 
 export interface SkillAnswer { status: number; text: string }
@@ -103,6 +105,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         }
         const decision = await o.decide({ job: { userId: user!.id, jobId: job!.id }, template: box.template, operation: l.operation, asset });
         if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Settings → Access; until then, find another way.`, decision);
+        if (user!.mintsFor(l.form, asset)) return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${mintedLinkText(l.form, l.operation, said)}`, decision);
         if (box.secrets.length === 0) {
           return no(403, `Access allows it, but template ${box.template} may be given no vault secret: a person adds one to the template in Settings → Vault and approves it.`, decision);
         }

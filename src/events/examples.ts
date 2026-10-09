@@ -132,6 +132,15 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
   'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
   'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
+  'vault.minted': {
+    kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
+    credential: 'KUBE_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000002', expiresAt: '2026-10-09T12:10:00.000Z', renewal: false,
+  },
+  'vault.mint_refused': {
+    mint: { kind: 'kube', operation: 'write', asset: { kind: 'namespace', name: 'lab/web' } }, machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
+    reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Settings → Vault (the first-time gate)',
+    decision: '6c1d2e3f-0000-4000-8000-000000000003',
+  },
   'vault.refused': { name: 'PROD_KEY', machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'kube is not approved for PROD_KEY: a person adds it to the template and approves it' },
   'skill.listed': { requestId: 'r4', machine: 'hopper-sandbox-kube', template: 'kube' },
   'skill.loaded': { requestId: 'r5', machine: 'hopper-sandbox-kube', template: 'kube', skill: 'kube-diagnostics', asset: 'cluster/prod', decision: 'd1' },

@@ -1,10 +1,11 @@
 // The vault's edits (issue #558, design.md "The vault"), an admin's: set a secret — a new one, or a new value or scope
-// for one —, or remove it; save a template (its image, scope and operation profiles), remove it, approve it as it is now,
+// for one, or the account or cluster it mints for (issue #580) —, or remove it; save a template (its image, scope and operation profiles), remove it, approve it as it is now,
 // or approve one of its operation profiles explicitly (issue #584: the gate for a write, sync or apply profile). Each
 // answers the vault's view, never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
+import { MINTS_FOR_KINDS } from '../../domain/minting.ts';
 import { VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -16,7 +17,10 @@ type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<
 const profile = { operation: z.enum(OPERATIONS), asset: z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) }) };
 
 export const vaultEditBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }),
+  z.strictObject({
+    action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX),
+    mints: z.strictObject({ kind: z.enum(MINTS_FOR_KINDS), name: z.string().max(200) }).nullable().optional(),
+  }),
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
   z.strictObject({
     action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
@@ -37,7 +41,7 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const by = identityName(s.identity);
     const { vault } = o.tenant(req);
     const edit = parseWith(vaultEditBody, req.body);
-    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}) }, by)
+    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}), ...(edit.mints !== undefined ? { mints: edit.mints } : {}) }, by)
       : edit.action === 'remove' ? vault.remove(edit.name, by)
         : edit.action === 'save-template' ? await vault.saveTemplate(edit, by)
           : edit.action === 'remove-template' ? await vault.removeTemplate(edit.name, by)

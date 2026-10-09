@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@aws-sdk/client-sts": "^3.1149.0",
     "@fastify/rate-limit": "^11.2.0",
     "@node-saml/node-saml": "^5.1.0",
     "@octokit/auth-app": "^8.3.1",

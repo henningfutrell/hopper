@@ -7,9 +7,9 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
-  UserStore, WebhookDispatcher,
+  UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
-import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type TemplateApprovals, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -92,8 +92,11 @@ export interface UserRuntimeOptions {
    * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
    */
   proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
-  /** Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584). */
-  access?: TemplateApprovals;
+  /**
+   * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
+   * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
+   */
+  access?: VaultAccess; minter?: CredentialMinter;
 }
 
 
@@ -356,7 +359,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, access: o.access, keys, clock, logger, targets: () => host.targets(), holds: (p) => proxy.githubProxy.user.holds(p) }), // issue #558: under the same token key, sealed again at start
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, userId: user.id, access: o.access, ...(o.minter ? { minter: o.minter } : {}), keys, clock, logger, targets: () => host.targets(), holds: (p) => proxy.githubProxy.user.holds(p) }), // issue #558: under the same token key, sealed again at start
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

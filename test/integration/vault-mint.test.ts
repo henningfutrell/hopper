@@ -39,8 +39,8 @@ import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
-const KUBE_ISSUER_TOKEN = 'issuer-token-0123456789-never-on-the-box';
-const AWS_ISSUER_SECRET = 'issuer-secret-key-fedcba-never-on-the-box';
+const KUBE_MINTING_TOKEN = 'minting-token-0123456789-never-on-the-box';
+const AWS_MINTING_SECRET = 'minting-secret-key-fedcba-never-on-the-box';
 const MINTED_TOKEN = 'minted-token-abc';
 const EXPIRES = '2030-01-01T00:10:00Z';
 const ACCOUNT = '123456789012';
@@ -123,8 +123,8 @@ async function boot(): Promise<{ a: TestApp; session: string; kube: Awaited<Retu
   });
   const session = await t.login();
   const edit = async (body: Record<string, unknown>) => expect((await t!.ui('/ui/api/vault', body, { token: session })).status).toBe(200);
-  await edit({ action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: KUBE_ISSUER_TOKEN }) });
-  await edit({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAISSUER', SecretAccessKey: AWS_ISSUER_SECRET, Region: 'us-east-1', Endpoint: sts.url }) });
+  await edit({ action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: KUBE_MINTING_TOKEN }) });
+  await edit({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: AWS_MINTING_SECRET, Region: 'us-east-1', Endpoint: sts.url }) });
   await edit({
     action: 'save-template', name: 'kube', image: 'localhost/box-kubectl:1', secrets: [],
     profiles: [{ operation: 'read', asset: WEB }, { operation: 'write', asset: WEB }, { operation: 'read', asset: ROLE }],
@@ -158,11 +158,11 @@ function helper(dir: string, args: string[], tokenFile: string): Promise<{ code:
 const accessOf = async (a: TestApp, session: string) => (await a.api<AccessView>('GET', '/api/access', undefined, { 'x-hopper-session': session })).body;
 
 /** Nothing the hopper logged or appended carries the minting credentials, and nothing in the box's client dir does. */
-function issuersNowhere(a: TestApp, dir: string): void {
+function mintingCredentialsNowhere(a: TestApp, dir: string): void {
   const everything = [JSON.stringify(a.user().store.events.since(0, 100_000)), logged.join('\n'), ...readdirSync(dir).filter((f) => f !== 'vault.sock').map((f) => readFileSync(join(dir, f), 'utf8'))];
   for (const text of everything) {
-    expect(text).not.toContain(KUBE_ISSUER_TOKEN);
-    expect(text).not.toContain(AWS_ISSUER_SECRET);
+    expect(text).not.toContain(KUBE_MINTING_TOKEN);
+    expect(text).not.toContain(AWS_MINTING_SECRET);
   }
 }
 
@@ -184,7 +184,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(minted.code).toBe(0);
     expect(JSON.parse(minted.stdout)).toEqual({ apiVersion: 'client.authentication.k8s.io/v1', kind: 'ExecCredential', status: { token: MINTED_TOKEN, expirationTimestamp: EXPIRES } });
     expect(kube.seen).toHaveLength(1);
-    expect(kube.seen[0]).toMatchObject({ method: 'POST', url: '/api/v1/namespaces/web/serviceaccounts/hopper-read/token', authorization: `Bearer ${KUBE_ISSUER_TOKEN}` });
+    expect(kube.seen[0]).toMatchObject({ method: 'POST', url: '/api/v1/namespaces/web/serviceaccounts/hopper-read/token', authorization: `Bearer ${KUBE_MINTING_TOKEN}` });
     expect(JSON.parse(kube.seen[0]!.body)).toMatchObject({ kind: 'TokenRequest', spec: { expirationSeconds: 600 } });
 
     const event = (await a.events()).find((e) => e.type === 'vault.minted');
@@ -196,7 +196,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(write.code).not.toBe(0);
     expect(write.stderr).toMatch(/not approved to write on namespace lab\/web/);
     expect(kube.seen).toHaveLength(1);
-    issuersNowhere(a, dir);
+    mintingCredentialsNowhere(a, dir);
   });
 
   it('mints a read-only AWS role session through STS; after a revoke in Settings → Access the next renewal is denied', async () => {
@@ -212,7 +212,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(asked.get('RoleArn')).toBe(`arn:aws:iam::${ACCOUNT}:role/diag`);
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
-    expect(sts.seen[0]!.authorization).toContain('Credential=AKIAISSUER/');
+    expect(sts.seen[0]!.authorization).toContain('Credential=AKIAMINTING/');
 
     expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
     const renewals = (await a.events()).filter((e) => e.type === 'vault.minted').map((e) => (e.data as { renewal: boolean }).renewal);
@@ -224,7 +224,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(revoked.code).not.toBe(0);
     expect(revoked.stderr).toMatch(/waits for a person's approval/);
     expect(sts.seen).toHaveLength(2);
-    issuersNowhere(a, dir);
+    mintingCredentialsNowhere(a, dir);
   });
 
   it('never gives out a minting credential; refuses a profile the template does not declare and an asset no minting credential covers', async () => {
@@ -248,6 +248,6 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(wrongKind.code).not.toBe(0);
     expect(wrongKind.stderr).toMatch(/an aws credential is minted for an aws-role/);
     expect(kube.seen).toHaveLength(0);
-    issuersNowhere(a, dir);
+    mintingCredentialsNowhere(a, dir);
   });
 });

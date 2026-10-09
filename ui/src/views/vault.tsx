@@ -3,7 +3,9 @@
 // Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
 // approved once by a person and again for a new secret or a new image. A template's operation profiles (issue #584)
 // rate its blast radius with its secrets, shown next to it: approving the template approves its read profiles; a write,
-// sync or apply profile takes its own explicit approval. Editing is an admin's.
+// sync or apply profile takes its own explicit approval. A minting credential (issue #580) says the AWS account or
+// cluster the hopper mints short-lived credentials for from it; it is never given to a box, so no template lists it.
+// Editing is an admin's.
 import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,12 +16,12 @@ import { FIELD } from '@/components/plugin-form';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, nameProblem, profileText, secretFacts } from '@/model/vault';
-import type { AssetKind, Operation, OperationProfile, TemplateView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, mintsOf, nameProblem, profileText, secretFacts } from '@/model/vault';
+import type { Asset, AssetKind, Operation, OperationProfile, TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
-type Edit = { action: 'set'; name: string; scope?: string; value: string } | { action: 'remove'; name: string }
+type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile);
 type Send = (e: Edit, done: string) => Promise<boolean>;
@@ -39,13 +41,15 @@ function ValueInput({ value, onChange }: { value: string; onChange: (v: string) 
 function SetForm({ secret, busy, send, onDone }: { secret?: VaultSecret; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(secret?.name ?? '');
   const [scope, setScope] = useState(secret?.scope ?? '');
+  const [mintsSaid, setMintsSaid] = useState(secret?.mints ? `${secret.mints.kind}/${secret.mints.name}` : '');
   const [value, setValue] = useState('');
   const problem = name ? nameProblem(name.trim()) : undefined;
+  const mints = mintsOf(mintsSaid);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
       const n = name.trim();
-      const ok = await send({ action: 'set', name: n, scope: scope.trim(), value }, secret ? `${n}: replaced` : `${n}: set`);
+      const ok = await send({ action: 'set', name: n, scope: scope.trim(), value, mints: typeof mints === 'object' ? mints : null }, secret ? `${n}: replaced` : `${n}: set`);
       setValue('');
       if (ok) onDone();
     }}>
@@ -57,10 +61,14 @@ function SetForm({ secret, busy, send, onDone }: { secret?: VaultSecret; busy: b
       )}
       <label className="block space-y-1"><Label>Scope — what it reaches, in your words (optional)</Label>
         <Input className="h-9 text-sm" value={scope} maxLength={200} placeholder="k3s lab, namespace default, read-only" onChange={(e) => setScope(e.target.value)} /></label>
+      <label className="block space-y-1"><Label>Mints for — the hopper mints short-lived credentials from it and never gives it out (optional)</Label>
+        <Input className="h-9 font-mono text-sm" value={mintsSaid} maxLength={220} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          placeholder="cluster/lab or aws-account/123456789012" onChange={(e) => setMintsSaid(e.target.value)} />
+        {typeof mints === 'string' && <div className="text-xs text-bad">{mints}</div>}</label>
       <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone</Label>
         <ValueInput value={value} onChange={setValue} /></label>
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !value || !name.trim() || problem !== undefined}>{secret ? 'Replace value' : 'Set secret'}</Button>
+        <Button type="submit" disabled={busy || !value || !name.trim() || problem !== undefined || typeof mints === 'string'}>{secret ? 'Replace value' : 'Set secret'}</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>
@@ -134,7 +142,9 @@ function ProfilesInput({ profiles, busy, onChange }: { profiles: OperationProfil
 }
 
 /** A template's form: its name (fixed once saved), its image, the vault secrets and the operation profiles its boxes may ask for. */
-function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
+function TemplateForm({ t, secrets: all, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
+  // A minting credential is never given to a box: no template's scope lists it.
+  const secrets = all.filter((s) => !s.mints);
   const [name, setName] = useState(t?.name ?? '');
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);

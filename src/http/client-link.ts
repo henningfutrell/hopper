@@ -96,7 +96,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     try { parsed = JSON.parse(body); } catch { throw new HttpError(400, 'the ask must be JSON'); }
     const ask = askOf(parsed);
     if (typeof ask === 'string') throw new HttpError(400, ask);
-    const r = tenant.vault.deliver(ask, key);
+    const r = 'name' in ask ? tenant.vault.deliver(ask, key) : await tenant.vault.mint(ask, key);
     if ('refused' in r) throw new HttpError(403, r.refused);
     return sealAnswer(token, nonceOf(signature), ask, r.value);
   });

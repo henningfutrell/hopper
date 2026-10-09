@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A sandbox box can now get a short-lived AWS or Kubernetes credential made for it on the spot, only for what its template is approved to do. Revoking the approval stops the next one.
 - A finished job's issue now shows where its pull request is: ready for your review, merged, or closed without a merge. A job that ships only part of an issue ends partly done, not failed, and the next part starts once that part is merged. Jobs that failed earlier only because their pull request was not merged yet now end done.
 - A Vault template can now list what its boxes may do — read, write, sync or apply on a cluster, a namespace, an Argo CD app, a Terraform workspace or an AWS account or role — and each template shows how much damage its boxes could do, low, medium or high, with the reasons, on the Vault and Access pages. Approving a template approves its read access only: each write, sync or apply needs its own approval, and adding one raises the rating and waits for you again.
 - A job can ask the hopper what it can set up for it, such as a read-only link to a cluster or an AWS account. The hopper sets it up only when Access allows it, and otherwise says no and why.

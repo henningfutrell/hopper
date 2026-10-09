@@ -3,13 +3,16 @@
 // appends a value: a set or a removal is an event naming the secret and who did it, never what it holds. A template's
 // operation profiles (issue #584) are approved in access, the one record of them: a read profile with the template, a
 // write, sync or apply profile only by its own explicit approval; a narrowing or a removal revokes what it dropped.
+// A minting credential (issue #580) is never delivered: the vault mints short-lived credentials from it (mint.ts).
 import { randomUUID } from 'node:crypto';
 import type { AttachedMachine } from '../domain/machines.ts';
-import { machineOfLane } from '../domain/raised-by.ts';
-import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
+import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { SecretUnreadable } from '../secrets/sealer.ts';
-import type { Clock, UserStore } from '../domain/ports.ts';
-import { profileProblem, TEMPLATE_NAME, type OperationProfile, type TemplateApprovals } from '../domain/access.ts';
+import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
+import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
+import { mintsForProblem } from '../domain/minting.ts';
+import { boxAsk, clientOf } from './box.ts';
+import { createMinting, type MintAsk } from './mint.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/blast-radius.ts';
 import { givesOf, templateView, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type Template, type TemplateView, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
@@ -25,7 +28,8 @@ export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_fou
 export interface VaultService {
   view(): VaultView;
   /** Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. */
-  set(s: { name: string; scope?: string; value: string }, by: string): VaultResult;
+  /** `mints`: the account or cluster it is a minting credential for (issue #580); null makes it a plain secret again; absent keeps it. */
+  set(s: { name: string; scope?: string; value: string; mints?: Asset | null }, by: string): VaultResult;
   remove(name: string, by: string): VaultResult;
   /**
    * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
@@ -45,14 +49,13 @@ export interface VaultService {
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
    */
   deliver(ask: { name: string; token: string }, machineKey: string): { value: string } | { refused: string };
+  /** A machine's ask for a credential minted (issue #580): Access decides first, every time; the minted credential as JSON, or why not. */
+  mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
-
-/** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
-const AT_WORK = ['running', 'waiting_answer'];
 
 const fail = (code: 'invalid' | 'not_found' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
 
@@ -61,22 +64,24 @@ export function createVaultService(o: {
   keys: SealerState;
   clock: Clock;
   idGen: () => string;
-  /** Access, where a template's operation profiles are approved (issue #584). Absent: no profile can be approved. */
-  access?: TemplateApprovals;
+  /** Access, where a template's operation profiles are approved (issue #584) and every mint is decided (issue #580). Absent: none is. */
+  access?: VaultAccess;
+  /** The vault's user: Access names a job by its user and id. */
+  userId?: string;
+  /** Mints short-lived credentials (issue #580). Absent: the vault mints nothing. */
+  minter?: CredentialMinter;
   logger: { warn(line: string): void };
   /** The attached machines now: a client target's key and the template it joined as (its join line named it). */
   targets?: () => AttachedMachine[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
 }): VaultService {
-  const clientOf = (match: (m: { name: string; key: string }) => boolean) =>
-    (o.targets?.() ?? []).flatMap((m) => ('client' in m && match({ name: m.name, key: m.client.key }) ? [{ name: m.name, template: m.client.template }] : []))[0];
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
 
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
-    const name = clientOf((m) => m.name === machine)?.template;
+    const name = clientOf(o.targets, (m) => m.name === machine)?.template;
     const t = name === undefined ? undefined : vault.template(name);
     return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t) : [] };
   }
@@ -103,24 +108,29 @@ export function createVaultService(o: {
   return {
     view: () => ({ secrets: vault.list(), templates: vault.templates().map(viewOf), ...(sealer ? {} : { problem: unavailable() }) }),
 
-    set({ name, scope, value }, by) {
+    set({ name, scope, value, mints }, by) {
       if (!VAULT_SECRET_NAME.test(name)) return fail('invalid', 'name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
       if (value.length === 0 || value.length > VAULT_VALUE_MAX) return fail('invalid', `value must be 1 to ${VAULT_VALUE_MAX} characters`);
       const said = scope?.trim();
       if (said !== undefined && (said.length > VAULT_SCOPE_MAX || /[\n\r]/.test(said))) return fail('invalid', `scope must be one line of at most ${VAULT_SCOPE_MAX} characters`);
+      const mintsProblem = mints ? mintsForProblem(mints) : undefined;
+      if (mintsProblem) return fail('invalid', mintsProblem);
+      if (mints && o.store.vault.templates().some((t) => t.secrets.includes(name))) return fail('invalid', `${name} is in a template's scope: take it out first, since a minting credential is never given out`);
       if (!sealer) return fail('unavailable', unavailable());
       const at = o.clock.now().toISOString();
       return o.store.tx(() => {
         const was = vault.get(name);
         const scoped = said ? { scope: said } : {};
+        const kept = mints === undefined ? was?.mints : mints ?? undefined;
+        const minting = kept ? { mints: { kind: kept.kind, name: kept.name } } : {};
         if (was) {
-          const { scope: _old, ...rest } = was;
-          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(was.id)));
+          const { scope: _old, mints: _mints, ...rest } = was;
+          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), ...minting, changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(was.id)));
         } else {
           const id = o.idGen();
-          vault.add({ id, name, ...scoped, setBy: by, createdAt: at, changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(id)));
+          vault.add({ id, name, ...scoped, ...minting, setBy: by, createdAt: at, changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(id)));
         }
-        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined } });
+        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...minting } });
         return { ok: true } as const;
       });
     },
@@ -139,6 +149,8 @@ export function createVaultService(o: {
       const scope = [...new Set(secrets)];
       const missing = scope.filter((n) => !vault.get(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
+      const minting = scope.filter((n) => vault.get(n)?.mints);
+      if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
       const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined);
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
@@ -194,23 +206,19 @@ export function createVaultService(o: {
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
     deliver(ask, machineKey) {
-      const m = clientOf((x) => x.key === machineKey);
-      const parts = parseProxyToken(ask.token);
-      const job = parts && parts.userId !== undefined ? o.store.jobs.get(parts.jobId) : undefined;
+      const box = boxAsk({ ...o, job: (id) => o.store.jobs.get(id) }, ask.token, machineKey);
       const at = o.clock.now().toISOString();
-      const machine = m?.name ?? 'a machine that is gone';
       const refuse = (reason: string): { refused: string } => {
+        const { machine: m, job } = box;
         events.append({
           type: 'vault.refused', ...(job ? { jobId: job.id } : {}), ...(m ? { machineId: m.name } : {}),
-          data: { name: ask.name, machine, ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), reason },
+          data: { name: ask.name, machine: m?.name ?? 'a machine that is gone', ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), reason },
         });
         return { refused: reason };
       };
-      if (!m) return refuse('no joined machine holds that key');
-      if (!parts || !o.holds?.(parts)) return refuse('not a token the hopper gave a job of this user');
-      if (!job || !AT_WORK.includes(job.status)) return refuse(`the job is not at work (${job?.status ?? 'no such job'}): a vault secret is given only while it runs`);
-      if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return refuse(`the job does not run on ${m.name}`);
-      if (!m.template) return refuse(`${m.name} is no box of a template: only a box joined with a template's line gets vault secrets`);
+      if ('refused' in box) return refuse(box.refused);
+      const { machine: m, job } = box;
+      if (vault.get(ask.name)?.mints) return refuse(`${ask.name} is a minting credential: the hopper mints from it and never gives it out`);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
@@ -225,10 +233,15 @@ export function createVaultService(o: {
       }
       o.store.tx(() => {
         vault.replace({ ...secret, lastUsed: { at, machine: m.name, job: job.id } }, vault.sealed(secret.id)!);
-        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template!, machine: m.name, job: job.id } });
+        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template, machine: m.name, job: job.id } });
       });
       return { value };
     },
+
+    mint: createMinting({
+      store: o.store, userId: o.userId ?? '', sealer, unavailable, clock: o.clock, logger: o.logger, context: vaultContext,
+      ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
+    }),
 
     resealAll() {
       if (!sealer) return 0;
@@ -249,7 +262,7 @@ export function createVaultService(o: {
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
-export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
+export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; userId?: string; access?: VaultAccess; minter?: CredentialMinter; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
   if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);
