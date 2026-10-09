@@ -62,7 +62,7 @@ export interface VaultService {
  * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
  * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
  */
-export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'templateScopes'> {
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxes' | 'templateScopes'> {
   /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
@@ -84,6 +84,7 @@ export const localVault = (v: VaultService): Vault => ({
   approveTemplate: (name, by) => v.approveTemplate(name, by),
   approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
   scopeOf: (machine) => v.scopeOf(machine),
+  boxes: () => v.boxes(),
   templateScopes: () => v.templateScopes(),
 });
 
@@ -280,7 +281,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
-    boxes: () => (o.targets?.() ?? []).flatMap((m) => ('client' in m && m.client.template !== undefined ? [{ machine: m.name, template: m.client.template }] : [])),
+    boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined ? [{ machine: m.name, template: m.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
