@@ -68,8 +68,9 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.jobs.update(job.id, { status: 'cancelled', finishedAt: at, pendingAnswer: undefined });
       store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: cancelReason } });
     } else if (outcome.kind === 'finished') {
-      store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined });
-      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result } });
+      const part = outcome.partlyDone ? { partlyDone: outcome.partlyDone } : {};
+      store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined, ...part });
+      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result, ...part } });
     } else if (outcome.kind === 'failed') {
       fail(c, job, laneId, outcome.error, at, outcome.tail);
     } else if (outcome.kind === 'report') {

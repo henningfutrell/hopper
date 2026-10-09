@@ -11,6 +11,7 @@ import type {
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
+import type { FollowsPullRequests } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -93,7 +94,7 @@ export interface ExecutionQuestion {
 }
 
 export type ExecutionOutcome =
-  | { kind: 'finished'; result: unknown }
+  | { kind: 'finished'; result: unknown; partlyDone?: string }
   /** `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. */
   | { kind: 'failed'; error: string; tail?: string }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
@@ -483,7 +484,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource {
+export interface JobSource extends FollowsPullRequests {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
@@ -608,6 +609,8 @@ export interface SourceHost {
   finishOperatorLed(jobId: JobId): boolean;
   /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
   finishClosedAsComplete(jobId: JobId): boolean;
+  /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
+  finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
   /**

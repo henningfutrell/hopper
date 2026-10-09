@@ -13,6 +13,9 @@
     },
     "job": {
       "type": "string"
+    },
+    "backend": {
+      "type": "string"
     }
   },
   "required": [

@@ -113,13 +113,25 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     }
   });
 
+  it('HashiCorp Vault is optional (issue #585): started only with the vault profile, on no host port, and the hopper does not depend on it', () => {
+    expect(r.services.vault).toBeUndefined();
+    expect(hopper.depends_on?.vault).toBeUndefined();
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'vault-token', target: '/run/hopper-vault', read_only: true }));
+    expect(hopper.environment?.VAULT_TOKEN_FILE).toBe('/run/hopper-vault/token');
+    const withVault = render(undefined, { COMPOSE_PROFILES: 'vault' });
+    const vault = svc(withVault, 'vault');
+    expect(vault.ports ?? []).toEqual([]);
+    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'vault-token', target: '/run/hopper-vault' }));
+    expect(svc(withVault, 'hopper').depends_on?.vault).toBeUndefined();
+  });
+
   it('keeps Postgres off every host port', () => {
     expect(postgres.ports ?? []).toEqual([]);
   });
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'secrets']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'secrets', 'vault-token']);
   });
 });
 

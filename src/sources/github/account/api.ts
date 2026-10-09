@@ -5,7 +5,7 @@
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
-import { closingPullRequest, openClosingPullRequests, projectItems } from '../app/graphql.ts';
+import { closingPullRequest, openClosingPullRequests, projectItems, referencingPullRequests } from '../app/graphql.ts';
 import { makeRequest } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -53,5 +53,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, (t) => rest.postComment(req, t, repo, number, body)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(req, t, repo, number)),
     openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(req, t, repo, number)),
+    referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, (t) => referencingPullRequests(req, t, repo, number)),
   };
 }

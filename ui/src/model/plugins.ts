@@ -71,16 +71,16 @@ export function machineOptions(schema: OptionsSchema | undefined): string[] {
 
 /** The list roles' instances, by their key in GET /api/plugins: every one follows the plugins config live (issue #356). */
 const LIVE = {
-  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers',
+  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers', 'vault-backend': 'vaultBackends',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter'];
 export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
 
-export const LIST: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export const LIST: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend'];
 export const isListRole = (role: Role): role is ListRole => (LIST as readonly Role[]).includes(role);
 
-const ONE: Record<ListRole, string> = { 'escalation-level': 'an escalation level', executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier' };
+const ONE: Record<ListRole, string> = { 'escalation-level': 'an escalation level', executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier', 'vault-backend': 'a vault backend' };
 
 /** The name an added instance gets — what was typed, else the plugin id — and why it cannot have it. */
 export function newInstance(report: PluginsReport, role: ListRole, plugin: string, typed: string): { name: string; problem?: string } {
@@ -138,7 +138,7 @@ export function appliedMessage(done: string, loadedAt: string | undefined): stri
 
 export const ROLE_TITLES: Record<Role, string> = {
   router: 'Router', 'queue-sorter': 'Queue sorter', 'escalation-level': 'Escalation levels', executor: 'Executors',
-  'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers',
+  'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers', 'vault-backend': 'Vault backends',
 };
 
 /**

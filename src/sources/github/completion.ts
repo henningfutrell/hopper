@@ -7,11 +7,12 @@
 // Anything else — a local commit, a branch, a draft, an issue closed as not planned or before the job, an older pull
 // request — is not complete; an error asking GitHub throws. A failed job whose issue is closed as complete is
 // finished too (`closedAsComplete`, asked by the sync loop before it reports the failure): its work landed, and its
-// pane ended after.
+// pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
+// not complete, and not failed either.
 
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, GitHubApi, GitHubIssue } from './api.ts';
+import type { ClosingPullRequest, GitHubApi, GitHubIssue, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
 export const isOwnPullRequest = <P extends { createdAt: string }>(pr: P | undefined, job: Job): pr is P =>
@@ -37,6 +38,22 @@ export async function notComplete(api: GitHubApi, job: Job): Promise<string | un
   const open = await api.openClosingPullRequests(repo, number);
   if (open.some((pr) => !pr.isDraft && !pr.conflicting && isOwnPullRequest(pr, job))) return undefined;
   return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}`;
+}
+
+/** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */
+export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): boolean =>
+  pr.repo.toLowerCase() === repo.toLowerCase() && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
+
+/**
+ * The job's own pull request that ships part of its issue (issue #579): open, ready for review and free of merge
+ * conflicts, or merged (yolo mode). Its URL, the newest first; undefined: none.
+ */
+export async function partlyDone(api: GitHubApi, job: Job): Promise<string | undefined> {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) return undefined;
+  const parts = (await api.referencingPullRequests(repo, number))
+    .filter((pr) => isPartOf(pr, repo, number) && isOwnPullRequest(pr, job) && (pr.state === 'merged' || (pr.state === 'open' && !pr.isDraft && !pr.conflicting)));
+  return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
 }
 
 /**

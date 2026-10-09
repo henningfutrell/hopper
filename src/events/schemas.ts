@@ -105,7 +105,8 @@ export const EVENT_SCHEMAS = {
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
   'job.started': strict({ attempts: z.number().int() }),
   'job.progressed': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
-  'job.finished': strict({ result: z.unknown() }),
+  // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
+  'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),
   'job.cancelled': strict({ reason: z.string() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
@@ -265,16 +266,19 @@ export const EVENT_SCHEMAS = {
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean(), question: z.enum(['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled', 'missing']).optional() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   // The vault (issue #558): names and people; never a value.
+  // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
+  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean() }),
+  'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean() }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
-  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean() }),
+  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), backend: z.string().optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
-  'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string() }),
-  'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string() }),
+  'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
+  'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),

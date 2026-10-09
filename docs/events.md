@@ -157,11 +157,12 @@ Version 1 (`docs/schemas/job.progressed.v1.json`). An executor reported progress
 
 ## `job.finished`
 
-Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully.
+Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully. `partlyDone` (issue #579): it ended partly done — the URL of its own pull request that ships part of its item ("Part of #N"); the next part runs once that is merged.
 
 | field | type | required |
 |---|---|---|
 | `result` | any | yes |
+| `partlyDone` | string | no |
 
 ```json
 {
@@ -622,7 +623,7 @@ Version 1 (`docs/schemas/plugin.installed.v1.json`). A plugin was installed from
 | field | type | required |
 |---|---|---|
 | `id` | string | yes |
-| `role` | `router` \| `queue-sorter` \| `escalation-level` \| `executor` \| `job-source` \| `machine-source` \| `usage-source` \| `notifier` | yes |
+| `role` | `router` \| `queue-sorter` \| `escalation-level` \| `executor` \| `job-source` \| `machine-source` \| `usage-source` \| `notifier` \| `vault-backend` | yes |
 | `commit` | string | yes |
 
 ```json
@@ -2181,13 +2182,14 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 
 ## `vault.secret_set`
 
-Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.
+Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value. `backend`: the vault backend it is kept in (issue #585), when it is kept in one: the hopper holds no value for it.
 
 | field | type | required |
 |---|---|---|
 | `name` | string | yes |
 | `by` | string | yes |
 | `replaced` | boolean | yes |
+| `backend` | string | no |
 
 ```json
 {
@@ -2310,7 +2312,7 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 
 ## `vault.delivered`
 
-Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client's own request, never in an environment or a file. The secret's name, the template, the machine and the job; never the value.
+Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client's own request, never in an environment or a file. The secret's name, the template, the machine and the job; never the value. `backend`: the vault backend it was read from at that moment (issue #585), when it is kept in one.
 
 | field | type | required |
 |---|---|---|
@@ -2318,6 +2320,7 @@ Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered
 | `template` | string | yes |
 | `machine` | string | yes |
 | `job` | string | yes |
+| `backend` | string | no |
 
 ```json
 {
@@ -2330,7 +2333,7 @@ Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered
 
 ## `vault.refused`
 
-Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give. `reason` says which; never a value.
+Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give, a vault backend that is gone or cannot read it (`backend`, issue #585). `reason` says which; never a value.
 
 | field | type | required |
 |---|---|---|
@@ -2338,6 +2341,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 | `machine` | string | yes |
 | `template` | string | no |
 | `job` | string | no |
+| `backend` | string | no |
 | `reason` | string | yes |
 
 ```json
@@ -2373,6 +2377,38 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
     }
   },
   "by": "owner"
+}
+```
+
+## `job.pull_request_merged`
+
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/12",
+  "part": false
+}
+```
+
+## `job.pull_request_closed`
+
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/13",
+  "part": true
 }
 ```
 
