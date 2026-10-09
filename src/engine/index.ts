@@ -20,6 +20,7 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
+import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { renewCredentials } from './credentials.ts';
 
 export { EngineError } from './errors.ts';
@@ -27,6 +28,7 @@ export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
 export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.ts';
 export type { BlastRadius, BlastRadiusSettingsPatch } from './blast-radius.ts';
+export type { PhaseShifts, PhaseShiftSettingsPatch, ShiftRequest, ShiftResult } from './phase-shifts.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -38,14 +40,14 @@ const SHUTDOWN_WAIT_MS = 5000;
  * new priority lane settings change which lanes default jobs may take (issue #535); a proposal or a research report frees
  * a lane, and one sent back or accepted on to the next section requeues its job (issues #537, #543); a discovery that
  * changed a machine, new blast-radius settings and a job let through the gate change which machines a job may take
- * (issue #542). */
+ * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
   'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
-  'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed',
+  'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed', 'job.forked',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ReviewHandlers {
@@ -56,6 +58,10 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly executorNames: string[];
   /** Of those, the ones that can park a job (issue #530): the UI offers Park only for their jobs. */
   readonly parkingExecutors: string[];
+  /** Of those, the ones that run the research and proposal loop (issue #548): only their jobs may shift phase from a question. */
+  readonly reviewingExecutors: string[];
+  /** Phase shifts from a question (issue #548): fork or switch into research or a proposal, and their settings. */
+  readonly phaseShifts: PhaseShifts;
   /** What the sync loop may do to the hopper (ingest, cancel, answer, refresh, setSourceState). */
   readonly sourceHost: SourceHost;
   /** The priority lanes and the high-priority threshold (issue #535): settings, choice, every lane's figures. */
@@ -102,10 +108,13 @@ export function createEngine(o: EngineOptions): Engine {
   const sweep = createSweep(c);
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
+  const phaseShifts = createPhaseShifts(c);
 
   return {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
+    get reviewingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.reviews === true); },
+    phaseShifts,
     sourceHost: createSourceHost(c, commands),
     priorityLanes,
     blastRadius,

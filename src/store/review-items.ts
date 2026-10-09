@@ -29,7 +29,8 @@ export function createReviewItemRepository(c: StoreContext, kind: ReviewKind): R
       const at = c.clock.now().toISOString();
       const p: ReviewItem = {
         id: c.idGen(), kind, jobId: input.jobId, status: 'open', stage: input.stage, versions: [input.version], reviews: [], levelRevisions: 0,
-        ...(input.raisedBy ? { raisedBy: input.raisedBy } : {}), ...(input.source ? { source: input.source } : {}), createdAt: at, updatedAt: at,
+        ...(input.raisedBy ? { raisedBy: input.raisedBy } : {}), ...(input.source ? { source: input.source } : {}),
+        ...(input.forkOf ? { forkOf: input.forkOf } : {}), ...(input.switchedFrom ? { switchedFrom: input.switchedFrom } : {}), createdAt: at, updatedAt: at,
       };
       c.db.run(`INSERT INTO ${table} (id, job_id, status, created_at, body) VALUES (?, ?, ?, ?, ?)`, p.id, p.jobId, p.status, at, JSON.stringify(p));
       return p;

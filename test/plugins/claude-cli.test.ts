@@ -84,14 +84,18 @@ describe('claude-cli (escalation level)', () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  it('spawns locked down with the reply schema { answer, escalate, reason }, --tools "" last, in the data dir', async () => {
+  it('spawns locked down with the reply schema { answer, escalate, reason, suggest? }, --tools "" last, in the data dir', async () => {
     await (await level()).answer(req(), signal());
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
     // Literal draft-07 shape: the claude CLI rejects a `$schema` it does not know.
     expect(schema).toEqual({
       type: 'object',
-      properties: { answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' } },
+      properties: {
+        answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' },
+        // Issue #548: a phase shift the level suggests, optional.
+        suggest: { type: 'object', properties: { to: { type: 'string', enum: ['research', 'proposal'] }, note: { type: 'string' } }, required: ['to'], additionalProperties: false },
+      },
       required: ['answer', 'escalate', 'reason'],
       additionalProperties: false,
     });

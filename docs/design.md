@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status), ports (`ports.ts`, re-exporting the store's from `store.ts` and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status), ports (`ports.ts`, re-exporting the store's from `store.ts` and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`) | http, decider |
@@ -844,6 +844,7 @@ default job rules (the first three lines; "Job rules", issue #172):
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION
+If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report, each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
 When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
@@ -8867,3 +8868,61 @@ closes it when it runs the job again (a webhook told of the hand-off sees it clo
 Tests: `test/minor-decisions/` (options, the guard, the view from events, Jev through the fake `typesafe_sdk`),
 `test/integration/minor-decisions.test.ts` (shadow, active, below the threshold, consequential, Jev failing, a failure
 in shadow and active, a known cause, overrides, settings, off, no key), `test/ui/minor-decisions.test.ts`.
+## Phase shifts (issue #548, 2026-10-09)
+
+Owner requirement: when a job asks a question, the right response is sometimes "go research this aspect" or "write a
+proposal for this first". The question card says so directly, as a **phase shift**: **Research this** and **Propose
+this**, next to Send answer, Park, Close and Dismiss, each with an optional note scoping the aspect, in one of two modes.
+
+**Phase** (`src/domain/phase.ts`): a job is in one — `work`, `research` or `proposal` (`JOB_PHASES`). `Job.phase` is set
+by a shift; absent, `phaseOf` derives it from the spec (a job asked for research is in research; one asked for a
+proposal, or that reached its proposal, in proposal; else work). Every route that answers a job names it (`withPhase`:
+`/api/queue`, `/api/jobs`, the shift routes), and the UI shows it wherever a job is named (`JobTitle`: Overview, Queue,
+Questions, the sections), unless it is `work`.
+
+**Fork** (`mode: fork`): a separate job asked for research or a proposal about the aspect — the parent's spec with that
+one special job's flag, its priority, its payload and work tree, accepted at once (a person or an allowed level asked
+for it) — the orchestration loop of #537 / #538. It has **no source of its own**: the sync never reports it to the
+parent's item (labels, completion), and `getBySourceKey` never takes it for the item's job. `forkOf` carries the parent
+job and question, the kind, the note, the question's text (it is told it, after its job rules: `forkBrief`) and the
+parent's source (where it came from in the sections, the repository its work tree holds, the connection it acts through).
+The parent records it (`forks`), keeps waiting on its question — which holds no lane and does not expire while a fork of it
+runs — or is parked (`forkParent: park`, where its executor can park). Its priority follows the parent's while it runs
+(`job.reprioritized`), and the usage limits apply to it as to any job. Accepted, its document answers the parent's
+question while that is open (`settleWith`, answered by `fork:<id>`, `forkAnswer`: the document and the notes, "use it
+as the answer, or as context"); rejected, the question stays open and waits on a person again, its timeout from now.
+`job.forked` on the parent, `job.queued { forkOf }` on the fork, `job.fork_resolved { decision, delivered }`.
+
+**Switch** (`mode: switch`): the question is answered with what the job is to do now (`switchBrief`: research or write
+a proposal first, the aspect, the section's ask) and the same job and session move into the phase (`phase`, `shift`:
+the question, the note, who, when; `job.phase_changed { from, to, mode: switch, questionId, note, by, reason }`). Its
+document is a review item like any (`switchedFrom` names the question). At Accept the person picks what the job does
+next (`then`, offered only while the job is in a switched phase of the item's kind — `ReviewItemView.then` lists the
+choices — and refused otherwise, 409): `work` — back to the work in the same session with the document as context
+(`backToWorkBrief`), the default —, `end` — it ends finished with its decisions as its result —, or, from research,
+`proposal` — it writes a proposal next, in the same session, still switched. A rejected proposal of a switched job sends
+it back to work, told so. Each move is `job.phase_changed`; `<prefix>.accepted` carries `then`.
+
+**Suggestions.** A job suggests a shift in its question (`Suggest: research — <aspect>` on a line of its own; the
+protocol tells every job, `SUGGEST_PROTOCOL`); an escalation level in its reply (`suggest: { to, note }`, the claude-cli
+level's schema and prompt). The question carries the first one (`suggestion`, `by` `job` or the level), and the card
+offers it as one click in the default mode. Only a person shifts — or a level the settings name (`levels`), which then
+shifts the job itself in the default mode (its reply's attempt `accepted`); a level's fork moves the question to a person,
+who may still answer it first.
+
+**Rules as everywhere else.** Only a job whose executor runs the research and proposal loop may shift (`Executor.reviews`:
+the test executor, herdr-claude, the print-mode agents; `GET /api/health` `reviewingExecutors`); the question's
+`shifts` (`QuestionView`) lists the modes the server takes now, or none with the refusal, and the card offers exactly
+those. The settings (`GET /api/phase-shifts`, `POST /ui/api/phase-shifts`, admin; settings row `phaseShifts`, read at
+each shift; `phase_shifts.settings_changed`): `defaultMode` (`fork`), `forkParent` (`wait`), `levels` (none). No schema
+change: the job's new fields are in its body, the settings a settings row.
+
+**Open decisions, as taken** (defaults, all live settings or per-decision choices): D1 the default mode is Fork — it
+leaves the original job as it was; D2 under Fork the parent waits on its question (no lane is held while it waits), Park
+a setting; D3 under Switch the person picks at each Accept, back to work preselected; D4 a research phase may go on to a
+proposal in the same job, and each step is the person's pick at Accept.
+
+Tests: `test/integration/phase-shifts.test.ts` (switch and back to work; research then proposal then end; `then` only in
+a switched phase; fork, its link, priority and accepted result answering the parent; a rejected forked proposal; the
+settings live; refusals; suggestions by a job and by levels, allowed and not), `test/ui/phase-shifts.test.ts`,
+`test/plugins/claude-cli-prompt.test.ts` (the level may suggest).

@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -37,7 +37,8 @@ function reviewEvents(kind: ReviewKind) {
     reviewed: strict({ ...item, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional() }),
     // `decision`: what sent it back — a level's or a person's request for changes, a person's dig deeper or steer (additive).
     revision_requested: strict({ ...item, stage, decision: z.enum(REVIEW_DECISIONS).optional(), notes: z.string(), by: z.string().optional() }),
-    accepted: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional() }),
+    // `then` (issue #548, additive): accepted in a switched phase, what the person picked for the job next.
+    accepted: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional(), then: z.enum(SHIFT_THEN).optional() }),
     rejected: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional() }),
     cancelled: strict({ ...item, reason: z.string() }),
   };
@@ -77,9 +78,18 @@ const divergence = strict({
   native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
 });
 
+// Phase shifts (issue #548): a phase, a review kind, the settings an admin saves.
+const phase = z.enum(JOB_PHASES);
+const reviewKind = z.enum(REVIEW_KINDS);
+const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
+
 export const EVENT_SCHEMAS = {
-  // `source`: the item the job was pulled from (phase 3; additive, so still v1).
-  'job.queued': strict({ spec: jobSpec, priority: z.number(), source: jobSourceRef.optional() }),
+  // `source`: the item the job was pulled from (phase 3; additive, so still v1). `forkOf`: a fork's parent job and
+  // question, and what it was forked for (issue #548; additive).
+  'job.queued': strict({
+    spec: jobSpec, priority: z.number(), source: jobSourceRef.optional(),
+    forkOf: strict({ jobId: z.string(), questionId: z.string(), kind: reviewKind }).optional(),
+  }),
   // v3: no `mode` (issue #211: the advice is always applied). v2: advice without top-level `jevUsed`.
   'job.prioritized': strict({ advice, statusAtAdvice: jobStatus }),
   'job.held': strict({ reason: z.string() }),
@@ -235,6 +245,16 @@ export const EVENT_SCHEMAS = {
   'minor_decision.compared': strict({ pickId: z.string(), point: decisionPoint, pick: z.string(), actual: z.string(), agreed: z.boolean(), decidedBy: z.string() }),
   'minor_decision.overridden': strict({ pickId: z.string(), point: decisionPoint, pick: z.string().optional(), actual: z.string() }),
   'minor_decision.settings_changed': strict({ point: decisionPoint, from: decisionPointSettings, to: decisionPointSettings }),
+  // Phase shifts (issue #548): a job moved into or out of a phase; a fork spun off a question, and its result.
+  'job.phase_changed': strict({
+    from: phase, to: phase, reason: z.string(), mode: z.enum(['switch']).optional(), questionId: z.string().optional(), note: z.string().optional(), by: z.string().optional(),
+  }),
+  'job.forked': strict({
+    forkId: z.string(), to: reviewKind, mode: z.literal('fork'), questionId: z.string(), note: z.string().optional(), by: z.string(),
+    parent: z.enum(['waiting', 'parked']), ...priority,
+  }),
+  'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean() }),
+  'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

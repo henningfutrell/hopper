@@ -46,6 +46,7 @@ export function createScriptedExecutor(): ScriptedExecutor {
   return {
     name: 'scripted',
     idempotent: true,
+    reviews: true,
     payloads,
     ships(fn) { ship = fn; },
     validate(payload) {

@@ -4,6 +4,7 @@
 // reaches a person, who decides with one of the decisions the section declares; a decision accepts it, rejects it, or
 // sends it back to the same job for the next version. One model for every review section: each is declared once,
 // here, by its ReviewSectionType, and a future one follows the same path. Pure: no I/O. Re-exported from types.ts.
+import type { ShiftThen } from './phase.ts';
 import type { JobId, PriorityTag, RaisedBy } from './types.ts';
 
 /**
@@ -88,6 +89,8 @@ export interface ReviewSignOff {
   /** The version signed off. */
   version: number;
   notes?: string;
+  /** Accepted in a switched phase (issue #548): what the person picked for the job next. */
+  then?: ShiftThen;
 }
 
 /** A proposal or a research report: one per job and kind, its versions and review trail in it. */
@@ -106,16 +109,23 @@ export interface ReviewItem {
   signOff?: ReviewSignOff;
   /** Where it was written. */
   raisedBy?: RaisedBy;
-  /** Where its job was pulled from: kept with the item (what it becomes is linked to it later). */
+  /** Where its job was pulled from: kept with the item (what it becomes is linked to it later). A fork's: its parent's. */
   source?: { key: string; url?: string; title?: string };
+  /** Written by a fork (issue #548): the job and question it was forked from. */
+  forkOf?: { jobId: JobId; questionId: string };
+  /** Written in a switched phase (issue #548): the job's question it switched from. */
+  switchedFrom?: { jobId: JobId; questionId: string };
   /** When a person first saw it in the UI. */
   seenAt?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A review item as the routes answer it: with its job's live priority (issue #535). */
-export type ReviewItemView = ReviewItem & PriorityTag;
+/**
+ * A review item as the routes answer it: with its job's live priority (issue #535), and, while its job is in a switched
+ * phase of its kind, what a person may pick for the job at Accept (issue #548).
+ */
+export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[] };
 
 /** Who may accept a review item: only a person, or the top reviewer level too (its approval accepts). */
 export const REVIEW_SIGN_OFF = ['owner', 'top-level'] as const;

@@ -152,6 +152,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   return {
     name: o.name,
     idempotent: false,
+    reviews: true,
     validate: validatePayload,
     run(ctx) {
       const refused = refusal(label, ctx);

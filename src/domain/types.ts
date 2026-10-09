@@ -9,6 +9,7 @@ import type { UsageReading } from './usage.ts';
 import type { JobAssessment, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
+import type { JobPhaseFields } from './phase.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -75,7 +76,8 @@ export interface JobSpec {
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
 export interface SpecFromConfig { executor: string; model?: string; cwd?: string; machineId?: MachineId; rule?: string }
 
-export interface Job {
+/** A job; its phase, switch and forks (issue #548) are declared in src/domain/phase.ts. */
+export interface Job extends JobPhaseFields {
   id: JobId;
   spec: JobSpec;
   priority: number; // resolved from spec, default 50
@@ -393,86 +395,9 @@ export interface WebhookDelivery {
   updatedAt: string;
 }
 
-// ---- Questions ---------------------------------------------------------------------
+// ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
-/** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
-/** `lapsed`: nobody answered a dialog before its countdown ran out; the agent denied it by itself and went on (issue #376). */
-/** `closed`: the owner ended it without answering; the job resumes with the close text (questions/service.ts CLOSED_ANSWER). */
-/** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
-export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'cancelled';
-
-/** Who made an attempt: an escalation level, Jev (a minor decision, issue #550), or the human. */
-export type AttemptRole = 'level' | 'jev' | 'human';
-
-/** One entry in a question's trail: an escalation level's reply, or the human's answer. Human attempts carry only the answer. */
-export interface QuestionAttempt {
-  /** Who: the level's instance name, `jev`, or `human`. */
-  tier: string;
-  role: AttemptRole;
-  /** The model that ran, as the level reports it, else the configured one. */
-  model?: string;
-  /** The machine the level ran on and why, when it named none and picked it (issue #442). */
-  machine?: { id: string; why: string };
-  startedAt: string;
-  finishedAt?: string;
-  /** The level's answer (escalating: its recommendation), or the human's answer. */
-  answer?: string;
-  /** Rows stored before escalation levels only: the answerer judged its draft settled. */
-  confident?: boolean;
-  /** Rows stored before slice 2 only: the answerer judged risk itself. */
-  risky?: boolean;
-  /** The level's reply, when it returned a schema-valid one: true sent the question up. */
-  escalate?: boolean;
-  /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
-  riskRules?: string[];
-  reason?: string;
-  error?: string;
-  /** accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. */
-  outcome: 'accepted' | 'escalated';
-}
-
-/**
- * The raising machine (issue #485): the machine a question was asked on, its name (label) then, and the
- * lane — a snapshot taken when it is asked, kept as it was after the job moves or the machine is renamed
- * or removed. Distinct from `QuestionAttempt.machine`, where an escalation level ran.
- */
-export interface RaisedBy {
-  machineId: MachineId;
-  /** The machine's label when the question was asked; absent when it was not known. */
-  name?: string;
-  laneId?: LaneId;
-}
-
-export interface Question {
-  id: string;
-  jobId: JobId;
-  text: string;
-  recentOutput: string;
-  detectedBy: string;
-  /** Where it was asked. Absent: asked before this was recorded, with nothing to fill it from (issue #485). */
-  raisedBy?: RaisedBy;
-  status: QuestionStatus;
-  /**
-   * The stage holding the question (or the last one that held it): an escalation level's instance
-   * name, or `human`.
-   */
-  tier: string;
-  attempts: QuestionAttempt[];
-  answer?: string;
-  /** Whose answer was typed: the level instance that answered, or `human` (also for a closed question). */
-  answeredBy?: string;
-  /** Human tier: when it was first and last notified, and how often. */
-  escalatedToHumanAt?: string; lastNotifiedAt?: string;
-  notifyCount: number;
-  /** Human tier: when the question expires and the job fails. */
-  expiresAt?: string;
-  /** A dialog with a countdown (issue #376): the agent denies it by itself then, unless answered first; it is `lapsed`. */
-  lapsesAt?: string;
-  /** When the owner first saw it in the UI (POST /ui/api/questions/:id/seen). Unseen open questions at the human stage are the nav badge. */
-  seenAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type * from './questions.ts';
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
@@ -498,6 +423,7 @@ export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES, type GateActor, type PreSort, typ
 
 export * from './logins.ts';
 export * from './review.ts';
+export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './priority.ts';

@@ -5,7 +5,7 @@
 // protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
-import { asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, type JobRulesView, type ReviewKind } from '../domain/types.ts';
+import { asksOfSpec, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
 /** The config record that holds them. */
 export const JOB_RULES = 'job-rules';
@@ -44,6 +44,8 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
+  // How to suggest research or a proposal first, on a question (issue #548).
+  SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
   'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.',
@@ -58,11 +60,12 @@ export const askLine = (kind: ReviewKind): string => REVIEW_SECTIONS[kind].ask;
  * The job rules a job starting now is told: with its first ask, when it asks for any (research before the proposal),
  * and what follows once that one is accepted.
  */
-export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }): string {
+export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }, forkOf?: ForkOf): string {
   const [first, ...then] = asksOfSpec(spec);
   if (!first) return jobRules;
   const after = then.length > 0 ? `\nOnce your ${REVIEW_SECTIONS[first].noun} is accepted, you are asked for the ${then.map((k) => REVIEW_SECTIONS[k].noun).join(', then the ')} in this same session.` : '';
-  return `${jobRules}\n${askLine(first)}${after}`;
+  // A fork (issue #548) is told the question it was forked from, and the aspect.
+  return `${jobRules}\n${askLine(first)}${after}${forkOf ? `\n${forkBrief(forkOf)}` : ''}`;
 }
 
 /** The lines after the job rules, as the UI shows them: the work tree (named `<work tree>`), then the protocol. */

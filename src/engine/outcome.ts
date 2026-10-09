@@ -3,6 +3,7 @@
 // design.md "Questions" lifecycle and "Question budget (B6)".
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
+import { suggestionIn } from '../domain/phase.ts';
 import type { Job, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
@@ -25,8 +26,10 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   if (store.questions.list({ jobId: job.id }).length >= c.maxQuestions) return fail(c, job, laneId, 'too many questions', at);
   // Where it was asked (issue #485): a snapshot, so it stays right after the job moves or the machine changes.
   const raised = raisedBy({ laneId, resumeOn: job.resumeOn, pin: job.spec.machineId, machines: new Map(machine ? [[machine.id, machine.label]] : []) });
+  // A phase shift the job suggests in its question (issue #548): offered to the person, never made by itself.
+  const suggestion = suggestionIn(question.text);
   const q = store.questions.create({
-    jobId: job.id, text: question.text, recentOutput: question.recentOutput, detectedBy: question.detectedBy,
+    jobId: job.id, text: question.text, recentOutput: question.recentOutput, detectedBy: question.detectedBy, ...(suggestion ? { suggestion } : {}),
     tier: c.questions.firstStage(), ...(question.lapsesAt ? { lapsesAt: question.lapsesAt } : {}), ...(raised ? { raisedBy: raised } : {}),
   });
   store.jobs.update(job.id, {

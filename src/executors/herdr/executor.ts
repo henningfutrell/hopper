@@ -294,6 +294,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   return {
     name: 'herdr-claude',
     idempotent: false,
+    reviews: true,
     lanePanes: () => new Map([...lanes].map(([lane, held]) => [lane, held.paneId])),
     validate: validatePayload,
 

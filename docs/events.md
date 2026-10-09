@@ -36,6 +36,7 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was created from a source i
 | `spec` | object | yes |
 | `priority` | number | yes |
 | `source` | object | no |
+| `forkOf` | object | no |
 
 ```json
 {
@@ -1456,6 +1457,7 @@ Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off 
 | `stage` | string | yes |
 | `by` | string | no |
 | `notes` | string | no |
+| `then` | `work` \| `end` \| `proposal` | no |
 
 ```json
 {
@@ -1674,6 +1676,7 @@ Version 1 (`docs/schemas/research.accepted.v1.json`). A research report was acce
 | `stage` | string | yes |
 | `by` | string | no |
 | `notes` | string | no |
+| `then` | `work` \| `end` \| `proposal` | no |
 
 ```json
 {
@@ -1968,6 +1971,110 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
   "to": {
     "mode": "active",
     "threshold": 0.9
+  }
+}
+```
+
+## `job.phase_changed`
+
+Version 1 (`docs/schemas/job.phase_changed.v1.json`). A job moved into another phase (issue #548): `from` and `to` are `work`, `research` or `proposal`. A switch from a question (`mode: "switch"`, the `questionId`, the person or level `by`, the scoping `note`) moves it into research or a proposal in the same session; accepted, the person picks whether it goes back to `work`, ends, or goes on from research to a proposal. `reason`: the note, or what moved it.
+
+| field | type | required |
+|---|---|---|
+| `from` | `work` \| `research` \| `proposal` | yes |
+| `to` | `work` \| `research` \| `proposal` | yes |
+| `reason` | string | yes |
+| `mode` | `switch` | no |
+| `questionId` | string | no |
+| `note` | string | no |
+| `by` | string | no |
+
+```json
+{
+  "from": "work",
+  "to": "research",
+  "reason": "research only the auth part",
+  "mode": "switch",
+  "questionId": "q1",
+  "note": "research only the auth part",
+  "by": "owner"
+}
+```
+
+## `job.forked`
+
+Version 1 (`docs/schemas/job.forked.v1.json`). A separate research or proposal job (`forkId`) was spun off a job's question (issue #548), by a person or an escalation level the phase-shift settings allow (`by`), about the aspect in `note`. The parent keeps waiting on its question (`parent: "waiting"`) or was parked (`"parked"`). The fork carries the parent's priority; its accepted result answers the question.
+
+| field | type | required |
+|---|---|---|
+| `forkId` | string | yes |
+| `to` | `research` \| `proposal` | yes |
+| `mode` | string | yes |
+| `questionId` | string | yes |
+| `note` | string | no |
+| `by` | string | yes |
+| `parent` | `waiting` \| `parked` | yes |
+| `priority` | number | no |
+| `high` | boolean | no |
+
+```json
+{
+  "forkId": "j2",
+  "to": "research",
+  "mode": "fork",
+  "questionId": "q1",
+  "note": "only the token lifetime",
+  "by": "owner",
+  "parent": "waiting",
+  "priority": 50,
+  "high": false
+}
+```
+
+## `job.fork_resolved`
+
+Version 1 (`docs/schemas/job.fork_resolved.v1.json`). A fork's research report or proposal was decided (issue #548). Accepted, it is the answer to the parent's question when that is still open (`delivered`); rejected, the question stays open.
+
+| field | type | required |
+|---|---|---|
+| `forkId` | string | yes |
+| `kind` | `research` \| `proposal` | yes |
+| `questionId` | string | yes |
+| `decision` | `accept` \| `reject` | yes |
+| `delivered` | boolean | yes |
+
+```json
+{
+  "forkId": "j2",
+  "kind": "research",
+  "questionId": "q1",
+  "decision": "accept",
+  "delivered": true
+}
+```
+
+## `phase_shifts.settings_changed`
+
+Version 1 (`docs/schemas/phase_shifts.settings_changed.v1.json`). An admin saved the phase-shift settings (issue #548): the default mode (`fork` or `switch`), what a parent does while its fork runs (`wait` or `park`), and the escalation levels that may shift a job themselves.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "defaultMode": "fork",
+    "forkParent": "wait",
+    "levels": []
+  },
+  "to": {
+    "defaultMode": "switch",
+    "forkParent": "wait",
+    "levels": [
+      "opus"
+    ]
   }
 }
 ```

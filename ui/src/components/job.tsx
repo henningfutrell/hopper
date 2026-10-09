@@ -1,4 +1,5 @@
-// How a job names itself everywhere: its goal, the issue it came from, and ticking times.
+// How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
+// (issue #548), and ticking times.
 import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
@@ -33,6 +34,11 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
           <GhLink url={job.source?.url}>{ref}<ExternalLink className="size-3 opacity-60" /></GhLink>
         ) : <span>{job.id.slice(0, 8)}</span>}
         {high && <HighTag priority={job.priority} />}
+        {job.phase && job.phase !== 'work' && (
+          <span data-phase={job.phase} className="rounded border border-question/40 px-1 text-[10px] text-question" title={job.forkOf ? 'a fork of another job\'s question' : `in its ${job.phase} phase`}>
+            {job.forkOf ? `fork: ${job.phase}` : job.phase}
+          </span>
+        )}
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}
       </div>

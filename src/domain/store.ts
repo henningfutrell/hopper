@@ -3,7 +3,7 @@
 
 import type { IntakeMigration } from './intake.ts';
 import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion,
+  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion, PhaseShiftSettings, PhaseSuggestion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, MinorDecisionSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
@@ -96,7 +96,7 @@ export interface WebhookRepository {
 
 export interface QuestionRepository {
   /** `tier`: the stage it starts at (the first escalation level's instance name, or `human`). */
-  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string; raisedBy?: RaisedBy }): Question;
+  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string; raisedBy?: RaisedBy; suggestion?: PhaseSuggestion }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
   /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open questions, the longest waiting first; issue #450). A limit keeps the first of that order. */
@@ -109,7 +109,7 @@ export interface QuestionRepository {
 
 /** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
 export interface ReviewItemRepository {
-  create(input: { jobId: JobId; stage: string; version: ReviewVersion; raisedBy?: RaisedBy; source?: ReviewItem['source'] }): ReviewItem;
+  create(input: { jobId: JobId; stage: string; version: ReviewVersion; raisedBy?: RaisedBy; source?: ReviewItem['source']; forkOf?: ReviewItem['forkOf']; switchedFrom?: ReviewItem['switchedFrom'] }): ReviewItem;
   get(id: string): ReviewItem | undefined;
   /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open ones, the longest waiting first). */
   list(filter?: { status?: ReviewStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): ReviewItem[];
@@ -225,6 +225,9 @@ export interface UserSettingsRepository {
   /** A review section's settings (issues #537, #543); absent: never saved. */
   getReviewSettings(kind: ReviewKind): ReviewSettings | undefined;
   setReviewSettings(kind: ReviewKind, settings: ReviewSettings): void;
+  /** The phase-shift settings (issue #548); absent: never set. */
+  getPhaseShifts(): PhaseShiftSettings | undefined;
+  setPhaseShifts(settings: PhaseShiftSettings): void;
   /** The failure assessor's settings (issue #509); absent: never set. */
   getFailureSettings(): FailureSettings | undefined;
   setFailureSettings(settings: FailureSettings): void;
