@@ -9,6 +9,7 @@ import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import codex from '../../src/plugins/executor/codex/index.ts';
 import cursorAgent from '../../src/plugins/executor/cursor-agent/index.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
+import claude from '../../src/plugins/executor/claude/index.ts';
 import omp from '../../src/plugins/executor/omp/index.ts';
 import opencode from '../../src/plugins/executor/opencode/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
@@ -33,9 +34,9 @@ function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
 const props = (def: PluginDefinition) => (optionsJsonSchema(def) as { properties: Record<string, Record<string, unknown>> }).properties;
 
 describe('built-in executor plugins are listed', () => {
-  it('herdr-claude, cursor-agent, codex, opencode, omp, command and test, role executor', () => {
+  it('herdr-claude, cursor-agent, codex, opencode, omp, claude, command and test, role executor', () => {
     const executors = BUILTIN_PLUGINS.filter((p) => p.role === 'executor').map((p) => p.id).sort();
-    expect(executors).toEqual(['codex', 'command', 'cursor-agent', 'herdr-claude', 'omp', 'opencode', 'test']);
+    expect(executors).toEqual(['claude', 'codex', 'command', 'cursor-agent', 'herdr-claude', 'omp', 'opencode', 'test']);
   });
 });
 
@@ -70,7 +71,9 @@ describe.each([
   { def: codex, bin: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'] },
   { def: opencode, bin: 'opencode', args: ['--auto'] },
   { def: omp, bin: 'omp', args: ['--auto-approve'] },
-])('$bin (issue #307)', ({ def, bin, args }) => {
+  // Issue #533: Claude Code in print mode, which shows no screen to answer.
+  { def: claude, bin: 'claude', args: ['--dangerously-skip-permissions'] },
+])('$bin (issues #307, #533)', ({ def, bin, args }) => {
   it('options: the CLI on PATH, running its tools without asking; no work tree of its own (issue #361); every option command-bearing', () => {
     expect(options(def)).toEqual({ bin, args, sshBin: 'ssh' });
     const p = props(def);
@@ -93,8 +96,14 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      trustWorkdir: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
+      trustWorkdir: true, unattended: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
     });
+  });
+
+  // Issue #533: on by default, so a job on a machine nobody watches never waits on a key press; set per instance in the UI.
+  it('unattended: on by default, its own option, described for the UI', () => {
+    expect(parseOptions(herdrClaude, { unattended: false })).toMatchObject({ ok: true, options: { unattended: false } });
+    expect(props(herdrClaude).unattended!.description).toMatch(/^unattended: Claude starts with no key press/);
   });
 
   it('names no work tree of its own (issue #361) and refuses the default herdr session', () => {
