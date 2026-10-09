@@ -21,6 +21,8 @@ export const EVENT_TYPES = [
   'machine.discovered', 'machine.discovery_failed', 'machine.radius_grew', 'machine.actor_mismatch', 'blast_radius.settings_changed', 'job.gate_passed',
   'minor_decision.picked', 'minor_decision.compared', 'minor_decision.overridden', 'minor_decision.settings_changed',
   'job.phase_changed', 'job.forked', 'job.fork_resolved', 'phase_shifts.settings_changed',
+  'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
+  'vault.secret_set', 'vault.secret_removed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -50,4 +52,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'machine.discovered': 1, 'machine.discovery_failed': 1, 'machine.radius_grew': 1, 'machine.actor_mismatch': 1, 'blast_radius.settings_changed': 1, 'job.gate_passed': 1,
   'minor_decision.picked': 1, 'minor_decision.compared': 1, 'minor_decision.overridden': 1, 'minor_decision.settings_changed': 1,
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
+  'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
+  'vault.secret_set': 1, 'vault.secret_removed': 1,
 };

@@ -117,6 +117,11 @@
         "job.forked",
         "job.fork_resolved",
         "phase_shifts.settings_changed",
+        "github_proxy.done",
+        "github_proxy.refused",
+        "github_proxy.failed",
+        "vault.secret_set",
+        "vault.secret_removed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

@@ -9,6 +9,7 @@
 // checks it, reads as the user it is linked to, and a GitHub realm's only as the user whose connected
 // GitHub account it is. A token given and refused is refused, on loopback too. A token reads only: every
 // mutation stays behind a UI session (src/http/ui/guard.ts).
+import type { VaultService } from '../vault/service.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
 import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
@@ -24,7 +25,9 @@ import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
+import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { UsageRecorder } from '../usage/history.ts';
+import type { ResourceRecorder } from '../machines/history.ts';
 
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
@@ -52,8 +55,14 @@ export interface TenantParts {
   secretProblem: SecretProblem;
   /** The user's machines that dial in (issue #308). */
   machineLink: UserMachineLink;
+  /** The vault (issue #558). */
+  vault: VaultService;
   /** The usage history's recorder: new usage samples (SSE usage.recorded, issue #502). */
   usageHistory: Pick<UsageRecorder, 'onRecorded'>;
+  /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */
+  machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
+  /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
+  githubProxy: UserGitHubProxy;
 }
 
 /** The users and their running parts. */

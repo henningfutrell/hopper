@@ -20,11 +20,17 @@ const idParams = z.object({ id: z.string() });
 
 /**
  * The item with its job's live priority: 0 and not high when its job is gone. While it is open and its job is in a
- * phase a question switched it to (issue #548), `then`: what a person may pick for the job at Accept.
+ * phase a question switched it to (issue #548), `then`: what a person may pick for the job at Accept. A fork's (issue
+ * #570): the question it was forked from as it is now.
  */
 export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView {
   const switched = p.status === 'open' && store.jobs.get(p.jobId)?.shift?.to === p.kind;
-  return { ...p, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}) };
+  const q = p.forkOf ? store.questions.get(p.forkOf.questionId) : undefined;
+  const forkQuestion = p.forkOf ? { status: q?.status ?? 'missing' as const, ...(q && q.status !== 'open' && q.answeredBy ? { answeredBy: q.answeredBy } : {}) } : undefined;
+  return {
+    ...p, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
+    ...(forkQuestion ? { forkQuestion } : {}),
+  };
 }
 
 export function reviewRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {

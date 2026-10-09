@@ -108,7 +108,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'job.phase_changed': { from: 'work', to: 'research', reason: 'research only the auth part', mode: 'switch', questionId: 'q1', note: 'research only the auth part', by: 'owner' },
   'job.forked': { forkId: 'j2', to: 'research', mode: 'fork', questionId: 'q1', note: 'only the token lifetime', by: 'owner', parent: 'waiting', priority: 50, high: false },
-  'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true },
+  'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true, question: 'open' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {
@@ -119,4 +119,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'minor_decision.overridden': { pickId: 'p1', point: 'failure-assessment', pick: 'retry', actual: 'person' },
   'minor_decision.settings_changed': { point: 'question-answer', from: { mode: 'shadow', threshold: 0.85 }, to: { mode: 'active', threshold: 0.9 } },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
+  'github_proxy.done': { requestId: 'r1', machine: 'desk', own: true, op: 'issue.create', repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' },
+  'github_proxy.refused': { requestId: 'r2', machine: 'box', own: false, forUser: 'u2', job: 'j7', op: 'issue.comment', repo: 'octo/tools', reason: 'a job of another user may only file an issue through the hopper (issue.create), not issue.comment' },
+  'github_proxy.failed': { requestId: 'r3', machine: 'desk', own: true, op: 'pr.create', repo: 'octo/tools', error: 'GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)' },
+  'vault.secret_set': { name: 'KUBE_TOKEN', by: 'Ada', replaced: false },
+  'vault.secret_removed': { name: 'KUBE_TOKEN', by: 'Ada' },
 };

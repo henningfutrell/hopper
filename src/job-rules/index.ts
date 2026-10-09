@@ -1,7 +1,7 @@
 // The job rules (issue #172): what every job is told before its work tree and the protocol — the config
 // record `job-rules`, a text, edited from the UI (POST /ui/api/job-rules) or with `hopper config set`.
 // Read when each job starts, so an edit reaches the next job without a restart. While none is saved, a
-// job gets the default: the publishing rule and the parallel-work rule. The work tree line and the
+// job gets the default: the publishing rule, the parallel-work rule and the writing style. The work tree line and the
 // protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
@@ -17,8 +17,11 @@ const PARALLEL_WORK = [
   'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
 ];
 
+/** The writing style (issue #571): every text a job writes for people is in Simplified Technical English. */
+export const STE_RULE = '[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.';
+
 /** What a job is told while no job rules are saved. */
-export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK].join('\n');
+export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE].join('\n');
 
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
@@ -41,14 +44,19 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
   ? 'Its node_modules is a link to dependencies shared with the other jobs of this repository: read-only. Before you add, remove or upgrade a dependency, replace the link with an install of your own (rm node_modules && npm ci). '
   : ''}The worktree is in this job's scratch dir, so the reap removes it when the job ends, unless it holds uncommitted or unpushed work.`;
 
+/** The protocol line on GitHub (issue #563): never a login of the job's own; the hopper's proxy, its help read only when needed. */
+export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. When a GitHub operation needs a login you lack (filing an issue, opening a pull request from your pushed branch, reading an issue or pull request, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
-  '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
+  '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION',
   // How to suggest research or a proposal first, on a question (issue #548).
   SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
-  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.',
+  // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
+  GITHUB_PROXY_LINE,
+  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];

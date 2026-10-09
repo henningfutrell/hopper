@@ -9,7 +9,7 @@ import { createAccess, type Access } from './authz/service.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
-import type { User } from './domain/types.ts';
+import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createServer } from './http/index.ts';
@@ -124,10 +124,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
   // The links of the machines dialled in (issue #308): the instance's, each keyed by user and machine key.
   const links = createMachineLinks();
+  // Where a job reaches the hopper to ask it for GitHub (issue #563): a client target, the URL it dialled in at;
+  // this machine, loopback; an ssh or container target, the public URL, else the first LAN name; else nowhere.
+  const reachable = (): string | undefined => config.publicUrl ?? (config.lanNames[0] ? `http://${config.lanNames[0]}:${port}` : undefined);
+  const proxyUrl = (m: MachineSnapshot, dialled: string | undefined): string | undefined =>
+    dialled ?? (m.client ? reachable() : !m.ssh && !m.docker ? `http://127.0.0.1:${port}` : reachable());
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links,
+      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.

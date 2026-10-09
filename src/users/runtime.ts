@@ -9,14 +9,13 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
 import { createExecutorRegistry } from '../executors/index.ts';
-import type { ClientTransport } from '../executors/client.ts';
-import { linkToken, mintLinkKey } from '../client/link.ts';
+import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
@@ -40,11 +39,14 @@ import { sealerOf } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
+import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
+import { createUserLink } from './link.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
-import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
+import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
+import { openVault, type VaultService } from '../vault/service.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 
@@ -85,7 +87,13 @@ export interface UserRuntimeOptions {
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
   otherUsersKnow?(keys: string[]): Set<string>;
+  /**
+   * The hopper's URL as a job on `machine` reaches it (issue #563): `dialled`, the URL a client target dialled in
+   * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
+   */
+  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
 }
+
 
 /** One user's running parts: what the HTTP edge reads and changes for that user, and tests drive. */
 export interface UserRuntime {
@@ -118,8 +126,13 @@ export interface UserRuntime {
   secretProblem: (sub: WebhookSubscription) => string | undefined;
   /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
   machineLink: UserMachineLink;
+  vault: VaultService; // issue #558: write-only secrets
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
+  /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
+  machineHistory: ResourceRecorder;
+  /** The GitHub proxy's view of this user (issue #563). */
+  githubProxy: UserGitHubProxy;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -154,21 +167,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
-  // The hopper's link key for this user (issue #308): minted once and kept in the user's store, like the
-  // hopper's own ssh key; its public half is what a joining machine is given. A client target's token is
-  // derived from it and the machine key, at each call.
-  let linkKey = store.settings.getLinkKey();
-  if (!linkKey) { linkKey = mintLinkKey(); store.settings.setLinkKey(linkKey); }
-  const hopperLink = linkKey;
-  const clientTransport = (machine: string, key: string): ClientTransport => ({
-    machine, link: () => o.links.link(user.id, key), token: () => linkToken(hopperLink.privateKey, key),
-  });
+  // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
-  /** The client target named `machine` now, reached down its link; undefined when none is. */
-  const clientNamed = (machine: string): ClientTransport | undefined => {
-    const m = clientTargets().find((t) => t.name === machine);
-    return m && 'client' in m ? clientTransport(m.name, m.client.key) : undefined;
-  };
+  const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
+  const { key: hopperLink, transport: clientTransport, named: clientNamed } = link;
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
@@ -205,6 +207,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       for (const s of sync.statuses().filter((j) => j.kind === `${provider}-account`)) void sync.syncNow(s.name).catch(() => undefined);
     },
   });
+  // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
+  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id)) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
@@ -314,6 +318,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     // A fork (issue #548) acts through its parent's source's connection.
     credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
+    // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL.
+    jobProxy: proxy.jobProxy,
     // Read at each Decision; reached only after `failures` exists.
     problems: () => failures.blocks(),
   });
@@ -336,20 +342,21 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
   host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority });
-  const usageHistory = createUsageRecorder({
-    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
-    // Read at every prune: a retention set in the UI applies without a restart (issue #356).
-    retentionDays: () => store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS,
+  // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
+  const history = createHistoryRecorders({
+    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
+    githubProxy: proxy.githubProxy,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name),
     connectedAccounts,
-    usageHistory,
+    ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub),
+    vault: openVault({ store, keys, clock, logger }), // issue #558: under the same token key, sealed again at start
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),
@@ -360,7 +367,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       started = true;
       await engine.start();
       sync.start();
-      usageHistory.start();
+      history.start();
       minorDecisions.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
@@ -370,7 +377,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await failures.stop();
         minorDecisions.stop();
         await sync.stop();
-        usageHistory.stop();
+        history.stop();
         connectedAccounts.stop();
         await questions.stop();
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));

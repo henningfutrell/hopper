@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "own": {
+      "type": "boolean"
+    },
+    "forUser": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "op": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "own",
+    "reason"
+  ],
+  "additionalProperties": false
+}

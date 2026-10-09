@@ -55,6 +55,11 @@ function fakeDaemon(d: Daemon) {
     if (path.startsWith('/ui/api/')) {
       posts.push({ path, body: init.body ? JSON.parse(String(init.body)) : undefined });
       if (path === '/ui/api/phase-shifts') return json({ ...PHASE_SETTINGS, ...(JSON.parse(String(init.body)) as object) });
+      const shifted = /^\/ui\/api\/questions\/q-(.+)\/(propose|research)$/.exec(path);
+      if (shifted && (JSON.parse(String(init.body)) as { mode?: string }).mode !== 'switch') {
+        const kind = shifted[2] === 'propose' ? 'proposal' : 'research';
+        return json({ question: question(shifted[1]!), job: job(shifted[1]!), fork: job('f1', { status: 'queued', phase: kind, forkOf: { jobId: shifted[1]!, questionId: `q-${shifted[1]!}`, kind, question: 'Which?' } }) });
+      }
       return json({});
     }
     return path in routes ? json(routes[path]) : new Response('{"error":"not found"}', { status: 404 });
@@ -131,6 +136,48 @@ describe('Research this and Propose this on the question card', () => {
   });
 });
 
+describe('a fork on its question card (issue #570)', () => {
+  const fork = { jobId: 'f9', kind: 'proposal', note: 'options for the schema', jobStatus: 'waiting_answer', running: true, itemId: 'p-f9', itemStatus: 'open' };
+
+  it('shows the fork, its status and a link to its review; no second fork of that kind is offered', async () => {
+    await boot('#questions', { jobs: [job('j10')], questions: [question('j10', { forks: [fork] })] });
+    const c = await vi.waitFor(() => { const x = card('Question of j10'); expect(x?.querySelector('[data-slot="fork"]')).toBeTruthy(); return x!; });
+    const banner = c.querySelector<HTMLElement>('[data-slot="fork"]')!;
+    expect(banner.textContent).toContain('Proposal in progress: options for the schema');
+    expect(banner.textContent).toContain('in review');
+    expect(banner.querySelector('a')!.getAttribute('href')).toBe('#proposals');
+    await click(button('Propose this', c));
+    const form = c.querySelector<HTMLElement>('[data-slot="shift-form"]')!;
+    expect(form.querySelector('input[value="fork"]')).toBeNull();
+    expect(form.querySelector<HTMLInputElement>('input[value="switch"]')!.checked).toBe(true);
+    await click(button('Research this', c));
+    expect(c.querySelector<HTMLElement>('[data-slot="shift-form"]')!.querySelector('input[value="fork"]')).not.toBeNull();
+  });
+
+  it('a fork not yet written links to its job, and one that ended says so', async () => {
+    await boot('#questions', { jobs: [job('j11')], questions: [question('j11', { forks: [
+      { jobId: 'f10', kind: 'research', jobStatus: 'running', running: true },
+      { jobId: 'f11', kind: 'proposal', note: 'old', jobStatus: 'finished', running: false, itemId: 'p-f11', itemStatus: 'rejected' },
+    ] })] });
+    const banners = await vi.waitFor(() => { const x = card('Question of j11')?.querySelectorAll<HTMLElement>('[data-slot="fork"]'); expect(x?.length).toBe(2); return [...x!]; });
+    expect(banners[0]!.textContent).toContain('Research in progress');
+    expect(banners[0]!.textContent).toContain('running');
+    expect(banners[0]!.querySelector('a')!.getAttribute('href')).toBe('#queue');
+    expect(banners[1]!.textContent).toContain('Proposal rejected: old');
+  });
+
+  it('a fork made from the card says so in its toast, with a link to it', async () => {
+    const daemon = await boot('#questions', { jobs: [job('j12')], questions: [question('j12')] });
+    const c = await vi.waitFor(() => { const x = card('Question of j12'); expect(x && button('Propose this', x)).toBeDefined(); return x!; });
+    await click(button('Propose this', c));
+    await click(button('Propose', c.querySelector<HTMLElement>('[data-slot="shift-form"]')!));
+    await vi.waitFor(() => expect(daemon.posts.some((p) => p.path === '/ui/api/questions/q-j12/propose')).toBe(true));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Proposal forked'));
+    const link = [...document.querySelectorAll<HTMLAnchorElement>('[data-sonner-toast] a')].find((a) => a.textContent?.includes('Open'));
+    expect(link?.getAttribute('href')).toBe('#queue');
+  });
+});
+
 describe('a job\'s phase', () => {
   it('shows wherever the job is named, unless it is doing the work', async () => {
     await boot('#questions', { jobs: [job('j4', { phase: 'research' }), job('j5')], questions: [question('j4'), question('j5')] });
@@ -161,6 +208,16 @@ describe('Research: an item of a switched phase, and a fork', () => {
     expect(c.querySelector('[data-slot="then"]')).toBeNull();
     await click(button('Accept', c));
     await vi.waitFor(() => expect(daemon.posts.find((p) => p.path === '/ui/api/research/r-j8/accept')?.body).toEqual({}));
+  });
+});
+
+describe('a fork\'s item whose question was answered meanwhile (issue #570)', () => {
+  it('the item says so: accepting it delivers nothing to the job it was forked from', async () => {
+    await boot('#research', { jobs: [job('j13'), job('j14', { forkOf: { jobId: 'j13', questionId: 'q-j13', kind: 'research', question: 'Which?' }, phase: 'research', researchId: 'r-j14' })], reports: [report('j14', { forkOf: { jobId: 'j13', questionId: 'q-j13' }, forkQuestion: { status: 'answered', answeredBy: 'human' } })] });
+    const c = await vi.waitFor(() => { const x = document.querySelector<HTMLElement>('[data-item="r-j14"]'); expect(x?.querySelector('[data-slot="origin"]')).toBeTruthy(); return x!; });
+    const origin = c.querySelector('[data-slot="origin"]')!.textContent!;
+    expect(origin).toContain('already answered');
+    expect(origin).toContain('delivers nothing');
   });
 });
 

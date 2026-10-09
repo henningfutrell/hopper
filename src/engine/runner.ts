@@ -12,6 +12,7 @@ import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
+import { forkResume } from './phase-shifts.ts';
 
 const PROGRESS_EVERY_MS = 500;
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
@@ -143,6 +144,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       return j;
     });
     const progress = progressReporter(job.id, claim.laneId);
+    // A fork whose question was answered without it (issue #570) is told the answer first.
+    const resumeWith = store.tx(() => forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer));
     let outcome: ExecutionOutcome;
     try {
       const waited = machine && executor && launch === 'reattach-when-reachable'
@@ -153,12 +156,12 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         // A login the job waits on (issue #476) goes to the logins, never into a question.
         logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: machine.id, run: job.spec.executor }, () => !c.stopping()),
         // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
-        credentials: (scratch, make = false) => placeCredentials(c, started, executor?.machineShell?.(machine), scratch, make, (line) => progress.report(0, line)),
+        credentials: (scratch, make = false) => placeCredentials(c, started, machine, executor?.machineShell?.(machine), scratch, make, (line) => progress.report(0, line)),
         progress: (f, m) => progress.report(f, m),
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
         agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
-      }, reattach, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer);
+      }, reattach, resumeWith);
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }

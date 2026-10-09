@@ -5,7 +5,7 @@
 // sends it back to the same job for the next version. One model for every review section: each is declared once,
 // here, by its ReviewSectionType, and a future one follows the same path. Pure: no I/O. Re-exported from types.ts.
 import type { ShiftThen } from './phase.ts';
-import type { JobId, PriorityTag, RaisedBy } from './types.ts';
+import type { JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
 
 /**
  * The review kinds, in the order a job asking for several does them (the orchestration loop): research first, then
@@ -123,9 +123,13 @@ export interface ReviewItem {
 
 /**
  * A review item as the routes answer it: with its job's live priority (issue #535), and, while its job is in a switched
- * phase of its kind, what a person may pick for the job at Accept (issue #548).
+ * phase of its kind, what a person may pick for the job at Accept (issue #548). A fork's (issue #570): the question it
+ * was forked from as it is now — answered without it, its acceptance delivers nothing to that job.
  */
-export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[] };
+export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion };
+
+/** The question a fork's item was forked from, as it is now: its status, and who answered it. */
+export interface ForkQuestion { status: QuestionStatus | 'missing'; answeredBy?: string }
 
 /** Who may accept a review item: only a person, or the top reviewer level too (its approval accepts). */
 export const REVIEW_SIGN_OFF = ['owner', 'top-level'] as const;
@@ -209,8 +213,8 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       { id: 'dig_deeper', route: 'dig-deeper', label: 'Dig deeper', effect: 'send_back', notes: 'optional' },
       { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
     ],
-    protocol: `When you are asked to research, do not do the work: research, then write a research report, each part on a line of its own starting with its label — ${labelled(RESEARCH_PARTS)} — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.`,
-    ask: '[hopper research] This job asks you to research, not to do the work: answer the research questions it names (the items under its Research heading, if it has one), then write the research report as the protocol says and end with HOPPER_RESEARCH_REPORT. Change nothing, and open no pull request.',
+    protocol: `When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — ${labelled(RESEARCH_PARTS)} — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.`,
+    ask: '[hopper research] This job asks you to research, not to do the work: answer the research questions it names (the items under its Research heading, if it has one), then write the research report as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_RESEARCH_REPORT. Change nothing, and open no pull request.',
     brief: (item, from, decision, notes) => [
       `[hopper research] Your research report (round ${item.versions.length}) was reviewed by ${whoOf(from)}.`,
       decision === 'steer' ? `Steer: ${notes}` : decision === 'request_changes' ? `What to change: ${notes}` : `Dig deeper: ${notes || 'go deeper on the whole report.'}`,
@@ -228,8 +232,8 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       { id: 'request_changes', route: 'request-changes', label: 'Request changes', effect: 'send_back', notes: 'required' },
       { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'required' },
     ],
-    protocol: 'When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.',
-    ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as the protocol says and end with HOPPER_PROPOSAL. Change nothing, and open no pull request.',
+    protocol: 'When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.',
+    ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_PROPOSAL. Change nothing, and open no pull request.',
     brief: (item, from, _decision, notes) => [
       `[hopper proposal] Your proposal (version ${item.versions.length}) was sent back by ${whoOf(from)}. What to change:`,
       notes,

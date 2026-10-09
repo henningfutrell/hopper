@@ -3,6 +3,7 @@
 import type { ExecutionContext } from '../../domain/ports.ts';
 import { LOGIN_KINDS, type LoginCheck, type LoginKind, type LoginReport } from '../../domain/types.ts';
 import { DEFAULT_EXPIRES_IN_SEC } from '../../logins/recognise.ts';
+import type { LoginSignal } from '../../logins/signals.ts';
 import type { LoginWait } from './monitor.ts';
 import { readTurn, type AuthFields } from './screen.ts';
 
@@ -19,6 +20,23 @@ export const loginCancelledNote = (tool: string): string => `[hopper] The user c
 
 /** Typed in when the user asks for a new code. */
 export const loginNewCodeNote = (tool: string): string => `[hopper] The user asked for a new code for the ${tool} login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
+
+/**
+ * Whether a login is GitHub's (issue #563): `gh`, or a device page on github.com. A job never logs in to GitHub
+ * itself; the hopper does GitHub for it.
+ */
+export function isGitHubLogin(r: Pick<LoginReport, 'tool' | 'verificationUrl'>): boolean {
+  if (/^gh(\s|$)/.test(r.tool.trim())) return true;
+  try {
+    const u = new URL(r.verificationUrl);
+    return /(^|\.)github\.com$/i.test(u.hostname) && u.pathname.startsWith('/login/device');
+  } catch {
+    return false;
+  }
+}
+
+/** Typed in, once, when a job reports a GitHub login (issue #563): ask the hopper instead. */
+export const githubLoginNote = (tool: string): string => `[hopper] Do not log in to GitHub on this machine: stop the ${tool} login (the command waiting for it) without entering the code. The hopper does GitHub for this job with its own connection: run sh "$HOPPER_GH" help to see how, and use it for what you needed the login for. If HOPPER_GH is not set, or the hopper cannot do what you need, say why and report the login again; then it goes to the user.`;
 
 /** Typed in when the login the job reported cannot be taken. */
 export const loginUnreadableNote = (problem: string): string => `[hopper] The login you reported could not be taken: ${problem}. Report it again: end your message with ${HOW}.`;
@@ -51,14 +69,23 @@ export function loginReportOf(f: AuthFields, now: Date): LoginReport | { problem
 
 /**
  * A turn that ended on a login: reported to the logins (the job then waits), or said back to the job when it
- * cannot be taken, `unreadable` times in a row at most before the job fails.
+ * cannot be taken, `unreadable` times in a row at most before the job fails. A GitHub login is steered to the
+ * hopper's GitHub proxy instead (`steered`, issue #563), unless the job was steered the turn before and reports it again,
+ * or already waits on it. The login it already waits on, reported again (a script polling, Claude checking on it,
+ * issue #567), is the same login and says nothing new.
  */
-export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number): { login: LoginRef } | { say: string } | { failed: string } {
+export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false, waitsOn?: LoginRef): { login: LoginRef } | { say: string; steered?: true } | { failed: string } {
   const report = loginReportOf(fields, now);
+  if (!('problem' in report) && !steered && !waitsOn && isGitHubLogin(report)) {
+    ctx.progress(0, `the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
+    return { say: githubLoginNote(report.tool), steered: true };
+  }
   let problem = 'problem' in report ? report.problem : ctx.logins ? undefined : 'this hopper takes no logins';
   if (!problem && !('problem' in report)) {
     try {
-      const login = { id: ctx.logins!.report(report, { renewable: true }), tool: report.tool };
+      const id = ctx.logins!.report(report, { renewable: true });
+      if (id === waitsOn?.id) return { login: waitsOn };
+      const login = { id, tool: report.tool };
       ctx.progress(0, `waiting for the ${login.tool} login: the user completes it (Logins)`);
       return { login };
     } catch (e) { problem = (e as Error).message; }
@@ -67,20 +94,29 @@ export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, 
   return { say: loginUnreadableNote(problem ?? 'unknown') };
 }
 
-/** The login as the monitor waits on it: what the user did, and Claude going on completes it. */
+/**
+ * The login as the monitor waits on it: what the user did, and a login signal on screen (issue #567) — completed,
+ * expired, or denied at the provider. Only a signal ends it; Claude going on by itself never does.
+ */
 export function loginWait(ctx: ExecutionContext, login: LoginRef, cleared: () => void): LoginWait {
   return {
     check: () => ctx.logins?.check(login.id) ?? { act: 'wait' },
-    wentOn: () => {
-      ctx.logins?.completed(login.id);
+    signal: (s: LoginSignal) => {
+      if (s === 'expired') {
+        ctx.logins?.expired(login.id);
+        ctx.progress(0, `the ${login.tool} code expired before the login was completed`);
+        return;
+      }
+      if (s === 'completed') ctx.logins?.completed(login.id);
+      else ctx.logins?.failed(login.id, `the ${login.tool} login was denied at the provider`);
       cleared();
-      ctx.progress(0, `the ${login.tool} login went through: claude goes on`);
+      ctx.progress(0, s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
     },
   };
 }
 
 /** What the user did with the login, as the job hears it: it fails, or a note typed in. A new code keeps the login open. */
-export function afterLoginAct(said: Exclude<LoginCheck, { act: 'wait' }>, tool: string): { failed: string } | { say: string; progress: string } {
+export function afterLoginAct(said: Exclude<LoginCheck, { act: 'wait' } | { act: 'ended' }>, tool: string): { failed: string } | { say: string; progress: string } {
   if (said.act === 'fail') return { failed: said.reason };
   if (said.act === 'cancelled') return { say: loginCancelledNote(tool), progress: `the user cancelled the ${tool} login: told claude` };
   return { say: loginNewCodeNote(tool), progress: `the user asked for a new ${tool} code: told claude` };

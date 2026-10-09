@@ -17,6 +17,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'minor_decision.picked': 'question', 'minor_decision.overridden': 'warn',
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
   'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
+  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -26,6 +27,10 @@ export function detailOf(e: DomainEvent): string {
   // Phase shifts (issue #548): from which phase to which, and why; a fork, what it is for.
   if (e.type === 'job.phase_changed') return `${String(d.from)} → ${String(d.to)}: ${String(d.reason)}`;
   if (e.type === 'job.forked') return `${String(d.to)} forked as ${String(d.forkId).slice(0, 8)}${typeof d.note === 'string' ? `: ${d.note}` : ''}`;
+  // The GitHub proxy (issue #563): what the hopper did on GitHub for the job, where, or why not.
+  if (e.type === 'github_proxy.done') return `${String(d.op)} ${String(d.repo)}#${String(d.number)}: ${String(d.url)}`;
+  if (e.type === 'github_proxy.refused') return `${typeof d.op === 'string' ? `${d.op} ` : ''}refused: ${String(d.reason)}`;
+  if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;

@@ -5,6 +5,7 @@
 import type { Question } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { forksOnAnswered } from './phase-shifts.ts';
 
 export interface AnswerHandlers {
   /** Requeue the job with the answer (or, for a closed question, the close text) pending; the next claim resumes it. */
@@ -30,12 +31,15 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
   };
   return {
     onAnswered(q) {
+      // Forks of it still running (issue #570): they keep the answer, and the job is told they run.
+      const forks = forksOnAnswered(c, q);
+      const answer = forks ? `${q.answer ?? ''}\n\n${forks}` : q.answer ?? '';
       if (parkedOn(q)) {
-        store.jobs.update(q.jobId, { pendingAnswer: q.answer ?? '' });
+        store.jobs.update(q.jobId, { pendingAnswer: answer });
         return;
       }
       if (!waitingOn(q)) return;
-      store.jobs.update(q.jobId, { status: 'queued', pendingAnswer: q.answer ?? '', holdReason: undefined, waitReason: undefined });
+      store.jobs.update(q.jobId, { status: 'queued', pendingAnswer: answer, holdReason: undefined, waitReason: undefined });
       store.events.append({ type: 'job.requeued', jobId: q.jobId, questionId: q.id, data: { from: 'waiting_answer', reason: q.status === 'closed' ? 'closed' : 'answered' } });
     },
     onExpired(q) {

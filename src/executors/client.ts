@@ -12,7 +12,9 @@ import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
 import type { FixedListRelease } from '../machines/client-bridge.ts';
 import type { DiskReading } from '../domain/machines.ts';
+import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskOf } from '../machines/disk.ts';
+import { resourcesOf } from '../machines/resources.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
 /** Reaching a client target. */
@@ -68,14 +70,16 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
  * (`manifest`, issue #545; a client before that checks a fixed list of file names), and its home when it says (a
  * client before issue #323 does not).
  */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading }> {
-  const { release, loads, home, disk } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown }>(t, '/release', {}, 15000);
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading }> {
+  const { release, loads, home, disk, resources } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
   const read = d && typeof d.freeBytes === 'number' && typeof d.totalBytes === 'number' ? { disk: diskOf(d.freeBytes, d.totalBytes) } : {};
   const at = clientHome(home);
-  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read };
+  // Its CPU, memory and swap (issue #560): a client older than this says none.
+  const res = resourcesOf(resources);
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}) };
 }
 
 /**

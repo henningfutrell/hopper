@@ -5,6 +5,9 @@ import { exportJsonSchemas } from './export.ts';
 import { LEGACY_EVENT_SCHEMAS } from './legacy.ts';
 
 export const EVENT_DOCS: Record<EventType, string> = {
+  'github_proxy.done': 'The hopper did a GitHub operation a running job asked for (issue #563), with the hopper\'s own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `pr.create`, `pr.view`) on `repo`, `number` and `url` where it is. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job\'s machine; `own`: the job is the hopper\'s own user\'s. For another user\'s job the same event is also in the log of the hopper\'s own user, with `forUser` and `job`.',
+  'github_proxy.refused': 'The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user\'s job may not ask, a rate limit, or no GitHub connection. Fields as `github_proxy.done`; `op` and `repo` when the request named them.',
+  'github_proxy.failed': 'GitHub failed or refused a GitHub operation the hopper did for a running job (issue #563): `error` is what GitHub answered, as the job was told. Fields as `github_proxy.done`.',
   'job.queued': 'A job was created from a source item; it waits at the queue gate until accepted (`job.accepted`).',
   'job.prioritized': 'The router\'s advice arrived for a job; once per job, whatever its status then.',
   'job.held': 'A Decision held a job and its hold reason changed.',
@@ -98,10 +101,12 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'minor_decision.settings_changed': 'An admin changed a decision point\'s settings (issue #550): its mode (`off`, `shadow`, `active`) and its threshold, `from` and `to`.',
   'job.phase_changed': 'A job moved into another phase (issue #548): `from` and `to` are `work`, `research` or `proposal`. A switch from a question (`mode: "switch"`, the `questionId`, the person or level `by`, the scoping `note`) moves it into research or a proposal in the same session; accepted, the person picks whether it goes back to `work`, ends, or goes on from research to a proposal. `reason`: the note, or what moved it.',
   'job.forked': 'A separate research or proposal job (`forkId`) was spun off a job\'s question (issue #548), by a person or an escalation level the phase-shift settings allow (`by`), about the aspect in `note`. The parent keeps waiting on its question (`parent: "waiting"`) or was parked (`"parked"`). The fork carries the parent\'s priority; its accepted result answers the question.',
-  'job.fork_resolved': 'A fork\'s research report or proposal was decided (issue #548). Accepted, it is the answer to the parent\'s question when that is still open (`delivered`); rejected, the question stays open.',
+  'job.fork_resolved': 'A fork\'s research report or proposal was decided (issue #548). Accepted, it is the answer to the parent\'s question when that is still open (`delivered`); rejected, the question stays open. `question`: the question\'s status at the decision (issue #570): `answered` when a person or a level answered it while the fork ran, and an acceptance delivered nothing.',
   'phase_shifts.settings_changed': 'An admin saved the phase-shift settings (issue #548): the default mode (`fork` or `switch`), what a parent does while its fork runs (`wait` or `park`), and the escalation levels that may shift a job themselves.',
   'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
+  'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.',
+  'vault.secret_removed': 'A vault secret was removed (issue #558), and who removed it.',
 };
 
 type Prop = Record<string, unknown>;

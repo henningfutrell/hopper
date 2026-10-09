@@ -8,7 +8,10 @@
 // notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
 // first, the longest waiting on top (issue #450).
 // Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
-// takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions.
+// takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions. The forks
+// made from a question show on its card, with their status and a link (issue #570).
+// A parked job's question is not here: it is in Parked, with its job, and comes back when the job is picked up with
+// it still open (issue #565).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -28,9 +31,9 @@ import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
-import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
+import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/selectors';
 import { ParkButton } from '@/views/overview/lanes';
-import { PhaseShiftSettingsPanel, ShiftActions } from '@/views/phase-shifts';
+import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -91,21 +94,18 @@ function QuestionCard({ q }: { q: QuestionView }) {
     setSending(false);
     refreshQuestions().catch(() => {});
   };
-  // A parked job (issue #501) still waits on its question: the answer is kept until it is re-queued.
-  const parked = job?.status === 'parked' && job.questionId === q.id;
-  const movedOn = job && !parked && (job.status !== 'waiting_answer' || job.questionId !== q.id);
+  const movedOn = job && (job.status !== 'waiting_answer' || job.questionId !== q.id);
   return (
     <Panel title={q.tier === 'human' ? 'For you' : `With ${q.tier}`} icon={MessageCircleQuestion} className={q.high ? 'border-warn/60' : q.tier === 'human' ? 'border-question/40' : ''}
       action={<span className="num text-xs text-muted-foreground">asked {clock(q.createdAt)} <RaisedOn raisedBy={q.raisedBy} className="align-bottom" />{q.tier === 'human' && <> · notified {q.notifyCount}×</>}
-        {q.tier === 'human' && q.expiresAt && !parked && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}
-        {parked && <> · its job is parked: never expires</>}</span>}
+        {q.tier === 'human' && q.expiresAt && <> · expires <Countdown iso={q.expiresAt} className="text-warn" /></>}</span>}
       bodyClassName="space-y-3">
       {!job && q.high && <HighTag priority={q.priority} className="self-start" />}
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
-        {parked && <StatusBadge status="parked" label="job parked" title="The answer is kept, and the job resumes with it when it is re-queued." />}
-        {!parked && !movedOn && <ParkButton job={job} />}</div>}
+        {!movedOn && <ParkButton job={job} />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
+      <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>
         <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -149,7 +149,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
 }
 
 export function Questions() {
-  const questions = useHopper((s) => s.questions);
+  const questions = useQuestions();
   const ordered = useMemo(() => questionOrder(questions), [questions]);
   const list = useRef<HTMLDivElement>(null);
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);

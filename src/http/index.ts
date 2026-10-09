@@ -14,6 +14,7 @@ import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { installHostGuard } from './host-guard.ts';
 import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
+import { jobGitHubRoutes } from './job-github.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -34,8 +35,10 @@ import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
+import { machineHistoryRoutes } from './machine-history.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
+import { vaultRoutes } from './vault.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
@@ -101,6 +104,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   questionGatesRoutes(app, tenant);
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
+  vaultRoutes(app, tenant);
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
@@ -112,10 +116,13 @@ export function createServer(o: ServerOptions): FastifyInstance {
   userRoutes(app, { tenants: o.tenants, instanceAdmin });
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
+  machineHistoryRoutes(app, { ...tenant, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
+  // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
+  jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,

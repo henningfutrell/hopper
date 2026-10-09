@@ -177,7 +177,8 @@ describe('a running job keeps GitHub access across a renewal (#441)', () => {
 
     const job = (await jobs(app))[0]!;
     const dir = join(work, '.hopper-scratch', job.id, 'credentials');
-    expect(env).toEqual({ GH_CONFIG_DIR: join(dir, 'gh') });
+    // Beside it, the GitHub proxy's files (issue #563): the job's proxy token and hopper-gh, never a GitHub token.
+    expect(env).toEqual({ GH_CONFIG_DIR: join(dir, 'gh'), HOPPER_TOKEN_FILE: join(dir, 'hopper', 'token'), HOPPER_GH: join(dir, 'hopper', 'gh'), HOPPER_URL: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/) });
     const hosts = () => readFileSync(join(dir, 'gh', 'hosts.yml'), 'utf8');
     const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
     expect(github.tokens.has(started)).toBe(true);

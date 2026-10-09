@@ -41,7 +41,7 @@ interface Pane {
   /** Looks left before the late dialog shows (FakeHerdrOptions.lateDialog). */
   lateIn?: number;
   /** Background work the last turn started, still running (FakeTurn.background). */
-  background?: { work: string; polls: number; wakes?: boolean };
+  background?: { work: string; polls: number; wakes?: boolean; prints?: string[] };
 }
 
 export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient {
@@ -131,6 +131,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       settle(p, 'idle');
       return;
     }
+    if (p.background && p.status === 'idle' && p.background.prints?.length) p.lines.push(p.background.prints.shift()!);
     if (p.background && p.status === 'idle' && --p.background.polls <= 0) {
       const { wakes } = p.background;
       p.background = undefined;
@@ -147,7 +148,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     if (t.hiddenUntilScrolled) p.hidden = [...t.output, '✻ Cooked for 1s'];
     else p.lines.push(...t.output, '✻ Cooked for 1s');
     p.turn = undefined;
-    if (t.background) p.background = { ...t.background };
+    if (t.background) p.background = { ...t.background, ...(t.background.prints ? { prints: [...t.background.prints] } : {}) };
     if (t.end === 'blocked' && t.dialog) { p.lines.push(...t.dialog); p.dialogLines = t.dialog.length; }
     if (t.end === 'exit') exit(p);
     else settle(p, t.end === 'blocked' ? 'blocked' : 'idle');

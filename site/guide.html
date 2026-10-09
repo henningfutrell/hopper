@@ -307,15 +307,19 @@ cleanup never removes them.</p>
 </ul>
 <p>Some executors cannot park (the print-mode ones); such a job says <em>cannot park</em> and why.</p>
 <h3>While it is parked</h3>
-<p>It is listed under <strong>Parked</strong> in the Overview and the Queue, with its machine, how long it has been parked, its
-work tree, and whether its question is open or answered. Its question stays in Questions, marked <em>job parked</em>, never
-expires, and you can still answer it: the answer is kept for when the job comes back. A login it waited on fails. There is no
-time limit and no reminder.</p>
+<p>It moves to <strong>Parked</strong>, its own place in the menu, with its open question: Questions and its count show only the
+questions that need an answer now. Parked lists one short row per job: its issue, its machine, how long it has been parked,
+the first line of its question, and whether it <em>resumes its session</em> or <em>starts fresh</em>. High-priority jobs come
+first. Parked's count in the menu reminds you of them. Open a row to read the whole question. Its question never expires, and
+you can still answer it: the answer is kept for when the job comes back. The Overview and the Queue list parked jobs too. A
+login it waited on fails. There is no time limit.</p>
 <h3>Resume</h3>
-<p>Press <strong>Re-queue</strong>. The job waits for its own machine (held while that machine is offline, never started
+<p>Press <strong>Pick up</strong>. The job waits for its own machine (held while that machine is offline, never started
 elsewhere), opens a new pane in its kept work tree and resumes its agent session there. If its question is still open, it waits
-on it again. A job with no recorded session asks first: <strong>Re-queue and start fresh</strong> gives it a new session, told
-its task, the question and the answer. <strong>Cancel</strong> ends a parked job.</p>
+on it again, and the question is back in Questions. To answer and resume in one step, open its row in Parked, type the answer
+and press <strong>Answer and pick up</strong>. A job with no recorded session asks first: <strong>Pick up and start
+fresh</strong> gives it a new session, told its task, the question and the answer. <strong>Cancel</strong> ends a parked
+job.</p>
 
 <h2 id="priority">High priority and priority lanes</h2>
 <h3>The labels</h3>
@@ -459,7 +463,7 @@ Others see the graph without handles.</p>
 <footer class="border-t border-border">
   <div class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-8">
     <span class="flex items-center gap-2"><img src="hopper-logo.svg" alt="" width="13" height="20" class="h-5 w-auto">hopper</span>
-    <span class="flex gap-4"><a href="./" class="hover:text-foreground">Home</a><a href="install.html" class="hover:text-foreground">Install</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a></span>
+    <span class="flex gap-4"><a href="./" class="hover:text-foreground">Home</a><a href="install.html" class="hover:text-foreground">Install</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a><a href="https://github.com/henningfutrell/hopper/blob/dev/LICENSE" class="hover:text-foreground">MIT license</a></span>
   </div>
 </footer>
 </body>

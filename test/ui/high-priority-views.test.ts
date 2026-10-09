@@ -44,6 +44,8 @@ function fakeDaemon(role: Role) {
     '/api/accounts': { accounts: [] }, '/api/usage': { readings: [], sources: [], machines: [], limits: { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false } },
     '/api/logins': { now: T, settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
     '/api/priority-lanes': priorityLanes,
+    // The resource graphs (issue #560): no machine samples.
+    '/api/machines/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T00:00:00.000Z', to: '2026-10-09T00:00:00.000Z', stepMs: 900000, retentionDays: 90, series: [] },
     '/api/machines/config': {
       version: 'v1', executors: ['test'], defaults: { lanes: 2, executors: ['test'] }, ssh: { targets: [], notes: [], here: [] },
       machines: [{ name: 'desk', plugin: 'local', options: { lanes: 2 } }],

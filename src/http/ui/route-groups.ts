@@ -11,5 +11,6 @@ import { registerPriorityLaneRoutes } from './priority-lanes.ts';
 import { registerPhaseShiftRoutes } from './phase-shifts.ts';
 import { registerReviewRoutes } from './reviews.ts';
 import { registerSourceIntakeRoutes } from './source-intake.ts';
+import { registerVaultRoutes } from './vault.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes] as const;

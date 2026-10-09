@@ -64,15 +64,18 @@ export interface ExecutionContext {
  */
 export interface RunLogins {
   /**
-   * The login's id; one open login per run and tool, so a new code updates it. `renewable`: the run can ask its tool
-   * for a new code. `restore`: the same login read again after a restart: only its URL and code are taken back.
-   * Throws on a report its kind refuses.
+   * The login's id; one open login per run and prompt — the same tool, code or URL (issue #567) —, so the same code
+   * reported again is the same login and a new code updates it. `renewable`: the run can ask its tool for a new
+   * code. `restore`: the same login read again after a restart: only its URL and code are taken back. Throws on a
+   * report its kind refuses.
    */
   report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
   /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
   check(id: string): LoginCheck;
-  /** The tool went on. */
+  /** The login went through: a login signal (a token obtained, the CLI logged in), or a print-mode run that succeeded. */
   completed(id: string): void;
+  /** The run said its code expired before it was completed (issue #567): expired now, as at `expiresAt`. */
+  expired(id: string): void;
   /** The run ended first, or could not take the login. */
   failed(id: string, reason: string): void;
 }
@@ -559,6 +562,18 @@ export interface JobCredentials {
   files: Record<string, string>;
   paths: Record<string, string>;
   env: Record<string, string>;
+}
+
+/**
+ * What a job asks the hopper's GitHub proxy with (issue #563): its proxy token and the `hopper-gh` script,
+ * kept as files in its credentials dir (by path under it, `paths` the variables pointing there), and `vars`
+ * — the hopper's URL as the job's machine reaches it. Only where its machine keeps files: never in an
+ * environment variable.
+ */
+export interface JobProxyCredentials {
+  files: Record<string, string>;
+  paths: Record<string, string>;
+  vars: Record<string, string>;
 }
 
 export class SourceError extends Error {

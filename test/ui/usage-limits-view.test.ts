@@ -30,6 +30,8 @@ function fakeDaemon(role: Role) {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/sources': { sources: [] },
     '/api/questions': { questions: [] }, '/api/accounts': { accounts: [] }, '/api/usage': usage, '/api/usage/history': history,
     '/api/logins': { now: '2026-10-08T12:00:00.000Z', settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
+    // The resource graphs (issue #560): no machine samples.
+    '/api/machines/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T00:00:00.000Z', to: '2026-10-09T00:00:00.000Z', stepMs: 900000, retentionDays: 90, series: [] },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const [path] = String(input).split('?') as [string];

@@ -9,10 +9,10 @@ import { allows } from '@/model/roles';
 import { reviewBadge } from '@/model/reviews';
 import { sectionBadges, type SectionBadge } from '@/model/sections';
 import { openHandoffs, openProblems } from '@/model/failures';
-import { highHandoffs, highQuestions } from '@/model/priority';
-import { awaitsOwner } from '@/model/questions';
+import { highHandoffs, highQuestions, isHighJob } from '@/model/priority';
+import { awaitsOwner, notParked } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
-import type { Job, SectionKind } from '@/model/wire';
+import type { Job, QuestionView, SectionKind } from '@/model/wire';
 import { useHopper } from './index';
 
 /** Every job the UI currently knows, by id. */
@@ -42,8 +42,22 @@ export function useQuestionWaits(since: number): QuestionWait[] {
   return useMemo(() => questionWaits(history, since, jobs), [history, since, jobs]);
 }
 
-/** How many open questions wait on the owner, seen or not: the nav badge (issue #499). */
-export const useAwaitingOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+/** The open questions but a parked job's (issue #565): what Questions shows and counts, and Attention lists. */
+export function useQuestions(): QuestionView[] {
+  const questions = useHopper((s) => s.questions);
+  const jobs = useJobIndex();
+  return useMemo(() => notParked(questions, jobs), [questions, jobs]);
+}
+
+/** How many open questions wait on the owner, seen or not: the nav badge (issue #499); a parked job's not (issue #565). */
+export const useAwaitingOwner = (): number => useQuestions().filter(awaitsOwner).length;
+
+/** The parked jobs, and how many are high priority: the Parked nav badge (issue #565). */
+export function useParkedBadge(): { n: number; high: number } {
+  const { parked } = useJobBoard();
+  const threshold = useHopper((s) => s.highPriority);
+  return useMemo(() => ({ n: parked.length, high: parked.filter((j) => isHighJob(j, threshold)).length }), [parked, threshold]);
+}
 
 
 /** Server time, ticking each second: the browser's shared clock plus the offset read with the logins (issue #477). */
@@ -88,8 +102,10 @@ export const useCanAdminInstance = (): boolean => useHopper((s) => s.authed && a
 
 /** Every section's nav badge (issue #543), by the one rule: what is open and waits on a person, seen or not (#499). */
 export function useSectionBadges(): Record<SectionKind, SectionBadge> {
-  const questions = useAwaitingOwner();
-  const highQ = useHopper((s) => highQuestions(s.questions));
+  const open = useQuestions();
+  const questions = open.filter(awaitsOwner).length;
+  const highQ = highQuestions(open);
+  const parked = useParkedBadge();
   const reviews = useHopper((s) => s.reviews);
   const logins = useLoginsBadge();
   const failures = useHopper((s) => s.failures);
@@ -98,5 +114,6 @@ export function useSectionBadges(): Record<SectionKind, SectionBadge> {
     reviews: { proposal: reviewBadge(reviews.proposal.items), research: reviewBadge(reviews.research.items) },
     logins,
     failures: { problems: openProblems(failures), handoffs: openHandoffs(failures), high: highHandoffs(failures) },
-  }), [questions, highQ, reviews, logins, failures]);
+    parked,
+  }), [questions, highQ, reviews, logins, failures, parked]);
 }

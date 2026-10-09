@@ -3,12 +3,13 @@
 
 import type { AccessRepository } from './access.ts';
 import type { IntakeMigration } from './intake.ts';
+import type { VaultSecret } from './vault.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewSettings, ReviewStatus, ReviewVersion, PhaseShiftSettings, PhaseSuggestion,
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, MinorDecisionSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
-import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, PriorityLaneSettings, UsageLimitPair } from './types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, MachineSample, PriorityLaneSettings, ResourceSeries, UsageLimitPair } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -93,6 +94,20 @@ export interface WebhookRepository {
   /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
   dueDeliveries(now: Date): WebhookDelivery[];
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
+}
+
+/** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. */
+export interface VaultRepository {
+  list(): VaultSecret[];
+  get(name: string): VaultSecret | undefined;
+  /** Keeps a new secret, its value already sealed for its id. False (nothing written) when the name is taken. */
+  add(secret: VaultSecret, sealed: string): boolean;
+  /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
+  replace(secret: VaultSecret, sealed: string): boolean;
+  /** The secret's sealed value; undefined when there is none. Never part of a secret. */
+  sealed(id: string): string | undefined;
+  /** True when there was one. */
+  remove(name: string): boolean;
 }
 
 export interface QuestionRepository {
@@ -261,6 +276,21 @@ export interface UsageHistoryRepository {
   series(q: UsageHistoryQuery): UsageSeries[];
   /** The lines summed per unit and usage window, nothing named: this user's share of the instance usage totals. */
   totals(q: UsageHistoryQuery): UsageTotalSum[];
+  /** Delete the samples older than `before`; how many. */
+  prune(before: Date): number;
+}
+
+/** The resource graph's query (issue #560): the usage graph's, and the one machine when it asks for one. */
+export interface MachineHistoryQuery extends UsageHistoryQuery {
+  machineId?: string;
+}
+
+/** Machine resources over time (issue #560): machine samples in the user schema. */
+export interface MachineHistoryRepository {
+  /** Keep machine samples; one already kept (same machine and time) is kept once. How many were new. */
+  record(samples: readonly MachineSample[]): number;
+  /** The resource graph's lines over [from, to), ordered by machine and resource. */
+  series(q: MachineHistoryQuery): ResourceSeries[];
   /** Delete the samples older than `before`; how many. */
   prune(before: Date): number;
 }
@@ -462,6 +492,8 @@ export interface UserStore {
   decisions: DecisionRepository;
   events: EventLog;
   webhooks: WebhookRepository;
+  /** The vault (issue #558). */
+  vault: VaultRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
@@ -472,6 +504,7 @@ export interface UserStore {
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
+  machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */

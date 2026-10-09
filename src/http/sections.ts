@@ -1,7 +1,8 @@
 // GET /api/sections (issue #543, design.md "Sections"): every section type in nav order, with what is open in it, how
 // many of those wait on a person, and how many of those are high priority (#535), and the event types it emits. A
-// section's open rule is its own, and stays where the section is: an open question at the human tier; a pending login;
-// an open problem or hand-off; a review item open or being revised, waiting on a person at the human stage.
+// section's open rule is its own, and stays where the section is: an open question at the human tier, its job not parked
+// on it; a pending login; an open problem or hand-off; a review item open or being revised, waiting on a person at the
+// human stage; a parked job, waiting on a person to pick it up (issue #565).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
 import { jobPriorityTag, REVIEW_OPEN_STATUSES, SECTION_KINDS, SECTIONS, type JobId, type SectionKind, type SectionSummary } from '../domain/types.ts';
@@ -19,9 +20,15 @@ function count(store: UserStore, kind: SectionKind): Counts {
     return { open: open.length, waiting: waiting.length, high: high(waiting.map((p) => p.jobId)) };
   }
   if (kind === 'questions') {
-    const open = store.questions.list({ status: ['open'] });
+    // A parked job's question is in Parked, with its job (issue #565).
+    const parkedOn = new Set(store.jobs.list({ status: ['parked'] }).map((j) => j.questionId));
+    const open = store.questions.list({ status: ['open'] }).filter((q) => !parkedOn.has(q.id));
     const waiting = open.filter((q) => q.tier === 'human');
     return { open: open.length, waiting: waiting.length, high: high(waiting.map((q) => q.jobId)) };
+  }
+  if (kind === 'parked') {
+    const parked = store.jobs.list({ status: ['parked'] });
+    return { open: parked.length, waiting: parked.length, high: high(parked.map((j) => j.id)) };
   }
   if (kind === 'logins') {
     const open = store.logins.list({ status: ['pending'] });

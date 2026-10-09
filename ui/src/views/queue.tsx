@@ -3,7 +3,7 @@
 // the pre-sort into the user order to be accepted; any waiting job can be rejected, with a reason — it ends
 // `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
 // where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
-// queue until run again or dismissed (issue #355), and the parked jobs, out of their lanes until re-queued (issue #501).
+// queue until run again or dismissed (issue #355), and the parked jobs, out of their lanes until picked up (issue #501).
 import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { JobTitle, Since } from '@/components/job';

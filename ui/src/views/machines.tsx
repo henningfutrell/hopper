@@ -8,8 +8,9 @@
 // daemon without a restart (design.md "Machines from the UI", issue #18). The machine defaults — what a
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142). Below the machines, the
 // priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
-// blast radius, the gate and the actor machines (issue #542, blast-radius.tsx).
-import { Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
+// blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
+// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx).
+import { Activity, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -20,14 +21,16 @@ import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
+import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit } from '@/model/wire';
+import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
 import { JoinMachineForm } from './machine-join';
 import { PriorityLanesPanel } from './priority-lanes';
 import { BlastRadiusPanel } from './blast-radius';
+import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -49,6 +52,8 @@ interface Ctx {
   setEditing: (id: string | null) => void;
   attach: (e: MachineEdit, done: string) => Promise<boolean>;
   edit: (e: Exclude<PluginsEdit, { action: 'rescan' }>, done: string) => Promise<boolean>;
+  /** Every machine's CPU over the last day, for the sparklines (issue #560). */
+  sparks: readonly ResourceSeries[];
 }
 
 function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
@@ -57,6 +62,8 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const busyLanes = m.lanes.filter((l) => l.state !== 'idle').length;
   const updateLine = clientUpdateLine(m.client, window.location.origin);
   const editing = ctx.editing === m.id;
+  const [graph, setGraph] = useState(false);
+  const res = resourcesText(m.resources);
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
     <>
       <Button size="sm" variant="outline" disabled={ctx.busy} onClick={() => ctx.setEditing(m.id)} aria-label={`Edit ${m.id}`}><Pencil />Edit</Button>
@@ -84,6 +91,8 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.client && <Fact label="connection">client, dialled in</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
         {reservedText(m) && <Fact label="reserved lanes">{reservedText(m)}</Fact>}
+        {res && <Fact label="CPU">{res.cpu}</Fact>}
+        {res && <Fact label="memory">{res.memory}</Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
       </dl>
@@ -100,7 +109,12 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
       )}
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      <CpuSparkline series={ctx.sparks} machineId={m.id} />
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide resources' : 'Resources over time'}</Button>
+        {actions}
+      </div>
+      {graph && <MachineResourcesGraph machineId={m.id} />}
       {editing && kind.kind === 'attached' && ctx.config && (
         <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />
       )}
@@ -149,8 +163,9 @@ export function Machines() {
       setBusy(false);
     }
   };
+  const sparks = useCpuSparks();
   const ctx: Ctx = {
-    config, authed, busy, editing, setEditing,
+    config, authed, busy, editing, setEditing, sparks,
     attach: (e, done) => run(async () => setConfig(await post<MachinesConfig>('/ui/api/machines', e)), done),
     edit: (e, done) => run(async () => { await post('/ui/api/plugins', e); await load(); }, done),
   };

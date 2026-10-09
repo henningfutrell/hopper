@@ -18,6 +18,7 @@ import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
+import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { newerStore } from './migrations.ts';
 
@@ -284,6 +285,37 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX research_reports_job ON research_reports (job_id);
   CREATE INDEX research_reports_status ON research_reports (status, created_at)`,
+  // 26: machine resources over time (issue #560): one machine sample per machine and time. A table only: the build
+  // before runs on it.
+  `CREATE TABLE machine_samples (
+    seq BIGSERIAL PRIMARY KEY,
+    at TIMESTAMPTZ NOT NULL,
+    machine_id TEXT NOT NULL,
+    cores DOUBLE PRECISION,
+    cpu_busy DOUBLE PRECISION,
+    load1 DOUBLE PRECISION,
+    mem_total DOUBLE PRECISION,
+    mem_available DOUBLE PRECISION,
+    swap_total DOUBLE PRECISION,
+    swap_used DOUBLE PRECISION,
+    disk_free DOUBLE PRECISION,
+    disk_total DOUBLE PRECISION,
+    lanes_busy INTEGER NOT NULL,
+    lanes_max INTEGER NOT NULL,
+    UNIQUE (machine_id, at)
+  );
+  CREATE INDEX machine_samples_at ON machine_samples (at)`,
+  // 27: the logins a device-flow polling loop flooded collapse into one per real prompt (issue #567).
+  collapseFloodedLogins,
+  // 28: The vault (issue #558): each secret's sealed value (`sealed`, never read into its metadata) beside its metadata.
+  // A table only: the build before runs on it.
+  `CREATE TABLE vault_secrets (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    sealed TEXT NOT NULL,
+    body TEXT NOT NULL
+  )`,
 ];
 
 /** A user schema's version once migrated. */

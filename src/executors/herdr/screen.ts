@@ -260,6 +260,21 @@ export function readTurn(text: string, anchor: string): TurnView {
   return view;
 }
 
+/**
+ * What the turn shows after its last login report (issue #567), the report's field lines left out: where a login
+ * signal is read. Empty while no report is on screen, so nothing above it — the prompt, the job's issue text — is.
+ */
+export function afterLoginReport(text: string, anchor: string): string {
+  const all = text.split('\n');
+  const lines = turnLines(all, anchorLine(all, anchor));
+  let at = -1;
+  lines.forEach((l, i) => { if (markerOf(l) === 'auth') at = i; });
+  if (at < 0) return '';
+  let k = at + 1;
+  while (k < lines.length && (authField(lines[k]!) || stripGutter(lines[k]!) === '')) k++;
+  return lines.slice(k).join('\n');
+}
+
 /** Claude Code's suggestion in an empty input box, e.g. `Try "refactor <filepath>"`: not input. */
 const PLACEHOLDER = /^Try "/;
 

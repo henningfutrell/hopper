@@ -1,6 +1,7 @@
 // Every job view's data, from the one job store: which group each status is in, the groups as
 // lists, the overview's numbers counted off those lists, the lane board, the waiting order, and how a lane,
 // a machine or an event's subject is named.
+import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
@@ -61,11 +62,15 @@ export function parkRefusal(job: Job, parkingExecutors: readonly string[]): stri
 /** Whether Park is offered (issues #501, #530): where the daemon takes it. */
 export const canPark = (job: Job, parkingExecutors: readonly string[]): boolean => parkRefusal(job, parkingExecutors) === undefined;
 
-/** A parked job with no agent session to resume (issue #530): its re-queue starts a fresh one, and asks first. */
+/** A parked job with no agent session to resume (issue #530): picked up, it starts a fresh one, and asks first. */
 export const startsFresh = (job: Job): boolean => job.status === 'parked' && job.agentSession === undefined;
 
-/** Whether Re-queue is offered (issue #501): a parked job. */
-export const canRequeue = (job: Job): boolean => job.status === 'parked';
+/** The Parked section's order (issue #565): high-priority jobs first, then the longest parked on top. */
+export const parkedOrder = (jobs: readonly Job[], threshold: number | null): Job[] =>
+  highFirst([...jobs].sort((a, b) => (a.parked?.at ?? a.updatedAt).localeCompare(b.parked?.at ?? b.updatedAt)), (j) => isHighJob(j, threshold));
+
+/** Whether Pick up is offered (issues #501, #565): a parked job. */
+export const canPickUp = (job: Job): boolean => job.status === 'parked';
 
 /** What Run again made, as its toast says it (issue #354): the new job queued — waiting for acceptance, or held and why — or failed at once. */
 export function rerunOutcome(job: Job): { ok: boolean; message: string } {
