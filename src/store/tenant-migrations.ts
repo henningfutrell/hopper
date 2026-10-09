@@ -18,6 +18,7 @@ import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
+import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { newerStore } from './migrations.ts';
 
@@ -304,6 +305,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
     UNIQUE (machine_id, at)
   );
   CREATE INDEX machine_samples_at ON machine_samples (at)`,
+  // 27: the logins a device-flow polling loop flooded collapse into one per real prompt (issue #567).
+  collapseFloodedLogins,
 ];
 
 /** A user schema's version once migrated. */

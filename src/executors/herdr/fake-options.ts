@@ -22,9 +22,10 @@ export interface FakeTurn {
   /**
    * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
    * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
-   * turn by itself, unless `wakes` is false.
+   * turn by itself, unless `wakes` is false. `prints`: lines the work prints while it runs, one per poll, Claude idle
+   * (a device-flow script polling, issue #567).
    */
-  background?: { work: string; polls: number; wakes?: boolean };
+  background?: { work: string; polls: number; wakes?: boolean; prints?: string[] };
 }
 
 export interface FakeHerdrOptions {

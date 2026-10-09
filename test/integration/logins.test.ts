@@ -1,8 +1,9 @@
 // Issue #476: a herdr-claude job that waits on a device login goes to the logins, never to the questions. Its URL
 // and code reach only a UI session of the user; no event, progress line or question carries them. The job waits
-// without nudges; Claude going on completes the login. Expiry fails the job (or holds it), cancel and a new code
-// are typed into its pane, and a second code for the same tool updates the login. (A GitHub login is steered to the
-// hopper's GitHub proxy instead, issue #563: test/herdr/executor-login.test.ts; these use another CLI's.)
+// without nudges; a login signal on screen completes the login (issue #567), never Claude going on by itself. Expiry
+// fails the job (or holds it), cancel and a new code are typed into its pane, and a second code for the same tool
+// updates the login. (A GitHub login is steered to the hopper's GitHub proxy instead, issue #563:
+// test/herdr/executor-login.test.ts; these use another CLI's.)
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EscalationLevel, SourceItem } from '../../src/domain/ports.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
@@ -14,7 +15,7 @@ let cleanup: (() => void) | undefined;
 
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100 } }];
 const CODE = 'WDJB-MJHT';
-const DONE: FakeTurn = { steps: ['● Pushing'], output: ['● Pushed the branch.', '  HOPPER_DONE'] };
+const DONE: FakeTurn = { steps: ['● Pushing'], output: ['● BashOutput(codex)', '  ⎿  Successfully logged in', '● Pushed the branch.', '  HOPPER_DONE'] };
 
 /** A turn that ends on a login while codex waits in the background; the work wakes Claude after `polls` polls, unless never. */
 const authTurn = (o: { code?: string; expiresIn?: number; polls?: number; wakes?: boolean } = {}): FakeTurn => ({
@@ -60,7 +61,7 @@ async function pendingLogin(a: TestApp) {
 }
 
 describe('a job that waits on a device login', () => {
-  it('goes to the logins, never the questions; the URL and code reach only a UI session; Claude going on completes it and the job finishes', async () => {
+  it('goes to the logins, never the questions; the URL and code reach only a UI session; codex saying it is logged in completes it and the job finishes', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ polls: 60 }), DONE] });
     const a = await start(herdr);
     const job = await a.pull({}, item());

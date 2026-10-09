@@ -62,15 +62,18 @@ export interface ExecutionContext {
  */
 export interface RunLogins {
   /**
-   * The login's id; one open login per run and tool, so a new code updates it. `renewable`: the run can ask its tool
-   * for a new code. `restore`: the same login read again after a restart: only its URL and code are taken back.
-   * Throws on a report its kind refuses.
+   * The login's id; one open login per run and prompt — the same tool, code or URL (issue #567) —, so the same code
+   * reported again is the same login and a new code updates it. `renewable`: the run can ask its tool for a new
+   * code. `restore`: the same login read again after a restart: only its URL and code are taken back. Throws on a
+   * report its kind refuses.
    */
   report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
   /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
   check(id: string): LoginCheck;
-  /** The tool went on. */
+  /** The login went through: a login signal (a token obtained, the CLI logged in), or a print-mode run that succeeded. */
   completed(id: string): void;
+  /** The run said its code expired before it was completed (issue #567): expired now, as at `expiresAt`. */
+  expired(id: string): void;
   /** The run ended first, or could not take the login. */
   failed(id: string, reason: string): void;
 }

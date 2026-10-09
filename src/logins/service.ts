@@ -16,14 +16,17 @@ export type LoginAction = { ok: true; login: Login } | { ok: false; reason: 'not
 
 export interface Logins {
   /**
-   * A run reports a login it waits on. One open login per job (or question) and tool: a second report
-   * updates it — a new code, a new expiry — and never makes a duplicate. Throws on a report its kind refuses.
+   * A run reports a login it waits on. One open login per job (or question) and prompt: a report with the same
+   * tool, code or URL is that login (issue #567) — the same code again changes nothing, a new code or expiry
+   * updates it —, never a duplicate. Throws on a report its kind refuses.
    */
   report(report: LoginReport, blocks: LoginBlocks, restore?: boolean): Login;
-  /** What the run waiting on login `id` does next; a new-code request or a cancel is answered once. */
+  /** What the run waiting on login `id` does next; a new-code request or a cancel is answered once, then `ended` once it is. */
   check(id: string): LoginCheck;
-  /** The machine went on: the tool proceeded, or ended. */
+  /** The login went through: a login signal, or a print-mode run that succeeded (issue #567). */
   completed(id: string): void;
+  /** Its run said the code expired: expired now, as the sweep expires it at `expiresAt`. */
+  expired(id: string): void;
   /** What waited on it ended first, or could not take it. */
   failed(id: string, reason: string): void;
   /** The user cancelled it. */
@@ -83,6 +86,21 @@ export function createLogins(o: LoginsOptions): Logins {
     });
   };
 
+  /** Two reports of one prompt: the same code, or, with no code, the same URL. */
+  const samePrompt = (a: { verificationUrl: string; userCode?: string } | undefined, b: { verificationUrl: string; userCode?: string }): boolean =>
+    a !== undefined && (a.userCode !== undefined || b.userCode !== undefined ? a.userCode === b.userCode : a.verificationUrl === b.verificationUrl);
+
+  /** Expire a pending login: its code dropped, `auth.expired`; the job fails on it while `onExpiry` says so. */
+  const expire = (l: Login): void => {
+    secrets.delete(l.id);
+    store.tx(() => {
+      const next = store.logins.update(l.id, { status: 'expired', newCodeAskedAt: undefined });
+      emit('auth.expired', next, { expiresAt: next.expiresAt });
+    });
+    // Read at each expiry (issue #356): a changed setting applies to the next one.
+    if (settings().onExpiry === 'fail') asked.set(l.id, { act: 'fail', reason: `the ${l.tool} login expired at ${l.expiresAt} before it was completed` });
+  };
+
   const openOf = (id: string): Login | undefined => {
     const l = store.logins.get(id);
     return l && OPEN.includes(l.status) ? l : undefined;
@@ -101,8 +119,10 @@ export function createLogins(o: LoginsOptions): Logins {
       const problem = LOGIN_KIND_HANDLERS[r.kind].problem(r);
       if (problem) throw new Error(problem);
       const secret = { verificationUrl: r.verificationUrl, ...(r.userCode ? { userCode: r.userCode } : {}) };
+      // The same prompt (issue #567): a script that polls, or a job that reports it again, under the same tool, or
+      // another name for it with the same code or URL. Only this process holds the codes: after a restart, the tool.
       const same = store.logins.list({ status: [...OPEN], ...(blocks.jobId ? { jobId: blocks.jobId } : { questionId: blocks.questionId ?? '' }) })
-        .find((l) => l.tool === r.tool && l.kind === r.kind);
+        .find((l) => l.kind === r.kind && (l.tool === r.tool || samePrompt(secrets.get(l.id), secret)));
       const fields = { expiresAt: r.expiresAt, ...(r.intervalSec ? { intervalSec: r.intervalSec } : {}) };
       if (same) {
         const before = secrets.get(same.id);
@@ -111,10 +131,10 @@ export function createLogins(o: LoginsOptions): Logins {
           if (same.status === 'pending' && before === undefined) secrets.set(same.id, secret);
           return same;
         }
+        // The same code again (issue #567): nothing new happened. Its life began when it was first shown, so a later
+        // report's expiry, counted from that report, moves nothing; and an expired code is not opened again.
+        if (before !== undefined && before.userCode === secret.userCode && before.verificationUrl === secret.verificationUrl) return same;
         secrets.set(same.id, secret);
-        // The same report again: nothing new happened.
-        const unchanged = same.status === 'pending' && same.expiresAt === r.expiresAt && before?.userCode === secret.userCode && before?.verificationUrl === secret.verificationUrl;
-        if (unchanged) return same;
         return store.tx(() => {
           const next = store.logins.update(same.id, { ...blocks, ...fields, status: 'pending', newCodeAskedAt: undefined });
           emit('auth.pending', next, { expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true, ...tagOf(next) });
@@ -133,12 +153,18 @@ export function createLogins(o: LoginsOptions): Logins {
     check(id) {
       const told = asked.get(id);
       if (told) { asked.delete(id); return told; }
-      return { act: 'wait' };
+      const l = store.logins.get(id);
+      return l && !OPEN.includes(l.status) ? { act: 'ended' } : { act: 'wait' };
     },
 
     completed(id) {
       const l = openOf(id);
       if (l) end(l, 'completed', {});
+    },
+
+    expired(id) {
+      const l = store.logins.get(id);
+      if (l?.status === 'pending') expire(l);
     },
 
     failed(id, reason) {
@@ -176,13 +202,7 @@ export function createLogins(o: LoginsOptions): Logins {
           continue;
         }
         if (l.status !== 'pending' || Date.parse(l.expiresAt) > at) continue;
-        secrets.delete(l.id);
-        store.tx(() => {
-          const next = store.logins.update(l.id, { status: 'expired', newCodeAskedAt: undefined });
-          emit('auth.expired', next, { expiresAt: next.expiresAt });
-        });
-        // Read at each expiry (issue #356): a changed setting applies to the next one.
-        if (settings().onExpiry === 'fail') asked.set(l.id, { act: 'fail', reason: `the ${l.tool} login expired at ${l.expiresAt} before it was completed` });
+        expire(l);
       }
     },
 
@@ -200,6 +220,7 @@ export function createLogins(o: LoginsOptions): Logins {
       report: (r, x) => logins.report(r, { ...blocks, renewable: x.renewable }, x.restore === true).id,
       check: (id) => logins.check(id),
       completed: (id) => { if (live()) logins.completed(id); },
+      expired: (id) => { if (live()) logins.expired(id); },
       failed: (id, reason) => { if (live()) logins.failed(id, reason); },
     }),
   };
