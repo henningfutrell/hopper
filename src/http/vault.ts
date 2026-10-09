@@ -6,6 +6,6 @@ import type { TenantParts } from './tenants.ts';
 export function vaultRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/vault', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    return o.tenant(req).vault.view();
+    return await o.tenant(req).vault.view();
   });
 }

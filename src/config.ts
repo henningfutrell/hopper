@@ -9,6 +9,7 @@ import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts'
 import type { UsagePacing } from './domain/types.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
+import { DEFAULT_KMS_KEY } from './vault/wire.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
@@ -62,6 +63,10 @@ export interface Config {
   hopperApps: HopperApps;
   /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
   openFgaUrl?: string;
+  /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
+  vaultUrl?: string;
+  /** The KMS the vault's data key is wrapped by (issue #586); unset: the vault seals under the token key. */
+  kms?: { url: string; key: string };
 }
 
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
@@ -113,6 +118,9 @@ const schema = z.object({
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
   HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -157,6 +165,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
   HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
+  HOPPER_VAULT_URL: 'the vault in a container of its own (http://vault:4791, the compose profile `vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
+  HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_TOKEN_KEY',
+  HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -198,6 +209,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
                                           webhook signing secrets are sealed again under HOPPER_TOKEN_KEY at start
   HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
                                           each call. Unset: none sent
+  HOPPER_VAULT_KEY                        the preshared key of the vault container HOPPER_VAULT_URL names, read at
+                                          each call. Unset: the vault container is not asked
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -220,6 +233,8 @@ const PART_SETTINGS = [
   'HOPPER_TOKEN_KEY', 'HOPPER_TOKEN_KEY_FILE', 'HOPPER_TOKEN_KEY_PREVIOUS', 'HOPPER_TOKEN_KEY_PREVIOUS_FILE',
   // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).
   'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
+  // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586).
+  'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE',
 ];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
@@ -277,6 +292,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
     ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}),
+    ...(e.HOPPER_VAULT_URL ? { vaultUrl: e.HOPPER_VAULT_URL } : {}),
+    ...(e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

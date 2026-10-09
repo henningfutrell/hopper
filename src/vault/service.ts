@@ -38,6 +38,38 @@ export interface VaultService {
   resealAll(): number;
 }
 
+/**
+ * The vault as the hopper's edges reach it (issue #586): in the hopper (`localVault`), or in a container of its own
+ * (`remoteVault`, src/vault/remote.ts). The same answers either way; only the edits and the ask, never the reseal.
+ */
+export interface Vault {
+  view(): Promise<VaultView>;
+  set(s: { name: string; scope?: string; value: string }, by: string): Promise<VaultResult>;
+  remove(name: string, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[] }, by: string): Promise<VaultResult>;
+  removeTemplate(name: string, by: string): Promise<VaultResult>;
+  approveTemplate(name: string, by: string): Promise<VaultResult>;
+  deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
+}
+
+/** The vault in the hopper's own process. */
+export const localVault = (v: VaultService): Vault => ({
+  view: async () => v.view(),
+  set: async (s, by) => v.set(s, by),
+  remove: async (name, by) => v.remove(name, by),
+  saveTemplate: async (t, by) => v.saveTemplate(t, by),
+  removeTemplate: async (name, by) => v.removeTemplate(name, by),
+  approveTemplate: async (name, by) => v.approveTemplate(name, by),
+  deliver: async (ask, key) => v.deliver(ask, key),
+});
+
+/** An attached machine as the vault knows it (issue #558): a client target's name, its machine key, its template. */
+export interface ClientTarget { name: string; key: string; template?: string }
+
+/** The client targets among the attached machines. */
+export const clientTargets = (machines: readonly AttachedMachine[]): ClientTarget[] =>
+  machines.flatMap((m) => ('client' in m ? [{ name: m.name, key: m.client.key, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []));
+
 /** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
 const AT_WORK = ['running', 'waiting_answer'];
 
@@ -49,13 +81,12 @@ export function createVaultService(o: {
   clock: Clock;
   idGen: () => string;
   logger: { warn(line: string): void };
-  /** The attached machines now: a client target's key and the template it joined as (its join line named it). */
-  targets?: () => AttachedMachine[];
+  /** The client targets now: each one's key and the template it joined as (its join line named it). */
+  targets?: () => ClientTarget[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
 }): VaultService {
-  const clientOf = (match: (m: { name: string; key: string }) => boolean) =>
-    (o.targets?.() ?? []).flatMap((m) => ('client' in m && match({ name: m.name, key: m.client.key }) ? [{ name: m.name, template: m.client.template }] : []))[0];
+  const clientOf = (match: (m: ClientTarget) => boolean): ClientTarget | undefined => (o.targets?.() ?? []).find(match);
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -189,7 +220,7 @@ export function createVaultService(o: {
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
-export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
+export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
   if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);

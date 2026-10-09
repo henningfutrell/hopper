@@ -46,7 +46,7 @@ import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
-import { openVault, type VaultService } from '../vault/service.ts';
+import { clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 
@@ -126,7 +126,7 @@ export interface UserRuntime {
   secretProblem: (sub: WebhookSubscription) => string | undefined;
   /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
   machineLink: UserMachineLink;
-  vault: VaultService; // issue #558: write-only secrets
+  vault: Vault; // issue #558: write-only secrets; issue #586: in the hopper or in a container of its own
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
   /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
@@ -354,7 +354,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: openVault({ store, keys, clock, logger, targets: () => host.targets(), holds: (p) => proxy.githubProxy.user.holds(p) }), // issue #558: under the same token key, sealed again at start
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p) }), // issues #558, #586
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

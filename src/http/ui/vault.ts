@@ -27,12 +27,12 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const by = identityName(s.identity);
     const { vault } = o.tenant(req);
     const edit = parseWith(vaultEditBody, req.body);
-    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}) }, by)
+    const r = await (edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}) }, by)
       : edit.action === 'remove' ? vault.remove(edit.name, by)
         : edit.action === 'save-template' ? vault.saveTemplate(edit, by)
           : edit.action === 'remove-template' ? vault.removeTemplate(edit.name, by)
-            : vault.approveTemplate(edit.name, by);
+            : vault.approveTemplate(edit.name, by));
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
-    return vault.view();
+    return await vault.view();
   });
 }

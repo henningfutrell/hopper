@@ -319,7 +319,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
     // A sandbox box of a template (issue #558): the code names it, so the box joins as an instance of it.
     const { template } = parseWith(machineJoinBody, req.body ?? {});
-    if (template !== undefined && !o.tenant(req).vault.view().templates.some((t) => t.name === template)) throw new HttpError(404, `no template ${template}`);
+    if (template !== undefined && !(await o.tenant(req).vault.view()).templates.some((t) => t.name === template)) throw new HttpError(404, `no template ${template}`);
     return mintJoinCode(o.instance, o.clock, id, template);
   });
 
