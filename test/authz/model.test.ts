@@ -60,7 +60,8 @@ describe('access objects', () => {
       { subject: 'machine:admin/box', relation: 'instance_of', object: 'template:kube' },
       approval, grant,
     ]);
-    expect(relationshipPath(live, 'job:admin/j1', profile)).toHaveLength(4);
+    // A job's path starts at its owner: whose job asked.
+    expect(relationshipPath(live, 'job:admin/j1', profile)).toEqual(relationshipPath(live, 'user:admin', profile));
     expect(relationshipPath(live, 'machine:admin/box', profile)).toEqual([{ subject: 'machine:admin/box', relation: 'instance_of', object: 'template:kube' }, approval, grant]);
     expect(relationshipPath(live, 'job:admin/j1', { ...profile, operation: 'write' })).toBeUndefined();
     expect(relationshipPath(live, 'user:bob', profile)).toBeUndefined();
