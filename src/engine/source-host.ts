@@ -2,11 +2,11 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { SourceHost, SourceItem } from '../domain/ports.ts';
-import { isRerunnable } from '../domain/types.ts';
+import { isRerunnable, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
@@ -134,7 +134,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
       if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
       // Created and failed together: the source reports claimed, then failed — once.
-      store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid } });
+      store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid, ...priorityTagOf(c, job.id) } });
       return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c), ...(known ? { rerunOf: known.id } : {}) });
     });
   }
@@ -162,11 +162,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       const to = fromConfigFor(item, routedBy);
       return store.tx(() => {
         const job = store.jobs.get(jobId);
-        if (!job || (job.status !== 'queued' && job.status !== 'held')) return false;
+        if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
         let changed = false;
         // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
         const was = job.fromConfig ?? fromSpec(job.spec);
-        if (job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
+        const waiting = job.status === 'queued' || job.status === 'held';
+        if (waiting && job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
           const spec = respecified(job, to, routedBy);
           const invalid = problemWith(c, item, spec);
           if (invalid !== undefined) console.warn(`hopper: job ${jobId} keeps its spec: ${invalid}`);
@@ -177,6 +178,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
             changed = true;
           }
         }
+        // The priority is the job's live one (issue #535): a started job's follows its item too, so it is tagged and
+        // listed by it everywhere — its question, its login, its lane.
         if (job.priority !== priority) {
           store.jobs.update(jobId, { priority });
           store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: priority, reason } });

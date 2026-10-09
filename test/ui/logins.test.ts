@@ -64,10 +64,10 @@ describe('the logins together', () => {
   it('the badge counts the open logins and warns when one is about to expire; an expired one no longer counts', () => {
     const a = login({ id: 'a' }, 900);
     const b = login({ id: 'b' }, 100);
-    expect(loginsBadge([a, b], T0, SETTINGS)).toEqual({ n: 2, warn: false });
-    expect(loginsBadge([a, b], T0 + 50_000, SETTINGS)).toEqual({ n: 2, warn: true });
-    expect(loginsBadge([a, b], T0 + 100_000, SETTINGS)).toEqual({ n: 1, warn: false });
-    expect(loginsBadge([a, login({ id: 'c', status: 'completed' })], T0, SETTINGS)).toEqual({ n: 1, warn: false });
+    expect(loginsBadge([a, b], T0, SETTINGS)).toEqual({ n: 2, warn: false, high: 0 });
+    expect(loginsBadge([a, b], T0 + 50_000, SETTINGS)).toEqual({ n: 2, warn: true, high: 0 });
+    expect(loginsBadge([a, b], T0 + 100_000, SETTINGS)).toEqual({ n: 1, warn: false, high: 0 });
+    expect(loginsBadge([a, login({ id: 'c', status: 'completed' })], T0, SETTINGS)).toEqual({ n: 1, warn: false, high: 0 });
   });
 
   it('several open logins sort by time left, the shortest first; ended ones after, the latest end first', () => {

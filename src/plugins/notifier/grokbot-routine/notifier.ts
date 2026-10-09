@@ -86,7 +86,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
 
   function sendQuestion(q: Question, offered: boolean, at: string): Promise<boolean> {
     sent.add(q.id);
-    const payload = questionPayload({ question: q, job: feed?.job(q.jobId), answerUrl: feed?.answerUrl(q.id), at, now: clock.now(), offered });
+    const payload = questionPayload({ question: q, job: feed?.job(q.jobId), answerUrl: feed?.answerUrl(q.id), at, now: clock.now(), offered, highPriority: feed?.highPriority?.() });
     return deliver(`grokbot: question.escalated ${q.jobId}${offered ? ' (open question)' : ''}`, payload);
   }
 

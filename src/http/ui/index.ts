@@ -24,6 +24,7 @@ import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
+import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 
@@ -219,7 +220,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { id } = parseWith(idParams, req.params);
     const { answer } = parseWith(answerBody, req.body);
     const r = o.tenant(req).questions.answerByHuman(id, answer);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req).store, r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -227,7 +228,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/close', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.closeByHuman(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req).store, r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -235,7 +236,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/dismiss', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.dismissByHuman(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req).store, r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -243,7 +244,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/seen', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.markSeen(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req).store, r.question);
     throw new HttpError(404, `question ${id} not found`);
   });
 

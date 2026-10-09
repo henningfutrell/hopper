@@ -52,6 +52,8 @@ export function createMemoryStore(): MemoryStore {
         return structuredClone(q);
       },
     },
+    // The priority lane settings never saved: the default high-priority threshold (issue #535).
+    settings: { getPriorityLanes: () => undefined },
     tx<T>(fn: () => T): T {
       if (depth > 0) return fn();
       const snap = { q: structuredClone(questions), e: structuredClone(events) };

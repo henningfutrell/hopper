@@ -28,7 +28,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'decision.made': { decisionId: 'd1', trigger: 'tick', starts: [start], holds: [{ jobId: 'j2', reason: 'full' }], waits: [{ jobId: 'j3', reason: 'waiting for a lane: machine local\'s lane cap is 4, all 4 in use' }], lanes: [lanePlan], divergences: [{ jobId: 'j1', advice: 'ask_human', native: 'start', withAdvice: 'hold', note: 'n' }] },
   'question.asked': { questionId: 'q1', text: 'which?', detectedBy: 'marker', raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' } },
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
-  'question.escalated_to_human': { questionId: 'q1', reason: 'fable: the owner\'s call', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 1, raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' } },
+  'question.escalated_to_human': { questionId: 'q1', reason: 'fable: the owner\'s call', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 1, raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' }, priority: 75, high: true },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },
   'question.closed': { questionId: 'q1', answer: 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.' },
   'question.dismissed': { questionId: 'q1' },
@@ -75,5 +75,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'handoff.closed': { handoffId: 'h1', end: 'run_again', nextJobId: 'j2' },
   'usage.limits_changed': { from: { soft: 0.7, hard: 0.95 }, to: { soft: 0.6, hard: 0.9 } },
+  'priority_lanes.changed': { from: [], to: ['desk/lane-1'], by: 'reliability' },
+  'priority_lanes.settings_changed': {
+    from: { highPriority: 75, count: 1, whenIdle: 'keep-free', windowDays: 14, minRuns: 5 },
+    to: { highPriority: 75, count: 2, whenIdle: 'share', windowDays: 14, minRuns: 5 },
+  },
   'queue.gate_changed': { from: { mode: 'auto-accept', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: null } },
 };

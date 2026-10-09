@@ -7,7 +7,7 @@ import type {
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
-import type { ConnectedAccountProvider, UsageLimitPair } from './types.ts';
+import type { ConnectedAccountProvider, PriorityLaneSettings, UsageLimitPair } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -31,8 +31,8 @@ export interface JobRepository {
 
 export interface LaneRepository {
   list(machineId?: MachineId): Lane[];
-  /** Opens the lowest free lane number for the machine. */
-  open(machineId: MachineId): Lane;
+  /** Opens the lane `id` names when it is the machine's and free (issue #535), else the lowest free lane number. */
+  open(machineId: MachineId, id?: LaneId): Lane;
   update(id: LaneId, patch: Partial<Omit<Lane, 'id' | 'machineId' | 'openedAt'>>): Lane;
   close(id: LaneId): void;
 }
@@ -56,6 +56,8 @@ export interface EventLog {
   since(afterSeq: number, limit?: number): DomainEvent[];
   /** Newest first. */
   recent(limit?: number, types?: EventType[]): DomainEvent[];
+  /** Events of these types at or after `since` (ISO), oldest first (issue #535: lane reliability). */
+  between(types: readonly EventType[], since: string): DomainEvent[];
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 
@@ -185,6 +187,12 @@ export interface UserSettingsRepository {
   /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
   getUsageLimits(): UsageLimitPair | undefined;
   setUsageLimits(limits: UsageLimitPair): void;
+  /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
+  getPriorityLanes(): PriorityLaneSettings | undefined;
+  setPriorityLanes(settings: PriorityLaneSettings): void;
+  /** The priority lanes last chosen (issue #535), so a restart keeps them and their hysteresis; absent: none yet. */
+  getPriorityLaneChoice(): LaneId[] | undefined;
+  setPriorityLaneChoice(lanes: readonly LaneId[]): void;
   /** The user's claim holder id (issue #440): made, random, the first time it is asked, then kept. */
   claimHolder(): string;
   /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */

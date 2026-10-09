@@ -7,6 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { JobAssessment, ProblemBlock } from './failures.ts';
+import type { PriorityLanesInput } from './priority.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -247,6 +248,8 @@ export interface DecisionInputs {
   cleanupDue?: CleanupDue[];
   /** Open problems that hold or redirect jobs (issue #509). Absent on Decisions stored before it. */
   problems?: ProblemBlock[];
+  /** The priority lanes and the high-priority threshold (issue #535). Absent on Decisions stored before it: none. */
+  priorityLanes?: PriorityLanesInput;
   policy: DeciderPolicy;
 }
 
@@ -271,6 +274,8 @@ export interface LanePlan {
 export interface StartPlan {
   jobId: JobId;
   laneId: LaneId | null; // null: start on a lane opened by this Decision (engine assigns)
+  /** With `laneId` null: the lane to open, a priority lane or one kept off them (issue #535). Absent: the lowest free number. */
+  opens?: LaneId;
   machineId: MachineId;
   effectivePriority: number;
   reason: string;
@@ -473,8 +478,7 @@ export interface SourceStatus {
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export type { AttachedMachine, ClientMachine, ConfiguredMachine, ContainerMachine, HostKeyOffer, HostKeyOfferOutcome, MachineDefaults, MachineDefaultsEdit, MachineEdit, SshMachine, MachineEditOutcome, MachinesConfig } from './machines.ts';
-export { HERDR_SESSION, HOST_KEY } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type ClientMachine, type ConfiguredMachine, type ContainerMachine, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
@@ -486,13 +490,13 @@ export * from './plugins.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 
-export type { GateActor, PreSort, PreSortReject, QueueGate, QueueGateMode } from './queue-gate.ts';
+export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES, type GateActor, type PreSort, type PreSortReject, type QueueGate, type QueueGateMode } from './queue-gate.ts';
 
 // ---- Logins (issue #476): src/domain/logins.ts (re-exported here) ----------------------
 
 export * from './logins.ts';
 export * from './failures.ts';
-export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
+export * from './priority.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
@@ -509,13 +513,11 @@ export { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESS
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
-export type { InstanceTotals, UsageTotal, User, UserAdded, UserView } from './users.ts';
-export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID } from './users.ts';
+export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID, type InstanceTotals, type UsageTotal, type User, type UserAdded, type UserView } from './users.ts';
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export type { InstallInfo, InstallKind, UpdateApply, UpdateChannel, UpdateSettings, UpdateState, UpdateStatus, VersionEntry, VersionHistory } from './update.ts';
-export { isUpdateChannel, UPDATE_CHANNELS } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 

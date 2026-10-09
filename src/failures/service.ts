@@ -11,7 +11,7 @@
 // closed (`item-check.ts`).
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_FAILURE_SETTINGS, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
+  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type Handoff, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, type RecentFailure } from './assess.ts';
@@ -20,7 +20,7 @@ import { evidenceOf, machineOf } from './evidence.ts';
 import { createHandoffs } from './handoffs.ts';
 import { createItemCheck } from './item-check.ts';
 import { signatureOf } from './signature.ts';
-import { newerOf, recordRetry, releasable, viewOf } from './view.ts';
+import { highestFirst, newerOf, recordRetry, releasable, viewOf } from './view.ts';
 
 export interface FailuresOptions {
   store: UserStore;
@@ -170,6 +170,7 @@ export function createFailures(o: FailuresOptions): Failures {
         data: {
           recordId: record.id, signature, class: a.cls, decision: a.decision, reasons: a.reasons, summary: a.summary, attempt, auto: a.auto,
           ...(cause ? { causeId: cause.id } : {}), ...(problem ? { problemId: problem.id } : {}), ...(record.retryAt ? { retryAt: record.retryAt } : {}),
+          ...jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), job.id),
         },
       });
       if (problem) {
@@ -242,7 +243,8 @@ export function createFailures(o: FailuresOptions): Failures {
       try {
         assessBacklog(JUST_FAILED_MS);
         if (!stopped) { handoffs.supersede(); handoffs.settle(); }
-        for (const r of store.failures.due(now().toISOString())) {
+        // High-priority jobs run again first (issue #535): by their live priority, then as due.
+        for (const r of highestFirst(store, store.failures.due(now().toISOString()))) {
           if (stopped) return;
           await runPending(r);
         }

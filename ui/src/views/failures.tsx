@@ -10,6 +10,7 @@ import { Check, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound }
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { JobTitle } from '@/components/job';
+import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
@@ -30,9 +31,14 @@ function scopeText(p: ProblemView): string {
   return executor ? `${executor} on every machine` : 'every machine';
 }
 
-function JobLine({ id }: { id: string }) {
+/** A job no longer in the queue still says it is high priority, from its failure's or hand-off's tag (issue #535). */
+function JobLine({ id, tag }: { id: string; tag?: { priority?: number; high?: boolean } }) {
   const job = useJobIndex().get(id);
-  return job ? <JobTitle job={job} /> : <span className="font-mono text-xs text-muted-foreground">job {id.slice(0, 8)}</span>;
+  if (job) return <JobTitle job={job} />;
+  return (
+    <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">job {id.slice(0, 8)}
+      {tag?.high && tag.priority !== undefined && <HighTag priority={tag.priority} />}</span>
+  );
 }
 
 function ProblemCard({ p }: { p: ProblemView }) {
@@ -84,7 +90,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
   return (
     <li data-handoff={h.id} className={cn('space-y-1.5 px-4 py-3', !open && 'opacity-70')}>
       <div className="flex items-start gap-2">
-        <JobLine id={h.jobId} />
+        <JobLine id={h.jobId} tag={h} />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={h.reason} tone={open ? 'question' : 'ok'} label={open ? HANDOFF_REASON_LABEL[h.reason] : handoffEndText(h)} />
           {offered(h.actions.runAgain, canAct) && <Button size="xs" variant="outline" disabled={busy} title="Its item runs again now: past its retry limit, past its problem's hold" onClick={() => void run('run-again', 'Running it again')}><RotateCcw />Run again</Button>}
@@ -129,7 +135,7 @@ function FailureRow({ r }: { r: FailureRecordView }) {
   return (
     <li data-failure={r.id} className="space-y-1.5 px-4 py-3">
       <div className="flex items-start gap-2">
-        <JobLine id={r.jobId} />
+        <JobLine id={r.jobId} tag={r} />
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={r.decision} tone={DECISION_TONE[r.decision]} label={DECISION_LABEL[r.decision]} title={r.reasons.join('\n')} />
           {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void retry()}><RotateCcw />Retry</Button>}

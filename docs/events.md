@@ -172,11 +172,13 @@ Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully.
 
 ## `job.failed`
 
-Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error.
+Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
 | `error` | string | yes |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -359,7 +361,7 @@ Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision
 
 ## `question.asked`
 
-Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a question.
+Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a question. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -367,6 +369,8 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 | `text` | string | yes |
 | `detectedBy` | string | yes |
 | `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -383,7 +387,7 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 
 ## `question.escalated`
 
-Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit.
+Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -398,6 +402,8 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 | `renotify` | boolean | no |
 | `lapsesAt` | string | no |
 | `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -415,7 +421,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.escalated_to_human`
 
-Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer.
+Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -428,6 +434,8 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `notifyCount` | integer | yes |
 | `lapsesAt` | string | no |
 | `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -442,7 +450,9 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
     "machineId": "desk",
     "name": "Desk tower",
     "laneId": "desk/lane-1"
-  }
+  },
+  "priority": 75,
+  "high": true
 }
 ```
 
@@ -979,7 +989,7 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
 
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`.
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -991,6 +1001,8 @@ Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (
 | `run` | string | yes |
 | `questionId` | string | no |
 | `renewed` | boolean | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -1082,7 +1094,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 
 ## `job.assessed`
 
-Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job.
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -1097,6 +1109,8 @@ Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a f
 | `causeId` | string | no |
 | `problemId` | string | no |
 | `retryAt` | string | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -1168,7 +1182,7 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
 
 ## `handoff.opened`
 
-Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person runs it again or clears it — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off.
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person runs it again or clears it — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -1179,6 +1193,8 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 | `recordId` | string | no |
 | `decision` | `retry` \| `hold` \| `redirect` \| `person` | no |
 | `class` | `transient` \| `shared` \| `job` | no |
+| `priority` | number | no |
+| `high` | boolean | no |
 
 ```json
 {
@@ -1228,6 +1244,54 @@ Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were s
   "to": {
     "soft": 0.6,
     "hard": 0.9
+  }
+}
+```
+
+## `priority_lanes.changed`
+
+Version 1 (`docs/schemas/priority_lanes.changed.v1.json`). The priority lanes changed (issue #535): `from` and `to` the lanes high-priority jobs get first, best first. `by`: `reliability` (the hopper measured its lanes again and a lane became more reliable by more than the margin, or one dropped out), `manual` (an admin chose them), `settings` (a settings change, such as the count).
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | `reliability` \| `manual` \| `settings` | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "desk/lane-1"
+  ],
+  "by": "reliability"
+}
+```
+
+## `priority_lanes.settings_changed`
+
+Version 1 (`docs/schemas/priority_lanes.settings_changed.v1.json`). An admin saved the priority lane settings (issue #535): `from` and `to` the high-priority threshold, the count of priority lanes, what a priority lane does while no high-priority job waits (`keep-free` or `share`), the window and the minimum runs lane reliability is measured over, and the lanes an admin chose (`manual`; absent: by reliability).
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "highPriority": 75,
+    "count": 1,
+    "whenIdle": "keep-free",
+    "windowDays": 14,
+    "minRuns": 5
+  },
+  "to": {
+    "highPriority": 75,
+    "count": 2,
+    "whenIdle": "share",
+    "windowDays": 14,
+    "minRuns": 5
   }
 }
 ```

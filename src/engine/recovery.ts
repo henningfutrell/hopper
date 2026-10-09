@@ -4,7 +4,7 @@
 // while the runner asks again, up to the reconnect grace (issue #368). Claimed jobs (nothing ran) and idempotent jobs return to the queue
 // (a pending answer is kept). waiting_answer jobs follow their question. Every other lane closes.
 import type { Job, Question } from '../domain/types.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
 
 export interface Recovered {
@@ -43,7 +43,7 @@ export async function recover(c: EngineContext): Promise<Recovered> {
   const toClean: string[] = [];
   const fail = (job: Job, error: string): void => {
     store.jobs.update(job.id, { status: 'failed', error, finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined });
-    store.events.append({ type: 'job.failed', jobId: job.id, data: { error } });
+    store.events.append({ type: 'job.failed', jobId: job.id, data: { error, ...priorityTagOf(c, job.id) } });
     toClean.push(job.id);
   };
   const requeue = (job: Job, from: string, reason: string, patch: Partial<Job> = {}): void => {

@@ -8,7 +8,7 @@
 // #529): the sweep, and the start, close an open hand-off nothing waits on any more — a newer job of its item that no
 // `job.queued` closed it for (a store from the build before), its job finished or gone, its item closed at its source.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
-import type { DomainEvent, FailureOutcome, FailureRecord, FailureSettings, Handoff, HandoffEnd, HandoffReason, Job } from '../domain/types.ts';
+import { jobPriorityTag, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason, type Job } from '../domain/types.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
 import { handoffView, newerOf, newestOfItem } from './view.ts';
 
@@ -78,6 +78,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       data: {
         handoffId: h.id, reason, summary: h.summary, notify: o.settings().handoffNotify,
         ...(record ? { recordId: record.id, decision: record.decision, class: record.cls } : {}),
+        ...jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), jobId),
       },
     });
   }

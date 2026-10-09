@@ -1,12 +1,13 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it.
-import { Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
+import { ChevronsUp, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingOwner, useAwaitingSort, useLoginsBadge } from '@/store/selectors';
 import { openHandoffs, openProblems, plural } from '@/model/failures';
+import { highHandoffs, highQuestions } from '@/model/priority';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'questions', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -39,11 +40,15 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const logins = useLoginsBadge();
   const problems = useHopper((s) => openProblems(s.failures));
   const handoffs = useHopper((s) => openHandoffs(s.failures));
-  const badge: Partial<Record<View, { n: number; cls: string; title?: string }>> = {
+  // A high-priority item waiting (issue #535): its badge is marked and says how many.
+  const highQ = useHopper((s) => highQuestions(s.questions));
+  const highH = useHopper((s) => highHandoffs(s.failures));
+  const highOf = (n: number): string => (n > 0 ? `; ${n} high priority` : '');
+  const badge: Partial<Record<View, { n: number; cls: string; title?: string; high?: number }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
-    questions: { n: questions, cls: 'bg-question text-background' },
-    logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}` },
-    failures: { n: problems + handoffs, cls: 'bg-bad text-background', title: `${plural(problems, 'open problem')}, ${plural(handoffs, 'job needs', 'jobs need')} a person` },
+    questions: { n: questions, cls: 'bg-question text-background', title: `${questions} ${questions === 1 ? 'question waits' : 'questions wait'} on you${highOf(highQ)}`, high: highQ },
+    logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}${highOf(logins.high)}`, high: logins.high },
+    failures: { n: problems + handoffs, cls: 'bg-bad text-background', title: `${plural(problems, 'open problem')}, ${plural(handoffs, 'job needs', 'jobs need')} a person${highOf(highH)}`, high: highH },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   return (
@@ -56,7 +61,12 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
             className={cn('flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
               view === v && 'bg-muted text-foreground')}>
             <Icon className="size-4" />{label}
-            {b && b.n > 0 && <span data-slot="nav-badge" title={b.title} className={cn('num ml-auto grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-semibold', b.cls)}>{b.n}</span>}
+            {b && b.n > 0 && (
+              <span data-slot="nav-badge" data-high={b.high ? b.high : undefined} title={b.title}
+                className={cn('num ml-auto flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold', b.cls, b.high && 'ring-2 ring-warn ring-offset-1 ring-offset-background')}>
+                {b.high ? <ChevronsUp className="size-3" aria-label="high priority" /> : null}{b.n}
+              </span>
+            )}
           </a>
         );
       })}

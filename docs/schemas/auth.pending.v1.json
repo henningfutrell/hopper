@@ -33,6 +33,12 @@
     },
     "renewed": {
       "type": "boolean"
+    },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
     }
   },
   "required": [

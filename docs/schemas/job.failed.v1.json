@@ -4,6 +4,12 @@
   "properties": {
     "error": {
       "type": "string"
+    },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
     }
   },
   "required": [

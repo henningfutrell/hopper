@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, Router, SourceRegistry,
   UserStore, WebhookDispatcher,
 } from '../domain/ports.ts';
-import { DEFAULT_HISTORY_RETENTION_DAYS, IN_FLIGHT_STATUSES, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
+import { DEFAULT_HISTORY_RETENTION_DAYS, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, prioritySettingsOf, type AttachedMachine, type ConnectedAccountProvider, type Job, type Question, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -332,7 +332,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), answerUrl: o.answerUrl });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority });
   const usageHistory = createUsageRecorder({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), history: store.usageHistory, clock, logger,
     // Read at every prune: a retention set in the UI applies without a restart (issue #356).

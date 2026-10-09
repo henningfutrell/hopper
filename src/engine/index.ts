@@ -16,12 +16,14 @@ import { createRunner } from './runner.ts';
 import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
 import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limits.ts';
+import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { renewCredentials } from './credentials.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
+export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -29,12 +31,13 @@ const SHUTDOWN_WAIT_MS = 5000;
  * answer or a close requeues a job; an expiry fails one; a source re-sort changes the order;
  * a respecified job may be pinned to another machine; a deferred cleanup that went through
  * frees a waiting job of its item (issue #371); parking frees a lane and a re-queue queues a job (issue #501); a
- * problem grouped or resolved holds or frees jobs (issue #509); new usage limits change every lane cap (issue #522). */
+ * problem grouped or resolved holds or frees jobs (issue #509); new usage limits change every lane cap (issue #522);
+ * new priority lane settings change which lanes default jobs may take (issue #535). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
-  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed',
+  'job.parked', 'job.unparked', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers {
@@ -45,6 +48,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly parkingExecutors: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, refresh, setSourceState). */
   readonly sourceHost: SourceHost;
+  /** The priority lanes and the high-priority threshold (issue #535): settings, choice, every lane's figures. */
+  readonly priorityLanes: PriorityLanes;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -63,7 +68,7 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due());
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes);
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
@@ -82,11 +87,13 @@ export function createEngine(o: EngineOptions): Engine {
   const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
+  const priorityLanes = createPriorityLanes(c);
 
   return {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     sourceHost: createSourceHost(c, commands),
+    priorityLanes,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),

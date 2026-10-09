@@ -1,7 +1,7 @@
 // The Grok Bot routine's JSON bodies (design.md "Grok Bot routine webhook"). A question's body carries
 // what the job already knows (issue #378), so the receiver can route and rank it without calling back
 // into the hopper: the machine (its id and name) and lane that raised it (issue #485: the question's own
-// snapshot, not where its job is now), the priority, the issue's labels, repo and number, what
+// snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
 // detected the question, and how long it has been open.
 import type { DomainEvent, Job, Question } from '../../sdk.ts';
 
@@ -17,6 +17,8 @@ export interface QuestionBody {
   now: Date;
   /** True: sent from the open questions (when the routine became configured, or Send open questions), not as it escalated. */
   offered: boolean;
+  /** The high-priority threshold (issue #535); absent: not known, and `high` is null. */
+  highPriority?: number | undefined;
 }
 
 /** A question that reached the human. */
@@ -27,6 +29,7 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
     ...base('question.escalated', b.at, job, q.jobId),
     question: q.text, questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
     machineId: raised?.machineId ?? null, machineName: raised?.name ?? null, laneId: raised?.laneId ?? null, priority: job?.priority ?? null,
+    high: job && b.highPriority !== undefined ? job.priority >= b.highPriority : null,
     labels: job?.source?.labels ?? null, repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null,
     detectedBy: q.detectedBy, askedAt: q.createdAt, escalatedAt: q.escalatedToHumanAt ?? null,
     openSeconds: Math.max(0, Math.floor((b.now.getTime() - Date.parse(q.createdAt)) / 1000)),

@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import type { DeciderPolicy, Job, ProblemBlock } from '../domain/types.ts';
+import { jobPriorityTag, type DeciderPolicy, type Job, type PriorityTag, type ProblemBlock } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -54,6 +54,10 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();
+
+/** The job's live priority and whether it is high priority (issue #535), for the events that tell of it; {} without the job. */
+export const priorityTagOf = (c: { store: UserStore }, jobId: string): PriorityTag | Record<string, never> =>
+  jobPriorityTag(c.store.jobs, c.store.settings.getPriorityLanes(), jobId) ?? {};
 
 /** The policy the decider uses now: the usage limits the user set in the UI (issue #522), else the environment's. */
 export function policyOf(c: Pick<EngineContext, 'policy' | 'store'>): DeciderPolicy {

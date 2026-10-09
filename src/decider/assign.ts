@@ -1,4 +1,5 @@
-import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -32,6 +33,8 @@ export interface MachineState {
   executors: Map<string, ExecutorState>;
   /** Open problems on this machine (issue #509): a new job of an executor one names is placed elsewhere. */
   problems?: ProblemBlock[];
+  /** Its priority lanes and which of its lanes are open or in use (issue #535). */
+  slots: LaneSlots;
 }
 
 export interface Candidate {
@@ -159,9 +162,12 @@ function roomFor(s: MachineState, executor: string): number {
 /** The most lanes jobs not pinned to it may hold: its lane cap less its reserved lanes (issue #372). */
 export const unpinnedCap = (s: MachineState): number => Math.max(0, s.cap - (s.machine.reservedLanes ?? 0));
 
-/** Room for `job` there: a job not pinned to it also stays out of its reserved lanes. */
-function roomForJob(s: MachineState, job: Job): number {
-  const r = roomFor(s, job.spec.executor);
+/**
+ * Room for `job` there: a job not pinned to it also stays out of its reserved lanes, and a job that may not use a
+ * priority lane leaves the free ones (issue #535).
+ */
+function roomForJob(s: MachineState, job: Job, pl?: PriorityLanesInput): number {
+  const r = roomFor(s, job.spec.executor) - keptFor(s.slots, job, pl);
   return pinOf(job) === s.machine.id ? r : Math.min(r, unpinnedCap(s) - s.unpinned);
 }
 
@@ -192,7 +198,7 @@ function eligible(s: MachineState, job: Job): boolean {
     && (pin === undefined || pin === s.machine.id);
 }
 
-const fits = (s: MachineState, job: Job): boolean => eligible(s, job) && roomForJob(s, job) > 0;
+const fits = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
@@ -206,12 +212,12 @@ function squeezes(s: MachineState, job: Job): boolean {
 }
 
 /** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
-function better(a: MachineState, b: MachineState, job: Job): MachineState {
+function better(a: MachineState, b: MachineState, job: Job, pl?: PriorityLanesInput): MachineState {
   const pa = a.executors.get(job.spec.executor)!.pressure;
   const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
-  const ra = roomForJob(a, job);
-  const rb = roomForJob(b, job);
+  const ra = roomForJob(a, job, pl);
+  const rb = roomForJob(b, job, pl);
   if (ra !== rb) return rb > ra ? b : a;
   return b.machine.id < a.machine.id ? b : a;
 }
@@ -224,12 +230,17 @@ const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' 
  * them — its executor's when that leaves less room than the machine's, else the machine's — with its
  * real number and how many lanes it counts in use.
  */
-function waitReason(job: Job, states: MachineState[]): string {
+function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): string {
   const ex = job.spec.executor;
   const s = states.filter((m) => eligible(m, job)).reduce((a, b) => (b.executors.get(ex)!.cap > a.executors.get(ex)!.cap ? b : a));
   const e = s.executors.get(ex)!;
   const id = s.machine.id;
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
+  const kept = keptFor(s.slots, job, pl) > 0 ? freePriority(s.slots) : [];
+  if (roomFor(s, ex) > 0 && kept.length > 0 && (pinOf(job) === id || s.unpinned < unpinnedCap(s))) {
+    // Only its priority lanes are free (issue #535).
+    return `waiting for a lane: machine ${id} keeps ${priorityLaneNames(kept)} free for high-priority jobs, the other ${s.occupied + s.assigned} are in use`;
+  }
   if (roomFor(s, ex) > 0) {
     // Only its reserved lanes are free (issue #372).
     return `waiting for a lane: machine ${id} keeps ${s.cap - unpinnedCap(s)} of its ${s.cap} lanes for jobs pinned to it, the other ${s.unpinned} are in use`;
@@ -242,24 +253,28 @@ function waitReason(job: Job, states: MachineState[]): string {
   return `waiting for a lane: machine ${id}'s lane cap is ${s.cap}${usageNote(s.band, s.usedFrac)}, all ${s.occupied + s.assigned} in use`;
 }
 
-/** Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy): { start: StartPlan[]; wait: WaitPlan[] } {
+/**
+ * Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. A high-priority job goes
+ * to the machine holding the best free priority lane first (issue #535).
+ */
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
-    const fitting = states.filter((s) => fits(s, job));
+    const fitting = states.filter((s) => fits(s, job, pl));
     // A critical job that fits nowhere takes one lane over the cap (issue #373); the extra lane drains when it ends.
     const squeezed = fitting.length === 0 && critical > 0 && job.priority >= critical;
     const options = squeezed ? states.filter((s) => squeezes(s, job)) : fitting;
     if (options.length === 0) {
-      wait.push({ jobId: job.id, reason: waitReason(job, states) });
+      wait.push({ jobId: job.id, reason: waitReason(job, states, pl) });
       continue;
     }
-    const pick = options.reduce((a, b) => better(a, b, job));
+    const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl));
     const pressure = pick.executors.get(ex)!.pressure;
-    const lane = pick.freeIdle.shift();
+    const picked = pickLane(pick.machine.id, pick.machine.maxLanes, pick.slots, pick.freeIdle, job, pl);
+    const lane = picked ? picked.lane : pick.freeIdle.shift();
     pick.assigned += 1;
     if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
     const overCap = squeezed && pick.occupied + pick.assigned > pick.cap;
@@ -272,9 +287,10 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
       ...(pressure > 0 ? [`placement pressure ${pressure.toFixed(3)}/h`] : []),
       ...(note ? [note] : []),
     ];
+    const where = `${picked?.priority ? `priority lane ${picked.priority} ` : ''}${lane ? `${picked?.priority ? '(idle)' : `idle lane ${lane.id}`}` : picked?.priority ? '(new)' : 'new lane'}`;
     start.push({
-      jobId: job.id, laneId: lane?.id ?? null, machineId: pick.machine.id, effectivePriority,
-      reason: `${lane ? `idle lane ${lane.id}` : 'new lane'} on ${pick.machine.id}, ${why.join(', ')}`,
+      jobId: job.id, laneId: lane?.id ?? null, ...(picked?.opens ? { opens: picked.opens } : {}), machineId: pick.machine.id, effectivePriority,
+      reason: `${where} on ${pick.machine.id}, ${why.join(', ')}`,
     });
   }
   return { start, wait };

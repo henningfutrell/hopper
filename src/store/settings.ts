@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, FailureSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
+import type { ConnectedAccountProvider, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -78,6 +78,22 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setUsageLimits(limits) {
       write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard }));
+    },
+    getPriorityLanes() {
+      const text = read('priorityLanes');
+      return text === undefined ? undefined : JSON.parse(text) as PriorityLaneSettings;
+    },
+    setPriorityLanes(s) {
+      write('priorityLanes', JSON.stringify({
+        highPriority: s.highPriority, count: s.count, whenIdle: s.whenIdle, windowDays: s.windowDays, minRuns: s.minRuns, ...(s.manual ? { manual: s.manual } : {}),
+      }));
+    },
+    getPriorityLaneChoice() {
+      const text = read('priorityLaneChoice');
+      return text === undefined ? undefined : JSON.parse(text) as string[];
+    },
+    setPriorityLaneChoice(lanes) {
+      write('priorityLaneChoice', JSON.stringify([...lanes]));
     },
     claimHolder() {
       const kept = read('claimHolder');

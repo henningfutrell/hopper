@@ -59,6 +59,8 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, uptimeS };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
+  // Priority lanes (issue #535): the settings, the lanes chosen, every lane's reliability and why.
+  app.get('/api/priority-lanes', async (req) => o.tenant(req).engine.priorityLanes.view());
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));

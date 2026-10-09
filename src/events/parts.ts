@@ -46,6 +46,8 @@ export const jobStatus = z.enum(['queued', 'held', 'claimed', 'running', 'waitin
 export const startPlan = strict({
   jobId: z.string(), laneId: z.string().nullable(), machineId: z.string(),
   effectivePriority: z.number(), reason: z.string(),
+  // Additive (issue #535): with `laneId` null, the lane to open — a priority lane, or one kept off them.
+  opens: z.string().optional(),
 });
 export const holdPlan = strict({ jobId: z.string(), reason: z.string() });
 export const waitPlan = strict({ jobId: z.string(), reason: z.string() });

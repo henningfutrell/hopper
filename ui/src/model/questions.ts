@@ -10,7 +10,7 @@ export const unseenByOwner = (q: Question): boolean => awaitsOwner(q) && !q.seen
 
 /** The open questions' one order, the API's too: oldest first, the longest waiting on top, so an arrival lands at the
  *  bottom (issue #450). A gained attempt or a tier change never moves a question. Stable: ties keep the API's order. */
-export const longestWaitingFirst = (qs: Question[]): Question[] => [...qs].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+export const longestWaitingFirst = <T extends Question>(qs: T[]): T[] => [...qs].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
 /** The raising machine as people read it: its name when it was asked, else its id; never blank (issue #485). */
 export const raisedName = (r: RaisedBy | undefined): string => (r ? r.name ?? r.machineId : 'machine unknown');

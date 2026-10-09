@@ -45,11 +45,11 @@ export const useAwaitingOwner = (): number => useHopper((s) => s.questions.filte
 export const useServerNow = (): number => useNow() + useHopper((s) => s.serverOffsetMs);
 
 /** How many logins wait on the user, and whether one is about to expire: the nav badge and the header (issue #477). */
-export function useLoginsBadge(): { n: number; warn: boolean } {
+export function useLoginsBadge(): { n: number; warn: boolean; high: number } {
   const now = useServerNow();
   const logins = useHopper((s) => s.logins);
   const settings = useHopper((s) => s.loginSettings);
-  return settings ? loginsBadge(logins, now, settings) : { n: 0, warn: false };
+  return settings ? loginsBadge(logins, now, settings) : { n: 0, warn: false, high: 0 };
 }
 
 /** A machine's name: its label, else its id; undefined for none. */

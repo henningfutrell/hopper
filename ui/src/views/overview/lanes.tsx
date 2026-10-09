@@ -1,5 +1,6 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
 import { FolderOpen, Hand, Layers, Pause, Play, X } from 'lucide-react';
+import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
@@ -86,7 +87,7 @@ const LANE_MEANING = {
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
 
-function LaneCard({ row, machine, idle }: { row: LaneRow; machine: string; idle?: string | undefined }) {
+function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
   // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job.
@@ -97,6 +98,7 @@ function LaneCard({ row, machine, idle }: { row: LaneRow; machine: string; idle?
       <div className="mb-2 flex items-center gap-2 text-xs">
         <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
+        {priority && <PriorityLaneMark />}
         {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={CLOSES_AFTER}>closes after this job</span>}
         <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
           tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
@@ -147,9 +149,19 @@ export function LanesPanel() {
   const rows = laneRows(machines, running);
   // A machine with no lane to show (its lane count is 0) still says why it runs nothing.
   const laneless = machines.filter((m) => !rows.some((r) => r.machine.id === m.id) && idle.has(m.id));
+  // The priority lanes (issue #535): marked where open; the ones not open now named below.
+  const view = useHopper((s) => s.priorityLanes);
+  const chosen = view?.chosen ?? [];
+  const shown = new Set(rows.flatMap((r) => (r.lane ? [r.lane.id] : [])));
+  const notOpen = chosen.filter((id) => !shown.has(id));
   return (
     <Panel title="Lanes" icon={Layers} count={`${running.length} running`} list bodyClassName="grid grid-cols-1 gap-2">
-      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} idle={idle.get(r.machine.id)} />) : <Empty>no machines</Empty>}
+      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} idle={idle.get(r.machine.id)} priority={!!r.lane && chosen.includes(r.lane.id)} />) : <Empty>no machines</Empty>}
+      {notOpen.length > 0 && (
+        <a href="#machines" data-slot="priority-lanes-closed" className="text-xs text-muted-foreground hover:text-foreground">
+          {notOpen.length === 1 ? 'Priority lane' : 'Priority lanes'} {notOpen.join(', ')} not open now: opened for the next high-priority job
+        </a>
+      )}
       {laneless.map((m) => <div key={m.id} data-lane-idle className="text-xs text-muted-foreground">{machineName(m.id, machines)}: {idle.get(m.id)}</div>)}
     </Panel>
   );

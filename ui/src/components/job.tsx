@@ -6,6 +6,7 @@ import { goalOf, issueRef } from '@/model/job';
 import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
 import { cn } from '@/lib/utils';
+import { HighTag, useIsHigh } from './priority';
 
 const GITHUB = 'https://github.com/';
 
@@ -23,6 +24,7 @@ export function GhLink({ url, children, className }: { url?: string; children: R
 export function JobTitle({ job, className }: { job: Job; className?: string }) {
   const ref = issueRef(job);
   const routed = routedByLabel(job);
+  const high = useIsHigh(job);
   return (
     <div className={cn('min-w-0', className)} title={`${goalOf(job)}\njob ${job.id}`}>
       <div className="truncate text-sm font-medium text-foreground">{goalOf(job)}</div>
@@ -30,6 +32,7 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
         {ref ? (
           <GhLink url={job.source?.url}>{ref}<ExternalLink className="size-3 opacity-60" /></GhLink>
         ) : <span>{job.id.slice(0, 8)}</span>}
+        {high && <HighTag priority={job.priority} />}
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}
       </div>

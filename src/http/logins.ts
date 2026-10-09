@@ -5,7 +5,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../domain/ports.ts';
-import { LOGIN_STATUSES, roleAllows } from '../domain/types.ts';
+import { highFirst, LOGIN_STATUSES, roleAllows } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { sessionToken } from './host-guard.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
@@ -33,7 +33,9 @@ export function loginRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     return {
       now: o.clock.now().toISOString(),
       settings: logins.settings(),
-      logins: logins.list({ ...(status ? { status: [...status] } : {}), limit: q.limit }).map((l) => logins.view(l, secrets)),
+      // Open logins of high-priority jobs first (issue #535); otherwise newest first.
+      logins: highFirst(logins.list({ ...(status ? { status: [...status] } : {}), limit: q.limit }).map((l) => logins.view(l, secrets)),
+        (l) => l.high === true && (l.status === 'pending' || l.status === 'expired')),
     };
   });
 

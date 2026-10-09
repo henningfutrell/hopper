@@ -30,6 +30,9 @@
           },
           "reason": {
             "type": "string"
+          },
+          "opens": {
+            "type": "string"
           }
         },
         "required": [
