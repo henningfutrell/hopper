@@ -58,6 +58,8 @@ interface Pane {
   dialogLines?: number;
   /** The shell runs in the job's scope (issue #410). */
   scoped?: boolean;
+  /** Looks left before Claude draws over its echoed launch line (FakeHerdrOptions.startupEcho). */
+  echoPolls?: number;
   /** Background work the last turn started, still running (FakeTurn.background). */
   background?: { work: string; polls: number; wakes?: boolean };
 }
@@ -149,6 +151,13 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   };
 
   const advance = (p: Pane): void => {
+    if (p.echoPolls !== undefined) {
+      if (--p.echoPolls > 0) return;
+      p.echoPolls = undefined;
+      p.lines.push('✻ Welcome to Claude Code');
+      settle(p, 'idle');
+      return;
+    }
     if (p.background && p.status === 'idle' && --p.background.polls <= 0) {
       const { wakes } = p.background;
       p.background = undefined;
@@ -225,6 +234,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         p.dialogs = dialogs;
         showDialog(p);
         return p.mode === 'bypass' && o.bypassDialog === 'started' ? { ok: true } : { ok: false, notReady: true };
+      }
+      if (o.startupEcho) {
+        p.lines.push(...o.startupEcho.lines);
+        p.echoPolls = o.startupEcho.polls;
+        settle(p, 'blocked');
+        return o.startupEcho.started ? { ok: true } : { ok: false, notReady: true };
       }
       if (o.startupBlockedBy) {
         p.mode = 'startup';

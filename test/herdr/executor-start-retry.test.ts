@@ -49,7 +49,7 @@ describe('herdr-claude executor: a start that times out is tried again (issue #4
   });
 
   it('a startup blocked by a screen the hopper may not answer is not tried again', async () => {
-    const { herdr, executor } = setup({ startupBlockedBy: ['Claude Code needs to update. Press enter.'] });
+    const { herdr, executor } = setup({ startupBlockedBy: ['─'.repeat(40), ' Claude Code needs to update', '', ' ❯ 1. Update now', '   2. Exit', '', ' Enter to confirm · Esc to cancel'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out.kind === 'failed' && out.error).toMatch(/^claude blocked at startup/);
     expect(herdr.calls.filter((c) => c.method === 'createTab')).toHaveLength(1);

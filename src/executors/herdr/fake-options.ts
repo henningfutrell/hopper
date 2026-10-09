@@ -20,6 +20,13 @@ export interface FakeHerdrOptions {
   importsDialog?: string;
   /** Startup blocks on some other screen. */
   startupBlockedBy?: string[];
+  /**
+   * Before Claude draws anything, the pane shows `lines` — its launch line echoed (a Windows shell's
+   * `-EncodedCommand`), or a setup command still on screen (issue #527) — and herdr calls the agent blocked, for
+   * `polls` looks at it (Infinity: Claude never comes up); then Claude starts. `started`: herdr's agent start
+   * answered ok all the same, else `notReady`.
+   */
+  startupEcho?: { lines: string[]; polls: number; started?: boolean };
   /** The first N `runInPane` commands are lost, as a shell not at its prompt yet drops what is typed. */
   shellDropsRuns?: number;
   /** The first N job worktree commands are lost (issue #518, seen live in a zsh whose start-up files were busy). */
