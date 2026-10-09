@@ -19,7 +19,7 @@ export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceCo
   return sourceConfig(shared);
 }
 
-export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami'>> = {}) {
+export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami' | 'yoloMode'>> = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };

@@ -1,9 +1,9 @@
 // What a user's job sources learn of the user's store (design.md "Plugin contract"): which source keys have a
 // local job, may be re-run or were rejected (issue #387), and, per source, the claim holder, the intake
-// migration and intake events (issue #440). The connected accounts are added by the runtime.
+// migration and intake events (issue #440), and the user's yolo mode (issue #579). The connected accounts are added by the runtime.
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
-import { isRerunnable } from '../domain/types.ts';
+import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 
 export function storeSourceContext(store: UserStore, otherUsersKnow?: (keys: string[]) => Set<string>): Omit<JobSourceContext, 'connectedAccounts'> {
@@ -18,5 +18,6 @@ export function storeSourceContext(store: UserStore, otherUsersKnow?: (keys: str
       migrated: (m) => store.settings.setIntakeMigration(name, m),
       record: (type, data) => { store.events.append({ type, data }); },
     }),
+    yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
   };
 }

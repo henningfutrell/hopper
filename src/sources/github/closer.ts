@@ -16,12 +16,12 @@ export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!
 
 export const OPEN_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
-    closedByPullRequestsReferences(first: 50, includeClosedPrs: false) { nodes { url createdAt isDraft state } }
+    closedByPullRequestsReferences(first: 50, includeClosedPrs: false) { nodes { url createdAt isDraft state mergeable } }
   } }
 }`;
 
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
-interface Referenced { url?: string; createdAt?: string; isDraft?: boolean; state?: string }
+interface Referenced { url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string }
 interface GqlResponse {
   data?: { repository?: { issue?: {
     timelineItems?: { nodes?: ({ closer?: Closer | null } | null)[] };
@@ -52,5 +52,5 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
 export function openPullRequestsFrom(body: unknown, what: string): OpenPullRequest[] {
   const nodes = response(body, what).data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt
-    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true }] : []);
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING' }] : []);
 }

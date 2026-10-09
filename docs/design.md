@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status), ports (`ports.ts`, re-exporting the store's from `store.ts` and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563) | http, decider |
@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
-| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
+| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -59,6 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog and a link's text (`catalog.ts`, pure), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -1651,7 +1652,6 @@ github:
   progressCommentSeconds: 300
   recentComments: 10    # comments passed into the job's context
   projects: {}          # per repo, optional — see "Priority"
-  completion: merge     # or pull-request: when a job's work is done — see "Done means complete"
   # projects:
   #   owner/hopper-sandbox:
   #     owner: owner
@@ -1703,7 +1703,7 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
-done (completion: merge|pull-request): what done means for this issue's completion ("Done means complete" below)
+done: …: done is the job's pull request, ready for review; with yolo mode on for the repo, it may also merge it ("Done is a pull request" below)
 recent comments (oldest first, up to recentComments; only the assignee's, no hopper-marked comments — anyone else's text never reaches the job; issue #387):
 - <author> at <ISO>: <body, ≤ 1000 chars>
 ...
@@ -1749,9 +1749,8 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 
 **Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at all
 (owner decision, 2026-10-04: a finished issue needs no comment). It never closes an issue (issue
-#187): the merge of the job's own pull request does, which is what completion `merge` requires
-before the job is finished, and with completion `pull-request` the issue stays open, labelled
-`hopper:done`, until a person merges. (Issue #38 had the hopper close a finished job's issue; once
+#187): the merge of the job's own pull request does — a person's, or the job's own with yolo mode on (issue #579) —;
+until then the issue stays open, labelled `hopper:done`. (Issue #38 had the hopper close a finished job's issue; once
 done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open.
 The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
@@ -1765,36 +1764,51 @@ Comments the hopper posted before this rule start with a hidden marker line (`<!
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
 `<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
-**Done means complete** (issues #171, #187). A job that ends done (`HOPPER_DONE`, or any
-executor's `finished` outcome) is not recorded finished until its source has said its work reached
-the item's **completion** (`JobSource.notComplete(job)`, asked by the engine's runner before
-`recordOutcome`). The GitHub sources (`src/sources/github/completion.ts`) know two completions,
-set by the `completion` option (default `merge`) or, for one issue, by the labels
-`hopper:complete-at-merge` / `hopper:complete-at-pr` (both: `merge`, the stricter; read when the
-job is judged, and when its prompt is built):
+**Done is a pull request** (issues #171, #187, #579). A job that ends done (`HOPPER_DONE`, or any
+executor's `finished` outcome) is not recorded finished until its source has said its work is **complete**
+(`JobSource.notComplete(job)`, asked by the engine's runner before `recordOutcome`). For the GitHub sources
+(`src/sources/github/completion.ts`) complete is one rule, for every issue: the job's own pull request — opened at
+or after the job's `createdAt` — is open, not a draft, has no merge conflicts (GraphQL `mergeable` is not
+`CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), and its merge will close the issue
+(`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch); or the issue is
+**closed as complete** — its last close event's closer a merged pull request opened at or after the job's
+`createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, closed as
+completed (`state_reason`) at or after the job's `createdAt`, by a commit or with no code (issue #350). **A merge
+is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). Before it, a
+source's `completion` option (default `merge`) and the labels `hopper:complete-at-merge` /
+`hopper:complete-at-pr` held a job to the merge, and a job whose pull request was open and waiting for review ended
+failed; tenant migration 30 removes the option from the stored config, and the labels mean nothing now.
 
-| completion | complete when | the job's prompt says |
-|------------|---------------|-----------------------|
-| `merge` | the issue is **closed as complete**: its last close event's closer is a merged pull request opened at or after the job's `createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, it was closed as completed (`state_reason`) at or after the job's `createdAt` — by a commit, or with no code (issue #350) | checks pass, pushed, a pull request with `Closes #N` merged, the merged change verified where the product runs; an issue that needs no code change: closed as completed |
-| `pull-request` | as `merge`, or an open pull request, not a draft, opened at or after the job's `createdAt`, whose merge will close the issue (GraphQL `closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch) | checks pass, pushed, a pull request with `Closes #N` open and not a draft; do not merge it |
+**Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
+repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
+settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
+job repository, and per repository (`repos`, `owner/repo` lowercased), which wins. The source reads it each time it
+builds a job's prompt (`JobSourceContext.yoloMode(repo)`), so a change applies to the next job without a restart; a
+running job keeps what it was told. It never changes what done is. Off by default because a merge with nobody
+reviewing it is a merge nothing else stops where a repository has no branch protection, and a merge to the default
+branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
+Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above).
 
-The prompt's `done (completion: …)` line carries the parts the hopper cannot see — the repo's own
-checks, verifying where the product runs — so a job is told everything done means, and the gate
-holds it to the part GitHub can show. Anything short of the completion — a local commit, a branch,
-a draft, the issue closed as not planned, closed before the job, or closed by an older pull request — fails the job with
-`not complete: no merged pull request opened by this job closes <issue url>` (`merge`) or `not
-complete: no pull request opened by this job, ready for review, closes <issue url>`
-(`pull-request`); an error asking GitHub (transient or not) fails it with `could not confirm the
-work is complete: <error>`. Fail closed: a failed job's issue stays open with `hopper:failed`, never
-`hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job of no
-source, take every done job as complete. Before issue #171, a job that said it was done was closed
-as completed with nothing on the default branch.
+| yolo mode | the job's prompt says |
+|-----------|-----------------------|
+| off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
+| on for the repo | the same, then: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done |
+
+The prompt's `done:` line carries the parts the hopper cannot see — the repo's own checks, verifying where the
+product runs — so a job is told everything done means, and the gate holds it to the part GitHub can show. Anything
+short of it — a local commit, a branch, a draft, a pull request with merge conflicts, the issue closed as not
+planned, closed before the job, or closed by an older pull request — fails the job with `not complete: no pull
+request opened by this job, ready for review, closes <issue url>`; an error asking GitHub (transient or not) fails
+it with `could not confirm the work is complete: <error>`. Fail closed: a failed job's issue stays open with
+`hopper:failed`, never `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job
+of no source, take every done job as complete. Before issue #171, a job that said it was done was closed as
+completed with nothing on the default branch.
 
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
 expires while it waits on a question, or it closes its issue with a commit and then trips. Before
-the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: the rule in
-the `merge` row above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
+the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: closed as complete,
+above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
 ends the job `finished` (its `error` cleared; `job.finished` with result `issue closed as complete`,
 after the `job.failed` already logged), and the report labels the issue `hopper:done`, never
 `hopper:failed`. Any failure path is covered — the runner's outcome, restart recovery, an expired
@@ -2181,7 +2195,7 @@ Manifest:
 
 - `issues: write` now covers only labels (write criteria).
   Reading which pull request closed an issue needs nothing more (verified against the live app,
-  2026-10-04). The open pull requests that close an issue (completion `pull-request`) are read
+  2026-10-04). The open pull requests that close an issue (the done-check, "Done is a pull request") are read
   the same way, over GraphQL with the installation token; not yet verified against the live app. The
   app could later drop to fewer permissions; not changed here.
 
@@ -3351,7 +3365,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 2. **Enforcement belongs to what the hopper runs.** The sandbox confines the jobs the hopper dispatches
    to an executor; it never reaches into an operator's IDE. An operator-led job runs nothing of the
    hopper's, so there is nothing to confine — and nothing to wait for but its source.
-3. **One check-in for both.** The closing pull request reaching its completion ("Done means complete").
+3. **One check-in for both.** The closing pull request being done ("Done is a pull request").
    No shape has its own gate, and none needs a hopper IDE plugin ("Work by hand in an IDE: how it checks
    in", settled there).
 4. **One claim per issue, either shape.** `hopper:claimed` holds an issue against dispatch whichever shape
@@ -3631,7 +3645,7 @@ that makes it a part of the hopper:
 3. **States are events.** Each new history entry becomes an event on the job (a state, its note, its
    time from the box); `stale` is the hopper's own reading, an event too, never a state the box writes;
    `waiting` could raise a question for the owner the way a pane's question does.
-4. **Done stays the closing pull request** (#316's recommendation, "Done means complete"). `finished` is
+4. **Done stays the closing pull request** (#316's recommendation, "Done is a pull request"). `finished` is
    the operator's word, as `HOPPER_DONE` is an agent's: the job is finished only when the source says the
    work reached its completion, else it fails as any job does. `released` cancels the job and takes the
    claim off, so the issue is the queue's again.
@@ -3650,7 +3664,7 @@ plugin or another product surface, or git and GitHub alone; how it lives beside 
 jobs. Related: #314, #308, #315; the claim and its timeline designation are #318, the protocol #319.
 
 **What already counts as check-in.** For a GitHub-sourced job, done is git and GitHub: the job's own
-closing pull request reaching its completion ("Done means complete"). Labels carry claim, done and
+closing pull request being done ("Done is a pull request"). Labels carry claim, done and
 failed; a local commit, a branch or a draft is never done. The `cursor-agent` executor is Cursor's CLI
 in print mode on a machine's work tree, not the IDE. A client target serves herdr only; a container
 target runs the command executor only.
@@ -3880,11 +3894,11 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
 - **Never run.** `operator_led` is neither waiting nor running to the decider (`WAITING`/`RUNNING` in
   `src/engine/decision-step.ts`), holds no lane, and restart recovery leaves it as it is.
 - **Done.** The sync loop, after the cancel signals, asks the source of each operator-led job
-  `notComplete(job)` (the same check an agent's `HOPPER_DONE` gets, "Done means complete"); complete →
+  `notComplete(job)` (the same check an agent's `HOPPER_DONE` gets, "Done is a pull request"); complete →
   `SourceHost.finishOperatorLed` ends it `finished` (`job.finished`), and the report labels the issue
   `hopper:done`. An error asking is a report retry; the job stays operator-led. The pull request must be the
   job's own (opened at or after the job was created), as for any job.
-- **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done means complete"), the label removed, or the issue gone cancels it, as for any job
+- **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done is a pull request"), the label removed, or the issue gone cancels it, as for any job
   (`check()`); so does Cancel in the UI, which takes the claim off the issue.
 - **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
   *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a
@@ -9087,7 +9101,8 @@ reading of its own live tuples: the job runs from the template → the template 
 profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
-status; each template's approvals with the chain and **Revoke** (asked once); the revoked ones; **Try a check** (a
+status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
+(issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
 decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
@@ -9233,8 +9248,8 @@ to stop the login without entering the code and ask the hopper (`githubLoginNote
 input (#533). Reported again at once — the proxy is not set up there, or cannot do what it needs — it goes to the
 Logins as before (issue #476), so a person still decides. A print-mode run is not steered: it cannot be typed into.
 
-**Not built.** The identity checks are the policy above, behind one function, until #559 (OpenFGA) decides them; the
-skill catalog of #559 ("what can you set up for me?") has one entry, `hopper-gh help`. No UI of its own: the events
+**Not built.** The identity checks are the policy above, behind one function, until #559 (OpenFGA) decides them. The
+skill catalog of #559 ("what can you set up for me?") is issue #582's: `hopper-gh`'s help is its `github` skill. No UI of its own: the events
 show on the job's timeline and the event log. Rate limits are not settings.
 
 | dir | owns | must not import |
@@ -9349,19 +9364,62 @@ migration 29, a table only), the last approval in its body.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
-**Access (#559) is not asked in v1.** #559's access check (OpenFGA) decides each credential the vault would *mint*; v1
-mints nothing and, by owner constraint, needs no system outside the hopper — so the vault's gate is the template's
-approval above, rows in the hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559
-says. A template's vault approval is not an access approval (`approved_for` an operation profile on an asset): the two
-name the same template and nothing else.
+**Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
+would *mint*; v1 mints nothing, so a vault secret's delivery is decided by the template's approval above, rows in the
+hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559 says. A template's vault
+approval of its image and secrets is not an access approval (`approved_for` an operation profile on an asset). A
+template's **operation profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their
+access approvals, and access is the one record of which are approved.
 
-**Not built** (owner: keep the vault minimal; deferred): the template's scope as an input to the blast-radius rating
-(#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one
+**Not built** (owner: keep the vault minimal; deferred): a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
+
+### A template's blast radius (issue #584)
+
+Owner direction (issue #559, split into #584): a box's tools decide what it *could* do (a machine's blast radius, issue
+#542, from its discovery); its identity decides what it *may* do. So a template is rated too, from what its boxes may
+ask for, and a high-radius operation profile takes its own explicit approval.
+
+- **Declared profiles.** A template declares the operation profiles its boxes may ask for (`Template.profiles`, kept in
+  its body: no migration; absent on a template saved before, none). `save-template` takes `profiles` (absent: the ones
+  it has); each must be one the access model can hold (`profileProblem`, 400). A profile dropped from the template, or
+  the template removed, has its access approval revoked at once (`Access.revokeProfile`): access holds no approval the
+  template does not declare. A profile approved in access but not declared is rated too.
+- **Approval is in access.** Access (issue #559) is the one record of which profiles are approved: `pending.profiles`
+  is what the template declares and access does not approve, and a revoke in Settings → Access makes a profile wait
+  again. The vault reaches access through `TemplateApprovals` (`approvedProfiles`, `approve`, `revokeProfile`;
+  `src/domain/access.ts`), given to each user's runtime by the composition root. `approve-template` approves the image,
+  the secrets and every pending **read** profile. A **high-radius** profile — `write`, `sync` or `apply` — is approved
+  only by `approve-profile` (`name`, `operation`, `asset`), one profile at a time, behind a confirmation that says it
+  changes the asset: an approval for read never approves write. Each is `template.profile_approved` (template,
+  operation, asset, level, who).
+- **The rating** (`rateTemplate`, `src/blast-radius/template.ts`, pure; `TemplateRadius`). Each profile, declared or
+  approved: `read` is `low`, a high-radius one `high`, approved or waiting. Each vault secret in the scope is a
+  credential whose reach the hopper cannot see: an unconfirmed reach, rated by the user's blast-radius rules
+  (`reachLevel`: `medium` by default, `high` when its name or scope line holds a prod pattern, `low` when the rules
+  count unconfirmed as read). The level is the highest; the reasons are the lines that set it, a profile's saying
+  whether it is approved or waits. Rated at every view: a widening (a profile or a secret added) rates it again at
+  once, and the new profile waits for a person.
+- **Where it shows.** `GET /api/vault` and Settings → Vault: each template's `radius`, its badge and reasons, its
+  profiles marked as waiting, Approve (the template and its read profiles) and one *Approve write on …* per waiting
+  high-radius profile. `GET /api/access` and Settings → Access: each template with an approval or a vault template of
+  its name, its `radius` beside its approvals, and what waits for approval on the Vault page. Access rates a template
+  from every user's vault templates of that name (`VaultService.templateScopes`), each with its user's rules, and shows
+  the highest.
+
+**Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
+discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
+carries its `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+
+Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
+not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
+read profile rated low and its check allowed; a write profile added raises the rating, the template's approval does
+not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Settings → Access
+makes it wait again; narrowing and removal revoke; refusals), `test/integration/access.test.ts`, `test/ui/vault.test.ts`.
 
 ### Delivery to the box (slice 3)
 
@@ -9412,6 +9470,68 @@ give, a computer of no template and an ask not signed by the machine refused; th
 of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
 `test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.
 
+## Skills: what the hopper can set up for a box (issue #582, 2026-10-09)
+
+Owner direction (#559, "hopper's skill system, how a box phones home"): the hopper is the broker between all boxes. A
+box does not wire itself to other boxes or to outside systems; it asks the hopper. Like MCP, without MCP: a small
+catalog that costs few tokens, the full text of a skill only when a box asks for it, a small API and CLI, and a clear
+no with a reason when the hopper cannot or may not — never a silent failure, never a hang.
+
+**The way in.** Beside `hopper-gh` (issue #563) the engine keeps a third file in the job's credentials dir,
+`hopper/skill`, and sets `HOPPER_SKILL` to it. It asks with the same **proxy token** (`HOPPER_TOKEN_FILE`) and the same
+`HOPPER_URL`. One protocol line (`SKILL_LINE`, `src/job-rules/`) tells the job to run it when it needs something set up.
+
+| call | answer (plain text) |
+|------|---------------------|
+| `sh "$HOPPER_SKILL"` | the **skill catalog**: `name: one line` per skill, then `Load one: sh "$HOPPER_SKILL" NAME [ASSET]` |
+| `sh "$HOPPER_SKILL" NAME` | the skill's full text, when it needs no asset |
+| `sh "$HOPPER_SKILL" NAME ASSET` | the skill's text and its **link** for this box, when Access allows it |
+| any no | `no: <reason>`, exit 1 |
+
+**`POST /job/skill`** (`src/http/job-skill.ts`): outside the UI session, behind the Host guard, like `POST /job/github`
+(`AGENTS.md`). `Authorization: Bearer <proxy token>`; no fields for the catalog, else `name` and `asset`, as a form or
+JSON. The broker (`src/skills/broker.ts`), in order:
+
+1. the token: its user, its link key, its job, at work — else **401**, logged only;
+2. no `name`: the catalog — **200**, `skill.listed`;
+3. a skill the hopper has — else **404** `no: the hopper has no skill NAME. It has: … Find another way.`;
+4. a skill with no link: its text — **200**, `skill.loaded`;
+5. a link: the `asset` (`kind/name`, as Access names assets: `cluster/prod`, `namespace/prod/web`, `aws-account/ID`,
+   `aws-role/ID/ROLE`) of a kind the skill takes — else **400** with how to name it;
+6. the box's identity: the job's machine (its lane's, else where it resumes) and the **template** that machine joined as
+   (`VaultService.scopeOf`) — a machine of no template: **403**, Access checks a box by its template;
+7. Access (issue #559): `decideMint({ job, template, operation, asset })`, the skill's operation (`read` for both
+   diagnostics skills). Recorded in Access's decisions, so it feeds the permission matrix — a deny: **403**
+   `no: Access denied it: <Access's reason>`, `skill.refused` with `decision`;
+8. the vault secrets the template may be given now (its approved scope, issue #558) — none: **403** saying a person adds
+   one; else **200**: the text, Access's reason, and the link — the secrets by name and scope line, and the stanza the
+   tool runs (`exec: … args: [kube, NAME]`, `credential_process = … aws NAME`) through `$HOPPER_SECRET`. Never a value:
+   the vault gives it just in time, with its own checks, when the tool runs.
+
+**The skills** (`src/skills/catalog.ts`, baked in): `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
+on a cluster or namespace) and `aws-diagnostics` (read on an AWS account or role). The catalog stays under 800
+characters.
+
+**Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
+(`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
+same row Settings → Access shows.
+
+**Not built.** Minting (#580): the link uses the vault secret as it is, delivered just in time. Skills a user or a plugin
+adds; a skill the hopper learns (#583, Render). A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
+link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
+their approvals (#581 makes identity richer).
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker | engine, http, store, plugins, executors, decider |
+
+Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
+the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
+list; on a box of a template, Access denies with its reason and the decision is recorded, then after an approval the
+skill and its link, never the value; a machine of no template, no asset, a wrong asset kind and a bad token refused),
+`test/integration/github-proxy.test.ts` (`HOPPER_SKILL` beside `HOPPER_GH`), `test/herdr/screen.test.ts` (the protocol
+line).
+
 ### Vault backends (issue #585, 2026-10-09)
 
 Owner direction (issue #559, split out as #585): the vault can keep a secret's value in an outside secret manager the
@@ -9434,7 +9554,7 @@ the backend (`backend`); a backend that is gone, cannot run or cannot read the r
 (`vault.refused`, a warning in the log naming the backend and the secret).
 
 **Kept.** A vault secret kept in a backend has `backend: { name, reference }` in its metadata, shown on Settings →
-Vault and in `GET /api/vault`, and no sealed value: tenant migration 30 lets `vault_secrets.sealed` be empty. The build
+Vault and in `GET /api/vault`, and no sealed value: tenant migration 31 lets `vault_secrets.sealed` be empty. The build
 before reads an empty value as one it cannot open, and refuses to deliver it. Set with `POST /ui/api/vault`
 `set-in-backend` (`name`, `scope?`, `backend`, `reference`): refused for a backend the plugins config does not name, one
 that cannot run, or a reference its `check` refuses. Setting a value again (`set`) keeps it in the hopper once more;

@@ -22,7 +22,9 @@ export const EVENT_TYPES = [
   'minor_decision.picked', 'minor_decision.compared', 'minor_decision.overridden', 'minor_decision.settings_changed',
   'job.phase_changed', 'job.forked', 'job.fork_resolved', 'phase_shifts.settings_changed',
   'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
-  'vault.secret_set', 'vault.secret_removed', 'template.saved', 'template.removed', 'vault.approved', 'vault.delivered', 'vault.refused',
+  'vault.secret_set', 'vault.secret_removed', 'template.saved', 'template.removed', 'vault.approved', 'template.profile_approved', 'vault.delivered', 'vault.refused',
+  'yolo_mode.changed',
+  'skill.listed', 'skill.loaded', 'skill.refused',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -53,5 +55,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'minor_decision.picked': 1, 'minor_decision.compared': 1, 'minor_decision.overridden': 1, 'minor_decision.settings_changed': 1,
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
-  'vault.secret_set': 1, 'vault.secret_removed': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.delivered': 1, 'vault.refused': 1,
+  'vault.secret_set': 1, 'vault.secret_removed': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'template.profile_approved': 1, 'vault.delivered': 1, 'vault.refused': 1,
+  'yolo_mode.changed': 1,
+  'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
 };

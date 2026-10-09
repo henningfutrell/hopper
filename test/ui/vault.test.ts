@@ -1,7 +1,7 @@
 // Issue #558: the Vault settings page's pure model. A secret is only its metadata: the page says what it is, who set
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
-import { approvalText, keptText, nameProblem, referenceHint, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, explicitApprovals, profileText, radiusText, keptText, nameProblem, referenceHint, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -46,15 +46,29 @@ describe('a name', () => {
 });
 
 describe('a template on the page', () => {
-  const base = { name: 'kube', image: 'img', secrets: ['A', 'B'], savedBy: 'Ada', savedAt: '2026-10-09T10:00:00Z' };
+  const radius = { level: 'low' as const, reasons: [], profiles: [] };
+  const base = { name: 'kube', image: 'img', secrets: ['A', 'B'], profiles: [], savedBy: 'Ada', savedAt: '2026-10-09T10:00:00Z', radius };
   it('never approved: its boxes get nothing', () => {
-    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true }, gives: [] })).toMatch(/not approved yet/);
+    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true, profiles: [] }, gives: [] })).toMatch(/not approved yet/);
   });
   it('approved as it is', () => {
-    expect(approvalText({ ...base, approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false }, gives: ['A', 'B'] })).toBe('approved');
+    expect(approvalText({ ...base, approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] }, gives: ['A', 'B'] })).toBe('approved');
   });
   it('widened or a new image: says what waits', () => {
-    expect(approvalText({ ...base, approval: { image: 'old', secrets: ['A'], by: 'Ada', at: '' }, pending: { secrets: ['B'], image: true }, gives: [] })).toBe('waits for approval: a new image; B added');
+    expect(approvalText({ ...base, approval: { image: 'old', secrets: ['A'], by: 'Ada', at: '' }, pending: { secrets: ['B'], image: true, profiles: [] }, gives: [] })).toBe('waits for approval: a new image; B added');
+  });
+  // Issue #584: a profile added waits too; a write, sync or apply profile waits for its own explicit approval.
+  const READ = { operation: 'read' as const, asset: { kind: 'cluster' as const, name: 'x' } };
+  const WRITE = { operation: 'write' as const, asset: { kind: 'cluster' as const, name: 'x' } };
+  it('a profile added: says which, and which needs an explicit approval', () => {
+    const t = { ...base, profiles: [READ, WRITE], approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [READ, WRITE] }, gives: ['A', 'B'] };
+    expect(approvalText(t)).toBe('waits for approval: read on cluster x; write on cluster x (explicit)');
+    expect(explicitApprovals(t)).toEqual([WRITE]);
+    expect(profileText(WRITE)).toBe('write on cluster x');
+  });
+  it('the rating in a few words, its level first', () => {
+    expect(radiusText({ level: 'high', reasons: ['write on cluster x: it changes the asset; approved'], profiles: [] })).toBe('high radius: write on cluster x: it changes the asset; approved');
+    expect(radiusText({ level: 'low', reasons: ['a', 'b'], profiles: [] })).toBe('low radius: a; b');
   });
 });
 

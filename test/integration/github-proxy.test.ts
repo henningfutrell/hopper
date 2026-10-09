@@ -125,7 +125,7 @@ describe('GitHub through the hopper (issue #563)', () => {
   it('files an issue for a job with the hopper\'s GitHub connection: unlabelled, unassigned, marked, on the job\'s timeline, never a job', async () => {
     const t = await start();
     const { job, env } = await running(t);
-    expect(env).toMatchObject({ HOPPER_URL: t.app.url, HOPPER_GH: `/work/.hopper-scratch/${job.id}/credentials/hopper/gh`, HOPPER_TOKEN_FILE: `/work/.hopper-scratch/${job.id}/credentials/hopper/token` });
+    expect(env).toMatchObject({ HOPPER_URL: t.app.url, HOPPER_GH: `/work/.hopper-scratch/${job.id}/credentials/hopper/gh`, HOPPER_SKILL: `/work/.hopper-scratch/${job.id}/credentials/hopper/skill`, HOPPER_TOKEN_FILE: `/work/.hopper-scratch/${job.id}/credentials/hopper/token` });
     const bodyFile = join(t.root, 'body.md');
     writeFileSync(bodyFile, 'The queue view drops a job\'s "priority" when it is 0.\n');
 

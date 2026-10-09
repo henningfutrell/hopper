@@ -16,6 +16,7 @@ import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
+import { noCompletion } from './migration-no-completion.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { collapseFloodedLogins } from './migration-login-flood.ts';
@@ -323,7 +324,10 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
     name TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL
   )`,
-  // 30: Vault backends (issue #585): a vault secret kept in a backend has no sealed value, only its reference in its
+  // 30: done is always a pull request ready for review (issue #579): the GitHub sources' `completion` option goes.
+  // The build before reads a source with none as its old default.
+  noCompletion,
+  // 31: Vault backends (issue #585): a vault secret kept in a backend has no sealed value, only its reference in its
   // body. The build before reads a missing value as one it cannot open, and refuses to deliver it.
   'ALTER TABLE vault_secrets ALTER COLUMN sealed DROP NOT NULL',
 ];

@@ -109,6 +109,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.phase_changed': { from: 'work', to: 'research', reason: 'research only the auth part', mode: 'switch', questionId: 'q1', note: 'research only the auth part', by: 'owner' },
   'job.forked': { forkId: 'j2', to: 'research', mode: 'fork', questionId: 'q1', note: 'only the token lifetime', by: 'owner', parent: 'waiting', priority: 50, high: false },
   'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true, question: 'open' },
+  'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {
@@ -124,9 +125,13 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'github_proxy.failed': { requestId: 'r3', machine: 'desk', own: true, op: 'pr.create', repo: 'octo/tools', error: 'GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)' },
   'vault.secret_set': { name: 'KUBE_TOKEN', by: 'Ada', replaced: false },
   'vault.secret_removed': { name: 'KUBE_TOKEN', by: 'Ada' },
-  'template.saved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
+  'template.saved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }], by: 'Ada' },
   'template.removed': { template: 'kube', by: 'Ada' },
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
+  'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
   'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
   'vault.refused': { name: 'PROD_KEY', machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'kube is not approved for PROD_KEY: a person adds it to the template and approves it' },
+  'skill.listed': { requestId: 'r4', machine: 'hopper-sandbox-kube', template: 'kube' },
+  'skill.loaded': { requestId: 'r5', machine: 'hopper-sandbox-kube', template: 'kube', skill: 'kube-diagnostics', asset: 'cluster/prod', decision: 'd1' },
+  'skill.refused': { requestId: 'r6', machine: 'desk', skill: 'render', reason: 'the hopper has no skill render. It has: github, kube-diagnostics, aws-diagnostics. Find another way.' },
 };
