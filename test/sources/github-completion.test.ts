@@ -118,4 +118,16 @@ describe('closed as complete (issue #350)', () => {
     gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     await expect(source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).rejects.toThrow('Bad Gateway');
   });
+
+  it('itemClosed (issue #529): an issue closed any way, or gone, is closed; an open one is not; a transient error throws', async () => {
+    const { gh, source } = setup();
+    for (let n = 1; n <= 4; n++) gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.closeIssue(REPO, 1, 'owner', { at: AFTER });
+    gh.closeIssue(REPO, 2, 'owner', { at: AFTER, reason: 'not_planned' });
+    gh.deleteIssue(REPO, 4);
+    const failed = (n: number) => jobForIssue(n, { status: 'failed' });
+    expect(await Promise.all([1, 2, 3, 4].map((n) => source.itemClosed!(failed(n))))).toEqual([true, true, false, true]);
+    gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    await expect(source.itemClosed!(failed(3))).rejects.toThrow('Bad Gateway');
+  });
 });
