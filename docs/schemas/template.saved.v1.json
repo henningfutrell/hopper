@@ -14,6 +14,52 @@
         "type": "string"
       }
     },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "sync",
+              "apply"
+            ]
+          },
+          "asset": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cluster",
+                  "namespace",
+                  "argocd-app",
+                  "terraform-workspace",
+                  "aws-account",
+                  "aws-role"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "operation",
+          "asset"
+        ],
+        "additionalProperties": false
+      }
+    },
     "by": {
       "type": "string"
     }

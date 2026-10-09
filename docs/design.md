@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
-| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
+| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -9099,7 +9099,8 @@ reading of its own live tuples: the job runs from the template → the template 
 profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
-status; each template's approvals with the chain and **Revoke** (asked once); the revoked ones; **Try a check** (a
+status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
+(issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
 decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
@@ -9361,19 +9362,62 @@ migration 29, a table only), the last approval in its body.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
-**Access (#559) is not asked in v1.** #559's access check (OpenFGA) decides each credential the vault would *mint*; v1
-mints nothing and, by owner constraint, needs no system outside the hopper — so the vault's gate is the template's
-approval above, rows in the hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559
-says. A template's vault approval is not an access approval (`approved_for` an operation profile on an asset): the two
-name the same template and nothing else.
+**Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
+would *mint*; v1 mints nothing, so a vault secret's delivery is decided by the template's approval above, rows in the
+hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559 says. A template's vault
+approval of its image and secrets is not an access approval (`approved_for` an operation profile on an asset). A
+template's **operation profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their
+access approvals, and access is the one record of which are approved.
 
-**Not built** (owner: keep the vault minimal; deferred): the template's scope as an input to the blast-radius rating
-(#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one
+**Not built** (owner: keep the vault minimal; deferred): a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
+
+### A template's blast radius (issue #584)
+
+Owner direction (issue #559, split into #584): a box's tools decide what it *could* do (a machine's blast radius, issue
+#542, from its discovery); its identity decides what it *may* do. So a template is rated too, from what its boxes may
+ask for, and a high-radius operation profile takes its own explicit approval.
+
+- **Declared profiles.** A template declares the operation profiles its boxes may ask for (`Template.profiles`, kept in
+  its body: no migration; absent on a template saved before, none). `save-template` takes `profiles` (absent: the ones
+  it has); each must be one the access model can hold (`profileProblem`, 400). A profile dropped from the template, or
+  the template removed, has its access approval revoked at once (`Access.revokeProfile`): access holds no approval the
+  template does not declare. A profile approved in access but not declared is rated too.
+- **Approval is in access.** Access (issue #559) is the one record of which profiles are approved: `pending.profiles`
+  is what the template declares and access does not approve, and a revoke in Settings → Access makes a profile wait
+  again. The vault reaches access through `TemplateApprovals` (`approvedProfiles`, `approve`, `revokeProfile`;
+  `src/domain/access.ts`), given to each user's runtime by the composition root. `approve-template` approves the image,
+  the secrets and every pending **read** profile. A **high-radius** profile — `write`, `sync` or `apply` — is approved
+  only by `approve-profile` (`name`, `operation`, `asset`), one profile at a time, behind a confirmation that says it
+  changes the asset: an approval for read never approves write. Each is `template.profile_approved` (template,
+  operation, asset, level, who).
+- **The rating** (`rateTemplate`, `src/blast-radius/template.ts`, pure; `TemplateRadius`). Each profile, declared or
+  approved: `read` is `low`, a high-radius one `high`, approved or waiting. Each vault secret in the scope is a
+  credential whose reach the hopper cannot see: an unconfirmed reach, rated by the user's blast-radius rules
+  (`reachLevel`: `medium` by default, `high` when its name or scope line holds a prod pattern, `low` when the rules
+  count unconfirmed as read). The level is the highest; the reasons are the lines that set it, a profile's saying
+  whether it is approved or waits. Rated at every view: a widening (a profile or a secret added) rates it again at
+  once, and the new profile waits for a person.
+- **Where it shows.** `GET /api/vault` and Settings → Vault: each template's `radius`, its badge and reasons, its
+  profiles marked as waiting, Approve (the template and its read profiles) and one *Approve write on …* per waiting
+  high-radius profile. `GET /api/access` and Settings → Access: each template with an approval or a vault template of
+  its name, its `radius` beside its approvals, and what waits for approval on the Vault page. Access rates a template
+  from every user's vault templates of that name (`VaultService.templateScopes`), each with its user's rules, and shows
+  the highest.
+
+**Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
+discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
+carries its `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+
+Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
+not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
+read profile rated low and its check allowed; a write profile added raises the rating, the template's approval does
+not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Settings → Access
+makes it wait again; narrowing and removal revoke; refusals), `test/integration/access.test.ts`, `test/ui/vault.test.ts`.
 
 ### Delivery to the box (slice 3)
 

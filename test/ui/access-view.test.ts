@@ -15,7 +15,10 @@ const running = { subject: 'job:trial/t1', relation: 'running', object: 'templat
 const VIEW = {
   status: { state: 'connected', syncedAt: '2026-10-09T12:00:00.000Z', storeId: 's1', modelId: 'm1' },
   model: { version: 3, dsl: 'model\n  schema 1.1\n', writtenBy: 'hopper', writtenAt: '2026-10-09T11:00:00.000Z' },
-  templates: [{ template: 'kubectl-diag', approvals: [{ id: 7, template: 'kubectl-diag', profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, approvedBy: 'alice', approvedAt: '2026-10-09T11:30:00.000Z', chain: [read, grant] }] }],
+  templates: [{ template: 'kubectl-diag', approvals: [{ id: 7, template: 'kubectl-diag', profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, approvedBy: 'alice', approvedAt: '2026-10-09T11:30:00.000Z', chain: [read, grant] }], radius: {
+    level: 'high', reasons: ['write on cluster x: it changes the asset; waits for an explicit approval'],
+    profiles: [{ profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, level: 'low', approved: true }, { profile: { operation: 'write', asset: { kind: 'cluster', name: 'x' } }, level: 'high', approved: false }],
+  } }],
   revoked: [],
   decisions: [
     { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', asset: { kind: 'cluster', name: 'x' }, job: { userId: 'admin', jobId: 'j1' } },
@@ -115,6 +118,14 @@ describe('Settings → Access', () => {
     expect(decisions.map((d) => d.getAttribute('data-allowed'))).toEqual(['false', 'true']);
     expect(decisions[0]!.textContent).toContain('not approved to write on cluster x');
     expect(decisions[1]!.textContent).toContain('this job runs from template kubectl-diag');
+  });
+
+  it('shows each template\'s blast radius and its reasons next to it, and what waits for approval (issue #584)', async () => {
+    await boot();
+    const t = panel()!.querySelector('[data-template="kubectl-diag"]')!;
+    expect(t.textContent).toContain('high radius');
+    expect(t.querySelector('[data-slot="template-radius"]')!.textContent).toBe('write on cluster x: it changes the asset; waits for an explicit approval');
+    expect(t.textContent).toContain('Waits for approval on Settings → Vault: write on cluster x');
   });
 
   it('says why OpenFGA cannot be asked, and that every credential is denied meanwhile', async () => {

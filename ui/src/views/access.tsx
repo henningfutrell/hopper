@@ -1,6 +1,7 @@
 // Settings → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
 // why not (every credential is denied meanwhile); each template's approvals, each with the relationship chain from
-// the template to the asset and Revoke (the next check is denied); a check tried for a template, an operation and a
+// the template to the asset and Revoke (the next check is denied), and its blast radius with the reasons (issue #584);
+// a check tried for a template, an operation and a
 // asset, answered with its path; the newest decisions; and the access model, saved against the version read. The
 // instance admin's alone: anyone else is told so.
 import { KeySquare } from 'lucide-react';
@@ -10,6 +11,7 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { FIELD } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
+import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -54,8 +56,15 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
         <div className="space-y-3">
           {view.templates.map((t) => (
             <section key={t.template} data-template={t.template} className="space-y-1">
-              <h3 className="font-mono text-sm font-medium">{t.template}</h3>
-              <ul className="divide-y rounded-lg border">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-mono text-sm font-medium">{t.template}</h3>
+                <TemplateRadiusBadge radius={t.radius} />
+              </div>
+              <TemplateRadiusReasons radius={t.radius} />
+              {t.radius.profiles.some((p) => !p.approved) && (
+                <p className="text-xs text-warn">Waits for approval on Settings → Vault: {t.radius.profiles.filter((p) => !p.approved).map((p) => `${p.profile.operation} on ${p.profile.asset.kind} ${p.profile.asset.name}`).join(', ')}</p>
+              )}
+              {t.approvals.length > 0 && <ul className="divide-y rounded-lg border">
                 {t.approvals.map((a) => (
                   <li key={a.id} data-approval={a.id} className="flex min-w-0 flex-wrap items-start gap-2 px-3 py-2 text-sm">
                     <div className="min-w-0 flex-1 space-y-0.5">
@@ -69,7 +78,7 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
                     </Confirm>
                   </li>
                 ))}
-              </ul>
+              </ul>}
             </section>
           ))}
         </div>
