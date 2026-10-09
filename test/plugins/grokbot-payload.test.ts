@@ -29,3 +29,16 @@ describe('Grok Bot routine: the question body names the raising machine (issue #
     expect(payload(question())).toMatchObject({ machineId: null, machineName: null, laneId: null });
   });
 });
+
+describe('Grok Bot routine: the question body says whether its job is high priority (issue #535)', () => {
+  const at = (job: Job, highPriority?: number) => questionPayload({ question: question(), job, answerUrl: undefined, at: 'x', now: new Date('2026-10-08T10:01:00.000Z'), offered: false, highPriority });
+
+  it('at or above the threshold: high', () => {
+    expect(at({ ...moved, priority: 75 }, 75)).toMatchObject({ priority: 75, high: true });
+    expect(at(moved, 75)).toMatchObject({ priority: 50, high: false });
+  });
+
+  it('the threshold not known: null', () => {
+    expect(at(moved)).toMatchObject({ priority: 50, high: null });
+  });
+});
