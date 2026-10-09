@@ -26,14 +26,15 @@
 #
 # Optional services (issue #586, docs/deploy.md "Optional services"), each behind a compose profile; the hopper starts
 # and works without them. Turn them on with lines in .env, then `podman compose up -d`:
-#   vault  the vault in a container of its own, so the hopper holds none of its keys:
-#            COMPOSE_PROFILES=vault
-#            HOPPER_VAULT_URL=http://vault:4791
-#   kms    a local KMS (local-kms) the vault's data key is wrapped by, envelope encryption:
-#            COMPOSE_PROFILES=vault,kms
-#            HOPPER_VAULT_URL=http://vault:4791
-#            HOPPER_KMS_URL=http://kms:8080
-#          (the KMS also works with the vault in the hopper: COMPOSE_PROFILES=kms and HOPPER_KMS_URL alone.)
+#   hopper-vault  the hopper's vault in a container of its own, so the hopper holds none of its keys:
+#                   COMPOSE_PROFILES=hopper-vault
+#                   HOPPER_VAULT_URL=http://hopper-vault:4791
+#   kms           a local KMS (local-kms) the vault's data key is wrapped by, envelope encryption:
+#                   COMPOSE_PROFILES=hopper-vault,kms
+#                   HOPPER_VAULT_URL=http://hopper-vault:4791
+#                   HOPPER_KMS_URL=http://kms:8080
+#                 (the KMS also works with the vault in the hopper: COMPOSE_PROFILES=kms and HOPPER_KMS_URL alone.)
+#   vault         HashiCorp Vault, a vault backend secrets may be kept in (issue #585): see the service below.
 # Turn the KMS on with the vault holding secrets: they are sealed again under the data key at its first use. Turn it
 # off again: set each vault secret again (a value sealed under the data key does not open without the KMS).
 name: hopper
@@ -41,7 +42,8 @@ name: hopper
 services:
   # Postgres makes the database password on its first start, kept in the secrets volume, before the
   # database starts, and the hopper's token key with it (issue #441). Each file is readable only by the one service that needs it (postgres: uid 70;
-  # the hopper and the vault: uid 1000; OpenFGA: uid 65532). The vault's preshared key (issue #586) is made the same way. No one-shot service for it: podman-compose cannot start a container whose
+  # the hopper and hopper-vault: uid 1000; OpenFGA: uid 65532). hopper-vault's preshared key (issue #586) is made the
+  # same way. No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   postgres:
@@ -96,11 +98,14 @@ services:
       # OpenFGA, asked before every credential a job is given (issue #559), and its preshared key.
       HOPPER_OPENFGA_URL: ${HOPPER_OPENFGA_URL:-http://openfga:8080}
       HOPPER_OPENFGA_KEY_FILE: /run/hopper-secrets/openfga_key
-      # The vault in its own container (profile `vault`, issue #586) and its preshared key; unset: the vault runs here.
+      # The vault in its own container (profile `hopper-vault`, issue #586) and its preshared key; unset: it runs here.
       HOPPER_VAULT_URL: ${HOPPER_VAULT_URL:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       # The KMS (profile `kms`), used here only when the vault runs here; unset: the token key.
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
+      # The token of the optional `vault` service below (issue #585): read-only, made by that service on its first
+      # start. Nothing reads it until a hashicorp-vault vault backend is added in Settings → Plugins.
+      VAULT_TOKEN_FILE: ${VAULT_TOKEN_FILE:-/run/hopper-vault/token}
       # The same port inside and out: the Host the browser sends must name the daemon's port.
       HOPPER_PORT: ${HOPPER_PORT:-4790}
       # The published port reaches the daemon from the compose network, not its loopback: those
@@ -110,6 +115,7 @@ services:
       HOPPER_LAN_PEERS: ${HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     volumes:
       - secrets:/run/hopper-secrets:ro
+      - vault-token:/run/hopper-vault:ro
       # Its home: the claude sign-in.
       - home:/home/node
     ports:
@@ -142,12 +148,12 @@ services:
     volumes:
       - secrets:/run/hopper-secrets:ro
 
-  # Optional (profile `vault`, issue #586): the vault in a container of its own, from the hopper's image. It holds the
-  # vault's key — the token key, or the data key the KMS opens — and the secret values, in the hopper's Postgres; the
-  # templates stay in the hopper. The hopper asks it at HOPPER_VAULT_URL with the preshared key. On no host port: only
-  # the hopper reaches it.
-  vault:
-    profiles: [vault]
+  # Optional (profile `hopper-vault`, issue #586): the hopper's vault in a container of its own, from the hopper's image.
+  # It holds the vault's key — the token key, or the data key the KMS opens — and the secret values, in the hopper's
+  # Postgres; the templates stay in the hopper. The hopper asks it at HOPPER_VAULT_URL with the preshared key. On no
+  # host port: only the hopper reaches it.
+  hopper-vault:
+    profiles: [hopper-vault]
     image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
     restart: unless-stopped
     command: [node, src/vault/main.ts]
@@ -179,9 +185,57 @@ services:
     restart: unless-stopped
     volumes:
       - kms:/data
+  # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
+  # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
+  #   podman compose --profile vault up -d
+  # Then Settings → Plugins → Vault backends → add hashicorp-vault (its defaults reach this service), and write a secret:
+  #   podman compose exec vault sh -c 'VAULT_TOKEN=$(cat /vault/keys/root_token) vault kv put secret/apps/db password=...'
+  # and in Settings → Vault, add a secret kept in it at apps/db#password. On no host port: only the hopper reaches it.
+  # Its first start initializes it (one unseal key) and writes, in its own volumes: the unseal key and the root token
+  # (vault-keys), and a read-only token for the hopper (vault-token: policy `hopper`, read on secret/data/*). Each
+  # start unseals it with that key: anyone who can read the vault-keys volume can open it (docs/deploy.md).
+  vault:
+    image: docker.io/hashicorp/vault:1.20
+    profiles: [vault]
+    restart: unless-stopped
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+    entrypoint: [sh, -euc]
+    command:
+      - |
+        k=/vault/keys; t=/run/hopper-vault
+        printf 'storage "file" { path = "/vault/file" }\nlistener "tcp" {\n  address = "0.0.0.0:8200"\n  tls_disable = true\n}\ndisable_mlock = true\nui = false\napi_addr = "http://vault:8200"\nmax_lease_ttl = "87600h"\n' > /vault/config/hopper.hcl
+        chown -R vault:vault /vault/file $$k
+        su-exec vault vault server -config=/vault/config/hopper.hcl &
+        pid=$$!
+        trap 'kill -TERM $$pid' TERM INT
+        until vault status >/dev/null 2>&1 || [ $$? -eq 2 ]; do sleep 1; done
+        if [ ! -s $$k/root_token ]; then
+          out=$$(vault operator init -key-shares=1 -key-threshold=1)
+          (umask 077; printf '%s' "$$out" | sed -n 's/^Unseal Key 1: //p' > $$k/unseal_key; printf '%s' "$$out" | sed -n 's/^Initial Root Token: //p' > $$k/root_token)
+        fi
+        vault operator unseal "$$(cat $$k/unseal_key)" >/dev/null
+        if [ ! -s $$t/token ]; then
+          export VAULT_TOKEN=$$(cat $$k/root_token)
+          vault secrets list | grep -q '^secret/' || vault secrets enable -path=secret kv-v2
+          printf 'path "secret/data/*" {\n  capabilities = ["read"]\n}\n' | vault policy write hopper -
+          (umask 077; vault token create -policy=hopper -orphan -ttl=87600h -field=token > $$t/token)
+          # The hopper reads it as uid 1000.
+          chown 1000:1000 $$t/token
+          unset VAULT_TOKEN
+        fi
+        chown -R vault:vault $$k
+        wait $$pid || wait $$pid
+    volumes:
+      - vault-data:/vault/file
+      - vault-keys:/vault/keys
+      - vault-token:/run/hopper-vault
 
 volumes:
   secrets:
   postgres:
   home:
+  vault-data:
+  vault-keys:
+  vault-token:
   kms:

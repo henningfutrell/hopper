@@ -107,7 +107,7 @@ describe('GET /api/plugins: the executor role', () => {
   it('the instances the plugins config names, detection per plugin and per instance', async () => {
     const a = await boot(newDb());
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend']);
     expect(body.executors).toEqual({
       instances: [{ instance: { name: 'test', plugin: 'test', options: {} }, detection: { status: 'available' }, active: 'test' }],
     });

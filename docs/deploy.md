@@ -192,25 +192,28 @@ every credential is denied, and Settings → Access says why.
 
 - **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once). A plain
   `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the token key.
-- **Optional**: `vault` and `kms`, each behind a compose profile of the same name. The hopper starts and works
-  without them. No required service depends on them, and neither is on a host port.
+- **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper starts
+  and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
+  Vault, a vault backend ("Vault backends" below); the other two are here.
 
 Turn them on with lines in the `.env` file beside `compose.yaml`, then run `podman compose up -d`:
 
 | You want | `.env` lines |
 |---|---|
-| The vault in a container of its own | `COMPOSE_PROFILES=vault` and `HOPPER_VAULT_URL=http://vault:4791` |
-| That, with a local KMS | `COMPOSE_PROFILES=vault,kms`, `HOPPER_VAULT_URL=http://vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
+| The vault in a container of its own | `COMPOSE_PROFILES=hopper-vault` and `HOPPER_VAULT_URL=http://hopper-vault:4791` |
+| That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
 
-Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists `vault`
-and `kms` as running. To turn a service off, remove its lines and run `podman compose up -d --remove-orphans`.
+Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists
+`hopper-vault` and `kms` as running. To turn a service off, remove its lines and run
+`podman compose up -d --remove-orphans`.
 
-### The vault container (`vault`)
+### The vault container (`hopper-vault`)
 
-The vault runs in its own container, from the hopper's image (`node src/vault/main.ts`). It holds the vault's key and
-the secret values, in the hopper's Postgres. Templates and their approvals stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at
-`HOPPER_VAULT_URL` with the preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
+The hopper's vault runs in its own container, from the hopper's image (`node src/vault/main.ts`). It holds the vault's
+key and the secret values, in the hopper's Postgres. Templates and their approvals, and secrets kept in a vault backend,
+stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at `HOPPER_VAULT_URL` with the
+preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
 (`vault_key` in the `secrets` volume). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
 recreates `postgres` once.
 
@@ -238,6 +241,35 @@ first ask. Its keys are in the `kms` volume.
 - When the KMS is down, the vault stores and delivers nothing and Settings → Vault says why. The vault container asks
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
 - local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
+
+## Vault backends (optional)
+
+The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,
+docs/design.md "Vault backends"): the hopper then reads the value there each time a box's job asks, and keeps no copy.
+None is needed: without one the hopper starts and its own vault works.
+
+- **HashiCorp Vault in the compose stack**: `podman compose --profile vault up -d` starts the `vault` service beside the
+  hopper. Its first start sets Vault up and makes a read-only token for the hopper, which the hopper reads as
+  `VAULT_TOKEN_FILE`. Then:
+  1. Settings → Plugins → Vault backends → add `hashicorp-vault`. Its defaults reach the service.
+  2. Write a secret: `podman compose exec vault sh -c 'VAULT_TOKEN=$(cat /vault/keys/root_token) vault kv put secret/apps/db password=...'`.
+  3. Settings → Vault → Add secret → Kept in: the backend, reference `apps/db#password`. Add it to a template and approve it.
+
+  The unseal key and the root token are in the `vault-keys` volume, beside Vault's data: whoever can read that volume
+  can open it. Keep a copy of `root_token` elsewhere if you need it. To stop using it: remove the backend in Settings →
+  Plugins, then `podman compose --profile vault down` (add `-v` only to delete its secrets).
+- **An outside HashiCorp Vault**: add `hashicorp-vault` with its `address` (and `mount`, `namespace`). Give a token that
+  may read the secrets as `VAULT_TOKEN_FILE` in `.env` (a file you mount), or name another variable in the instance's
+  `tokenEnv` and set that.
+- **1Password**: add `1password`; set `OP_SERVICE_ACCOUNT_TOKEN` to a service account token that may read the vaults
+  (https://developer.1password.com/docs/service-accounts/). A reference is `op://vault/item/field`, as Copy Secret
+  Reference gives it.
+- **Bitwarden Secrets Manager**: add `bitwarden`; set `BWS_ACCESS_TOKEN` to a machine account's access token
+  (https://bitwarden.com/help/access-tokens/). For the EU cloud or your own server, set `apiUrl` and `identityUrl`. A
+  reference is the secret's id.
+
+Each token is read at each use: change it in the runtime and the next read uses it. A backend that cannot read a
+secret refuses the box's ask, saying why, on the box and in the event log.
 
 ## This host (systemd --user)
 

@@ -9,6 +9,7 @@ import type { MachineJoin } from './attached-edit.ts';
 import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
 import type { BuiltJobSource } from './source-slots.ts';
+import type { ConfiguredBackend } from '../domain/vault.ts';
 import type { DetectionKit, ExecutorContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
@@ -74,6 +75,8 @@ export interface PluginHost {
   usageSources(): UsageSource[];
   /** The notifiers now that run (and, once started, did not throw); follows the plugins config live (issue #356). Valid after start(). */
   notifiers(): Notifier[];
+  /** The vault backends the plugins config names now (issue #585), each running or why not. Follows it live. */
+  vaultBackends(): ConfiguredBackend[];
   /** Start every notifier with the event feed; one whose start throws is dropped with its reason. Once; a notifier built later starts with this feed. */
   startNotifiers(events: NotifierEvents): void;
   /** Stop every started notifier, awaiting in-flight work; none is started after. Once; never throws. */

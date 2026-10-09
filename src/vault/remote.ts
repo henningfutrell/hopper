@@ -2,7 +2,8 @@
 // own"). The vault container holds the vault's key: setting or removing a secret, delivering one, and whether the vault
 // can be used now are each a POST to HOPPER_VAULT_URL on the compose network, with the preshared key HOPPER_VAULT_KEY
 // (read at each call, so a rotated file is used at once). The secrets' metadata and the templates — with their approvals,
-// which are access's (issue #584) — are read and changed here, by a vault service that holds no key. The hopper keeps the
+// which are access's (issue #584) — are read and changed here, by a vault service that holds no key; so is a secret kept in
+// a vault backend (issue #585), which the hopper runs and the vault container does not know. The hopper keeps the
 // event log, so the events the vault container answers are appended here, where webhooks and the UI see them. A vault
 // container that cannot be reached, or that refuses the key, is said so: its status is the problem, a set or a removal
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
@@ -62,9 +63,12 @@ export function remoteVault(o: {
       const r = await call<string | null>('status', {});
       return 'problem' in r ? r.problem : r.result ?? undefined;
     },
-    set: ({ name, scope, value }, by) => edit('set', { secret: { name, value, ...(scope !== undefined ? { scope } : {}) }, by }),
+    set: async (s, by) => ('value' in s
+      ? edit('set', { secret: { name: s.name, value: s.value, ...(s.scope !== undefined ? { scope: s.scope } : {}) }, by })
+      : o.local.set(s, by)),
     remove: (name, by) => edit('remove', { name, by }),
     async deliver(ask, machineKey) {
+      if (o.local.view().secrets.find((s) => s.name === ask.name)?.backend) return o.local.deliver(ask, machineKey);
       // What only the hopper knows, said to the vault: the machine whose link signed the ask, and whether the job's
       // token is one this user's link key gives. The vault decides the rest.
       const machine = o.targets().find((m) => m.key === machineKey);

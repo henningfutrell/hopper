@@ -29,7 +29,7 @@ function reportOf(levels: Level[], version: string) {
     router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
     escalationLevels: levels.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
     executors: { instances: [{ instance: { name: 'test', plugin: 'test' }, detection: { status: 'available' }, active: 'test' }] },
-    jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
+    jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] }, vaultBackends: { instances: [] },
     plugins: [
       { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { machine: MACHINES } },
       { id: 'anthropic-api', role: 'escalation-level', describe: 'the API', builtin: true, detection: { status: 'available' }, options: {} },

@@ -9,6 +9,8 @@ export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 export const VAULT_VALUE_MAX = 64 * 1024;
 /** The longest scope: a line saying what the secret reaches. */
 export const VAULT_SCOPE_MAX = 200;
+/** The longest reference to where a vault backend keeps a value (issue #585). */
+export const VAULT_REFERENCE_MAX = 500;
 
 /** One vault secret, as anything but the sealer sees it: its metadata, never its value. */
 export interface VaultSecret {
@@ -22,6 +24,11 @@ export interface VaultSecret {
   /** Who last set its value or scope, and when. */
   changedBy: string;
   changedAt: string;
+  /**
+   * Where the value is kept when not in the hopper (issue #585): a vault backend's instance name and the reference it
+   * reads. Absent: the hopper keeps the value itself, sealed.
+   */
+  backend?: { name: string; reference: string };
   /** When it was last delivered, to which machine, for which job (issue #558, slice 3). */
   lastUsed?: { at: string; machine: string; job: string };
 }
@@ -31,8 +38,38 @@ export interface VaultView {
   secrets: VaultSecret[];
   /** The templates (issue #558, slice 2), each with what waits for a person. */
   templates: TemplateView[];
+  /** The vault backends a secret may be kept in (issue #585): each configured one, and why it cannot run when it cannot. */
+  backends: VaultBackendView[];
   /** Why no secret can be stored now (no token key); absent when one can. */
   problem?: string;
+}
+
+/**
+ * A vault backend (issue #585, design.md "Vault backends"): where a vault secret's value may be kept outside the hopper
+ * — HashiCorp Vault, 1Password, Bitwarden. Only where the value is kept changes: the vault still decides who gets it.
+ * The hopper reads the value at the moment of use and keeps no copy.
+ */
+export interface VaultBackend {
+  readonly name: string;
+  /** Why `reference` is not one this backend reads, or undefined. Its form only: no network, no credential. */
+  check(reference: string): string | undefined;
+  /** The value `reference` points at, now. Throws, saying why, when it cannot: never with a value in the message. */
+  read(reference: string): Promise<string>;
+}
+
+/** A configured vault backend (issue #585), as the plugin host gives it the vault: running (`backend`), or why not. */
+export interface ConfiguredBackend extends VaultBackendView {
+  backend?: VaultBackend;
+}
+
+/** A vault backend as the vault shows it (issue #585): its instance name, its plugin, and why it cannot run now. */
+export interface VaultBackendView {
+  name: string;
+  plugin: string;
+  /** Why it cannot run now (an unknown plugin, invalid options); absent when it runs. */
+  problem?: string;
+  /** What it still needs (its token in the runtime); absent when nothing. */
+  setup?: string;
 }
 
 /**
@@ -92,10 +129,10 @@ export function templateView(t: Template, approvedProfiles: readonly OperationPr
 /** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. Kept beside the vault's types; domain/store.ts re-exports it. */
 export interface VaultRepository {
   list(): VaultSecret[]; get(name: string): VaultSecret | undefined;
-  /** Keeps a new secret, its value already sealed for its id. False (nothing written) when the name is taken. */
-  add(secret: VaultSecret, sealed: string): boolean;
+  /** Keeps a new secret, its value already sealed for its id (null: kept in a vault backend, issue #585). False when the name is taken. */
+  add(secret: VaultSecret, sealed: string | null): boolean;
   /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
-  replace(secret: VaultSecret, sealed: string): boolean;
+  replace(secret: VaultSecret, sealed: string | null): boolean;
   /** The secret's sealed value; undefined when there is none. Never part of a secret. */
   sealed(id: string): string | undefined;
   /** True when there was one. */

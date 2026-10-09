@@ -4,6 +4,7 @@
 // the token key.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { TemplateApprovals } from '../domain/access.ts';
+import type { ConfiguredBackend } from '../domain/vault.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { vaultKeys } from './keys.ts';
@@ -19,9 +20,11 @@ export async function openUserVault(o: {
   env: Record<string, string | undefined>; user: string;
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; clock: Clock; logger: { info(line: string): void; warn(line: string): void };
   targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
+  /** The vault backends the plugins config names now (issue #585): read in the hopper, which runs them. */
+  backends: () => ConfiguredBackend[];
 }): Promise<Vault> {
   const secret = runtimeSecrets(o.env);
-  const shared = { store: o.store, ...(o.access ? { access: o.access } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds };
+  const shared = { store: o.store, ...(o.access ? { access: o.access } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, backends: o.backends };
   if (o.vaultUrl) {
     const local = createVaultService({ ...shared, keys: { problem: `the vault's key is in its container, at ${o.vaultUrl}` }, idGen: randomUUID });
     return remoteVault({ url: o.vaultUrl, secret, user: o.user, store: o.store, local, targets: o.targets, holds: o.holds });

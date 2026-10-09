@@ -4,11 +4,12 @@
 // escalation levels, each swapped between calls; the machine sources — this machine and the attached ones,
 // each an instance (issue #74, live since issue #18); the executors (issue #142: a shipped plugin is enabled
 // in the UI and runs at once); and the job sources, usage sources and notifiers (issue #356: no restart
-// role is left). An unchanged instance is kept, a new or changed one built, a removed one retired.
+// role is left), and the vault backends (issue #585). An unchanged instance is kept, a new or changed one built, a removed one retired.
 // Notifiers are started with the event feed by the caller; one built later starts with that feed. A
 // section the plugins config leaves out means the built-in instances.
 // UI edits (edit.ts, attached-edit.ts) replace the plugins config in the store and apply like any other change.
 import type { MachineSource, Notifier, NotifierEvents, UsageSource } from '../domain/ports.ts';
+import type { VaultBackend } from '../domain/vault.ts';
 import {
   ROLES, type AttachedMachine, type ConfiguredInstance, type Detection, type InstanceSpec, type InstanceStatus, type MachineSnapshot, type OptionChoice, type PluginsReport, type RouterSelection, type RoutingRule,
 } from '../domain/types.ts';
@@ -24,7 +25,7 @@ import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
 import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifier, notifierStatus, runNotifierAction, startNotifier, stopNotifiers } from './notifier-slot.ts';
-import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
+import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, applyVaultBackendSpecs, configuredBackend, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
 import { createTargetPool } from '../machines/index.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
@@ -56,22 +57,18 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
   let sorter: LiveQueueSorter | undefined;
   let levels: BuiltLevel[] | undefined;
   const builtin = builtinInstances();
+  // A vault backend is always optional (issue #585): none unless the plugins config names one. Never written to a fresh
+  // store's plugins config either, so a build from before vault backends still reads it.
   const defaults = {
-    routing: [] as RoutingRule[],
-    machineDefaults: {},
-    queueSorter: builtin.queueSorter,
-    escalationLevels: o.defaultLevels ?? builtin.escalationLevels,
-    executors: o.defaultExecutors ?? builtin.executors,
-    jobSources: builtin.jobSources,
-    machines: o.defaultMachines ?? builtin.machines,
-    usageSources: builtin.usageSources,
-    notifiers: builtin.notifiers,
+    ...builtin, routing: [] as RoutingRule[], machineDefaults: {}, vaultBackends: [] as InstanceSpec[],
+    escalationLevels: o.defaultLevels ?? builtin.escalationLevels, executors: o.defaultExecutors ?? builtin.executors, machines: o.defaultMachines ?? builtin.machines,
   };
   const executors: { built?: BuiltExecutor[] } = {};
   const jobSources: { built?: BuiltJobSource[] } = {};
   const machines: { built?: Built<MachineSource>[] } = {};
   const usageSources: { built?: Built<UsageSource>[] } = {};
   const notifiers: { built?: Built<Notifier>[] } = {};
+  const vaultBackends: { built?: Built<VaultBackend>[] } = {};
   /** The event feed the notifiers run with, from startNotifiers until stopNotifiers. */
   let feed: NotifierEvents | undefined;
   let notifiersStarted = false;
@@ -133,6 +130,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       machines: file?.machines ?? defaults.machines,
       usageSources: file?.usageSources ?? defaults.usageSources,
       notifiers: file?.notifiers ?? defaults.notifiers,
+      vaultBackends: file?.vaultBackends ?? defaults.vaultBackends,
       ...(file?.escalationMachine ? { escalationMachine: file.escalationMachine } : {}),
     };
     const error = 'error' in r ? r.error : undefined;
@@ -183,6 +181,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
       },
       retire: (gone) => (feed ? stopNotifiers(gone, o.logger) : undefined),
     });
+    await applyVaultBackendSpecs(vaultBackends, spec.vaultBackends, deps);
   }
 
   /** The machines as last listed (the engine lists them every tick): whether a level's machine is online, for Settings (issue #482). */
@@ -268,6 +267,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     machines: () => { started(machines.built); return liveMachines; },
     usageSources: () => started(usageSources.built).flatMap((b) => (b.instance ? [b.instance] : [])),
     notifiers: () => started(notifiers.built).flatMap((b) => (b.instance ? [b.instance] : [])),
+    vaultBackends: () => (vaultBackends.built ?? []).map(configuredBackend),
     startNotifiers(events) {
       if (notifiersStarted) return;
       notifiersStarted = true;
@@ -327,6 +327,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
         machines: { instances: (machines.built ?? []).map(instanceStatus) },
         usageSources: { instances: (usageSources.built ?? []).map((b) => withMachineNote(instanceStatus(b))) },
         notifiers: { instances: (notifiers.built ?? []).map(notifierStatus) },
+        vaultBackends: { instances: (vaultBackends.built ?? []).map(instanceStatus) },
         plugins: entries.map((e) => ({
           id: e.definition.id, role: e.definition.role, describe: e.definition.describe, builtin: e.builtin,
           ...(e.path ? { path: e.path } : {}), detection: e.detection, options: optionsJsonSchema(e.definition),

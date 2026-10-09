@@ -165,7 +165,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
   HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
-  HOPPER_VAULT_URL: 'the vault in a container of its own (http://vault:4791, the compose profile `vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
+  HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_TOKEN_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
 };

@@ -36,3 +36,7 @@ plugins:
     role: usage-source
     describe: Reports one fixed usage reading
     path: examples/plugins/usage-source/fixed-usage
+  - id: env-backend
+    role: vault-backend
+    describe: Reads vault secrets from runtime variables
+    path: examples/plugins/vault-backend/env-backend

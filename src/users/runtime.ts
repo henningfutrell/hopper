@@ -356,7 +356,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p) }), // issues #558, #586
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), // issues #558, #585, #586
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),

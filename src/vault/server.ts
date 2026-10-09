@@ -77,7 +77,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
         const n = vault.resealAll();
         if (n > 0) logger.warn(`hopper vault: ${n} vault secret(s) sealed again under the current key`);
       }
-      return { result: run(vault, op, body) ?? null, events };
+      return { result: (await run(vault, op, body)) ?? null, events };
     } finally {
       store.close();
     }

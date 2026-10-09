@@ -3,6 +3,7 @@
 // appends a value: a set or a removal is an event naming the secret and who did it, never what it holds. A template's
 // operation profiles (issue #584) are approved in access, the one record of them: a read profile with the template, a
 // write, sync or apply profile only by its own explicit approval; a narrowing or a removal revokes what it dropped.
+// A secret may instead be kept in a vault backend (issue #585): the hopper keeps only where, and reads it there at delivery.
 import { randomUUID } from 'node:crypto';
 import type { AttachedMachine } from '../domain/machines.ts';
 import { machineOfLane } from '../domain/raised-by.ts';
@@ -11,7 +12,7 @@ import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type OperationProfile, type TemplateApprovals } from '../domain/access.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/blast-radius.ts';
-import { givesOf, templateView, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type Template, type TemplateView, type VaultView } from '../domain/vault.ts';
+import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import type { RadiusRules } from '../domain/blast-radius.ts';
 import type { SealerState } from '../secrets/sealer.ts';
@@ -24,8 +25,11 @@ export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_fou
 
 export interface VaultService {
   view(): VaultView;
-  /** Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. */
-  set(s: { name: string; scope?: string; value: string }, by: string): VaultResult;
+  /**
+   * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
+   * where a vault backend keeps it: `backend` and `reference` in place of `value`; the hopper then keeps no value.
+   */
+  set(s: SetSecret, by: string): VaultResult;
   remove(name: string, by: string): VaultResult;
   /**
    * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
@@ -44,7 +48,7 @@ export interface VaultService {
    * A machine's ask (slice 3), already proven to be the machine's (its link's signature): one secret, for the job whose
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
    */
-  deliver(ask: { name: string; token: string }, machineKey: string): { value: string } | { refused: string };
+  deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
@@ -61,7 +65,7 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
   status(): Promise<string | undefined>;
-  set(s: { name: string; scope?: string; value: string }, by: string): Promise<VaultResult>;
+  set(s: SetSecret, by: string): Promise<VaultResult>;
   remove(name: string, by: string): Promise<VaultResult>;
   deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
 }
@@ -72,7 +76,7 @@ export const localVault = (v: VaultService): Vault => ({
   status: async () => v.view().problem,
   set: async (s, by) => v.set(s, by),
   remove: async (name, by) => v.remove(name, by),
-  deliver: async (ask, key) => v.deliver(ask, key),
+  deliver: (ask, key) => v.deliver(ask, key),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),
   approveTemplate: (name, by) => v.approveTemplate(name, by),
@@ -95,6 +99,9 @@ export interface ClientTarget { name: string; key: string; template?: string }
 export const clientTargets = (machines: readonly AttachedMachine[]): ClientTarget[] =>
   machines.flatMap((m) => ('client' in m ? [{ name: m.name, key: m.client.key, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []));
 
+/** A secret to set: its value, or (issue #585) the vault backend that keeps it and where. */
+export type SetSecret = { name: string; scope?: string } & ({ value: string } | { backend: string; reference: string });
+
 /** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
 const AT_WORK = ['running', 'waiting_answer'];
 
@@ -112,11 +119,45 @@ export function createVaultService(o: {
   targets?: () => ClientTarget[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
+  /** The vault backends the plugins config names now (issue #585); none when absent. */
+  backends?: () => ConfiguredBackend[];
 }): VaultService {
   const clientOf = (match: (m: ClientTarget) => boolean): ClientTarget | undefined => (o.targets?.() ?? []).find(match);
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
+  const backendOf = (name: string): ConfiguredBackend | undefined => (o.backends?.() ?? []).find((b) => b.name === name);
+  const backendView = ({ name, plugin, problem, setup }: ConfiguredBackend): VaultBackendView => ({ name, plugin, ...(problem ? { problem } : {}), ...(setup ? { setup } : {}) });
+
+  /** Where a secret to set is kept: a sealed value, or a backend and reference with no value; or why not. */
+  function keptOf(s: SetSecret, id: string): { id: string; sealed: string | null; backend?: VaultSecret['backend'] } | VaultResult {
+    if ('value' in s) {
+      if (s.value.length === 0 || s.value.length > VAULT_VALUE_MAX) return fail('invalid', `value must be 1 to ${VAULT_VALUE_MAX} characters`);
+      if (!sealer) return fail('unavailable', unavailable());
+      return { id, sealed: sealer.seal(s.value, vaultContext(id)) };
+    }
+    const b = backendOf(s.backend);
+    if (!b) return fail('invalid', `no vault backend ${s.backend}: add it in Settings → Plugins first`);
+    if (!b.backend) return fail('invalid', `the vault backend ${s.backend} cannot run: ${b.problem ?? 'unknown'}`);
+    if (s.reference.length === 0 || s.reference.length > VAULT_REFERENCE_MAX) return fail('invalid', `reference must be 1 to ${VAULT_REFERENCE_MAX} characters`);
+    const bad = b.backend.check(s.reference);
+    if (bad) return fail('invalid', bad);
+    return { id, sealed: null, backend: { name: b.name, reference: s.reference } };
+  }
+
+  /** The value of a secret kept in a backend, read there now; or why not. */
+  async function readBackend(secret: VaultSecret & { backend: { name: string; reference: string } }): Promise<{ value: string } | { refused: string }> {
+    const b = backendOf(secret.backend.name);
+    if (!b) return { refused: `no vault backend ${secret.backend.name}: ${secret.name} is kept there; add the backend again in Settings → Plugins` };
+    if (!b.backend) return { refused: `the vault backend ${b.name} cannot run: ${b.problem ?? 'unknown'}` };
+    try {
+      return { value: await b.backend.read(secret.backend.reference) };
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      o.logger.warn(`hopper: vault backend ${b.name} cannot read ${secret.name}: ${why}`);
+      return { refused: `the vault backend ${b.name} cannot read ${secret.name}: ${why}` };
+    }
+  }
 
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
     const name = clientOf((m) => m.name === machine)?.template;
@@ -144,26 +185,30 @@ export function createVaultService(o: {
   const noAccess = (): VaultResult => fail('unavailable', 'access is not part of this hopper: no operation profile can be approved');
 
   return {
-    view: () => ({ secrets: vault.list(), templates: vault.templates().map(viewOf), ...(sealer ? {} : { problem: unavailable() }) }),
+    view: () => ({
+      secrets: vault.list(), templates: vault.templates().map(viewOf), backends: (o.backends?.() ?? []).map(backendView),
+      ...(sealer ? {} : { problem: unavailable() }),
+    }),
 
-    set({ name, scope, value }, by) {
+    set(s, by) {
+      const { name, scope } = s;
       if (!VAULT_SECRET_NAME.test(name)) return fail('invalid', 'name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
-      if (value.length === 0 || value.length > VAULT_VALUE_MAX) return fail('invalid', `value must be 1 to ${VAULT_VALUE_MAX} characters`);
       const said = scope?.trim();
       if (said !== undefined && (said.length > VAULT_SCOPE_MAX || /[\n\r]/.test(said))) return fail('invalid', `scope must be one line of at most ${VAULT_SCOPE_MAX} characters`);
-      if (!sealer) return fail('unavailable', unavailable());
       const at = o.clock.now().toISOString();
       return o.store.tx(() => {
         const was = vault.get(name);
+        const kept = keptOf(s, was?.id ?? o.idGen());
+        if ('ok' in kept) return kept;
         const scoped = said ? { scope: said } : {};
+        const where = kept.backend ? { backend: kept.backend } : {};
         if (was) {
-          const { scope: _old, ...rest } = was;
-          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(was.id)));
+          const { scope: _old, backend: _was, ...rest } = was;
+          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), ...where, changedBy: by, changedAt: at }, kept.sealed);
         } else {
-          const id = o.idGen();
-          vault.add({ id, name, ...scoped, setBy: by, createdAt: at, changedBy: by, changedAt: at }, sealer.seal(value, vaultContext(id)));
+          vault.add({ id: kept.id, name, ...scoped, ...where, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
         }
-        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined } });
+        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}) } });
         return { ok: true } as const;
       });
     },
@@ -236,16 +281,16 @@ export function createVaultService(o: {
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
-    deliver(ask, machineKey) {
+    async deliver(ask, machineKey) {
       const m = clientOf((x) => x.key === machineKey);
       const parts = parseProxyToken(ask.token);
       const job = parts && parts.userId !== undefined ? o.store.jobs.get(parts.jobId) : undefined;
       const at = o.clock.now().toISOString();
       const machine = m?.name ?? 'a machine that is gone';
-      const refuse = (reason: string): { refused: string } => {
+      const refuse = (reason: string, backend?: string): { refused: string } => {
         events.append({
           type: 'vault.refused', ...(job ? { jobId: job.id } : {}), ...(m ? { machineId: m.name } : {}),
-          data: { name: ask.name, machine, ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), reason },
+          data: { name: ask.name, machine, ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), ...(backend ? { backend } : {}), reason },
         });
         return { refused: reason };
       };
@@ -257,18 +302,29 @@ export function createVaultService(o: {
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
-      if (!sealer) return refuse(unavailable());
       let value: string;
-      try {
-        value = sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id));
-      } catch (e) {
-        if (!(e instanceof SecretUnreadable)) throw e;
-        o.logger.warn(`hopper: vault secret ${ask.name}: ${e.message}`);
-        return refuse(`the vault secret ${ask.name} cannot be opened: set it again`);
+      const { backend } = secret;
+      if (backend) {
+        const r = await readBackend({ ...secret, backend });
+        if ('refused' in r) return refuse(r.refused, backend.name);
+        // The read took a while: the job must still be at work now.
+        const still = o.store.jobs.get(job.id)?.status;
+        if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): a vault secret is given only while it runs`, backend.name);
+        value = r.value;
+      } else {
+        if (!sealer) return refuse(unavailable());
+        try {
+          value = sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id));
+        } catch (e) {
+          if (!(e instanceof SecretUnreadable)) throw e;
+          o.logger.warn(`hopper: vault secret ${ask.name}: ${e.message}`);
+          return refuse(`the vault secret ${ask.name} cannot be opened: set it again`);
+        }
       }
       o.store.tx(() => {
-        vault.replace({ ...secret, lastUsed: { at, machine: m.name, job: job.id } }, vault.sealed(secret.id)!);
-        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template!, machine: m.name, job: job.id } });
+        const now = vault.get(ask.name);
+        if (now?.id === secret.id) vault.replace({ ...now, lastUsed: { at, machine: m.name, job: job.id } }, vault.sealed(secret.id) ?? null);
+        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template!, machine: m.name, job: job.id, ...(backend ? { backend: backend.name } : {}) } });
       });
       return { value };
     },
@@ -292,7 +348,11 @@ export function createVaultService(o: {
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
-export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
+export function openVault(o: {
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; keys: SealerState; clock: Clock;
+  logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
+  backends: () => ConfiguredBackend[];
+}): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
   if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);
