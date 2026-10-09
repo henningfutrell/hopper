@@ -18,6 +18,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
   'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
+  'skill.loaded': 'ok', 'skill.refused': 'warn',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -31,6 +32,10 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'github_proxy.done') return `${String(d.op)} ${String(d.repo)}#${String(d.number)}: ${String(d.url)}`;
   if (e.type === 'github_proxy.refused') return `${typeof d.op === 'string' ? `${d.op} ` : ''}refused: ${String(d.reason)}`;
   if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
+  // Skills (issue #582): what the job asked the hopper to set up, and the answer.
+  if (e.type === 'skill.listed') return 'asked what the hopper can set up';
+  if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
+  if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;

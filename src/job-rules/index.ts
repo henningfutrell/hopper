@@ -47,6 +47,9 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
 /** The protocol line on GitHub (issue #563): never a login of the job's own; the hopper's proxy, its help read only when needed. */
 export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. When a GitHub operation needs a login you lack (filing an issue, opening a pull request from your pushed branch, reading an issue or pull request, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how.';
 
+/** The protocol line on skills (issue #582): the catalog first, a skill loaded only when needed, a no taken as it is. */
+export const SKILL_LINE = 'When you need something set up from outside this machine (a read-only link to a cluster or an AWS account, and the like), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. When the hopper says no, it says why: find another way.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION',
@@ -56,6 +59,8 @@ export const PROTOCOL_LINES: readonly string[] = [
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
   // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
   GITHUB_PROXY_LINE,
+  // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
+  SKILL_LINE,
   'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',

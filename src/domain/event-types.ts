@@ -24,6 +24,7 @@ export const EVENT_TYPES = [
   'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
   'vault.secret_set', 'vault.secret_removed', 'template.saved', 'template.removed', 'vault.approved', 'vault.delivered', 'vault.refused',
   'yolo_mode.changed',
+  'skill.listed', 'skill.loaded', 'skill.refused',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -56,4 +57,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
   'vault.secret_set': 1, 'vault.secret_removed': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.delivered': 1, 'vault.refused': 1,
   'yolo_mode.changed': 1,
+  'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
 };

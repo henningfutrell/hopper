@@ -15,6 +15,7 @@ const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
 /** Who asked the GitHub proxy (issue #563): the request, the job's machine, whether the job is the hopper's own user's. */
+const skillAsked = { requestId: z.string(), machine: z.string().optional(), template: z.string().optional(), asset: z.string().optional() };
 const proxyAsked = { requestId: z.string(), machine: z.string().optional(), own: z.boolean(), forUser: z.string().optional(), job: z.string().optional() };
 const proxyOp = z.enum(PROXY_OPS);
 /** A question stage: an escalation level's instance name, or `human`. */
@@ -276,6 +277,11 @@ export const EVENT_SCHEMAS = {
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
   'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), reason: z.string() }),
   'github_proxy.failed': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), error: z.string() }),
+  // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
+  // `decision` names Access's decision (issue #559) when a link was checked.
+  'skill.listed': strict(skillAsked),
+  'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
+  'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({
