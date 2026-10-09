@@ -1,4 +1,5 @@
-// Live activity (the newest events, as they arrive) and Attention (what wants a human). Each
+// Live activity (the newest events, as they arrive) and Attention (what wants a human; a parked job's question is in
+// Parked, not here: issue #565). Each
 // Attention item can be dismissed in this browser (issue #83); the thing it points at is unchanged.
 import { BellRing, Radio, X } from 'lucide-react';
 import { Countdown } from '@/components/job';
@@ -13,7 +14,7 @@ import { diskText } from '@/model/machines';
 import { raisedName } from '@/model/questions';
 import { ago } from '@/model/format';
 import { useHopper } from '@/store';
-import { useJobBoard, useJobName } from '@/store/selectors';
+import { useJobBoard, useJobName, useQuestions } from '@/store/selectors';
 
 export function LivePanel({ count }: { count: number }) {
   const events = useHopper((s) => s.events);
@@ -31,7 +32,7 @@ export function LivePanel({ count }: { count: number }) {
 interface Alert { key: string; tone: 'question' | 'bad' | 'warn'; label: string; text: string; href?: string; at?: string; expires?: string }
 
 export function AttentionPanel() {
-  const questions = useHopper((s) => s.questions);
+  const questions = useQuestions();
   const { ended } = useJobBoard();
   const sources = useHopper((s) => s.sources);
   const health = useHopper((s) => s.health);

@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canPark, canRequeue, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -72,7 +72,7 @@ describe('Park and Re-queue (issue #501): offered only where the daemon takes th
     expect(startsFresh(job('p', { status: 'parked', agentSession: 's' }))).toBe(false);
   });
   it('Re-queue: a parked job only', () => {
-    expect(STATUSES.filter((status) => canRequeue(job(status, { status, agentSession: 's' })))).toEqual(['parked']);
+    expect(STATUSES.filter((status) => canPickUp(job(status, { status, agentSession: 's' })))).toEqual(['parked']);
   });
   it('a parked job is in no other group: never running, never waiting, never on a lane', () => {
     const b = jobBoard([job('p', { status: 'parked', resumeOn: 'm1' })], []);

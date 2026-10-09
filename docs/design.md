@@ -8387,11 +8387,13 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   end; the deferred cleanup is of ended jobs: none touches a parked job. Restart recovery leaves it as it is.
   Credential files left in the scratch dir are not renewed while parked (no process reads them) and are
   written again at the re-queue's start.
-- **Its question.** Stays open in Questions and counts for the badge. While its job is parked it never
+- **Its question.** Stays open, in **Parked** with its job, not in Questions (issue #565): neither Questions, its
+  badge nor the Attention panel shows it, and `GET /api/sections` counts it in `parked`, not `questions`
+  (`GET /api/questions` still lists it). Picked up with it still open, it is back in Questions. While its job is parked it never
   expires and is not renotified (`QuestionService`: `expire`, `renotify` and `armHuman` skip it). An answer
   or a close is kept as `pendingAnswer`; the job stays parked. Dismissing it cancels the job, as for any job
   on its question.
-- **Re-queue.** `POST /ui/api/jobs/:id/requeue` (least role `operator`), `job.unparked { to }`. With its
+- **Pick up** (a re-queue; the UI's word since issue #565). `POST /ui/api/jobs/:id/requeue` (least role `operator`), `job.unparked { to }`. With its
   question still open: back to `waiting_answer` (`to: waiting_answer`), the human timeout started again
   (`QuestionService.unparked`); the answer then re-queues it as any. Else `queued` (`to: queued`) with
   `pendingAnswer` the answer kept, or `PARKED_RESUME` (it was parked; go on). A pending answer pins it to
@@ -8420,12 +8422,20 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   live there, and the answer is typed into them. A parked job is not in it: nothing of it runs, and parking
   ends its pane and agent, so the machine is free of it at once.
 - **UI.** Park on a running lane's job, on a job on a question in the Waiting panel, and on its question card
-  (For you / Questions, issue #530), where a person decides a job must wait; Re-queue and Cancel on a parked
+  (For you / Questions, issue #530), where a person decides a job must wait; Pick up and Cancel on a parked
   job. Park only where `canPark` (`ui/src/model/board.ts`, from `parkingExecutors`) says the daemon takes it;
   on a running job or one on a question it does not apply to, the job says why instead (`parkRefusal`).
-  Re-queue of a job that starts fresh asks first, saying it starts a fresh session in the kept work tree with
+  Pick up of a job that starts fresh asks first, saying it starts a fresh session in the kept work tree with
   its question and answer as context. Only for a role that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
+- **The Parked section** (issue #565, `ui/src/views/parked.tsx`). Parked jobs have their own place, a section like
+  Questions, Logins and Failures (`SECTIONS.parked`, events `job.parked` and `job.unparked`): one compact row per
+  job — its issue title and number, the machine it resumes on, how long it has been parked, its open question's first
+  line, whether its agent session resumes or it starts fresh —, high-priority jobs first, then the longest parked
+  (`parkedOrder`). Expanded, the full question and **Answer and pick up**: the answer (`POST
+  /ui/api/questions/:id/answer`, kept as `pendingAnswer`), then the pick up, in one step; a fresh start is confirmed
+  first; an answer kept when the pick up fails leaves the job parked, answered. Pick up and Cancel on each row. Its
+  badge counts the parked jobs, marked when high priority, quiet (muted): a reminder, not an alarm.
 - **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
   ended`); the resumed session meets its tool again and reports a new one.
 - **Settings.** None of its own: who may park is the operator role, as for cancel, and roles apply live. No
@@ -8786,11 +8796,13 @@ sections. Events and webhooks `proposal.*` and `research.*`; settings in the dat
 server takes. The structural home for #537 (proposals) and #538 (research reports), not a replacement.
 
 **The section types** (`src/domain/sections.ts`): `SECTIONS`, in nav order — `questions`, `proposals`, `research`,
-`logins`, `failures` — each with its label, the event types it emits (by prefix: `question.`, `proposal.`, `research.`,
-`auth.`, `failure.` and `handoff.`; a webhook subscribes to them like any), and for a review section its review kind.
+`logins`, `failures`, `parked` (issue #565) — each with its label, the event types it emits (by prefix: `question.`,
+`proposal.`, `research.`, `auth.`, `failure.` and `handoff.`; for Parked, `job.parked` and `job.unparked`; a webhook
+subscribes to them like any), and for a review section its review kind.
 `GET /api/sections` (`src/http/sections.ts`) answers each with `open`, `waiting` (of those, what waits on a person) and
 `high` (of those, a high-priority job's), each counted by the section's own open rule: an open question at the human
-tier; a pending login; an open problem or hand-off; a review item open or revising, waiting at the human stage. The UI
+tier, its job not parked on it; a pending login; an open problem or hand-off; a review item open or revising, waiting
+at the human stage; a parked job. The UI
 lists the same kinds (`ui/src/model/sections.ts`, checked against the server's `SectionKind` at typecheck): every
 section's nav entry and its badge follow one rule (`sectionBadges`, `useSectionBadges`): what is open and waits on a
 person, seen or not, marked and counted when high priority.

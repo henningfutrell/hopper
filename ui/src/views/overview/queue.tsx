@@ -17,7 +17,7 @@ import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
 import { act, rerun, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
-import { AskButton, CancelButton, OperatorLedButton, ParkButton, RequeueButton } from './lanes';
+import { AskButton, CancelButton, OperatorLedButton, ParkButton, PickUpButton } from './lanes';
 
 /** Run again: a new job for the item joins the queue now (issue #354). */
 function RerunButton({ job }: { job: Job }) {
@@ -107,7 +107,7 @@ const WAITING_MEANING: Record<string, string> = {
 
 /**
  * The parked jobs (issue #501): out of their lanes, no pane or agent, their work tree and agent session kept on their
- * machine until re-queued. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ * machine until picked up. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
  */
 export function ParkedRows({ heading = true }: { heading?: boolean }) {
   const { parked } = useJobBoard();
@@ -119,12 +119,12 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
     </div>}
     {parked.map((job) => (
       <div key={job.id} data-job-group="parked" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
-        <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><RequeueButton job={job} /><CancelButton job={job} /></div>
+        <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><PickUpButton job={job} /><CancelButton job={job} /></div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <StatusBadge status="parked" title="Out of its lane, its pane and agent ended: its work tree, branch and agent session are kept on its machine until it is re-queued." />
+          <StatusBadge status="parked" title="Out of its lane, its pane and agent ended: its work tree, branch and agent session are kept on its machine until it is picked up." />
           {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
           {job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer' && <span>answered, resumes with it</span>}
-          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#questions" className="text-question hover:underline">question open →</a>}
+          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#parked" className="text-question hover:underline">question open →</a>}
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
         {job.workTree && <div className="truncate font-mono text-xs text-muted-foreground" title={`work tree ${job.workTree}`}>{job.workTree}</div>}
