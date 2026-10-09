@@ -7,6 +7,7 @@
 import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
 import type { Question, QuestionAttempt } from '../domain/types.ts';
+import { openOnEndedJobs } from './stale.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
 import { readRules } from './rules.ts';
@@ -66,10 +67,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     timers.delete(id);
   }
 
-  function abortStage(id: string, reason: string) {
-    inflight.get(id)?.abort(reason);
-    inflight.delete(id);
-  }
+  function abortStage(id: string, reason: string) { inflight.get(id)?.abort(reason); inflight.delete(id); }
 
   function escalationData(q: Question, target: string, reason: string): Record<string, unknown> {
     const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}) };
@@ -361,7 +359,11 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       armHuman(id);
     },
 
+    sweep() { for (const q of openOnEndedJobs(store)) this.cancel(q.id); },
+
     recover() {
+      // What a restart, or the build before, left open with nothing waiting on it (issue #529): cancelled, not asked again.
+      this.sweep();
       for (const q of store.questions.list({ status: ['open'] })) {
         if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart');
         else if (q.expiresAt) armHuman(q.id);

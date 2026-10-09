@@ -6,7 +6,9 @@
 // through the sync loop's Run again, so they outlive a restart. The sweep also marks superseded a failure whose item
 // ran again since (issue #517), runs each open problem's check and prunes past the retention. A failed job automatic
 // handling ended for is handed off to a person (issue #516, `handoffs.ts`) in the same transaction as the record that
-// ended it.
+// ended it. Stale data clears itself (issue #529): the sweep, and the start, close the hand-offs nothing waits on any
+// more — a newer job of its item, its job finished or gone — and ask each open hand-off's source whether its item is
+// closed (`item-check.ts`).
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   DEFAULT_FAILURE_SETTINGS, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
@@ -16,6 +18,7 @@ import { assess, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { createHandoffs } from './handoffs.ts';
+import { createItemCheck } from './item-check.ts';
 import { signatureOf } from './signature.ts';
 import { newerOf, recordRetry, releasable, viewOf } from './view.ts';
 
@@ -28,6 +31,8 @@ export interface FailuresOptions {
   dismiss(jobId: string): void;
   /** The machines now: a problem's check reads them. */
   machines(): Promise<MachineSnapshot[]>;
+  /** Whether the job's item is closed at its source (issue #529); undefined: its source cannot tell. Throws: asked again later. */
+  itemClosed(job: Job): Promise<boolean | undefined>;
   /** Ask for a Decision: a problem opened or resolved changes what may start. */
   trigger(reason: string): void;
   logger: { warn(line: string): void };
@@ -80,6 +85,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const now = () => clock.now();
   const settings = (): FailureSettings => ({ ...DEFAULT_FAILURE_SETTINGS, ...store.settings.getFailureSettings() });
   const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
+  const checkItems = createItemCheck({ store, clock, itemClosed: o.itemClosed, closed: (id) => handoffs.itemClosed(id), logger: o.logger, live: () => !stopped });
 
   /** Its run in its chain of retries: 1, plus each earlier job of its item that a retry ran again. */
   function attemptOf(job: Job): number {
@@ -235,11 +241,12 @@ export function createFailures(o: FailuresOptions): Failures {
     sweeping ??= (async () => {
       try {
         assessBacklog(JUST_FAILED_MS);
-        if (!stopped) handoffs.supersede();
+        if (!stopped) { handoffs.supersede(); handoffs.settle(); }
         for (const r of store.failures.due(now().toISOString())) {
           if (stopped) return;
           await runPending(r);
         }
+        if (!stopped) await checkItems();
         if (!stopped) await runChecks();
         if (!stopped) prune();
       } catch (e) {
@@ -278,6 +285,9 @@ export function createFailures(o: FailuresOptions): Failures {
     start() {
       // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog.
       assessBacklog();
+      // A store from the build before (issue #529): what nothing waits on any more clears before anything is handed off.
+      handoffs.supersede();
+      handoffs.settle();
       handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;

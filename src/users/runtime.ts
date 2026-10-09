@@ -324,7 +324,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const failures = createFailures({
     store, clock, logger, sweepMs: config.tickMs,
     rerun: (jobId, by) => sync.rerun(jobId, by), dismiss: (jobId) => { engine.dismiss(jobId); },
-    machines: () => host.machines().list(),
+    machines: () => host.machines().list(), itemClosed: async (job) => sourceOf(job)?.itemClosed?.(job),
     trigger: (reason) => engine.trigger(reason),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };

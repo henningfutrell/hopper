@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Failures that no longer need you clear themselves, old ones included: once a newer job of the same issue exists or the issue is closed, the failure leaves Needs a person and Recent failures, and the badge goes down. The failure history still counts it. Questions and sign-ins left behind by a job that already ended clear the same way.
+
 - Jobs on Windows computers start again: what the computer shows while Claude is still starting is no longer taken for a question Claude asked. Run again on an issue that is no longer assigned to you now says so, instead of making a job that stops at once. Going back to an earlier version of the hopper on the same database works again, and from now on a version too old for its database says so when it starts.
 - Jobs on Claude start more reliably on computers whose shell is slow to start or whose project instructions pull in other files: the hopper types its setup again when the shell lost it, waits for the real result instead of giving up early, and allows the project's instruction imports in a trusted work folder. A GitHub connection that cannot renew now says so, and when it ends, while it still works, and an ended one says to connect again instead of saying GitHub is not connected.
 - You can now set where the hopper starts slowing down and where it stops starting work on the Usage page: drag the soft and hard lines on a graph of the last day's usage and see at once which band you are in and how many lanes each machine keeps, then save. It takes effect straight away, no restart.

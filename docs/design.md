@@ -8003,8 +8003,10 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   `renewed: true`), never a duplicate. The run asks `check` on each poll for what the user did: wait, a
   new code, cancelled, or fail. `completed` when Claude goes on by itself (the tool proceeded, or ended:
   the hopper cannot tell which), or a print-mode run succeeds; `failed` when the run ends first. The tick
-  sweeps: a pending login whose job no longer runs fails (`the job ended`); one past `expiresAt` expires,
-  with or without word from the machine.
+  sweeps: an open login whose job no longer runs fails (`the job ended`), an expired one too (issue #529: nothing
+  waits on it, so no Cancel or New code is offered that does nothing), and so does an escalation level's login
+  whose question is no longer open (`the question ended`); a pending one past `expiresAt` expires, with or without
+  word from the machine.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `fail` (default) — the job fails, its error
   `the <tool> login expired at <time> before it was completed`; `hold` — the job keeps waiting until its
@@ -8167,6 +8169,22 @@ one action), and marks the record `retried`.
 
 **It never goes by itself.** The prune deletes closed hand-offs older than `handoffRetentionDays` (default 30) and
 never an open one; the failure records' prune does not touch them.
+
+**Stale data clears itself (issue #529, 2026-10-09).** A hand-off nothing waits on any more closes without a person,
+by the same rule at start and on every sweep, so one recorded before the rule existed clears on the upgrade. Closed,
+never deleted, with why (`handoffs.ts` `settle`, `itemClosed`):
+
+- a newer job of its item exists that no `job.queued` closed it for — a store from the build before, or a newer job
+  made while nothing followed the events (`superseded`, `nextJobId` the newer job); its record turns `superseded`;
+- its job ended finished (`finished`) or is gone (`job_gone`);
+- its item is closed at its source, by any means, or gone (`item_closed`): the sweep asks the source
+  (`JobSource.itemClosed`; GitHub: the issue's state, 404/410 gone) for each open hand-off at most every 10 minutes,
+  and at start; its record turns `item_closed`. A source that cannot tell leaves it open.
+
+A record nothing waits on (`superseded`, `item_closed`: `SETTLED`, `handoff.ts`) leaves Recent failures; the profile
+and the history still count it. The badge and `counts` follow the open hand-offs. The same rule clears questions and
+logins: an open question whose job ended or is gone is cancelled at `recover` and on each tick (`QuestionService.sweep`),
+and a login, below in "Logins".
 
 **Events.** `handoff.opened` (reason, summary, `notify`) and `handoff.closed` (end, `nextJobId`). `notify` is the
 setting `handoffNotify` (default on); off, the event is still recorded and streamed, but no webhook delivers it — the

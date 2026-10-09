@@ -7,7 +7,7 @@ export const DECISION_TONE: Record<FailureDecision, 'warn' | 'bad' | 'busy' | 'q
 
 const OUTCOME_LABEL: Record<NonNullable<FailureRecordView['outcome']>, string> = {
   retried: 'ran again', redirected: 'ran again elsewhere', released: 'released', held: 'waits on its problem', surfaced: 'waits on a person', not_retried: 'not run again',
-  superseded: 'its item ran again',
+  superseded: 'its item ran again', item_closed: 'its item is closed',
 };
 
 /** What became of the decision, in a few words; a pending run again says when. */
@@ -31,9 +31,14 @@ export const HANDOFF_REASON_LABEL: Record<HandoffReason, string> = {
   retry_limit: 'retries used up', person: 'job-specific', auto_off: 'automatic action off', not_retried: 'run again refused', dismissed: 'dismissed from the queue',
 };
 
-/** How a closed hand-off ended. */
+/** How a closed hand-off ended: by a person, or found stale (issue #529). */
+const HANDOFF_END_LABEL: Record<NonNullable<HandoffView['end']>, string> = {
+  run_again: 'ran again', cleared: 'cleared', finished: 'its job finished',
+  superseded: 'a newer job of its item', item_closed: 'its item is closed', job_gone: 'its job is gone',
+};
+
 export function handoffEndText(h: HandoffView): string {
-  return h.end === 'run_again' ? 'ran again' : h.end === 'finished' ? 'its job finished' : 'cleared';
+  return h.end ? HANDOFF_END_LABEL[h.end] : 'closed';
 }
 
 /** A count as `n thing(s)`. */

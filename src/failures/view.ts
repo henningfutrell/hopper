@@ -1,10 +1,11 @@
 // What the Failures view reads (issue #509): how many failed jobs are left (issue #517), the hand-offs waiting on a
 // person and those closed in the last day (issue #516), the open problems and those resolved in the last day, the
-// newest assessed failures, the profile — and, on each problem and failure, whether the daemon takes each action now
+// newest assessed failures nothing settled (issue #529), the profile — and, on each problem and failure, whether the daemon takes each action now
 // and why not. The routes refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
 import type { Allowed, FailureCounts, FailureRecord, FailureSettings, FailuresView, Handoff, HandoffView, Job, Problem, ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
+import { SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
 
 const DAY_MS = 86_400_000;
@@ -47,6 +48,7 @@ export function releasable(store: Reads, problemId: string): FailureRecord[] {
 export function recordRetry(store: Reads, r: FailureRecord): Allowed {
   if (r.pending) return no(r.pending === 'retry' ? 'it runs again by itself' : 'it is being run again');
   if (r.outcome === 'retried' || r.outcome === 'redirected' || r.outcome === 'released' || r.outcome === 'superseded') return no('already run again');
+  if (r.outcome === 'item_closed') return no('its item is closed');
   if (r.outcome === 'held') return no('it waits on its problem: resolve or release it');
   return newestOfItem(store, r.jobId);
 }
@@ -79,7 +81,8 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
     handoffs: handoffs.map((h) => handoffView(store, h)),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
-    recent: store.failures.list({ limit: RECENT }).map((r) => ({ ...r, actions: { retry: recordRetry(store, r) } })),
+    // Nothing waits on a settled one (issue #529): out of the list, still in the profile.
+    recent: store.failures.list({ limit: RECENT, notOutcome: [...SETTLED] }).map((r) => ({ ...r, actions: { retry: recordRetry(store, r) } })),
     profile: profileOf(store.failures.list({ since, limit: 5000 }), now.toISOString(), { days: PROFILE_DAYS, generalThreshold: settings.groupThreshold }),
   };
 }

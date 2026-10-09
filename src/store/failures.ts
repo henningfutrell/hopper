@@ -28,6 +28,10 @@ export function createFailureRepository(c: StoreContext): FailureRepository {
       if (filter?.signature !== undefined) { conds.push('signature = ?'); args.push(filter.signature); }
       if (filter?.problemId !== undefined) { conds.push("body::jsonb->>'problemId' = ?"); args.push(filter.problemId); }
       if (filter?.outcome?.length) { conds.push(`body::jsonb->>'outcome' IN (${filter.outcome.map(() => '?').join(',')})`); args.push(...filter.outcome); }
+      if (filter?.notOutcome?.length) {
+        conds.push(`(body::jsonb->>'outcome' IS NULL OR body::jsonb->>'outcome' NOT IN (${filter.notOutcome.map(() => '?').join(',')}))`);
+        args.push(...filter.notOutcome);
+      }
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       args.push(filter?.limit ?? 1000);
       return many(`SELECT body FROM failures ${where} ORDER BY at DESC, seq DESC LIMIT ?`, ...args);

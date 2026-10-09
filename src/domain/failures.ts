@@ -14,9 +14,10 @@ export type FailureClass = typeof FAILURE_CLASSES[number];
  * What became of a decision. `retried`, `redirected`, `released`: its job ran again (`nextJobId`). `held`: it
  * waits on its problem. `surfaced`: it waits on a person. `not_retried`: running it again was refused (`note`).
  * `superseded` (issue #517): a newer job of its item exists (`nextJobId`) — a person's Run again, or anything
- * else — so nothing is left to do for this one.
+ * else — so nothing is left to do for this one. `item_closed` (issue #529): its item is closed at its source, so
+ * nothing waits on it either.
  */
-export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded'] as const;
+export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded', 'item_closed'] as const;
 export type FailureOutcome = typeof FAILURE_OUTCOMES[number];
 
 /** A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job. */
@@ -171,8 +172,12 @@ export interface JobAssessment {
 export const HANDOFF_REASONS = ['retry_limit', 'person', 'auto_off', 'not_retried', 'dismissed'] as const;
 export type HandoffReason = typeof HANDOFF_REASONS[number];
 
-/** How a hand-off ended: its item ran again, a person cleared it, or its job ended finished. */
-export const HANDOFF_ENDS = ['run_again', 'cleared', 'finished'] as const;
+/**
+ * How a hand-off ended: its item ran again, a person cleared it, or its job ended finished. Or, found stale by the
+ * sweep or at start (issue #529): a newer job of its item exists (`superseded`), its item is closed at its source
+ * (`item_closed`), or its job is gone (`job_gone`).
+ */
+export const HANDOFF_ENDS = ['run_again', 'cleared', 'finished', 'superseded', 'item_closed', 'job_gone'] as const;
 export type HandoffEnd = typeof HANDOFF_ENDS[number];
 
 /**
@@ -196,7 +201,7 @@ export interface Handoff {
   problemId?: string;
   closedAt?: string;
   end?: HandoffEnd;
-  /** Run again: the new job. */
+  /** Run again or superseded: the newer job. */
   nextJobId?: string;
 }
 
