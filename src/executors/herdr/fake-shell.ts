@@ -44,3 +44,17 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   const printed = /printf '([^']*)%s\\n' (\S+)$/.exec(command);
   return { lines: printed ? [`${printed[1]}${printed[2]}`] : [] };
 }
+
+/** Claude's config in the fake machine's home (FakeHerdrOptions.claudeConfig), `seeded` once the seed wrote it. */
+export type FakeClaudeConfig = 'absent' | 'present' | 'unwritable' | 'seeded';
+
+/**
+ * The seed of Claude's config (claude-config.ts, issue #533), when `command` is it: its arguments (the work tree, trust,
+ * yolo), the line it prints, and the config after it — written only where there was none.
+ */
+export function seedSays(command: string, config: FakeClaudeConfig): { args: string[]; line: string; config: FakeClaudeConfig } | undefined {
+  const seed = /^sh -c '.*' hopper-claude-config '([^']*)' ([01]) ([01])$/s.exec(command);
+  if (!seed) return undefined;
+  const said = config === 'absent' ? 'seeded' : config === 'unwritable' ? 'unwritable' : 'kept';
+  return { args: seed.slice(1), line: `hopper-claude-config-${said}`, config: said === 'seeded' ? 'seeded' : config };
+}

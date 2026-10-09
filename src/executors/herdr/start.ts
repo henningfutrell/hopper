@@ -1,6 +1,6 @@
-// Opening a job's pane and getting Claude ready in it: workspace, tab, agent start, and the
-// startup dialogs (folder trust; external CLAUDE.md imports in a trusted work tree; the bypass permissions
-// warning when yolo). docs/design.md "Phase 2" → "Start".
+// Opening a job's pane and getting Claude ready in it: workspace, tab, Claude's config seeded where the machine
+// has none, agent start, and the screens Claude shows before its prompt (startup.ts). docs/design.md "Phase 2" →
+// "Start", "Startup screens".
 
 import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
@@ -12,13 +12,13 @@ import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, checkoutOf, checkoutWorktreeOf
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
-import { SCRATCH_DIR, isBypassDialog, isImportsDialog, isTrustDialog, showsDialog, windowsShellOf } from './screen.ts';
+import { SCRATCH_DIR, windowsShellOf } from './screen.ts';
+import { awaitOnScreen, shows } from './pane-wait.ts';
+import { seedClaudeConfig, settleStartup } from './startup.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
-/** How long Claude has to come up once started, its startup dialogs answered (issue #527: a Windows machine's PowerShell launch is slow). */
-const SETTLE_TIMEOUT_MS = 2 * START_TIMEOUT_MS;
 const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */
 export const SCRATCH_READY = 'hopper-scratch-ready';
@@ -34,8 +34,6 @@ const JOB_WORKTREE_TYPINGS = 3;
 const DEPS_WAIT_MS = 15 * 60000;
 /** A machine's scratch age when it sets none: an entry of shared dependencies nothing links to goes after it. */
 const SCRATCH_MAX_AGE_HOURS = 24;
-/** Startup dialogs answered at most: folder trust, external imports and the bypass permissions warning, with room to spare. */
-const MAX_STARTUP_DIALOGS = 4;
 
 /** What grants Claude every permission: the flag, and the permission mode that means the same. */
 const YOLO_FLAG = '--dangerously-skip-permissions';
@@ -121,6 +119,8 @@ export interface StartDeps {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted: its warning about that is accepted at startup. */
   yolo: boolean;
+  /** Claude's config seeded where the machine has none, and its first-run screens answered with their defaults (issue #533). */
+  unattended: boolean;
   /** A work tree that is the top of a git repository gets each job its own worktree of it (issue #379). */
   jobWorktrees: boolean;
   /** A job worktree's node_modules is linked to dependencies shared with the repository's other jobs (issue #410). */
@@ -179,7 +179,8 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
-    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
+    // Unattended (issue #533), Claude never updates itself in a job's pane, so no update notice stands in its way.
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
@@ -190,77 +191,6 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
   ctx.saveState({ ...state });
   return state;
 }
-
-/**
- * What the hopper answers to the startup dialog on `screen`, as the progress it reports, or undefined when it may not
- * answer it: the folder trust of `dir` and the external imports (with `trustWorkdir`), the bypass warning (with yolo).
- */
-export function startupAnswer(d: Pick<StartDeps, 'trustWorkdir' | 'yolo'>, screen: string, dir: string): string | undefined {
-  return d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
-    : d.trustWorkdir && isImportsDialog(screen) ? 'allowed the external CLAUDE.md imports of the trusted work tree'
-      : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
-}
-
-/**
- * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
- * folder-trust dialog naming the job's cwd and the external CLAUDE.md imports dialog (issue #518; both when
- * `trustWorkdir`: the work tree is trusted, the CLAUDE.md that imports is its own or above it), and the
- * bypass permissions warning (when yolo). Any other dialog Claude shows, it is up all the same: the send finds it and asks it
- * of a person (issue #534). A dialog is judged
- * once per state change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
- * ready, so anything but a dialog is; else herdr found it held at one. A screen that shows no dialog is not one
- * (issue #527): what stood on the pane before Claude drew — its launch line echoed (a Windows shell's
- * `-EncodedCommand`), a setup command — is looked at again until Claude is up, or the start times out, to be
- * tried again in a new pane. Null when up (or aborted), else the failure or the start that timed out.
- */
-async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
-  const until = d.clock.now().getTime() + SETTLE_TIMEOUT_MS;
-  let answeredAt = -1;
-  let answered = 0;
-  while (d.clock.now().getTime() < until) {
-    if (ctx.signal.aborted) return null;
-    const agent = await d.herdr.getAgent(s.agentName);
-    if (!agent) return { kind: 'failed', error: 'claude exited at startup' };
-    if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
-    if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
-      const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-      const dialog = startupAnswer(d, screen, s.jobWorktree ?? s.cwd);
-      if (dialog && answered < MAX_STARTUP_DIALOGS) {
-        // Each dialog opens on its refusing option; the next one down accepts.
-        await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
-        ctx.progress(0, dialog);
-        answeredAt = agent.stateChangeSeq;
-        answered++;
-        continue;
-      }
-      // Claude is up, at a dialog the hopper may not answer: the send asks it of a person (issue #534, before-send.ts).
-      if (dialog || showsDialog(screen)) return null;
-    }
-    await d.sleep(d.pollMs, ctx.signal);
-  }
-  const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-  return { startTimedOut: `claude not ready at startup: ${tail(screen, 30)}` };
-}
-
-/**
- * What `parse` reads on the pane once it shows, waiting up to `ms` by the hopper's own clock (issue #518): herdr's
- * wait-output on some machines answered within seconds, the text not there yet, so its answer only says when to
- * look at the screen, never what is on it. Undefined when `ms` passed (or the signal fired) first, with the screen.
- */
-async function awaitOnScreen<T>(d: StartDeps, ctx: ExecutionContext, paneId: string, mark: string, parse: (screen: string) => T | undefined, ms: number): Promise<{ found?: T; screen: string }> {
-  const until = d.clock.now().getTime() + ms;
-  for (;;) {
-    await d.herdr.waitOutput(paneId, mark, Math.max(1, until - d.clock.now().getTime()));
-    const screen = await d.herdr.read(paneId, { source: 'recent-unwrapped', lines: 40 });
-    const found = parse(screen);
-    if (found !== undefined) return { found, screen };
-    if (ctx.signal.aborted || d.clock.now().getTime() >= until) return { screen };
-    await d.sleep(d.pollMs, ctx.signal);
-  }
-}
-
-/** Whether a line of the screen is `line`. */
-const shows = (line: string) => (screen: string): true | undefined => (screen.split('\n').some((l) => l.trim() === line) ? true : undefined);
 
 /**
  * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
@@ -407,6 +337,8 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
       if (unshared || ctx.signal.aborted) return unshared;
     }
   }
+  if (d.unattended) await seedClaudeConfig(d, ctx, s);
+  if (ctx.signal.aborted) return null;
   const session = resume ?? (d.newSession ?? randomUUID)();
   const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : []), ...(resume ? ['--resume', resume] : ['--session-id', session])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;

@@ -37,6 +37,8 @@ export interface HerdrClaudeExecutorOptions {
   trustWorkdir: boolean;
   /** Claude starts with every permission granted (issue #267): its warning is accepted at startup. Default false. */
   yolo?: boolean;
+  /** Claude's config seeded where the machine has none, its first-run screens answered with their defaults (issue #533). Default false. */
+  unattended?: boolean;
   /** Each job its own git worktree of a work tree that is a git repository's top, in its scratch dir (issue #379). Default false. */
   jobWorktrees?: boolean;
   /** A job worktree's node_modules linked to dependencies shared with the repository's other jobs (issue #410). Default false. */
@@ -84,7 +86,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   };
 
   const depsOn = (where: Where): StartDeps => ({
-    herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false,
+    herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false, unattended: o.unattended ?? false,
     jobWorktrees: o.jobWorktrees ?? false, sharedDependencies: o.sharedDependencies ?? false,
   });
 
@@ -329,7 +331,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const s = { ...state, laneId: ctx.laneId };
         // The question was a dialog before the job's text reached Claude (issue #534): the answer goes into the
         // dialog, then the text.
-        if (s.turn?.unsent) return (agent.status === 'blocked' ? await answerDialog(depsOn(s), ctx, s, answer) : null) ?? send(ctx, s, p, s.turn.text ?? answer, s.turn.anchor);
+        if (s.turn?.unsent) return (await answerDialog(depsOn(s), ctx, s, answer, agent.status === 'blocked')) ?? send(ctx, s, p, s.turn.text ?? answer, s.turn.anchor);
         // Claude waits at a dialog (a permission it asks for without yolo, issue #267) and the answer
         // names one of its options: pick it, and the parked turn goes on. Any other answer dismisses
         // the dialog and goes to Claude as text.

@@ -109,7 +109,8 @@ describe('a herdr-claude question frees its lane at once', () => {
     );
     const herdrItem = (prompt: string) => ({ executor: 'herdr-claude', prompt, cwd: '/tmp', env: {} });
     const [asker, next] = await pullAll(a, [herdrItem('Paint the shed'), herdrItem('Mow the lawn')], true);
-    await waitFor(async () => (await a.job(next!.id)).status === 'running' && herdr.prompts.length === 2, { what: 'next job prompted', timeoutMs: 4000 });
+    // Each start holds Claude's input box on screen for 2 s before it is ready (issue #533).
+    await waitFor(async () => (await a.job(next!.id)).status === 'running' && herdr.prompts.length === 2, { what: 'next job prompted', timeoutMs: 10000 });
     const waiting = await a.job(asker!.id);
     expect(waiting.status).toBe('waiting_answer');
     expect(waiting.laneId).toBeUndefined();

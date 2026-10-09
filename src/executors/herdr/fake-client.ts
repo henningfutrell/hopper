@@ -3,11 +3,11 @@
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
 import { HerdrError } from './client.ts';
-import { shellSays } from './fake-shell.ts';
+import { seedSays, shellSays, type FakeClaudeConfig } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
-import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, importsDialog, trustDialog, wrap } from './fake-screens.ts';
+import { WINDOWS_SHELLS, enterGoesOn, paneScreen, startupScreen, startupScreens, wrap, type StartupScreen } from './fake-screens.ts';
 
 export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
 
@@ -20,9 +20,9 @@ interface Pane {
   agent?: string;
   status: AgentStatus;
   seq: number;
-  mode: 'none' | 'trust' | 'imports' | 'bypass' | 'startup' | 'late';
-  /** Startup dialogs still to come once the one on screen is answered. */
-  dialogs?: ('trust' | 'imports' | 'bypass')[];
+  mode: 'none' | StartupScreen | 'startup' | 'late';
+  /** Startup screens still to come once the one on screen is answered. */
+  dialogs?: StartupScreen[];
   /** Lines the shell prints after `lag` more waits (FakeHerdrOptions.worktreeLag). */
   pending?: { lines: string[]; lag: number };
   turn?: FakeTurn;
@@ -59,6 +59,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   let droppedPicks = o.dropsDialogPicks ?? 0;
   let leftInInput = o.promptsLeftInInput ?? 0;
   let workspaceId: string | undefined;
+  let claudeConfig: FakeClaudeConfig = o.claudeConfig ?? 'present';
+  let signedIn = o.notSignedIn !== true;
 
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
     fake.calls.push({ method, args });
@@ -78,15 +80,23 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   const settle = (p: Pane, status: AgentStatus): void => { p.status = status; p.seq++; };
   /** The dialog on screen closes (picked, lapsed, dismissed): its lines go. */
   const closeDialog = (p: Pane): void => { if (p.dialogLines) p.lines.splice(-p.dialogLines); p.dialogLines = undefined; };
-  /** The next startup dialog on screen, Claude blocked at it. */
+  /**
+   * The next startup screen, Claude blocked at it. The first is shown below what started Claude, and moves
+   * state_change_seq; each next one replaces the one answered and moves nothing, as herdr does between Claude's
+   * startup dialogs (seen live, issue #533).
+   */
   const showDialog = (p: Pane): void => {
     const next = p.dialogs!.shift()!;
-    const lines = next === 'trust' ? trustDialog(o.trustDialogFor!) : next === 'imports' ? importsDialog(o.importsDialog!) : bypassDialog();
-    // The first is shown below what started Claude; each next one replaces the one answered.
-    if (p.mode === 'none') p.lines.push(...lines);
-    else p.lines = lines;
-    p.mode = next;
-    settle(p, 'blocked');
+    const lines = startupScreen(next, o);
+    p.sawDown = false;
+    if (p.mode === 'none') { p.lines.push(...lines); p.mode = next; settle(p, 'blocked'); return; }
+    [p.lines, p.mode] = [lines, next];
+  };
+  /** The startup screen on show is answered: the next one, or Claude's prompt. */
+  const goOn = (p: Pane): void => {
+    if (p.dialogs?.length) return showDialog(p);
+    [p.mode, p.lines] = ['none', ['✻ Welcome to Claude Code']];
+    settle(p, 'idle');
   };
   const exit = (p: Pane): void => { p.agent = undefined; p.status = 'unknown'; p.lines.push('$ '); };
 
@@ -141,8 +151,9 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [], seeds: [],
     addTurns: (...more) => { turns.push(...more); },
+    signIn: () => { signedIn = true; },
     dropPrompts: (count) => { droppedPrompts = count; },
     killAgent(name) { const p = byAgent(name); if (p) exit(p); },
     wake(name) { const p = byAgent(name); if (p) wake(p); },
@@ -155,13 +166,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     },
     failNext(method, code) { failures.set(method, code); },
     setUnreachable(on) { unreachable = on; },
-    screen: (id) => {
-      const p = panes.get(id);
-      const indicator = p?.hidden ? ['                                               1 new message (ctrl+End) ↓'] : [];
-      const box = p?.input === undefined ? CHROME.slice(0, 3) : [CHROME[0]!, `❯ [Pasted text #1 +${p.input.split('\n').length - 1} lines]`, CHROME[2]!];
-      const chrome = [...box, p?.background ? backgroundFooter(p.background.work) : CHROME[3]!];
-      return [...(p?.lines ?? []), ...indicator, ...chrome].join('\n');
-    },
+    screen: (id) => paneScreen(panes.get(id), signedIn),
 
     async ensureWorkspace(label, cwd) {
       record('ensureWorkspace', label, cwd);
@@ -188,11 +193,11 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         throw new HerdrError('timeout', 'timed out waiting for agent startup');
       }
       if (o.lateDialog) p.lateIn = o.lateDialog.after;
-      const dialogs = ([o.trustDialogFor !== undefined && 'trust', o.importsDialog !== undefined && 'imports', o.bypassDialog && 'bypass'] as const)
-        .filter((m): m is 'trust' | 'imports' | 'bypass' => m !== false && m !== undefined);
+      const dialogs = startupScreens(o, claudeConfig);
       if (dialogs.length > 0) {
         p.dialogs = dialogs;
         showDialog(p);
+        if (o.idleAtStartupScreens) { p.status = 'idle'; return { ok: true }; }
         return p.mode === 'bypass' && o.bypassDialog === 'started' ? { ok: true } : { ok: false, notReady: true };
       }
       if (o.startupEcho) {
@@ -239,6 +244,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       fake.texts.push({ paneId, text });
       if (text === CTRL_END && p.hidden) { p.lines.push(...p.hidden); p.hidden = undefined; }
       // A digit at a dialog picks that option: Claude goes on with the next scripted turn.
+      if (/^\d$/.test(text) && p.agent && p.mode === 'login') return goOn(p);
       // A digit at a dialog shown before anything was sent picks it: Claude is ready for the prompt.
       if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && (p.mode === 'startup' || p.mode === 'late') && droppedPicks-- <= 0) {
         if (p.mode === 'late') closeDialog(p);
@@ -259,15 +265,9 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         if (key !== 'ctrl+c') p.ctrlC = 0;
         if (key === 'enter' && p.input !== undefined && p.agent && p.status !== 'blocked') submit(p, p.input);
         else if (key === 'down') p.sawDown = true;
-        else if (key === 'enter' && (p.mode === 'trust' || p.mode === 'imports' || p.mode === 'bypass')) {
-          // Refusing the imports goes on without them; refusing trust or the warning quits Claude.
-          const goesOn = p.sawDown || p.mode === 'imports';
-          p.sawDown = false;
-          if (goesOn && p.dialogs?.length) showDialog(p);
-          else {
-            p.mode = 'none';
-            if (goesOn) { p.lines = ['✻ Welcome to Claude Code']; settle(p, 'idle'); } else exit(p);
-          }
+        else if (key === 'enter' && enterGoesOn(p.mode, p.sawDown) !== undefined) {
+          if (enterGoesOn(p.mode, p.sawDown)) goOn(p);
+          else { p.mode = 'none'; exit(p); }
         } else if (key === 'esc' && p.agent && (p.status === 'blocked' || p.status === 'working') && p.mode !== 'startup' && p.mode !== 'late') {
           closeDialog(p);
           p.lines.push('  ⎿  Interrupted');
@@ -282,6 +282,13 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (droppedRuns-- > 0) return;
       if (command.includes(' hopper-worktree ') && droppedWorktreeRuns-- > 0) return;
       if (o.windowsShell) { const [prompt, error] = WINDOWS_SHELLS[o.windowsShell]; p.lines.push(`${prompt}${command}`, error, '', prompt); return; }
+      const seed = seedSays(command, claudeConfig);
+      if (seed) {
+        fake.seeds.push(seed.args);
+        claudeConfig = seed.config;
+        p.lines.push(`$ ${command}`, seed.line, '$ ');
+        return;
+      }
       const said = shellSays(command, o, p.scoped === true);
       if (said.scoped) p.scoped = true;
       if (o.worktreeLag && command.includes(' hopper-worktree ')) {

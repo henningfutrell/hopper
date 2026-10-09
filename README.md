@@ -428,6 +428,19 @@ of it shows in a herdr pane.
 4. Send jobs to it with a routing rule in the Routing view: set its machine and the executor
    `cursor-agent`.
 
+### Machines nobody watches: Claude with no key press
+
+A job never waits on a key press at Claude's startup. On each herdr-claude instance, **unattended** (on by default,
+Settings → Plugins) seeds Claude's config where the machine has none — a fresh container's empty home starts with no
+first-run screen — and answers Claude's first-run screens (theme, the machine's API key, notices) with their defaults.
+A screen the hopper has no default for, or Claude not signed in, comes to you as a question with the screen; your
+answer picks its option. In a container, give Claude its credential as `CLAUDE_CODE_OAUTH_TOKEN` in `.env`
+(docs/deploy.md).
+
+To run Claude with no screen at all, switch the `claude` executor on under **Shipped plugins**: Claude Code in print
+mode, one run per turn, on this host or an ssh target, as `cursor-agent` runs (steps above). A question it asks is
+answered in the same Claude session. It has no pane to watch and cannot pick up again after a daemon restart.
+
 ### Agent boxes: claude, codex, cursor, omp and opencode
 
 On a computer with docker, `bash scripts/agent-boxes.sh` (from a checkout) starts one container per agent
