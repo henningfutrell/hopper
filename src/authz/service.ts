@@ -92,6 +92,12 @@ export function createAccess(o: AccessOptions): Access {
     return raw ? JSON.parse(raw) as { storeId: string; version: number; modelId: string } : undefined;
   };
 
+  /** OpenFGA cannot be asked: said in the log once per reason, and in the status. */
+  const down = (why: string): void => {
+    if (status.state !== 'unreachable' || status.why !== why) o.logger.warn(`hopper: access: OpenFGA cannot be asked, so every mint is denied: ${why}`);
+    status = { state: 'unreachable', why, ...(status.storeId ? { storeId: status.storeId } : {}) };
+  };
+
   const push = async (server: AuthorizationServer): Promise<void> => {
     const storeId = await server.store(o.repo.state(KEY_STORE), STORE_NAME);
     if (storeId !== o.repo.state(KEY_STORE)) o.repo.setState(KEY_STORE, storeId);
@@ -115,15 +121,12 @@ export function createAccess(o: AccessOptions): Access {
     if (!server) return Promise.resolve();
     // One push at a time; a change made while one runs is pushed by the next.
     running ??= (async () => {
-      const was = status.state;
       dirty = false;
       try {
         await push(server);
       } catch (e) {
         dirty = true;
-        const why = isRefusal(e) ? `OpenFGA refused what the hopper pushed: ${(e as Error).message}` : (e as Error).message;
-        if (was !== 'unreachable' || status.why !== why) o.logger.warn(`hopper: access: OpenFGA cannot be asked, so every mint is denied: ${why}`);
-        status = { state: 'unreachable', why, ...(status.storeId ? { storeId: status.storeId } : {}) };
+        down(isRefusal(e) ? `OpenFGA refused what the hopper pushed: ${(e as Error).message}` : (e as Error).message);
       } finally {
         running = undefined;
       }
@@ -158,7 +161,7 @@ export function createAccess(o: AccessOptions): Access {
       return { allowed, modelId: pushed.modelId, reason: `template ${r.template} is approved to ${r.operation} on ${describeTarget(r.target)}`, ...(path ? { path } : {}) };
     } catch (e) {
       dirty = true;
-      status = { state: 'unreachable', why: (e as Error).message, ...(status.storeId ? { storeId: status.storeId } : {}) };
+      down((e as Error).message);
       return { allowed: false, reason: `OpenFGA cannot be asked: ${(e as Error).message}` };
     }
   };
