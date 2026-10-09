@@ -60,7 +60,7 @@ function Why({ picked, view, onClose, onChanged }: { picked: Picked | undefined;
       <SheetContent className="w-full overflow-y-auto sm:max-w-md">
         {picked && cell && <div data-slot="matrix-why" className="space-y-3 p-4 text-sm">
           <SheetHeader className="p-0">
-            <SheetTitle className="font-mono">{picked.row.label} → {picked.column.asset.kind} {picked.column.asset.name}</SheetTitle>
+            <SheetTitle className="pr-8 font-mono break-words">{picked.row.label} → {picked.column.asset.kind} {picked.column.asset.name}</SheetTitle>
             <SheetDescription>Why this {picked.row.kind} may do each operation here, and who approved it.</SheetDescription>
           </SheetHeader>
           {rowSteps(picked.row).length > 0 && <ul className="list-disc pl-4 text-xs text-muted-foreground">{rowSteps(picked.row).map((s) => <li key={s}>{s}</li>)}</ul>}
@@ -96,7 +96,7 @@ function Filters({ filter, onChange }: { filter: MatrixFilter; onChange: (f: Mat
     <div className="flex flex-wrap items-end gap-2 text-sm">
       <div className="flex rounded-lg border p-0.5" role="group" aria-label="Rows">
         {ROW_VIEWS.map(([rows, label]) => (
-          <Button key={rows} size="xs" variant={filter.rows === rows ? 'secondary' : 'ghost'} aria-pressed={filter.rows === rows} onClick={() => onChange({ ...filter, rows })}>{label}</Button>
+          <Button key={rows} size="xs" variant={filter.rows === rows ? 'default' : 'ghost'} aria-pressed={filter.rows === rows} onClick={() => onChange({ ...filter, rows })}>{label}</Button>
         ))}
       </div>
       <label className="grid gap-1"><span className="text-xs text-muted-foreground">Asset kind</span>
