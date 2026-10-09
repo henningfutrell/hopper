@@ -1,7 +1,7 @@
 // High priority and priority lanes (issue #535, design.md "High priority everywhere"): a job at or above the
 // high-priority threshold is tagged and listed first wherever jobs are listed or wait, and the most reliable lanes
 // are kept for it. Re-exported by types.ts.
-import type { LaneId, MachineId } from './types.ts';
+import type { Job, JobId, LaneId, MachineId } from './types.ts';
 
 /** What a priority lane does while no high-priority job waits: stays free for one, or takes a default job (never a low one). */
 export const PRIORITY_LANE_IDLE = ['keep-free', 'share'] as const;
@@ -40,6 +40,20 @@ export interface PriorityTag { priority: number; high: boolean }
 /** The tag of a job's priority; undefined for no job. */
 export const priorityTag = (priority: number | undefined, threshold: number): PriorityTag | undefined =>
   (priority === undefined ? undefined : { priority, high: isHighPriority(priority, threshold) });
+
+/** The settings in force: the user's saved ones, else the defaults. */
+export const prioritySettingsOf = (saved: PriorityLaneSettings | undefined): PriorityLaneSettings => saved ?? DEFAULT_PRIORITY_LANE_SETTINGS;
+
+/** The tag of the job `jobId` names, by its live priority; undefined when there is no such job. */
+export function jobPriorityTag(jobs: { get(id: JobId): Job | undefined }, saved: PriorityLaneSettings | undefined, jobId: JobId | undefined): PriorityTag | undefined {
+  const job = jobId === undefined ? undefined : jobs.get(jobId);
+  return priorityTag(job?.priority, prioritySettingsOf(saved).highPriority);
+}
+
+/** High-priority items first, then as they were: a stable sort, so each list keeps its own order within. */
+export function highFirst<T>(items: readonly T[], high: (item: T) => boolean): T[] {
+  return items.map((item, i) => ({ item, i, h: high(item) })).sort((a, b) => Number(b.h) - Number(a.h) || a.i - b.i).map((x) => x.item);
+}
 
 /** What the decider reads of the priority lanes (`DecisionInputs.priorityLanes`): the lanes, best first, and how they act. */
 export interface PriorityLanesInput {

@@ -50,7 +50,7 @@ describe('priority lanes', () => {
     const v = await waitFor(async () => { const x = await view(a); return x.by === 'reliability' ? x : undefined; });
     expect(v.chosen).toEqual(['local/lane-1']);
     expect(v.lanes[0]).toMatchObject({ laneId: 'local/lane-1', runs: 3, finished: 3, laneFaults: 0, rank: 1, priority: true });
-    expect((await a.events('types=priority_lanes.changed')).map((e) => e.data)).toEqual([{ from: [], to: ['local/lane-1'], by: 'reliability' }]);
+    expect((await a.events('types=priority_lanes.changed')).map((e) => e.data)).toEqual([{ from: [], to: ['local/lane-1'], by: 'settings' }]);
     expect((await a.events('types=priority_lanes.settings_changed')).map((e) => e.data.to)).toEqual([expect.objectContaining({ minRuns: 3 })]);
   });
 

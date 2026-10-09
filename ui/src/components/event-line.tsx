@@ -11,6 +11,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'question.lapsed': 'warn', 'lane.opened': 'busy',
   'update.available': 'warn', 'update.started': 'busy', 'update.applied': 'ok', 'update.failed': 'bad',
   'plugin.installed': 'ok', 'job.accepted': 'ok', 'job.rejected': 'muted', 'queue.gate_changed': 'warn', 'usage.limits_changed': 'warn',
+  'priority_lanes.changed': 'warn', 'priority_lanes.settings_changed': 'warn',
   'job.claimed_by_operator': 'operator',
   'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
 };

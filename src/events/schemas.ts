@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -18,6 +18,13 @@ const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), la
 
 // Every auth event (issue #476) names its login, its kind and its tool; never the login's URL or code.
 const login = { loginId: z.string(), kind: z.enum(LOGIN_KINDS), tool: z.string().min(1) };
+
+// Additive (issue #535): the job's live priority, and whether it is high priority, on what waits on a job or tells of it.
+const priority = { priority: z.number().optional(), high: z.boolean().optional() };
+const priorityLaneSettings = strict({
+  highPriority: z.number(), count: z.number().int(), whenIdle: z.enum(PRIORITY_LANE_IDLE), windowDays: z.number(), minRuns: z.number().int(),
+  manual: z.array(z.string()).optional(),
+});
 
 const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().min(0).max(1) });
 
@@ -39,7 +46,7 @@ export const EVENT_SCHEMAS = {
   'job.started': strict({ attempts: z.number().int() }),
   'job.progressed': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
   'job.finished': strict({ result: z.unknown() }),
-  'job.failed': strict({ error: z.string() }),
+  'job.failed': strict({ error: z.string(), ...priority }),
   'job.cancelled': strict({ reason: z.string() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional() }),
@@ -56,7 +63,7 @@ export const EVENT_SCHEMAS = {
     // Additive (issue #381): the jobs left queued for want of a lane, with the lane cap that binds.
     waits: z.array(waitPlan).optional(),
   }),
-  'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string(), raisedBy }),
+  'question.asked': strict({ questionId: z.string(), text: z.string(), detectedBy: z.string(), raisedBy, ...priority }),
   // v2: `target` is the stage entered (an instance name or `human`), no longer opus | fable | human.
   'question.escalated': strict({
     questionId: z.string(), target: stage, reason: z.string(), text: z.string(), jobId: z.string(),
@@ -64,13 +71,13 @@ export const EVENT_SCHEMAS = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
     // Additive (issue #376): the question is a dialog the agent denies by itself at this time.
     lapsesAt: z.string().optional(),
-    raisedBy,
+    raisedBy, ...priority,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(), raisedBy,
+    lapsesAt: z.string().optional(), raisedBy, ...priority,
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
@@ -120,7 +127,7 @@ export const EVENT_SCHEMAS = {
   'source.intake_migrated': strict({ source: z.string(), changes: z.array(strict({ key: z.string(), change: z.string() })) }),
   'source.issues_assigned': strict({ source: z.string(), keys: z.array(z.string()), assignee: z.string() }),
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
-  'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional() }),
+  'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime() }),
   'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),
@@ -129,7 +136,7 @@ export const EVENT_SCHEMAS = {
   'job.assessed': strict({
     recordId: z.string(), signature: z.string(), class: z.enum(FAILURE_CLASSES), decision: z.enum(FAILURE_DECISIONS),
     reasons: z.array(z.string()), summary: z.string(), attempt: z.number().int().min(1), auto: z.boolean(),
-    causeId: z.string().optional(), problemId: z.string().optional(), retryAt: z.iso.datetime().optional(),
+    causeId: z.string().optional(), problemId: z.string().optional(), retryAt: z.iso.datetime().optional(), ...priority,
   }),
   'failure.grouped': strict({
     problemId: z.string(), signature: z.string(), title: z.string(), opened: z.boolean(), general: z.boolean(),
@@ -139,11 +146,15 @@ export const EVENT_SCHEMAS = {
   // Needs a person (issue #516): a failed job handed off to a person, and the hand-off ending.
   'handoff.opened': strict({
     handoffId: z.string(), reason: z.enum(HANDOFF_REASONS), summary: z.string(), notify: z.boolean(),
-    recordId: z.string().optional(), decision: z.enum(FAILURE_DECISIONS).optional(), class: z.enum(FAILURE_CLASSES).optional(),
+    recordId: z.string().optional(), decision: z.enum(FAILURE_DECISIONS).optional(), class: z.enum(FAILURE_CLASSES).optional(), ...priority,
   }),
   'handoff.closed': strict({ handoffId: z.string(), end: z.enum(HANDOFF_ENDS), nextJobId: z.string().optional() }),
   // The usage limits set in the UI (issue #522): what the decider used before, and what it uses from now on.
   'usage.limits_changed': strict({ from: usageLimits, to: usageLimits }),
+  // Priority lanes (issue #535): the lanes high-priority jobs get first changed, chosen by reliability, by an admin,
+  // or by a settings change; and the settings an admin saved.
+  'priority_lanes.changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.enum(['reliability', 'manual', 'settings']) }),
+  'priority_lanes.settings_changed': strict({ from: priorityLaneSettings, to: priorityLaneSettings }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

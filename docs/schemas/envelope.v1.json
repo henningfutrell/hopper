@@ -83,6 +83,8 @@
         "handoff.opened",
         "handoff.closed",
         "usage.limits_changed",
+        "priority_lanes.changed",
+        "priority_lanes.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

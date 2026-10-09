@@ -2,7 +2,7 @@
 import { isLocked } from '../domain/locked.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, highFirst, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
@@ -25,6 +25,8 @@ export interface QueueView {
   gate: QueueGate;
   /** The pre-sort of the waiting jobs not yet accepted. */
   presort: PreSort;
+  /** The high-priority threshold (issue #535): a job at or above it is high priority, tagged and listed first. */
+  highPriority: number;
 }
 
 /** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
@@ -62,16 +64,19 @@ export function createQueries(c: EngineContext): Queries {
       const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
       const ids = queueOrder(c, queued).jobIds;
       const waiting = order(queued.map((job) => ({ job, effectivePriority: effectivePriority(job, c.policy) })), ids).map((x) => x.job);
-      const running = all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse();
-      const waitingAnswer = all.filter((j) => j.status === 'waiting_answer').reverse();
-      const operatorLed = all.filter((j) => j.status === 'operator_led').reverse();
-      const parked = all.filter((j) => j.status === 'parked').reverse();
+      // High-priority jobs first in every list (issue #535), each list's own order within.
+      const { highPriority } = prioritySettingsOf(c.store.settings.getPriorityLanes());
+      const first = (jobs: Job[]): Job[] => highFirst(jobs, (j) => isHighPriority(j.priority, highPriority));
+      const running = first(all.filter((j) => j.status === 'claimed' || j.status === 'running').reverse());
+      const waitingAnswer = first(all.filter((j) => j.status === 'waiting_answer').reverse());
+      const operatorLed = first(all.filter((j) => j.status === 'operator_led').reverse());
+      const parked = first(all.filter((j) => j.status === 'parked').reverse());
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;
       const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, parked, locked: lockedOf(all), ended, gate: gateOf(c), presort };
+      return { waiting, running, waitingAnswer, operatorLed, parked, locked: lockedOf(all), ended, gate: gateOf(c), presort, highPriority };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);

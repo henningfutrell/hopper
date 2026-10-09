@@ -28,6 +28,12 @@
         "machineId"
       ],
       "additionalProperties": false
+    },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
     }
   },
   "required": [

@@ -53,6 +53,10 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
       const where = types?.length ? `WHERE type IN (${types.map(() => '?').join(',')})` : '';
       return c.db.all(`SELECT * FROM events ${where} ORDER BY seq DESC LIMIT ?`, ...(types ?? []), limit).map(toEvent);
     },
+    between(types, since) {
+      if (types.length === 0) return [];
+      return c.db.all(`SELECT * FROM events WHERE type IN (${types.map(() => '?').join(',')}) AND at >= ? ORDER BY seq`, ...types, since).map(toEvent);
+    },
     subscribe(l) {
       listeners.add(l);
       return () => { listeners.delete(l); };
