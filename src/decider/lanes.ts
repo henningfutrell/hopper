@@ -1,9 +1,13 @@
-import type { HoldPlan, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
+import { freePriority, priorityLaneNames } from './priority-lanes.ts';
 
-/** Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. */
+/**
+ * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
+ * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535).
+ */
 export function planLanes(
-  s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
+  s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number, priorityOf: ReadonlyMap<JobId, number> = new Map(),
 ): LanePlan {
   const mine = lanes.filter((l) => l.machineId === s.machine.id);
   const opening = starts.filter((st) => st.machineId === s.machine.id && st.laneId === null).length;
@@ -21,10 +25,12 @@ export function planLanes(
     else close.push(l.id);
   }
 
-  // Newest busy lanes drain first. An executor past its own cap drains its own lanes (issue #140);
-  // then the machine drains what is still past its cap.
+  // The lowest-priority busy lanes drain first (issue #535), the newest of them first. An executor past its own cap
+  // drains its own lanes (issue #140); then the machine drains what is still past its cap.
   const draining = mine.filter((l) => l.state === 'draining');
-  const busy = mine.filter((l) => l.state === 'busy').sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
+  const priority = (l: Lane): number => (l.jobId === undefined ? -Infinity : priorityOf.get(l.jobId) ?? -Infinity);
+  const busy = mine.filter((l) => l.state === 'busy')
+    .sort((a, b) => priority(a) - priority(b) || b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
   const drained = new Set<string>();
   for (const e of s.executors.values()) {
     const excess = e.occupied.length - draining.filter((l) => e.occupied.includes(l.id)).length - e.cap;
@@ -68,6 +74,8 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
     const kept = m.reservedLanes!;
     return `reserved: ${kept} lane${kept === 1 ? '' : 's'} kept for jobs pinned to this machine`;
   }
+  const kept = freePriority(s.slots);
+  if (wait.length > 0 && kept.length > 0) return `${priorityLaneNames(kept)} kept free for high-priority jobs`;
   if (wait.length > 0) return 'no waiting job can run here (its executor, its pin, or an executor\'s lane cap)';
   if (hold.length > 0) {
     const first = hold[0]!.reason;
