@@ -24,6 +24,19 @@
     },
     "delivered": {
       "type": "boolean"
+    },
+    "question": {
+      "type": "string",
+      "enum": [
+        "open",
+        "answered",
+        "closed",
+        "dismissed",
+        "expired",
+        "lapsed",
+        "cancelled",
+        "missing"
+      ]
     }
   },
   "required": [

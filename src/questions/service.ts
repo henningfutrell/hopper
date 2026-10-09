@@ -10,7 +10,7 @@ import type { Logins } from '../logins/index.ts';
 import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
-import { forkRuns, openOnEndedJobs } from './stale.ts';
+import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
 import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
@@ -82,6 +82,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   // ---- the human stage ------------------------------------------------------------------
 
   // Its job parked (issue #501): the question stays open and answerable, never expires and is not renotified, until re-queued.
+  // A fork of it running (issues #548, #570): the same, until the fork's item is decided (resolveFork re-arms it).
 
   function expire(id: string) {
     store.tx(() => {
@@ -98,7 +99,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function renotify(id: string) {
     store.tx(() => {
       const q = store.questions.get(id);
-      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked') return;
+      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked' || forkRuns(store, q)) return;
       const updated = store.questions.update(id, { notifyCount: q.notifyCount + 1, lastNotifiedAt: iso() });
       emit(updated, 'question.escalated', { ...escalationData(updated, HUMAN, 'still unanswered'), renotify: true });
     });
@@ -112,7 +113,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function armHuman(id: string) {
     clearTimers(id);
     const q = store.questions.get(id);
-    if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.expiresAt || store.jobs.get(q.jobId)?.status === 'parked') return;
+    if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.expiresAt || store.jobs.get(q.jobId)?.status === 'parked' || forkRuns(store, q)) return;
     const now = clock.now().getTime();
     const expiresIn = new Date(q.expiresAt).getTime() - now;
     if (expiresIn <= 0) return expire(id);
@@ -370,11 +371,13 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       armHuman(id);
     },
 
-    sweep() { for (const q of openOnEndedJobs(store)) this.cancel(q.id); },
+    // A question at the human stage left with no timers — its fork ended without a decision (issue #570) — waits on a person
+    // again, its timeout from now, as when the fork's item is rejected.
+    sweep() { for (const q of openOnEndedJobs(store)) this.cancel(q.id); for (const q of unarmed(store, timers, HUMAN)) this.unparked(q.id); },
 
     recover() {
       // What a restart, or the build before, left open with nothing waiting on it (issue #529): cancelled, not asked again.
-      this.sweep();
+      for (const q of openOnEndedJobs(store)) this.cancel(q.id);
       for (const q of store.questions.list({ status: ['open'] })) {
         if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart');
         else if (q.expiresAt) armHuman(q.id);

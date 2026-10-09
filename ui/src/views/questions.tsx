@@ -8,7 +8,8 @@
 // notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
 // first, the longest waiting on top (issue #450).
 // Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
-// takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions.
+// takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions. The forks
+// made from a question show on its card, with their status and a link (issue #570).
 // A parked job's question is not here: it is in Parked, with its job, and comes back when the job is picked up with
 // it still open (issue #565).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
@@ -32,7 +33,7 @@ import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/selectors';
 import { ParkButton } from '@/views/overview/lanes';
-import { PhaseShiftSettingsPanel, ShiftActions } from '@/views/phase-shifts';
+import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -104,6 +105,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
         {!movedOn && <ParkButton job={job} />}</div>}
       <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
+      <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>
         <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">

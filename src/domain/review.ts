@@ -5,7 +5,7 @@
 // sends it back to the same job for the next version. One model for every review section: each is declared once,
 // here, by its ReviewSectionType, and a future one follows the same path. Pure: no I/O. Re-exported from types.ts.
 import type { ShiftThen } from './phase.ts';
-import type { JobId, PriorityTag, RaisedBy } from './types.ts';
+import type { JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
 
 /**
  * The review kinds, in the order a job asking for several does them (the orchestration loop): research first, then
@@ -123,9 +123,13 @@ export interface ReviewItem {
 
 /**
  * A review item as the routes answer it: with its job's live priority (issue #535), and, while its job is in a switched
- * phase of its kind, what a person may pick for the job at Accept (issue #548).
+ * phase of its kind, what a person may pick for the job at Accept (issue #548). A fork's (issue #570): the question it
+ * was forked from as it is now — answered without it, its acceptance delivers nothing to that job.
  */
-export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[] };
+export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion };
+
+/** The question a fork's item was forked from, as it is now: its status, and who answered it. */
+export interface ForkQuestion { status: QuestionStatus | 'missing'; answeredBy?: string }
 
 /** Who may accept a review item: only a person, or the top reviewer level too (its approval accepts). */
 export const REVIEW_SIGN_OFF = ['owner', 'top-level'] as const;

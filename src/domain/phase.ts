@@ -4,9 +4,11 @@
 // its parent keeps waiting on its question (or is parked), and the fork's accepted result answers that question. A
 // switch moves the same job, in its session, into the phase; once its report or proposal is accepted, the person picks
 // whether it goes back to work with the result, ends, or — from research — goes on to a proposal. A job or an
-// escalation level may suggest a shift; only a person, or a level the settings allow, makes one. Pure: no I/O.
-// Re-exported from types.ts.
-import { asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, type ReviewItem, type ReviewKind } from './review.ts';
+// escalation level may suggest a shift; only a person, or a level the settings allow, makes one. A fork shows on its
+// question (issue #570), and is told when the question is answered without it; its parent, that it still runs. Pure:
+// no I/O. Re-exported from types.ts.
+import { asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, type ReviewItem, type ReviewKind, type ReviewStatus } from './review.ts';
+import type { JobStatus } from './types.ts';
 
 /** The phases a job is in: the work, or a review section's special job. */
 export const JOB_PHASES = ['work', ...REVIEW_KINDS] as const;
@@ -50,6 +52,25 @@ export interface ForkOf {
    * connection it acts through. The fork has no source of its own: the sync never reports it to the parent's item.
    */
   source?: { source: string; kind: string; key: string; url?: string; title?: string; repo?: string };
+  /** Its question, answered without it while it runs (issue #570): the answer, who gave it, and once the fork was told. */
+  answered?: ForkAnswered;
+}
+
+/** A forked-from question's answer, kept on the fork: it takes it into account. `told`: the fork has been given it. */
+export interface ForkAnswered { answer: string; by: string; at: string; told?: true }
+
+/**
+ * A fork as its question shows it (issue #570): its job and what it was asked for, whether it still runs, and its
+ * review item once it wrote one.
+ */
+export interface QuestionFork {
+  jobId: string;
+  kind: ReviewKind;
+  note?: string;
+  jobStatus: JobStatus;
+  running: boolean;
+  itemId?: string;
+  itemStatus?: ReviewStatus;
 }
 
 /** A job's phase-shift fields (issue #548). */
@@ -111,9 +132,25 @@ export function switchBrief(to: ReviewKind, note: string | undefined): string {
   return `[hopper phase] Your question is not answered yet: first ${to === 'research' ? 'research it' : 'write a proposal for it'}.${aspect(note)}\n${REVIEW_SECTIONS[to].ask.replace('This job asks you', 'You are asked')}`;
 }
 
-/** What a fork is told after its job rules: the question it was forked from, and the aspect. */
+/** What a fork is told of its question answered without it: the answer, to take into account. */
+const answeredLines = (f: ForkOf): string =>
+  `The question was answered meanwhile, directly. Take that answer into account; your ${REVIEW_SECTIONS[f.kind].noun} still goes to review. The answer:\n${f.answered!.answer}`;
+
+/** What a fork is told after its job rules: the question it was forked from, the aspect, and its answer if it has one. */
 export function forkBrief(f: ForkOf): string {
-  return `[hopper fork] This job was forked from another job's question, to ${f.kind === 'research' ? 'research' : 'write a proposal for'} one aspect of it.${aspect(f.note)}\nThe question was:\n${f.question}`;
+  return `[hopper fork] This job was forked from another job's question, to ${f.kind === 'research' ? 'research' : 'write a proposal for'} one aspect of it.${aspect(f.note)}\nThe question was:\n${f.question}${f.answered ? `\n${answeredLines(f)}` : ''}`;
+}
+
+/** What a fork that started before its question was answered is told when it next resumes (issue #570). */
+export const forkAnsweredBrief = (f: ForkOf): string => `[hopper fork] The question this job was forked from: ${answeredLines(f)}`;
+
+/**
+ * What a parent is told when it resumes from a question a fork of which still runs (issue #570): the fork is not the
+ * answer it waits for any more, and its result goes to review on its own.
+ */
+export function forkRunningBrief(forkId: string, f: ForkOf): string {
+  const t = REVIEW_SECTIONS[f.kind];
+  return `[hopper fork] A ${t.noun} about ${f.note ?? 'your question'} was forked from your question and is still being written (job ${forkId}). Your question is answered now, so its result does not come to you: it goes to review on its own, and its reviewer is told your question was answered.`;
 }
 
 /** The accepted result of a fork, as its parent is told it: the answer to its question. */

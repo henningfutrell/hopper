@@ -3,6 +3,8 @@
 // takes; with none, why. A shift the job or a level suggested is one click, in the default mode. Below the questions,
 // for an admin: the phase-shift settings — the default mode, what a parent does while its fork runs, and the
 // escalation levels that may shift a job themselves.
+// A fork shows on its question (issue #570): what it was asked for, its status and a link to its review or its job;
+// while one runs, a second fork of its kind is not offered. A fork made from the card says so in its toast.
 import { FileCheck, GitFork, Lightbulb, Settings2, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -10,8 +12,10 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, SessionRejected } from '@/lib/api';
-import type { ForkParent, PhaseShiftSettings, PhaseShiftSettingsView, QuestionView, ReviewKind, ShiftMode } from '@/model/wire';
-import { actFor, refreshQuestions, useHopper } from '@/store';
+import { REVIEW_UI } from '@/model/reviews';
+import type { ForkParent, Job, PhaseShiftSettings, PhaseShiftSettingsView, QuestionFork, QuestionView, ReviewKind, ShiftMode } from '@/model/wire';
+import { refreshLiveSoon, refreshQuestions, useHopper } from '@/store';
+import { refreshReviewsSoon } from '@/store/reviews';
 
 /** The route of each shift, its button and what one is called. */
 const SHIFT: Record<ReviewKind, { path: string; label: string; verb: string; noun: string }> = {
@@ -23,15 +27,61 @@ const MODE: Record<ShiftMode, { label: string; help: (noun: string) => string }>
   switch: { label: 'Switch', help: (noun) => `this job, in its session, does ${noun} first; at Accept you pick whether it goes back to work` },
 };
 
+/** What each kind is called on its fork's line. */
+const FORK_NAME: Record<ReviewKind, string> = { research: 'Research', proposal: 'Proposal' };
+const ITEM_STATUS: Record<string, string> = { open: 'in review', revising: 'being revised', accepted: 'accepted', rejected: 'rejected', cancelled: 'cancelled' };
+const JOB_STATUS: Record<string, string> = { waiting_answer: 'waiting on a question', queued: 'queued', running: 'running', held: 'held', parked: 'parked' };
+/** Where a fork is looked at: its item's review, or, before it wrote one, its job in the queue. */
+const forkLink = (kind: ReviewKind, itemId: string | undefined): string => (itemId ? `#${REVIEW_UI[kind].section}` : '#queue');
+
+/** A fork made, the toast says so and links to it; the jobs and the review sections are read again. */
 async function shift(q: QuestionView, to: ReviewKind, body: { mode?: ShiftMode; note?: string }): Promise<boolean> {
-  const r = await actFor(`/ui/api/questions/${encodeURIComponent(q.id)}/${SHIFT[to].path}`, body, `${SHIFT[to].verb}: done`);
-  refreshQuestions().catch(() => {});
-  return r.ok;
+  try {
+    const r = await post<{ fork?: Job }>(`/ui/api/questions/${encodeURIComponent(q.id)}/${SHIFT[to].path}`, body);
+    if (r.fork) toast.success(`${FORK_NAME[to]} forked`, { description: <a href={forkLink(to, undefined)} className="underline">Open its job ({r.fork.id.slice(0, 8)})</a> });
+    else toast.success(`${SHIFT[to].verb}: done`);
+    refreshLiveSoon();
+    refreshReviewsSoon(to);
+    return true;
+  } catch (e) {
+    if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
+    toast.error((e as Error).message);
+    return false;
+  } finally {
+    refreshQuestions().catch(() => {});
+  }
+}
+
+/** A running fork of the kind: a second fork of it is not offered. */
+const forkRunning = (q: QuestionView, to: ReviewKind): boolean => (q.forks ?? []).some((f) => f.running && f.kind === to);
+
+/** One fork of the question: what it was asked for, where it is, and a link to it. */
+function ForkLine({ f, q }: { f: QuestionFork; q: QuestionView }) {
+  const status = f.itemStatus ? ITEM_STATUS[f.itemStatus] ?? f.itemStatus : JOB_STATUS[f.jobStatus] ?? f.jobStatus;
+  const head = f.running ? `${FORK_NAME[f.kind]} in progress` : `${FORK_NAME[f.kind]} ${status}`;
+  const answeredWithout = f.running && q.status !== 'open' && q.answeredBy !== `fork:${f.jobId}`;
+  return (
+    <div data-slot="fork" data-fork={f.jobId} className="flex flex-wrap items-center gap-2 rounded-md border border-question/40 bg-question/5 p-2 text-sm">
+      <GitFork className="size-4 text-question" />
+      <span className="min-w-0 flex-1">{head}{f.note ? `: ${f.note}` : ''}{f.running && <span className="text-muted-foreground"> — {status}</span>}
+        {answeredWithout && <span className="block text-xs text-muted-foreground">The question was answered while it ran; the fork was given the answer, and its result no longer goes to the job.</span>}
+      </span>
+      <a href={forkLink(f.kind, f.itemId)} className="text-xs underline">{f.itemId ? `Open the ${REVIEW_UI[f.kind].noun}` : `Open its job (${f.jobId.slice(0, 8)})`}</a>
+    </div>
+  );
+}
+
+/** The forks made from the question (issue #570), oldest first. */
+export function QuestionForks({ q }: { q: QuestionView }) {
+  if (!q.forks?.length) return null;
+  return <div className="space-y-1.5">{q.forks.map((f) => <ForkLine key={f.jobId} f={f} q={q} />)}</div>;
 }
 
 function ShiftForm({ q, to, onDone }: { q: QuestionView; to: ReviewKind; onDone: () => void }) {
   const offered = q.shifts!;
-  const [mode, setMode] = useState<ShiftMode>(offered.modes.includes(offered.defaultMode) ? offered.defaultMode : offered.modes[0]!);
+  // A fork of this kind still runs: only a switch is offered (issue #570).
+  const modes = offered.modes.filter((m) => m !== 'fork' || !forkRunning(q, to));
+  const [mode, setMode] = useState<ShiftMode>(modes.includes(offered.defaultMode) ? offered.defaultMode : modes[0]!);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
@@ -50,7 +100,7 @@ function ShiftForm({ q, to, onDone }: { q: QuestionView; to: ReviewKind; onDone:
         onChange={(e) => setNote(e.target.value)} />
       <fieldset className="grid gap-1 text-sm">
         <legend className="text-xs text-muted-foreground">How</legend>
-        {offered.modes.map((m) => (
+        {modes.map((m) => (
           <label key={m} className="flex items-start gap-2">
             <input type="radio" name={`mode-${q.id}`} value={m} checked={mode === m} disabled={busy} onChange={() => setMode(m)} className="mt-1" />
             <span><span className="font-medium">{MODE[m].label}</span>{m === offered.defaultMode && <span className="text-muted-foreground"> (default)</span>}<span className="text-muted-foreground"> — {MODE[m].help(SHIFT[to].noun)}</span></span>
@@ -83,7 +133,7 @@ export function ShiftActions({ q, busy }: { q: QuestionView; busy: boolean }) {
   };
   return (
     <div className="space-y-2">
-      {s && (
+      {s && !(offered.defaultMode === 'fork' && forkRunning(q, s.to)) && (
         <div data-slot="suggestion" className="flex flex-wrap items-center gap-2 rounded-md border border-question/40 bg-question/5 p-2 text-sm">
           <Lightbulb className="size-4 text-question" />
           <span className="min-w-0 flex-1">{s.by === 'job' ? 'the job suggests' : `${s.by} suggests`} {SHIFT[s.to].noun} first{s.note ? `: ${s.note}` : ''}</span>

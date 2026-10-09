@@ -40,12 +40,23 @@ const VERDICT_LABEL: Record<string, string> = {
 const DECISION_ICON: Record<ReviewDecision['effect'], LucideIcon> = { accept: Check, send_back: RotateCcw, reject: X };
 const THEN_LABEL: Record<ShiftThen, string> = { work: 'goes back to the work, with it as context', end: 'ends here', proposal: 'writes a proposal next, in the same session' };
 
-/** Where an item came from (issue #548): a fork of another job's question, or a phase its own job's question switched it to. */
+/**
+ * Where an item came from (issue #548): a fork of another job's question, or a phase its own job's question switched it
+ * to. A fork's question answered without it says so (issue #570).
+ */
 function Origin({ p }: { p: ReviewItemView }) {
   const jobs = useJobIndex();
   if (p.forkOf) {
     const parent = jobs.get(p.forkOf.jobId);
-    return <div data-slot="origin" className="text-xs text-muted-foreground">Forked from a question of {parent ? goalOf(parent) : `job ${p.forkOf.jobId.slice(0, 8)}`}: its acceptance answers that question.</div>;
+    const of = parent ? goalOf(parent) : `job ${p.forkOf.jobId.slice(0, 8)}`;
+    // Its question settled without it (issue #570): an acceptance delivers nothing to that job, and the reviewer is told so.
+    const q = p.forkQuestion;
+    const delivered = q?.answeredBy === `fork:${p.jobId}`;
+    if (q && q.status !== 'open' && !delivered) {
+      const how = q.status === 'answered' ? `already answered${q.answeredBy ? ` by ${q.answeredBy === 'human' ? 'a person' : q.answeredBy}` : ''}` : q.status === 'missing' ? 'gone' : `already ${q.status}`;
+      return <div data-slot="origin" data-settled="" className="text-xs text-warn">Forked from a question of {of}, which is {how}: accepting it delivers nothing to that job.</div>;
+    }
+    return <div data-slot="origin" className="text-xs text-muted-foreground">Forked from a question of {of}: {delivered ? 'its acceptance answered that question.' : 'its acceptance answers that question.'}</div>;
   }
   if (p.switchedFrom) return <div data-slot="origin" className="text-xs text-muted-foreground">Its job switched from its question to write this.</div>;
   return null;

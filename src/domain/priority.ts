@@ -2,7 +2,7 @@
 // high-priority threshold is tagged and listed first wherever jobs are listed or wait, and the most reliable lanes
 // are kept for it. Re-exported by types.ts.
 import type { Job, JobId, LaneId, MachineId, Question } from './types.ts';
-import type { QuestionShifts } from './phase.ts';
+import type { QuestionFork, QuestionShifts } from './phase.ts';
 
 /** What a priority lane does while no high-priority job waits: stays free for one, or takes a default job (never a low one). */
 export const PRIORITY_LANE_IDLE = ['keep-free', 'share'] as const;
@@ -38,8 +38,11 @@ export const isHighPriority = (priority: number, threshold: number): boolean => 
 /** A job's live priority as a question, login, failure or hand-off carries it on a route and in an event. */
 export interface PriorityTag { priority: number; high: boolean }
 
-/** A question as the routes answer it: with its job's live priority (issue #535), and the phase shifts it offers now (issue #548). */
-export type QuestionView = Question & PriorityTag & { shifts?: QuestionShifts };
+/**
+ * A question as the routes answer it: with its job's live priority (issue #535), the phase shifts it offers now (issue
+ * #548), and the forks made from it (issue #570).
+ */
+export type QuestionView = Question & PriorityTag & { shifts?: QuestionShifts; forks?: QuestionFork[] };
 
 /** The tag of a job's priority; undefined for no job. */
 export const priorityTag = (priority: number | undefined, threshold: number): PriorityTag | undefined =>
