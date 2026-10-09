@@ -1,7 +1,7 @@
 // Proposals across a daemon restart (issue #537): two app instances over one database, sharing one manual source. A
 // job waiting on its proposal stays waiting, its proposal open and decidable; one at a reviewer level is reviewed again.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ProposalView } from '../../src/domain/types.ts';
+import type { ReviewItemView } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -16,7 +16,7 @@ afterEach(async () => {
 
 const source = createManualSource();
 const boot = async (dbPath: string) => { const a = await startTestApp({ dbPath, source }); apps.push(a); return a; };
-const open = async (a: TestApp) => (await a.api<{ proposals: ProposalView[] }>('GET', '/api/proposals')).body.proposals;
+const open = async (a: TestApp) => (await a.api<{ items: ReviewItemView[] }>('GET', '/api/proposals')).body.items;
 
 describe('restart with a proposal', () => {
   it('keeps the job waiting on its proposal; accepting it after the restart ends the job', async () => {

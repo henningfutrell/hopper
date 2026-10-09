@@ -8,7 +8,7 @@
 // the job ends, through the machine's connection. How each CLI is called and read is print-agents.ts's.
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
-import type { MachineSnapshot } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
 import { scopeUnitOf } from '../client/server.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
@@ -61,7 +61,8 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: before.slice(0, SUMMARY_CHARS), chatId } };
   if (last.startsWith('HOPPER_FAILED')) return { kind: 'failed', error: last.slice('HOPPER_FAILED'.length).trim() || 'HOPPER_FAILED without a reason' };
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
-  if (last === 'HOPPER_PROPOSAL') return { kind: 'proposal', proposal: { text: before, recentOutput: tail(text.trim()) } };
+  const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === last);
+  if (review) return { kind: 'report', review, report: { text: before, recentOutput: tail(text.trim()) } };
   return { statusNote: text.trim() };
 }
 
@@ -141,7 +142,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
         if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
         return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
       }
-      if (out.kind === 'question' || out.kind === 'proposal') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
+      if (out.kind === 'question' || out.kind === 'report') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
       return out;
     } catch (e) {
       return { kind: 'failed', error: `${label} on ${where}: ${(e as Error).message}` };

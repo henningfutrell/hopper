@@ -5,7 +5,7 @@
 // protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
-import type { JobRulesView } from '../domain/types.ts';
+import { asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
 /** The config record that holds them. */
 export const JOB_RULES = 'job-rules';
@@ -44,17 +44,26 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
-  'When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.',
+  // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
+  ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
   'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.',
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];
 
-/** What a job asked for a proposal (issue #537) is told after its job rules. */
-export const proposalAsk = '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as the protocol says and end with HOPPER_PROPOSAL. Change nothing, and open no pull request.';
+/** What a job asked for a review section's special job (issues #537, #543) is told after its job rules. */
+export const askLine = (kind: ReviewKind): string => REVIEW_SECTIONS[kind].ask;
 
-/** The job rules a job starting now is told: with the proposal ask when it was asked for a proposal. */
-export const withProposalAsk = (jobRules: string, spec: { proposal?: true }): string => (spec.proposal ? `${jobRules}\n${proposalAsk}` : jobRules);
+/**
+ * The job rules a job starting now is told: with its first ask, when it asks for any (research before the proposal),
+ * and what follows once that one is accepted.
+ */
+export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }): string {
+  const [first, ...then] = asksOfSpec(spec);
+  if (!first) return jobRules;
+  const after = then.length > 0 ? `\nOnce your ${REVIEW_SECTIONS[first].noun} is accepted, you are asked for the ${then.map((k) => REVIEW_SECTIONS[k].noun).join(', then the ')} in this same session.` : '';
+  return `${jobRules}\n${askLine(first)}${after}`;
+}
 
 /** The lines after the job rules, as the UI shows them: the work tree (named `<work tree>`), then the protocol. */
 export const FIXED_JOB_LINES: readonly string[] = [workTreeRule('<work tree>', `<work tree>/${SCRATCH_DIR}/<job id>`), ...PROTOCOL_LINES];

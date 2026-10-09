@@ -9,7 +9,8 @@ import type {
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
-  Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
+  ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
+  SectionKind, SectionSummary,
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 } from '../../../src/domain/types.ts';
 
@@ -22,7 +23,8 @@ export type {
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
-  Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
+  ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
+  SectionKind, SectionSummary,
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 };
 

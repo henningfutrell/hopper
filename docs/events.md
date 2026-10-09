@@ -1418,7 +1418,7 @@ Version 1 (`docs/schemas/proposal.reviewed.v1.json`). A reviewer level gave its 
 
 ## `proposal.revision_requested`
 
-Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person): `notes` is what to change. The job is re-queued with it and writes the next version.
+Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person; `decision` `request_changes`): `notes` is what to change. The job is re-queued with it and writes the next version.
 
 | field | type | required |
 |---|---|---|
@@ -1428,6 +1428,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 | `priority` | number | no |
 | `high` | boolean | no |
 | `stage` | string | yes |
+| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` | no |
 | `notes` | string | yes |
 | `by` | string | no |
 
@@ -1436,6 +1437,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
   "proposalId": "p1",
   "version": 1,
   "stage": "opus",
+  "decision": "request_changes",
   "notes": "Say how the cache is invalidated."
 }
 ```
@@ -1506,6 +1508,199 @@ Version 1 (`docs/schemas/proposal.cancelled.v1.json`). A proposal waiting on a d
 ```json
 {
   "proposalId": "p1",
+  "version": 1,
+  "reason": "its job is cancelled"
+}
+```
+
+## `research.asked`
+
+Version 1 (`docs/schemas/research.asked.v1.json`). A person asked a job that has not started to research (issue #543): when it starts, its agent is told to research and write a research report instead of doing the work. A job from an item labelled `hopper:research`, or with a Research heading in its body, is asked from the start, with no event.
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` | yes |
+
+```json
+{
+  "by": "user"
+}
+```
+
+## `research.submitted`
+
+Version 1 (`docs/schemas/research.submitted.v1.json`). A job came back with a research report (issue #543): its agent ended with HOPPER_RESEARCH_REPORT instead of doing the work. Round 1 (`version`), or the next round after a dig deeper or a steer. The job waits on it, keeping its session. `question`: its Question part; `missing`: the parts it left out.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `question` | string | no |
+| `missing` | `question` \| `findings` \| `sources` \| `confidence` \| `openThreads` \| `nextStep`[] | yes |
+
+```json
+{
+  "researchId": "r1",
+  "version": 1,
+  "question": "What can each machine reach?",
+  "missing": [
+    "confidence"
+  ],
+  "raisedBy": {
+    "machineId": "desk",
+    "name": "Desk tower",
+    "laneId": "desk/lane-1"
+  },
+  "priority": 50,
+  "high": false
+}
+```
+
+## `research.escalated`
+
+Version 1 (`docs/schemas/research.escalated.v1.json`). A research report entered a stage of its review (issue #543): `target` is the reviewer level (an escalation level named in the research settings) or `human`, and `reason` why it climbed.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `target` | string | yes |
+| `reason` | string | yes |
+| `question` | string | no |
+
+```json
+{
+  "researchId": "r1",
+  "version": 1,
+  "target": "human",
+  "reason": "no reviewer levels configured",
+  "question": "What can each machine reach?"
+}
+```
+
+## `research.escalated_to_human`
+
+Version 1 (`docs/schemas/research.escalated_to_human.v1.json`). A research report reached a person (issue #543): every reviewer level passed it up, there are none (the default), or they asked for changes more often than the settings allow. Once per round.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `reason` | string | yes |
+
+```json
+{
+  "researchId": "r1",
+  "version": 1,
+  "reason": "no reviewer levels configured",
+  "priority": 80,
+  "high": true
+}
+```
+
+## `research.reviewed`
+
+Version 1 (`docs/schemas/research.reviewed.v1.json`). A reviewer level gave its verdict on a research report (issue #543): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `verdict` | `approve` \| `request_changes` \| `escalate` | yes |
+| `notes` | string | yes |
+| `error` | string | no |
+
+```json
+{
+  "researchId": "r1",
+  "version": 1,
+  "stage": "opus",
+  "verdict": "approve",
+  "notes": "The findings follow from the sources."
+}
+```
+
+## `research.revision_requested`
+
+Version 1 (`docs/schemas/research.revision_requested.v1.json`). A research report was sent back for another round (issue #543): `decision` `dig_deeper` (a person: deeper on the whole report, or on the open threads `notes` names), `steer` (a person: `notes` is the new direction) or `request_changes` (a reviewer level). The job is re-queued with it, in the same session, and its next report is the next round.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` | no |
+| `notes` | string | yes |
+| `by` | string | no |
+
+```json
+{
+  "researchId": "r1",
+  "version": 1,
+  "stage": "human",
+  "decision": "steer",
+  "notes": "Only the AWS side.",
+  "by": "owner"
+}
+```
+
+## `research.accepted`
+
+Version 1 (`docs/schemas/research.accepted.v1.json`). A research report was accepted (issue #543), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the research settings let it. A job that also asks for a proposal is re-queued to write it, in the same session; any other ends finished, with the decision as its result.
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `by` | string | no |
+| `notes` | string | no |
+
+```json
+{
+  "researchId": "r1",
+  "version": 2,
+  "stage": "human",
+  "by": "owner",
+  "notes": "Enough to propose."
+}
+```
+
+## `research.cancelled`
+
+Version 1 (`docs/schemas/research.cancelled.v1.json`). A research report waiting on a decision was cancelled because its job ended or is gone (issue #543).
+
+| field | type | required |
+|---|---|---|
+| `researchId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `reason` | string | yes |
+
+```json
+{
+  "researchId": "r1",
   "version": 1,
   "reason": "its job is cancelled"
 }

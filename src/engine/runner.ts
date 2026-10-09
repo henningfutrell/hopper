@@ -5,7 +5,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
-import { readJobRules, withProposalAsk } from '../job-rules/index.ts';
+import { readJobRules, withAsks } from '../job-rules/index.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { placeCredentials } from './credentials.ts';
@@ -149,7 +149,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         ? await whenReachable(executor, started, claim, machine.id, entry.controller.signal) : undefined;
       outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, {
         // The job rules as they are at this start (issue #172): an edit reaches the next job.
-        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, jobRules: withProposalAsk(readJobRules(store.config), started.spec),
+        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), started.spec),
         // A login the job waits on (issue #476) goes to the logins, never into a question.
         logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: machine.id, run: job.spec.executor }, () => !c.stopping()),
         // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
@@ -176,7 +176,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     progress.flush();
     const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason, machine);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
-    else if (recorded.kind === 'proposal') c.proposals.handle(recorded.proposalId);
+    else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
     else await cleanup(job.id);
   }
 

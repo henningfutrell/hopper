@@ -2,7 +2,7 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { SourceHost, SourceItem } from '../domain/ports.ts';
-import { isRerunnable, PROPOSAL_LABEL, TERMINAL_STATUSES } from '../domain/types.ts';
+import { asksOf, isRerunnable, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
@@ -69,8 +69,9 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
   const spec: JobSpec = {
     executor: f.executor, payload: { prompt: item.prompt, body: item.body, env: item.env }, priority, goal: item.title,
     submittedBy: `${source.name}:${item.author}`, kind: 'coding',
-    // Labelled hopper:proposal (issue #537): the job is asked for a proposal, not the work.
-    ...(item.labels.includes(PROPOSAL_LABEL) ? { proposal: true as const } : {}),
+    // Labelled hopper:research or hopper:proposal, or with a Research or Proposal heading in its body (issues #537,
+    // #543; the layout of #542): the job is asked for the research or the proposal, not the work — research first.
+    ...Object.fromEntries(asksOf(item.labels, item.body ?? '').map((k) => [REVIEW_SECTIONS[k].specFlag, true as const])),
   };
   return withParts(spec, f, routedBy);
 }

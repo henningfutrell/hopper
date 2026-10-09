@@ -11,7 +11,7 @@
 // mutation stays behind a UI session (src/http/ui/guard.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
-import type { ConnectedAccounts, PluginsView, ProposalService, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { Identity, UiRole, User } from '../domain/types.ts';
 import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
@@ -30,9 +30,9 @@ export interface TenantParts {
   store: UserStore;
   engine: Engine;
   questions: QuestionService;
-  /** The proposal review (issue #537). */
-  proposals: ProposalService;
-  /** The levels that may review proposals now: the escalation levels' names (issue #537). */
+  /** Each review section's review: proposals (issue #537), research (issue #543). */
+  reviews: ReviewServices;
+  /** The levels that may review a review section's items now: the escalation levels' names (issues #537, #543). */
   levelNames(): string[];
   /** The logins a job or run waits on (issue #476). */
   logins: Logins;

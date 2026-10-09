@@ -1,4 +1,4 @@
-// The reviewer replies the proposal service accepts (issue #537): validated here, so a level that breaks its
+// The reviewer replies the review service accepts (issues #537, #543): validated here, so a level that breaks its
 // contract escalates, it never decides. Notes are never empty: a request for changes is what the job is told.
 import { z } from 'zod';
 import { REVIEW_VERDICTS } from '../domain/types.ts';

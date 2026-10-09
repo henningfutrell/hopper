@@ -11,9 +11,11 @@ import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { BlastRadiusView, FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, ProposalSettingsView, ProposalView, QuestionView, SessionUser, SessionView } from '@/model/wire';
+import type { BlastRadiusView, FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, QuestionView, SessionUser, SessionView } from '@/model/wire';
 import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes';
-import { refreshProposals, refreshProposalsSoon } from './proposals';
+import { refreshAllReviews, refreshReviewsSoon } from './reviews';
+import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
+import type { ReviewKind } from '@/model/wire';
 import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
@@ -51,12 +53,12 @@ export interface HopperState {
   questions: QuestionView[];
   /** The question history: every question no longer open, newest first (GET /api/questions?status=all). */
   handled: QuestionView[];
-  /** Open proposals (issue #537), in review or being revised, each with its job's live priority; never in `questions`. */
-  proposals: ProposalView[];
-  /** The decided and cancelled proposals, newest first. */
-  decidedProposals: ProposalView[];
-  /** The proposal settings and the escalation levels that may review, as GET /api/proposals answered them; null until read. */
-  proposalSettings: ProposalSettingsView | null;
+  /**
+   * Each review section (issues #537, #543): its open items — in review or sent back, each with its job's live priority,
+   * never in `questions` —, the decided and cancelled ones newest first, its settings and its type, as GET /api/<section>
+   * answered them.
+   */
+  reviews: Readonly<Record<ReviewKind, ReviewState>>;
   /** The logins, newest first (GET /api/logins, issue #477): open and ended; never in `questions`. */
   logins: LoginView[];
   /** The logins settings, as GET /api/logins answered them; null until read. */
@@ -92,7 +94,7 @@ export interface HopperState {
 
 export const useHopper = create<HopperState>(() => ({
   loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
-  decisions: [], questions: [], handled: [], proposals: [], decidedProposals: [], proposalSettings: null, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
+  decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   usageRecorded: 0,
 }));
@@ -324,10 +326,10 @@ export function onDomainEvent(e: DomainEvent) {
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
   if (e.type.startsWith('auth.')) refreshLoginsSoon();
-  if (e.type.startsWith('proposal.')) refreshProposalsSoon();
+  for (const k of REVIEW_KINDS) if (e.type.startsWith(`${REVIEW_UI[k].prefix}.`)) refreshReviewsSoon(k);
   if (FAILURE_EVENTS.has(e.type)) refreshFailuresSoon();
   // A job's priority changed (a label): its question, login and hand-off are tagged and sorted by it (issue #535).
-  if (e.type === 'job.reprioritized') { refreshQuestionsSoon(); refreshProposalsSoon(); refreshLoginsSoon(); refreshFailuresSoon(); }
+  if (e.type === 'job.reprioritized') { refreshQuestionsSoon(); for (const k of REVIEW_KINDS) refreshReviewsSoon(k); refreshLoginsSoon(); refreshFailuresSoon(); }
   if (e.type.startsWith('priority_lanes.') && s.priorityLanes) refreshPriorityLanesSoon();
   if (e.type === 'priority_lanes.settings_changed') refreshQuestionsSoon();
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
@@ -371,7 +373,7 @@ export async function load(): Promise<boolean> {
   refreshUpdate().catch(() => {});
   // Apart, so the server's time is read close to its answer; until it is read the Logins view says so.
   refreshLogins().catch(() => {});
-  refreshProposals().catch(() => {});
+  refreshAllReviews();
   refreshFailures().catch(() => {});
   refreshPriorityLanes().catch(() => {});
   return true;

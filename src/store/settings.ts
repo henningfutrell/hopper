@@ -1,9 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ProposalSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+
+/** Each review section's settings row (issues #537, #543). */
+const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
 
 /** `settings` rows by key, in whichever schema the context's connection reads. */
 function keyValues(c: StoreContext) {
@@ -143,12 +146,12 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setLoginWarnSec(seconds) {
       write('loginWarnSec', String(seconds));
     },
-    getProposalSettings() {
-      const text = read('proposalSettings');
-      return text === undefined ? undefined : JSON.parse(text) as ProposalSettings;
+    getReviewSettings(kind) {
+      const text = read(REVIEW_SETTINGS_KEYS[kind]);
+      return text === undefined ? undefined : JSON.parse(text) as ReviewSettings;
     },
-    setProposalSettings(settings) {
-      write('proposalSettings', JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions }));
+    setReviewSettings(kind, settings) {
+      write(REVIEW_SETTINGS_KEYS[kind], JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions }));
     },
     getFailureSettings() {
       const text = read('failureSettings');

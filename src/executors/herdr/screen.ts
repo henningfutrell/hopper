@@ -1,6 +1,7 @@
 // The hopper screen protocol over a Claude Code pane: pure functions, no I/O.
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
+import { REVIEW_KINDS, REVIEW_SECTIONS, type ReviewKind } from '../../domain/types.ts';
 import { DEFAULT_JOB_RULES, PROTOCOL_LINES, jobWorktreeRule, workTreeRule } from '../../job-rules/index.ts';
 import { selectOf, selectText } from './select-dialog.ts';
 
@@ -25,7 +26,8 @@ export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 
-export type Marker = 'done' | 'question' | 'proposal' | 'failed' | 'auth';
+/** A review kind's marker reads as that kind (issues #537, #543): `proposal`, `research`. */
+export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth';
 
 /** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
 export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval'] as const;
@@ -76,7 +78,8 @@ function markerOf(line: string): Marker | null {
   const s = normaliseMarkerLine(line);
   if (s === 'HOPPER_DONE') return 'done';
   if (s === 'HOPPER_QUESTION') return 'question';
-  if (s === 'HOPPER_PROPOSAL') return 'proposal';
+  const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === s);
+  if (review) return review;
   if (s === 'HOPPER_AUTH_PENDING') return 'auth';
   if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;

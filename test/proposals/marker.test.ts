@@ -2,10 +2,12 @@
 // executors read it as a proposal, never as a question; its parts are read from their labels; a job asked for a
 // proposal is told so after the job rules, and every job learns the marker from the protocol.
 import { describe, expect, it } from 'vitest';
-import { proposalSections } from '../../src/domain/types.ts';
+import { reviewSections } from '../../src/domain/types.ts';
+const proposalSections = (text: string) => reviewSections('proposal', text);
 import { FOOTER_ANCHOR, readTurn } from '../../src/executors/herdr/screen.ts';
 import { outcomeOf } from '../../src/executors/print-agent.ts';
-import { PROTOCOL_LINES, proposalAsk, withProposalAsk } from '../../src/job-rules/index.ts';
+import { askLine, PROTOCOL_LINES, withAsks } from '../../src/job-rules/index.ts';
+const proposalAsk = askLine('proposal');
 
 const ECHO = ['❯ Paint the shed.', `  ${FOOTER_ANCHOR}`];
 const BODY = [
@@ -33,12 +35,12 @@ describe('the proposal marker', () => {
 
   it('a print-mode answer that ends with it is a proposal outcome', () => {
     const text = 'Goal: paint it\nApproach: a brush\nHOPPER_PROPOSAL';
-    expect(outcomeOf(text, 'm', 'c')).toEqual({ kind: 'proposal', proposal: { text: 'Goal: paint it\nApproach: a brush', recentOutput: text } });
+    expect(outcomeOf(text, 'm', 'c')).toEqual({ kind: 'report', review: 'proposal', report: { text: 'Goal: paint it\nApproach: a brush', recentOutput: text } });
   });
 
   it('a job asked for a proposal is told so after its job rules; any other job is not', () => {
-    expect(withProposalAsk('the rules', { proposal: true })).toBe(`the rules\n${proposalAsk}`);
-    expect(withProposalAsk('the rules', {})).toBe('the rules');
+    expect(withAsks('the rules', { proposal: true })).toBe(`the rules\n${proposalAsk}`);
+    expect(withAsks('the rules', {})).toBe('the rules');
     expect(proposalAsk).toContain('HOPPER_PROPOSAL');
   });
 });
