@@ -105,13 +105,13 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'phase_shifts.settings_changed': 'An admin saved the phase-shift settings (issue #548): the default mode (`fork` or `switch`), what a parent does while its fork runs (`wait` or `park`), and the escalation levels that may shift a job themselves.',
   'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
-  'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value.',
+  'vault.secret_set': 'A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value. `backend`: the vault backend it is kept in (issue #585), when it is kept in one: the hopper holds no value for it.',
   'vault.secret_removed': 'A vault secret was removed (issue #558), and who removed it.',
   'template.saved': 'A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).',
   'template.removed': 'A template was removed (issue #558): its boxes are given nothing from the vault.',
   'vault.approved': 'A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.',
-  'vault.delivered': 'A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client\'s own request, never in an environment or a file. The secret\'s name, the template, the machine and the job; never the value.',
-  'vault.refused': 'A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give. `reason` says which; never a value.',
+  'vault.delivered': 'A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client\'s own request, never in an environment or a file. The secret\'s name, the template, the machine and the job; never the value. `backend`: the vault backend it was read from at that moment (issue #585), when it is kept in one.',
+  'vault.refused': 'A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give, a vault backend that is gone or cannot read it (`backend`, issue #585). `reason` says which; never a value.',
 };
 
 type Prop = Record<string, unknown>;

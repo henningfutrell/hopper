@@ -1,8 +1,8 @@
 // The vault's edits (issue #558, design.md "The vault"), an admin's: set a secret — a new one, or a new value or scope
-// for one —, or remove it; save a template (its image and scope), remove it, or approve it as it is now. Each answers the vault's view, never a value, and is not cached.
+// for one —, or point one at where a vault backend keeps it (issue #585) —, or remove it; save a template (its image and scope), remove it, or approve it as it is now. Each answers the vault's view, never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { VAULT_VALUE_MAX } from '../../domain/vault.ts';
+import { VAULT_REFERENCE_MAX, VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
@@ -10,7 +10,9 @@ import { identityName } from './sessions.ts';
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
 export const vaultEditBody = z.discriminatedUnion('action', [
+  // A value, or (issue #585) the vault backend that keeps it and where: one of the two, never both.
   z.strictObject({ action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }),
+  z.strictObject({ action: z.literal('set-in-backend'), name: z.string().max(64), scope: z.string().max(200).optional(), backend: z.string().max(64), reference: z.string().max(VAULT_REFERENCE_MAX) }),
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256) }),
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
@@ -27,11 +29,13 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const by = identityName(s.identity);
     const { vault } = o.tenant(req);
     const edit = parseWith(vaultEditBody, req.body);
-    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...(edit.scope !== undefined ? { scope: edit.scope } : {}) }, by)
-      : edit.action === 'remove' ? vault.remove(edit.name, by)
-        : edit.action === 'save-template' ? vault.saveTemplate(edit, by)
-          : edit.action === 'remove-template' ? vault.removeTemplate(edit.name, by)
-            : vault.approveTemplate(edit.name, by);
+    const scope = 'scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {};
+    const r = edit.action === 'set' ? vault.set({ name: edit.name, value: edit.value, ...scope }, by)
+      : edit.action === 'set-in-backend' ? vault.set({ name: edit.name, backend: edit.backend, reference: edit.reference, ...scope }, by)
+        : edit.action === 'remove' ? vault.remove(edit.name, by)
+          : edit.action === 'save-template' ? vault.saveTemplate(edit, by)
+            : edit.action === 'remove-template' ? vault.removeTemplate(edit.name, by)
+              : vault.approveTemplate(edit.name, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
     return vault.view();
   });

@@ -186,6 +186,35 @@ every credential is denied, and Settings → Access says why.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
   filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
 
+## Vault backends (optional)
+
+The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,
+docs/design.md "Vault backends"): the hopper then reads the value there each time a box's job asks, and keeps no copy.
+None is needed: without one the hopper starts and its own vault works.
+
+- **HashiCorp Vault in the compose stack**: `podman compose --profile vault up -d` starts the `vault` service beside the
+  hopper. Its first start sets Vault up and makes a read-only token for the hopper, which the hopper reads as
+  `VAULT_TOKEN_FILE`. Then:
+  1. Settings → Plugins → Vault backends → add `hashicorp-vault`. Its defaults reach the service.
+  2. Write a secret: `podman compose exec vault sh -c 'VAULT_TOKEN=$(cat /vault/keys/root_token) vault kv put secret/apps/db password=...'`.
+  3. Settings → Vault → Add secret → Kept in: the backend, reference `apps/db#password`. Add it to a template and approve it.
+
+  The unseal key and the root token are in the `vault-keys` volume, beside Vault's data: whoever can read that volume
+  can open it. Keep a copy of `root_token` elsewhere if you need it. To stop using it: remove the backend in Settings →
+  Plugins, then `podman compose --profile vault down` (add `-v` only to delete its secrets).
+- **An outside HashiCorp Vault**: add `hashicorp-vault` with its `address` (and `mount`, `namespace`). Give a token that
+  may read the secrets as `VAULT_TOKEN_FILE` in `.env` (a file you mount), or name another variable in the instance's
+  `tokenEnv` and set that.
+- **1Password**: add `1password`; set `OP_SERVICE_ACCOUNT_TOKEN` to a service account token that may read the vaults
+  (https://developer.1password.com/docs/service-accounts/). A reference is `op://vault/item/field`, as Copy Secret
+  Reference gives it.
+- **Bitwarden Secrets Manager**: add `bitwarden`; set `BWS_ACCESS_TOKEN` to a machine account's access token
+  (https://bitwarden.com/help/access-tokens/). For the EU cloud or your own server, set `apiUrl` and `identityUrl`. A
+  reference is the secret's id.
+
+Each token is read at each use: change it in the runtime and the next read uses it. A backend that cannot read a
+secret refuses the box's ask, saying why, on the box and in the event log.
+
 ## This host (systemd --user)
 
 One line, the curl install (`scripts/get.sh`, issue #87): it checks what the install needs, clones

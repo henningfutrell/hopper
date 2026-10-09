@@ -23,8 +23,12 @@ import gateRouter from './router/gate-router/index.ts';
 import passThrough from './router/pass-through/index.ts';
 import claudePlan from './usage-source/claude-plan/index.ts';
 import commandUsage from './usage-source/command-usage/index.ts';
+import bitwarden from './vault-backend/bitwarden/index.ts';
+import hashicorpVault from './vault-backend/hashicorp-vault/index.ts';
+import onePassword from './vault-backend/1password/index.ts';
 import type { PluginDefinition } from './sdk.ts';
 
 export const BUILTIN_PLUGINS: readonly PluginDefinition[] = [
   gateRouter, passThrough, priority, oldestFirst, newestFirst, claudeCli, anthropicApi, herdrClaude, cursorAgent, codex, opencode, omp, claude, testExecutor, command, githubAccount, githubApp, local, ssh, docker, client, claudePlan, commandUsage, grokbotRoutine,
+  hashicorpVault, onePassword, bitwarden,
 ];

@@ -73,7 +73,7 @@ describe('a vault secret kept in a vault backend', () => {
   it('is read from HashiCorp Vault at the moment of use and delivered to the box; the hopper keeps no copy', async () => {
     await vault.write('apps/db', { password: VALUE });
     const { a, session, edit } = await boot([BACKEND(vault.addr)]);
-    expect((await edit({ action: 'set', name: 'DB_PASS', backend: 'my-vault', reference: 'apps/db#password' })).status).toBe(200);
+    expect((await edit({ action: 'set-in-backend', name: 'DB_PASS', backend: 'my-vault', reference: 'apps/db#password' })).status).toBe(200);
     expect((await edit({ action: 'save-template', name: 'db', image: 'localhost/box-db:1', secrets: ['DB_PASS'] })).status).toBe(200);
     await edit({ action: 'approve-template', name: 'db' });
 
@@ -100,7 +100,7 @@ describe('a vault secret kept in a vault backend', () => {
   it('is optional: with no backend the hopper starts, its own secrets are delivered, and one kept in a backend that is gone is refused', async () => {
     await vault.write('apps/db', { password: VALUE });
     const first = await boot([BACKEND(vault.addr)]);
-    await first.edit({ action: 'set', name: 'DB_PASS', backend: 'my-vault', reference: 'apps/db#password' });
+    await first.edit({ action: 'set-in-backend', name: 'DB_PASS', backend: 'my-vault', reference: 'apps/db#password' });
     await first.edit({ action: 'set', name: 'LOCAL_KEY', value: LOCAL });
     await first.edit({ action: 'save-template', name: 'db', image: 'localhost/box-db:1', secrets: ['DB_PASS', 'LOCAL_KEY'] });
     await first.edit({ action: 'approve-template', name: 'db' });
@@ -121,7 +121,7 @@ describe('a vault secret kept in a vault backend', () => {
 
   it('a backend that cannot be read refuses the ask, saying why, and never answers a value', async () => {
     const { a, session, edit } = await boot([BACKEND(vault.addr)]);
-    await edit({ action: 'set', name: 'MISSING', backend: 'my-vault', reference: 'apps/nothing-here#password' });
+    await edit({ action: 'set-in-backend', name: 'MISSING', backend: 'my-vault', reference: 'apps/nothing-here#password' });
     await edit({ action: 'save-template', name: 'db', image: 'localhost/box-db:1', secrets: ['MISSING'] });
     await edit({ action: 'approve-template', name: 'db' });
     const dir = await box.join(a, session, 'hopper-sandbox-db', 'db');
@@ -133,10 +133,10 @@ describe('a vault secret kept in a vault backend', () => {
 
   it('a secret cannot point at a backend the hopper does not have, or at a reference the backend cannot read', async () => {
     const { edit } = await boot([BACKEND(vault.addr)]);
-    const none = await edit({ action: 'set', name: 'X', backend: 'other', reference: 'apps/db#password' });
+    const none = await edit({ action: 'set-in-backend', name: 'X', backend: 'other', reference: 'apps/db#password' });
     expect(none.status).toBe(400);
     expect(JSON.stringify(none.body)).toMatch(/no vault backend other/);
-    const bad = await edit({ action: 'set', name: 'X', backend: 'my-vault', reference: 'apps/db' });
+    const bad = await edit({ action: 'set-in-backend', name: 'X', backend: 'my-vault', reference: 'apps/db' });
     expect(bad.status).toBe(400);
     expect(JSON.stringify(bad.body)).toMatch(/path#key/);
     const both = await edit({ action: 'set', name: 'X', backend: 'my-vault', reference: 'apps/db#password', value: 'v' });

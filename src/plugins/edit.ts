@@ -39,12 +39,13 @@ const SECTIONS: Record<Role, { key: string; many: boolean }> = {
   'machine-source': { key: 'machines', many: true },
   'usage-source': { key: 'usageSources', many: true },
   notifier: { key: 'notifiers', many: true },
+  'vault-backend': { key: 'vaultBackends', many: true },
 };
 
 /** What the plugins config (or the built-in instances) names now, section by section. */
 export interface Configured {
   router?: InstanceSpec; queueSorter: InstanceSpec; escalationLevels: InstanceSpec[]; executors: InstanceSpec[];
-  jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[];
+  jobSources: InstanceSpec[]; machines: InstanceSpec[]; usageSources: InstanceSpec[]; notifiers: InstanceSpec[]; vaultBackends: InstanceSpec[];
   /** `routing`, in order; absent: none. */
   routing: RoutingRule[];
   /** `machineDefaults`; absent: none set. */
@@ -64,6 +65,7 @@ export function configuredInstances(c: Configured, detectedRouter: InstanceSpec)
     ...c.machines.map((instance) => ({ role: 'machine-source' as const, instance })),
     ...c.usageSources.map((instance) => ({ role: 'usage-source' as const, instance })),
     ...c.notifiers.map((instance) => ({ role: 'notifier' as const, instance })),
+    ...c.vaultBackends.map((instance) => ({ role: 'vault-backend' as const, instance })),
   ];
 }
 

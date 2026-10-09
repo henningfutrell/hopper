@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The Vault can now keep a secret in HashiCorp Vault, 1Password or Bitwarden: add one in Plugins, then point a secret at where it is there. The hopper reads it each time a job asks and keeps no copy. You can also run HashiCorp Vault beside the hopper in the same container setup; nothing needs it.
 - Jobs in a sandbox box can now use the Vault: a job asks for a secret at the moment a tool needs it — kubectl, git or the AWS tools can ask by themselves — and gets it only if the box's template is approved for it, and only while the job runs. The secret is never put in the box's environment or written to its disk, and the Vault shows when each secret was last used and by which job.
 - The Vault now has templates: an image and the secrets its boxes may use. A sandbox box you add from Machines can be one of a template, and it gets that template's secrets only once you approve the template, and again whenever you add a secret or change its image.
 - Settings → Access: before a job is given a credential, the hopper now asks OpenFGA whether the job's template is approved for that operation on that asset. See each template's approvals and why they allow what they do, revoke one so the next request is denied, try a check, and see every decision. When OpenFGA cannot be asked, nothing is given, and the page says why.

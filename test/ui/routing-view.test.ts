@@ -18,7 +18,7 @@ const PLUGINS = {
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   queueSorter: { instance: { name: 'priority', plugin: 'priority' }, detection: { status: 'available' }, active: 'priority', fallback: false },
   escalationLevels: [],
-  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
+  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] }, vaultBackends: { instances: [] },
   plugins: [
     { id: 'pass-through', role: 'router', describe: 'admits every job', builtin: true, detection: { status: 'available' }, options: empty },
     { id: 'gate-router', role: 'router', describe: 'gate router', builtin: true, detection: { status: 'unavailable', reason: 'no grok-bot-jev checkout' }, options: empty },

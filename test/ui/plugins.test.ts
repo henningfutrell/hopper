@@ -72,6 +72,7 @@ describe('instanceState', () => {
     machines: { instances: [{ instance: { name: 'local', plugin: 'local' }, detection: { status: 'available' }, active: 'local' }] },
     usageSources: { instances: [] },
     notifiers: { instances: [] },
+    vaultBackends: { instances: [] },
   } as unknown as PluginsReport;
 
   it('a live role: active, or the fallback answering', () => {

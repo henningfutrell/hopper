@@ -15,7 +15,7 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
   or select it (a one-instance role), then set its options in the instance form. Every option is
   edited there, command-bearing ones too. An instance is `{ "name": <instance>, "plugin": <id>,
   "options": { … } }` in the role's section (`router`, `queueSorter`, `escalationLevels`,
-  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`). Every change applies when it is
+  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`, `vaultBackends`). Every change applies when it is
   saved, without a restart; the escalation levels are a list in order, lowest first.
 
 ## From the plugin store
@@ -103,7 +103,7 @@ source and an escalation level also get `client(machine)`, how to reach a client
 
 `detect(sys, options)` → `available` | `unavailable` + reason | `needs-setup` + reason + the command
 to run. Use the kit (`which`, `version`, `succeeds`, `output`, `exists`, `readable`, `pythonImports`, `env`).
-Cheap: never a paid model call, never a GUI program (`which` only). Only a job source or a notifier
+Cheap: never a paid model call, never a GUI program (`which` only). Only a job source, a notifier or a vault backend
 that needs setup still runs; any other role's must be `available`.
 
 ## Option choices

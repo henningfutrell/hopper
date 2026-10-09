@@ -15,7 +15,7 @@ import type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  Template, TemplateView, VaultSecret, VaultView,
+  Template, TemplateView, VaultBackendView, VaultSecret, VaultView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind,
 } from '../../../src/domain/types.ts';
 
@@ -34,7 +34,7 @@ export type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  Template, TemplateView, VaultSecret, VaultView,
+  Template, TemplateView, VaultBackendView, VaultSecret, VaultView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind,
 };
 
