@@ -303,7 +303,7 @@ describe('hopper join-code (issue #308)', () => {
     try {
       const hash = createHash('sha256').update(code).digest('hex');
       const now = new Date().toISOString();
-      expect(s.joinCodes.take(hash, now)).toBeDefined();
+      expect(s.joinCodes.take(hash, now)).toMatchObject({ userId: expect.any(String) });
       expect(s.joinCodes.take(hash, now)).toBeUndefined();
     } finally { s.close(); }
   });

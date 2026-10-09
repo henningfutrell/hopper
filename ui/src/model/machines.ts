@@ -273,7 +273,7 @@ export const BOX_AGENTS = ['claude'] as const;
 export type BoxAgent = (typeof BOX_AGENTS)[number];
 
 /** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker. */
-export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; engine: 'podman' | 'docker' };
+export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; engine: 'podman' | 'docker'; template?: { name: string; image: string } };
 
 /** Where a box reaches the hopper from, and the image it runs. */
 export interface BoxPlace { boxUrl: string; boxNetwork: string; boxImage: string }
@@ -299,10 +299,12 @@ export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
  */
 export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
   if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
-  const box = `hopper-sandbox-${choice.agent}`;
+  // A box of a template (issue #558) is named after it and runs its image.
+  const box = `hopper-sandbox-${choice.template?.name ?? choice.agent}`;
+  const image = choice.template?.image ?? `${o.join.boxImage}:box-${choice.agent}`;
   return [
     `${choice.engine} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
     '--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp',
-    `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${o.join.boxImage}:box-${choice.agent}`,
+    `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${image}`,
   ].join(' ');
 }

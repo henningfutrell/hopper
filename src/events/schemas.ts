@@ -263,6 +263,9 @@ export const EVENT_SCHEMAS = {
   // The vault (issue #558): names and people; never a value.
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
+  'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
+  'template.removed': strict({ template: z.string(), by: z.string() }),
+  'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),

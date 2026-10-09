@@ -3,7 +3,8 @@
 // appends a value: a set or a removal is an event naming the secret and who did it, never what it holds.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
-import { VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type VaultView } from '../domain/vault.ts';
+import { TEMPLATE_NAME } from '../domain/access.ts';
+import { templateView, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type VaultView } from '../domain/vault.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
 
@@ -17,6 +18,13 @@ export interface VaultService {
   /** Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. */
   set(s: { name: string; scope?: string; value: string }, by: string): VaultResult;
   remove(name: string, by: string): VaultResult;
+  /** Saves a template: its image and scope. A widened scope or a new image waits for a person's approval. */
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[] }, by: string): VaultResult;
+  removeTemplate(name: string, by: string): VaultResult;
+  /** A person approves a template as it is now: its image and its whole scope. */
+  approveTemplate(name: string, by: string): VaultResult;
+  /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
+  scopeOf(machine: string): { template?: string; secrets: string[] };
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
@@ -29,13 +37,15 @@ export function createVaultService(o: {
   clock: Clock;
   idGen: () => string;
   logger: { warn(line: string): void };
+  /** The template a machine joined as (its join line named it); undefined for a machine of none. */
+  templateOf?: (machine: string) => string | undefined;
 }): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
 
   return {
-    view: () => ({ secrets: vault.list(), ...(sealer ? {} : { problem: unavailable() }) }),
+    view: () => ({ secrets: vault.list(), templates: vault.templates().map(templateView), ...(sealer ? {} : { problem: unavailable() }) }),
 
     set({ name, scope, value }, by) {
       if (!VAULT_SECRET_NAME.test(name)) return fail('invalid', 'name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
@@ -67,6 +77,44 @@ export function createVaultService(o: {
       });
     },
 
+    saveTemplate({ name, image, secrets }, by) {
+      if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
+      if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
+      const scope = [...new Set(secrets)];
+      const missing = scope.filter((n) => !vault.get(n));
+      if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
+      return o.store.tx(() => {
+        const was = vault.template(name);
+        vault.saveTemplate({ name, image: image.trim(), secrets: scope, savedBy: by, savedAt: o.clock.now().toISOString(), ...(was?.approval ? { approval: was.approval } : {}) });
+        events.append({ type: 'template.saved', data: { template: name, image: image.trim(), secrets: scope, by } });
+        return { ok: true } as const;
+      });
+    },
+
+    removeTemplate(name, by) {
+      return o.store.tx(() => {
+        if (!vault.removeTemplate(name)) return fail('not_found', `no template ${name}`);
+        events.append({ type: 'template.removed', data: { template: name, by } });
+        return { ok: true } as const;
+      });
+    },
+
+    approveTemplate(name, by) {
+      return o.store.tx(() => {
+        const t = vault.template(name);
+        if (!t) return fail('not_found', `no template ${name}`);
+        vault.saveTemplate({ ...t, approval: { image: t.image, secrets: [...t.secrets], by, at: o.clock.now().toISOString() } });
+        events.append({ type: 'vault.approved', data: { template: name, image: t.image, secrets: t.secrets, by } });
+        return { ok: true } as const;
+      });
+    },
+
+    scopeOf(machine) {
+      const name = o.templateOf?.(machine);
+      const t = name === undefined ? undefined : vault.template(name);
+      return { ...(name !== undefined ? { template: name } : {}), secrets: t ? templateView(t).gives : [] };
+    },
+
     resealAll() {
       if (!sealer) return 0;
       let n = 0;
@@ -86,7 +134,7 @@ export function createVaultService(o: {
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
-export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void } }): VaultService {
+export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; templateOf: (machine: string) => string | undefined }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
   if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);

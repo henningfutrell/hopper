@@ -5,9 +5,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { post } from '@/lib/api';
+import { get, post } from '@/lib/api';
 import { BOX_AGENTS, boxPlace, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
-import type { MachinesConfig } from '@/model/wire';
+import type { TemplateView, MachinesConfig, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 
 interface Minted { code: string; expiresAt: string }
@@ -29,11 +29,15 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   const [engine, setEngine] = useState<'podman' | 'docker'>('podman');
   const [agent, setAgent] = useState<BoxAgent>(BOX_AGENTS[0]);
   const [minted, setMinted] = useState<Minted | null>(null);
+  // A sandbox box may be one of a template (issue #558): its line names the template and runs its image.
+  const [templates, setTemplates] = useState<TemplateView[]>([]);
+  const [template, setTemplate] = useState<TemplateView | null>(null);
+  useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
   // The machines there were when the line was shown: the first new one online is the one that joined.
   const before = useRef<Set<string> | null>(null);
-  const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, engine };
+  const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, engine, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
   const line = minted ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)) }) : null;
 
   useEffect(() => {
@@ -49,7 +53,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
     setBusy(true);
     try {
       before.current = new Set(machines.map((m) => m.id));
-      setMinted(await post<Minted>('/ui/api/machines/join'));
+      setMinted(await post<Minted>('/ui/api/machines/join', kind === 'box' && template ? { template: template.name } : {}));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -74,6 +78,14 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           {(['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={engine === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setEngine(e)}>{e}</Button>)}
         </div>
       )}
+      {kind === 'box' && templates.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">template</span>
+          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(null)}>none</Button>
+          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
+          {template && <span className="text-muted-foreground">its boxes get {template.gives.join(', ') || 'nothing yet: approve the template in Settings → Vault'}</span>}
+        </div>
+      )}
       {!line && (
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" size="lg" disabled={busy} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
@@ -91,7 +103,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           </div>
           <span className="text-muted-foreground">
             The code in it works once, until {time(minted.expiresAt)}. The machine shows here, online, when it joins.
-            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{engine} exec -it hopper-sandbox-{agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
+            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{engine} exec -it hopper-sandbox-{template?.name ?? agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Waiting for it to join…</span>

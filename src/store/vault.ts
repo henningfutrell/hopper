@@ -1,7 +1,7 @@
 // The vault's table (issue #558): a secret's sealed value in its own column, never read into its metadata (the body).
 // Only `sealed` answers a value, and only sealed.
 import type { VaultRepository } from '../domain/ports.ts';
-import type { VaultSecret } from '../domain/vault.ts';
+import type { Template, VaultSecret } from '../domain/vault.ts';
 import { parse, type StoreContext } from './context.ts';
 
 export function createVaultRepository(c: StoreContext): VaultRepository {
@@ -23,5 +23,14 @@ export function createVaultRepository(c: StoreContext): VaultRepository {
       return (r?.sealed as string | undefined) ?? undefined;
     },
     remove: (name) => c.db.run('DELETE FROM vault_secrets WHERE name = ?', name).changes > 0,
+    templates: () => c.db.all('SELECT body FROM templates ORDER BY name').map((r) => parse<Template>(r.body)),
+    template(name) {
+      const r = c.db.get('SELECT body FROM templates WHERE name = ?', name);
+      return r ? parse<Template>(r.body) : undefined;
+    },
+    saveTemplate(t) {
+      c.db.run('INSERT INTO templates (name, body) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET body = EXCLUDED.body', t.name, JSON.stringify(t));
+    },
+    removeTemplate: (name) => c.db.run('DELETE FROM templates WHERE name = ?', name).changes > 0,
   };
 }

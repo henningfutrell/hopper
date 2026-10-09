@@ -182,6 +182,8 @@ const MIGRATIONS: readonly Migration[] = [
   CREATE TABLE IF NOT EXISTS access_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS access_decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, at TEXT NOT NULL, body TEXT NOT NULL);
   `,
+  // 30: a join code may name the template the machine joins as (issue #558). A column only: the build before runs on it.
+  'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS template TEXT;',
 ];
 
 /**
