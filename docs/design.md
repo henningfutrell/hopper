@@ -60,6 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -9305,7 +9306,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`) | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`) | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9318,12 +9319,10 @@ Owner constraint (issue #558): a key service (a cloud KMS, or a local one) is al
 the vault needs nothing outside the hopper to start, and a user hosting everything themselves has a vault that works.
 So the vault reaches its key through one small seam, the **key provider** — the `Sealer` interface of
 `src/secrets/sealer.ts` (`seal(value, context)`, `open(sealed, context)`, `current(sealed)`, `keyId`) — and
-`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, the
-only one built. A KMS mode would be another `Sealer`: it would wrap each value's key with the key service (or have it
-encrypt), record its own key id, and plug in where `sealerOf` is chosen; nothing in the vault, the store or the routes
-changes, and a value it cannot open is `SecretUnreadable` as now. Not built: it would add a cloud SDK or a network
-service, and the vault's purpose is getting secrets to boxes, not key management. `test/vault/key-seam.test.ts` keeps
-the vault working behind any key provider.
+`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, used
+when no KMS is named. Since issue #586 a **KMS** can stand behind it, optional ("The KMS: an optional key provider" below); nothing
+in the vault, the store or the routes changed for it, and a value it cannot open is `SecretUnreadable` as before.
+`test/vault/key-seam.test.ts` keeps the vault working behind any key provider.
 
 ### Templates (slice 2)
 
@@ -9409,3 +9408,65 @@ the template is approved, then `get` and `kube`; a secret outside the scope, an 
 give, a computer of no template and an ask not signed by the machine refused; the value in no event, log line or file
 of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
 `test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.
+
+### The KMS: an optional key provider (issue #586, 2026-10-09)
+
+Owner rule (issue #586): extra compose services are allowed; nothing outside the hopper's compose stack is required;
+the KMS is always optional. So the KMS is a second key provider, chosen by one runtime setting, never a dependency.
+
+- **Envelope encryption, a data key per user.** With `HOPPER_KMS_URL` set, the vault asks the KMS once for a data key
+  (`GenerateDataKey`, AES-256, bound to the encryption context `hopper: vault data key v1`). It keeps only the wrapped
+  form, in the user schema's `config` table as the row `vault-data-key` (no config record names it, so no route or CLI
+  reads it). At each start the KMS opens it (`Decrypt`). The vault's sealer is then the usual one (`src/secrets/sealer.ts`)
+  under the data key: each value still gets its own key from a salt, AES-256-GCM, bound to `vault:<id>/value`. The data
+  key's id is its fingerprint, so a sealed value says which key it needs.
+- **Turning it on.** The token keys stay as previous keys, so a vault secret sealed before opens, and is sealed again
+  under the data key when the vault opens (`resealAll`). Two starts at once: the first to keep its data key wins
+  (`INSERT … ON CONFLICT DO NOTHING`), the other opens that one.
+- **Fails closed.** A KMS that gives no data key (down, refused, a changed wrapped key) leaves the vault with no sealer
+  and a problem naming the KMS: Settings → Vault says it, nothing is stored, nothing delivered. In the hopper, a restart
+  asks again; the vault container asks again at the next request.
+- **Turning it off** is not built: a value sealed under the data key does not open without the KMS, and is said so.
+  Set each secret again. A fold of users (issue #265) keeps the kept user's data key; the folded user's secrets sealed
+  under another data key are set again.
+- **The KMS built**: local-kms (`docker.io/nsmithuk/local-kms`, AWS KMS's API, keys in its `/data` volume), the
+  compose profile `kms`. The key is `HOPPER_KMS_KEY` (default `alias/hopper-vault`), made with its alias at the first
+  ask when the KMS has none. The client is AWS's own (`@aws-sdk/client-kms`), with fixed placeholder credentials:
+  local-kms checks none. A KMS that checks credentials (AWS) is not supported yet. Residual risk: local-kms keeps its key
+  material in clear in its volume; it parts the key from the database (a dump holds no usable value), not from the host.
+
+Tests: `test/vault/kms-keys.test.ts` (a fake KMS at the `KeyService` port: wrap once, open again, seal again, fail
+closed), `test/vault/local-kms.test.ts` (the adapter against a real local-kms, when `HOPPER_TEST_KMS_URL` names one).
+
+### The vault in a container of its own (issue #586, 2026-10-09)
+
+The vault can run as a separate compose container, `vault` (profile `vault`): the hopper's image, `node
+src/vault/main.ts`. With `HOPPER_VAULT_URL` set, the hopper builds no vault of its own and holds none of its keys: it
+asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopper, as before.
+
+- **The same vault.** The server (`src/vault/server.ts`) opens the user's store and runs the same vault service per
+  request: the write-only rule, the template's approval, and every check of a delivery stay in the vault. What only the
+  hopper knows travels with an ask: the client target whose link signed it (name, machine key, template) and whether the
+  job's token is one the user's link key gives (issue #563). The vault decides the rest — the job at work, on that
+  machine, the secret in the template's approved scope — and opens the value.
+- **The wire** (`src/vault/wire.ts`): `POST /vault/<op>` — `view`, `set`, `remove`, `save-template`, `remove-template`,
+  `approve-template`, `deliver` — JSON, with the preshared key `HOPPER_VAULT_KEY` as a bearer token (compared in constant
+  time; the postgres service makes it on first start, `vault_key`, uid 1000). The answer is `{ result, events }`. On the
+  compose network only: no host port. Residual risk: plain HTTP on that network, as for OpenFGA; a value crosses it when
+  it is set and when it is delivered.
+- **The hopper keeps the event log.** The vault answers the events it would append (`vault.secret_set`,
+  `vault.delivered`, …); the hopper appends them, so webhooks and the UI see them as before. A vault edit and its event
+  are no longer one transaction.
+- **Not running, or the wrong key**: the view carries the problem ("not reachable", "refused the hopper"), an edit
+  answers 503, an ask is refused and recorded (`vault.refused`). Nothing else in the hopper waits on the vault.
+- **Its key provider** is chosen in the vault container: the token key (mounted read-only from the `secrets` volume), or
+  the KMS's data key with `HOPPER_KMS_URL`. The hopper's token key still seals what the hopper owns itself (webhook
+  signing secrets, the GitHub connection's tokens).
+- **Migrations stay the hopper's.** The vault server opens the store at its first request, after the hopper has
+  migrated it.
+
+Tests: `test/integration/vault-container.test.ts` (the hopper with no token key, the vault server with it: set, sealed
+under the vault's key, events in the hopper's log; a wrong key; no vault running and the hopper works),
+`test/integration/vault-delivery.test.ts` (a box's job gets a secret through the vault container),
+`test/scripts/compose.test.ts` (the profiles).
+
