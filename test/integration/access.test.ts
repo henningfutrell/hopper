@@ -19,6 +19,33 @@ afterEach(async () => {
 
 const CLUSTER_X = { kind: 'cluster', name: 'x' } as const;
 
+/** The default model #559 shipped, before the requester relations (issue #581). */
+const MODEL_559 = `model
+  schema 1.1
+
+type job
+
+type template
+  relations
+    define running: [job]
+
+type operation_profile
+  relations
+    define approved_for: [template]
+    define running_job: running from approved_for
+
+type asset
+  relations
+    define grants_read: [operation_profile]
+    define grants_write: [operation_profile]
+    define grants_sync: [operation_profile]
+    define grants_apply: [operation_profile]
+    define can_read: running_job from grants_read
+    define can_write: running_job from grants_write
+    define can_sync: running_job from grants_sync
+    define can_apply: running_job from grants_apply
+`;
+
 async function boot(o: { server?: FakeAuthorizationServer | null; dbPath?: string } = {}): Promise<{ a: TestApp; server: FakeAuthorizationServer; token: string }> {
   let dbPath = o.dbPath;
   if (!dbPath) {
@@ -89,22 +116,23 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(after.body.reason).toMatch(/not approved to read on cluster x/);
   });
 
-  it('gives a running job of an approved template its read, and nothing once the job is no longer live', async () => {
+  it('denies a running job on a machine of no template, and a job that is no longer live', async () => {
     const { a, token } = await boot();
     await approve(a, token);
     const job = await a.pull({ op: 'sleep', ms: 1500 });
     await a.waitForStatus(job.id, 'running');
-    const request = { job: { userId: 'admin', jobId: job.id }, template: 'kubectl-diag', operation: 'read', asset: CLUSTER_X } as const;
+    const request = { requester: { kind: 'job', userId: 'admin', jobId: job.id }, operation: 'read', asset: CLUSTER_X } as const;
 
+    // A job reaches a template only through a box of it (issue #581): this machine is none.
     const live: MintDecision = await a.app.access.decideMint(request);
-    expect(live.allowed).toBe(true);
-    expect(live.path?.[0]).toEqual({ subject: `job:admin/${job.id}`, relation: 'running', object: 'template:kubectl-diag' });
+    expect(live.allowed).toBe(false);
+    expect(live.reason).toMatch(new RegExp(`job ${job.id} is not approved to read on cluster x`));
 
     await a.waitForStatus(job.id, 'finished');
     const ended = await a.app.access.decideMint(request);
     expect(ended.allowed).toBe(false);
     expect(ended.reason).toMatch(/is not live \(finished\)/);
-    expect((await view(a, token)).decisions[0]).toMatchObject({ job: { userId: 'admin', jobId: job.id }, allowed: false });
+    expect((await view(a, token)).decisions[0]).toMatchObject({ requester: { kind: 'job', userId: 'admin', jobId: job.id }, allowed: false });
   });
 
   it('fails closed while OpenFGA is unreachable, and the access view says why', async () => {
@@ -156,7 +184,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect(before.model.dsl).toBe(DEFAULT_ACCESS_MODEL);
 
     // Reading is allowed to anything approved for write on the same asset too: a model change, no restart.
-    const widened = DEFAULT_ACCESS_MODEL.replace('define can_read: running_job from grants_read', 'define can_read: running_job from grants_read or running_job from grants_write');
+    const widened = DEFAULT_ACCESS_MODEL.replace('define can_read: requester from grants_read', 'define can_read: requester from grants_read or requester from grants_write');
     expect(widened).not.toBe(DEFAULT_ACCESS_MODEL);
     await edit(a, token, { action: 'revoke', approval: before.templates[0]!.approvals[0]!.id });
     await approve(a, token, 'write');
@@ -202,6 +230,36 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect((await check(second.a, second.token, 'write')).body.allowed).toBe(true);
     await second.a.app.access.sync();
     expect((await check(second.a, second.token, 'write')).body.allowed).toBe(false);
+  });
+
+  it('moves a store on the default model of #559 to this default at start, and fails closed on an edited model that lacks a requester relation', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const first = await boot({ dbPath: db.dbPath });
+    await approve(first.a, first.token);
+    const at = new Date().toISOString();
+    first.a.app.instance.access.addModel(MODEL_559, 'hopper', at);
+    await first.a.stop();
+    apps.splice(apps.indexOf(first.a), 1);
+
+    // Written by the hopper and never edited: the new default, a new version, live with no step by anyone.
+    const second = await boot({ dbPath: db.dbPath });
+    expect((await view(second.a, second.token)).model).toMatchObject({ dsl: DEFAULT_ACCESS_MODEL, writtenBy: 'hopper' });
+    expect((await check(second.a, second.token, 'read')).body.allowed).toBe(true);
+    second.a.app.instance.access.addModel(MODEL_559, 'someone', at);
+    await second.a.stop();
+    apps.splice(apps.indexOf(second.a), 1);
+
+    // Edited by a person: kept as it is, and nothing is allowed until a model with the requester relations is saved.
+    const third = await boot({ dbPath: db.dbPath });
+    const v = await view(third.a, third.token);
+    expect(v.model).toMatchObject({ dsl: MODEL_559, writtenBy: 'someone' });
+    const d = await check(third.a, third.token, 'read');
+    expect(d.body.allowed).toBe(false);
+    expect(d.body.reason).toMatch(/the access model lacks what the hopper writes or asks: .*job#owns/);
+    expect((await view(third.a, third.token)).status).toMatchObject({ state: 'unreachable', why: expect.stringMatching(/Settings → Access/) });
+    expect((await edit(third.a, third.token, { action: 'model', dsl: DEFAULT_ACCESS_MODEL, version: v.model.version })).status).toBe(200);
+    expect((await check(third.a, third.token, 'read')).body.allowed).toBe(true);
   });
 
   it('is the hopper admin\'s alone: another user reads and changes nothing', async () => {

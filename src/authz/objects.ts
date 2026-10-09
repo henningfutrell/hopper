@@ -1,9 +1,35 @@
-// The access model's objects and tuples (issue #559), pure: how a template, a job, an operation profile and an asset
-// are named in OpenFGA, the two tuples an approval is, and the relationship path that explains an allow.
-import { OPERATIONS, ASSET_KINDS, type Operation, type OperationProfile, type RelationshipTuple, type Asset, type AssetKind } from '../domain/types.ts';
+// The access model's objects and tuples (issues #559, #581), pure: how a requester, a template, an operation profile
+// and an asset are named in OpenFGA, the two tuples an approval is, the tuples of who is live, and the relationship path
+// that explains an allow.
+import {
+  OPERATIONS, ASSET_KINDS, type LiveRequesters, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+} from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
+export const userObject = (userId: string): string => `user:${userId}`;
 export const jobObject = (job: { userId: string; jobId: string }): string => `job:${job.userId}/${job.jobId}`;
+/** OpenFGA takes no space, `:` or `#` in an id, and a machine's name may hold one: it is escaped. */
+export const machineObject = (m: { userId: string; machine: string }): string => `machine:${m.userId}/${encodeURIComponent(m.machine)}`;
+
+export function requesterObject(r: Requester): string {
+  if (r.kind === 'job') return jobObject(r);
+  if (r.kind === 'machine') return machineObject(r);
+  return userObject(r.userId);
+}
+
+/** Who is live, as tuples: a user owns each live job, a job runs on its machine, a box is an instance of its template. */
+export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTuple[] {
+  return live.flatMap(({ userId, jobs, boxes }) => [
+    ...jobs.flatMap(({ jobId, machine }) => {
+      const job = jobObject({ userId, jobId });
+      return [
+        { subject: userObject(userId), relation: 'owns', object: job },
+        ...(machine === undefined ? [] : [{ subject: job, relation: 'runs_on', object: machineObject({ userId, machine }) }]),
+      ];
+    }),
+    ...boxes.map(({ machine, template }) => ({ subject: machineObject({ userId, machine }), relation: 'instance_of', object: templateObject(template) })),
+  ]);
+}
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 
 /** `read/cluster/x`: the operation, then the asset. */
@@ -31,17 +57,33 @@ export function approvalTuples(template: string, p: OperationProfile): { grant: 
   };
 }
 
-/** The tuple a job's check adds while it is live: the job is running from its template. */
+/** The tuple a check tried in Settings → Access adds for its made-up job: the job is running from the template. */
 export const runningTuple = (job: string, template: string): RelationshipTuple => ({ subject: job, relation: 'running', object: templateObject(template) });
 
 const same = (a: RelationshipTuple, b: RelationshipTuple) => a.subject === b.subject && a.relation === b.relation && a.object === b.object;
+/** The steps from a requester to its template, as the default model reads them. */
+const TOWARD_TEMPLATE = new Set(['owns', 'runs_on', 'instance_of', 'running']);
 
 /**
- * The path from the job to the asset through the approval rows, when the live tuples hold it; undefined when they do
- * not (a model edit allowed it another way): the path is the hopper's reading of its own rows, not OpenFGA's.
+ * The path from the requester (a job's owner first) to the asset through the tuples given — who is live, and the approval rows —, when they
+ * hold one; undefined when they do not (a model edit allowed it another way): the path is the hopper's reading of its
+ * own rows, not OpenFGA's.
  */
-export function relationshipPath(live: readonly RelationshipTuple[], job: string, template: string, p: OperationProfile): RelationshipTuple[] | undefined {
-  const { grant, approval } = approvalTuples(template, p);
-  if (!live.some((t) => same(t, grant)) || !live.some((t) => same(t, approval))) return undefined;
-  return [runningTuple(job, template), approval, grant];
+export function relationshipPath(live: readonly RelationshipTuple[], requester: string, p: OperationProfile): RelationshipTuple[] | undefined {
+  const walk = (at: string, seen: Set<string>): RelationshipTuple[] | undefined => {
+    if (at.startsWith('template:')) {
+      const { grant, approval } = approvalTuples(at.slice('template:'.length), p);
+      return live.some((t) => same(t, grant)) && live.some((t) => same(t, approval)) ? [approval, grant] : undefined;
+    }
+    for (const step of live) {
+      if (step.subject !== at || !TOWARD_TEMPLATE.has(step.relation) || seen.has(step.object)) continue;
+      const rest = walk(step.object, new Set([...seen, step.object]));
+      if (rest) return [step, ...rest];
+    }
+    return undefined;
+  };
+  const path = walk(requester, new Set([requester]));
+  // A job's path names whose job it is too: its owner, when the hopper wrote one.
+  const owner = requester.startsWith('job:') ? live.find((t) => t.relation === 'owns' && t.object === requester) : undefined;
+  return path && owner ? [owner, ...path] : path;
 }

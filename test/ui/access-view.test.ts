@@ -3,6 +3,8 @@
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
 // template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
 // operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.
+// Issue #581: each requester — a user, a live job, a box — is a row of the permission matrix, each asset a column, each
+// cell the operations it may do, with the path.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,6 +14,10 @@ import { chainText, tupleText } from '../../ui/src/model/access.ts';
 const read = { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' };
 const grant = { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'asset:cluster/x' };
 const running = { subject: 'job:trial/t1', relation: 'running', object: 'template:kubectl-diag' };
+const owns = { subject: 'user:admin', relation: 'owns', object: 'job:admin/j1' };
+const runsOn = { subject: 'job:admin/j1', relation: 'runs_on', object: 'machine:admin/kbox' };
+const instance = { subject: 'machine:admin/kbox', relation: 'instance_of', object: 'template:kubectl-diag' };
+const READ_X = { operation: 'read', asset: { kind: 'cluster', name: 'x' } };
 const VIEW = {
   status: { state: 'connected', syncedAt: '2026-10-09T12:00:00.000Z', storeId: 's1', modelId: 'm1' },
   model: { version: 3, dsl: 'model\n  schema 1.1\n', writtenBy: 'hopper', writtenAt: '2026-10-09T11:00:00.000Z' },
@@ -20,8 +26,14 @@ const VIEW = {
     profiles: [{ profile: { operation: 'read', asset: { kind: 'cluster', name: 'x' } }, level: 'low', approved: true }, { profile: { operation: 'write', asset: { kind: 'cluster', name: 'x' } }, level: 'high', approved: false }],
   } }],
   revoked: [],
+  requesters: [
+    { requester: { kind: 'user', userId: 'admin' }, grants: [{ profile: READ_X, path: [owns, runsOn, instance, read, grant] }] },
+    { requester: { kind: 'job', userId: 'admin', jobId: 'j1' }, template: 'kubectl-diag', machine: 'kbox', grants: [{ profile: READ_X, path: [owns, runsOn, instance, read, grant] }] },
+    { requester: { kind: 'machine', userId: 'admin', machine: 'kbox' }, template: 'kubectl-diag', grants: [{ profile: READ_X, path: [instance, read, grant] }] },
+    { requester: { kind: 'user', userId: 'bob' }, grants: [] },
+  ],
   decisions: [
-    { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', asset: { kind: 'cluster', name: 'x' }, job: { userId: 'admin', jobId: 'j1' } },
+    { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', asset: { kind: 'cluster', name: 'x' }, requester: { kind: 'job', userId: 'admin', jobId: 'j1' } },
     { id: 'd1', at: '2026-10-09T12:00:30.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] },
   ],
 };
@@ -103,6 +115,13 @@ describe('access model', () => {
     expect(tupleText({ subject: 'a:b', relation: 'odd', object: 'c:d' })).toBe('a:b odd c:d');
     expect(chainText([running, read, grant])).toBe('this job runs from template kubectl-diag → template kubectl-diag is approved for read on cluster x → read on cluster x grants read on cluster x');
   });
+
+  it('reads the requester relations in plain words (issue #581)', () => {
+    expect(tupleText(owns)).toBe('user admin owns job j1');
+    expect(tupleText(runsOn)).toBe('job j1 runs on machine kbox');
+    expect(tupleText(instance)).toBe('machine kbox is an instance of template kubectl-diag');
+    expect(tupleText({ subject: 'machine:admin/my%20box', relation: 'instance_of', object: 'template:t' })).toBe('machine my box is an instance of template t');
+  });
 });
 
 describe('Settings → Access', () => {
@@ -118,6 +137,21 @@ describe('Settings → Access', () => {
     expect(decisions.map((d) => d.getAttribute('data-allowed'))).toEqual(['false', 'true']);
     expect(decisions[0]!.textContent).toContain('not approved to write on cluster x');
     expect(decisions[1]!.textContent).toContain('this job runs from template kubectl-diag');
+  });
+
+  it('shows each requester as a row of the permission matrix: each asset a column, each cell what it may do, with the path (issue #581)', async () => {
+    await boot();
+    const matrix = panel()!.querySelector('[data-slot="access-matrix"]')!;
+    expect([...matrix.querySelectorAll('th[data-asset]')].map((h) => h.textContent)).toEqual(['cluster x']);
+    const rows = [...matrix.querySelectorAll('[data-requester]')];
+    expect(rows.map((r) => r.getAttribute('data-requester'))).toEqual(['user:admin', 'job:admin/j1', 'machine:admin/kbox', 'user:bob']);
+    expect(rows[1]!.textContent).toContain('job j1');
+    expect(rows[1]!.textContent).toContain('on kbox, template kubectl-diag');
+    const cell = rows[1]!.querySelector('[data-cell="cluster/x"]')!;
+    expect(cell.textContent).toBe('read');
+    expect(cell.getAttribute('title')).toBe('user admin owns job j1 → job j1 runs on machine kbox → machine kbox is an instance of template kubectl-diag → template kubectl-diag is approved for read on cluster x → read on cluster x grants read on cluster x');
+    expect(rows[3]!.querySelector('[data-cell="cluster/x"]')!.textContent).toBe('—');
+    expect(panel()!.querySelector('[data-decision="d2"]')!.textContent).toContain('job j1');
   });
 
   it('shows each template\'s blast radius and its reasons next to it, and what waits for approval (issue #584)', async () => {

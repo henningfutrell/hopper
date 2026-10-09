@@ -1,9 +1,10 @@
 // Settings → Access (issue #559): OpenFGA decides each credential a job is given. Whether OpenFGA can be asked, and
 // why not (every credential is denied meanwhile); each template's approvals, each with the relationship chain from
 // the template to the asset and Revoke (the next check is denied), and its blast radius with the reasons (issue #584);
-// a check tried for a template, an operation and a
-// asset, answered with its path; the newest decisions; and the access model, saved against the version read. The
-// instance admin's alone: anyone else is told so.
+// a check tried for a template, an operation and an asset, answered with its path; the permission matrix (issue #581):
+// each requester — a user, a live job, a box — a row, each asset a column, each cell what it may do with the path; the
+// newest decisions; and the access model, saved against the version read. The instance admin's alone: anyone else is
+// told so.
 import { KeySquare } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -17,9 +18,9 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { get, post } from '@/lib/api';
-import { chainText } from '@/model/access';
+import { chainText, requesterKey, requesterText } from '@/model/access';
 import { clock } from '@/model/format';
-import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, Operation, AssetKind } from '@/model/wire';
+import type { AccessDecisionRecord, AccessStatus, AccessView, Approval, Asset, Operation, AssetKind, RequesterRow } from '@/model/wire';
 
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
@@ -95,12 +96,66 @@ function Approvals({ view, onChanged }: { view: AccessView; onChanged: (v: Acces
   );
 }
 
+const assetKey = (a: Asset) => `${a.kind}/${a.name}`;
+
+/** Where the requester runs: a job on its machine and template, a box of its template. */
+function whereText(r: RequesterRow): string {
+  if (r.requester.kind === 'job') return r.machine ? `on ${r.machine}${r.template ? `, template ${r.template}` : ', no template'}` : 'on no machine yet';
+  return r.template ? `template ${r.template}` : '';
+}
+
+function Matrix({ view }: { view: AccessView }) {
+  // The columns: every asset an approval names.
+  const assets = [...new Map(view.templates.flatMap((t) => t.approvals.map((a) => [assetKey(a.profile.asset), a.profile.asset] as const))).values()]
+    .sort((a, b) => assetKey(a).localeCompare(assetKey(b)));
+  return (
+    <Panel title="Who may do what" icon={KeySquare} count={view.requesters.length}>
+      <div data-slot="access-matrix" className="space-y-2 text-sm">
+        <p className="text-muted-foreground">
+          Each requester now — every user, each live job, each box — and what it may do on each asset. A job reaches a template through the box it runs on; a user through their live jobs. Hover a cell for the path. The hopper's reading of its own rows: a model edit can allow more.
+        </p>
+        {assets.length === 0 ? <Empty>No template is approved for anything: no requester may do anything.</Empty> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="py-1 pr-3 font-medium">Requester</th>
+                  {assets.map((a) => <th key={assetKey(a)} data-asset={assetKey(a)} className="py-1 pr-3 font-medium whitespace-nowrap">{a.kind} {a.name}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {view.requesters.map((r) => (
+                  <tr key={requesterKey(r.requester)} data-requester={requesterKey(r.requester)} className="border-b last:border-b-0">
+                    <td className="py-1 pr-3">
+                      <div className="font-mono">{requesterText(r.requester)}</div>
+                      {whereText(r) && <div className="text-muted-foreground">{whereText(r)}</div>}
+                    </td>
+                    {assets.map((a) => {
+                      const grants = r.grants.filter((g) => assetKey(g.profile.asset) === assetKey(a));
+                      return (
+                        <td key={assetKey(a)} data-cell={assetKey(a)} className="py-1 pr-3 align-top"
+                          {...(grants.length ? { title: grants.map((g) => chainText(g.path)).join('\n') } : {})}>
+                          {grants.length ? grants.map((g) => g.profile.operation).join(', ') : '—'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
 function DecisionLine({ d }: { d: AccessDecisionRecord }) {
   return (
     <div className="space-y-0.5">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <StatusBadge status={d.allowed ? 'allowed' : 'denied'} tone={d.allowed ? 'ok' : 'bad'} />
-        <span className="font-medium">{d.template}: {d.operation} on {d.asset.kind} {d.asset.name}</span>
+        <span className="font-medium">{d.template ? `${d.template}: ` : ''}{d.operation} on {d.asset.kind} {d.asset.name}</span>
       </div>
       <div className="break-words">{d.reason}</div>
       {d.path && <div className="break-words text-muted-foreground">{chainText(d.path)}</div>}
@@ -184,13 +239,14 @@ export function Access() {
       <Panel title="Access" icon={KeySquare}>
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Before a job is given a credential, the hopper asks OpenFGA whether the job's template is approved for that operation on that
-            asset. Revoking an approval denies the next request; nothing already given is widened.
+            Before a credential is given, the hopper asks OpenFGA whether the requester — a job, a box or a user — reaches a template
+            approved for that operation on that asset. Revoking an approval denies the next request; nothing already given is widened.
           </p>
           <Status status={view.status} />
         </div>
       </Panel>
       <Approvals view={view} onChanged={setView} />
+      <Matrix view={view} />
       <Check />
       <Panel title="Recent decisions" icon={KeySquare} count={view.decisions.length} list>
         {view.decisions.length === 0 ? <Empty>no decisions yet</Empty> : (
@@ -198,7 +254,7 @@ export function Access() {
             {view.decisions.map((d) => (
               <li key={d.id} data-decision={d.id} data-allowed={String(d.allowed)} className="space-y-0.5 border-b py-2 text-xs last:border-b-0">
                 <span className="num font-mono text-muted-foreground" title={d.at}>{clock(d.at)}</span>
-                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}` : d.job ? `job ${d.job.jobId}` : ''}</span>
+                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}` : d.requester ? requesterText(d.requester) : ''}</span>
                 <DecisionLine d={d} />
               </li>
             ))}
