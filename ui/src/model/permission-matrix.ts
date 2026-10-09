@@ -1,15 +1,17 @@
 // The permission matrix (issue #559), pure: who may do what on which asset, read from GET /api/access. Rows are the
-// templates, each followed by its machines, or the live jobs; a machine or a job may do what its template is approved
-// for. Columns are the assets an approval names or a template waits on, grouped by kind. A cell holds the approved
-// operations and, apart, those that wait for approval (a template's declared profile not approved yet, issue #584).
-import type { AccessView, Approval, Asset, AssetKind, Operation, OperationProfile, TemplateRadius } from './wire.ts';
+// templates, each followed by its boxes, then the users — or the live jobs; the rows besides the templates are the
+// requesters (issue #581), each with the profiles it reaches and the path. Columns are the assets an approval names or a
+// template waits on, grouped by kind. A cell holds what the row may do, each with its path and the approval behind it,
+// and apart what the row's template waits for (a declared profile not approved yet, issue #584).
+import { requesterKey, requesterText } from './access.ts';
+import type { AccessView, Approval, Asset, AssetKind, Operation, OperationProfile, RelationshipTuple, Requester, TemplateRadius } from './wire.ts';
 
 export const ALL = 'all';
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
 
-/** `templates`: each template, then its machines; `jobs`: the live jobs. */
-export type MatrixRows = 'templates' | 'jobs';
+/** `requesters`: each template, then its boxes, then the users; `jobs`: the live jobs. */
+export type MatrixRows = 'requesters' | 'jobs';
 
 export interface MatrixFilter {
   rows: MatrixRows;
@@ -17,26 +19,29 @@ export interface MatrixFilter {
   operation: Operation | typeof ALL;
   /** Part of a template, machine, job or user name; empty: every row. */
   search: string;
-  /** Only the rows with an approved operation in a column shown. */
+  /** Only the rows that may do something in a column shown. */
   onlyWithAccess: boolean;
 }
 
 export interface MatrixRow {
-  /** `template:<name>`, `machine:<user>/<machine>`, `job:<user>/<job>`. */
+  /** `template:<name>`, else the requester's key (`user:<user>`, `job:<user>/<job>`, `machine:<user>/<machine>`). */
   key: string;
-  kind: 'template' | 'machine' | 'job';
+  kind: 'template' | Requester['kind'];
   label: string;
-  template: string;
-  user?: string;
+  requester?: Requester;
+  /** The template it is, or runs as now. */
+  template?: string;
   machine?: string;
-  job?: string;
-  status?: string;
   /** A template row's blast radius. */
   radius?: TemplateRadius;
+  /** What it may do: each operation profile with the path to it. */
+  grants: { profile: OperationProfile; path: RelationshipTuple[] }[];
 }
 
 export interface MatrixColumn { key: string; asset: Asset }
-export interface MatrixCell { approved: Approval[]; pending: OperationProfile[] }
+/** One operation the row may do on the asset: why (the path), and the approval a revoke ends, when the path names one. */
+export interface MatrixEntry { operation: Operation; path: RelationshipTuple[]; approval?: Approval }
+export interface MatrixCell { entries: MatrixEntry[]; pending: OperationProfile[] }
 export interface Matrix {
   rows: MatrixRow[];
   groups: { kind: AssetKind; columns: MatrixColumn[] }[];
@@ -45,44 +50,35 @@ export interface Matrix {
 
 export const assetKey = (a: Asset): string => `${a.kind}/${a.name}`;
 const byOperation = (a: Operation, b: Operation) => OPERATIONS.indexOf(a) - OPERATIONS.indexOf(b);
-
-/** How a row reaches its template, in words: a job runs on its machine, a machine joined as a box of the template. */
-export function rowSteps(row: MatrixRow): string[] {
-  const steps: string[] = [];
-  if (row.kind === 'job') steps.push(`job ${row.job} runs on machine ${row.machine}`);
-  if (row.kind !== 'template') steps.push(`machine ${row.machine} joined as a box of template ${row.template}`);
-  return steps;
-}
+const templateOnPath = (path: readonly RelationshipTuple[]): string | undefined =>
+  path.find((t) => t.relation === 'approved_for')?.subject.replace(/^template:/, '');
 
 function allRows(view: AccessView, rows: MatrixRows): MatrixRow[] {
-  if (rows === 'jobs') {
-    return view.holders.jobs.map((j) => ({ key: `job:${j.user}/${j.job}`, kind: 'job', label: `job ${j.job}`, template: j.template, user: j.user, machine: j.machine, job: j.job, status: j.status }));
-  }
-  const names = [...new Set([...view.templates.map((t) => t.template), ...view.holders.machines.map((m) => m.template)])].sort();
-  return names.flatMap((template): MatrixRow[] => {
-    const radius = view.templates.find((t) => t.template === template)?.radius;
-    return [
-      { key: `template:${template}`, kind: 'template', label: template, template, ...(radius ? { radius } : {}) },
-      ...view.holders.machines.filter((m) => m.template === template)
-        .map((m): MatrixRow => ({ key: `machine:${m.user}/${m.machine}`, kind: 'machine', label: m.machine, template, user: m.user, machine: m.machine })),
-    ];
+  const of = (r: AccessView['requesters'][number]): MatrixRow => ({
+    key: requesterKey(r.requester), kind: r.requester.kind, label: requesterText(r.requester), requester: r.requester,
+    ...(r.template === undefined ? {} : { template: r.template }), ...(r.machine === undefined ? {} : { machine: r.machine }), grants: r.grants,
   });
+  if (rows === 'jobs') return view.requesters.filter((r) => r.requester.kind === 'job').map(of);
+  const boxes = view.requesters.filter((r) => r.requester.kind === 'machine');
+  const names = [...new Set([...view.templates.map((t) => t.template), ...boxes.flatMap((b) => (b.template ? [b.template] : []))])].sort();
+  return [
+    ...names.flatMap((template): MatrixRow[] => {
+      const t = view.templates.find((x) => x.template === template);
+      return [
+        { key: `template:${template}`, kind: 'template', label: template, template, ...(t ? { radius: t.radius } : {}), grants: (t?.approvals ?? []).map((a) => ({ profile: a.profile, path: a.chain })) },
+        ...boxes.filter((b) => b.template === template).map(of),
+      ];
+    }),
+    ...view.requesters.filter((r) => r.requester.kind === 'user').map(of),
+  ];
 }
 
 export function permissionMatrix(view: AccessView, f: MatrixFilter): Matrix {
   const shows = (op: Operation) => f.operation === ALL || f.operation === op;
-  const approvals = new Map<string, Approval[]>();
-  const pending = new Map<string, OperationProfile[]>();
   const assets = new Map<string, Asset>();
   for (const t of view.templates) {
-    for (const a of t.approvals.filter((x) => shows(x.profile.operation))) {
-      approvals.set(t.template, [...approvals.get(t.template) ?? [], a]);
-      assets.set(assetKey(a.profile.asset), a.profile.asset);
-    }
-    for (const p of t.radius.profiles.filter((x) => !x.approved && shows(x.profile.operation))) {
-      pending.set(t.template, [...pending.get(t.template) ?? [], p.profile]);
-      assets.set(assetKey(p.profile.asset), p.profile.asset);
-    }
+    for (const a of t.approvals) if (shows(a.profile.operation)) assets.set(assetKey(a.profile.asset), a.profile.asset);
+    for (const p of t.radius.profiles) if (!p.approved && shows(p.profile.operation)) assets.set(assetKey(p.profile.asset), p.profile.asset);
   }
   const groups = ASSET_KINDS.filter((k) => f.kind === ALL || f.kind === k).map((kind) => ({
     kind,
@@ -90,13 +86,24 @@ export function permissionMatrix(view: AccessView, f: MatrixFilter): Matrix {
   })).filter((g) => g.columns.length > 0);
   const shown = new Set(groups.flatMap((g) => g.columns.map((c) => c.key)));
 
+  const approvalOf = (path: RelationshipTuple[], p: OperationProfile): Approval | undefined => {
+    const template = templateOnPath(path);
+    return view.templates.find((t) => t.template === template)?.approvals
+      .find((a) => a.profile.operation === p.operation && assetKey(a.profile.asset) === assetKey(p.asset));
+  };
   const cell = (row: MatrixRow, column: MatrixColumn): MatrixCell => ({
-    approved: (approvals.get(row.template) ?? []).filter((a) => assetKey(a.profile.asset) === column.key).sort((a, b) => byOperation(a.profile.operation, b.profile.operation)),
-    pending: (pending.get(row.template) ?? []).filter((p) => assetKey(p.asset) === column.key).sort((a, b) => byOperation(a.operation, b.operation)),
+    entries: row.grants.filter((g) => assetKey(g.profile.asset) === column.key && shows(g.profile.operation))
+      .map((g): MatrixEntry => {
+        const approval = approvalOf(g.path, g.profile);
+        return { operation: g.profile.operation, path: g.path, ...(approval ? { approval } : {}) };
+      }).sort((a, b) => byOperation(a.operation, b.operation)),
+    pending: (view.templates.find((t) => t.template === row.template)?.radius.profiles ?? [])
+      .filter((p) => !p.approved && assetKey(p.profile.asset) === column.key && shows(p.profile.operation))
+      .map((p) => p.profile).sort((a, b) => byOperation(a.operation, b.operation)),
   });
   const needle = f.search.trim().toLowerCase();
   const rows = allRows(view, f.rows)
-    .filter((r) => needle === '' || [r.label, r.template, r.machine, r.job, r.user].some((s) => s?.toLowerCase().includes(needle)))
-    .filter((r) => !f.onlyWithAccess || (approvals.get(r.template) ?? []).some((a) => shown.has(assetKey(a.profile.asset))));
+    .filter((r) => needle === '' || [r.label, r.template, r.machine, r.requester?.userId].some((s) => s?.toLowerCase().includes(needle)))
+    .filter((r) => !f.onlyWithAccess || r.grants.some((g) => shows(g.profile.operation) && shown.has(assetKey(g.profile.asset))));
   return { rows, groups, cell };
 }

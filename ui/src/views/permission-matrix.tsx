@@ -1,7 +1,7 @@
 // Settings → Permission matrix (issue #559): who may do what on which asset, from GET /api/access. Rows are the
-// templates (with their blast radius, issue #584) each followed by its machines, or the live jobs; columns the assets,
-// grouped by kind; each cell the approved operations, and apart those that wait for approval. A click on a cell says
-// why — how the row reaches its template, the relationship chain, who approved it and when — and revokes from there.
+// templates (with their blast radius, issue #584) each followed by its boxes, then the users — or the live jobs: the
+// requesters of issue #581. Columns are the assets, grouped by kind; each cell the approved operations, and apart those
+// that wait for approval. A click on a cell says why — the relationship path, who approved it and when — and revokes.
 // Filters keep it readable with dozens of rows and columns; headers and the first column stay in place on scroll. The
 // instance admin's alone, as Settings → Access.
 import { Grid3x3 } from 'lucide-react';
@@ -20,23 +20,30 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { chainText } from '@/model/access';
 import { clock } from '@/model/format';
-import { ALL, permissionMatrix, rowSteps, type MatrixColumn, type MatrixFilter, type MatrixRow, type MatrixRows } from '@/model/permission-matrix';
+import { ALL, permissionMatrix, type MatrixColumn, type MatrixFilter, type MatrixRow, type MatrixRows } from '@/model/permission-matrix';
 import type { AccessView, Approval, AssetKind, Operation } from '@/model/wire';
 
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
 const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
-const ROW_VIEWS: [MatrixRows, string][] = [['templates', 'Templates and machines'], ['jobs', 'Jobs']];
+const ROW_VIEWS: [MatrixRows, string][] = [['requesters', 'Templates, boxes and users'], ['jobs', 'Jobs']];
 
 const profileText = (a: Approval) => `${a.profile.operation} on ${a.profile.asset.kind} ${a.profile.asset.name}`;
+
+/** Where the row runs: a job on its machine as its template, a box of its template; and whose it is. */
+function whereText(row: MatrixRow): string {
+  const user = row.requester ? ` · ${row.requester.userId}` : '';
+  if (row.kind === 'job') return `${row.template ?? 'no template'} on ${row.machine ?? 'no machine yet'}${user}`;
+  if (row.kind === 'machine') return `box${user}`;
+  return '';
+}
 
 function RowHead({ row }: { row: MatrixRow }) {
   return (
     <div className={cn('flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5', row.kind === 'machine' && 'pl-4')}>
-      <span className="truncate font-mono">{row.label}</span>
+      <span className="truncate font-mono">{row.kind === 'template' || row.kind === 'machine' ? row.label.replace(/^machine /, '') : row.label}</span>
       {row.radius && <TemplateRadiusBadge radius={row.radius} />}
-      {row.kind !== 'template' && <span className="text-[11px] text-muted-foreground">{row.kind === 'job' ? `${row.template} on ${row.machine}` : 'machine'} · {row.user}</span>}
-      {row.status && <StatusBadge status={row.status} />}
+      {whereText(row) && <span className="text-[11px] text-muted-foreground">{whereText(row)}</span>}
     </div>
   );
 }
@@ -45,8 +52,9 @@ type Picked = { row: MatrixRow; column: MatrixColumn };
 
 function Why({ picked, view, onClose, onChanged }: { picked: Picked | undefined; view: AccessView; onClose: () => void; onChanged: (v: AccessView) => void }) {
   const [busy, setBusy] = useState(false);
-  const matrix = permissionMatrix(view, { rows: 'templates', kind: ALL, operation: ALL, search: '', onlyWithAccess: false });
-  const cell = picked ? matrix.cell(picked.row, picked.column) : undefined;
+  const matrix = permissionMatrix(view, { rows: picked?.row.kind === 'job' ? 'jobs' : 'requesters', kind: ALL, operation: ALL, search: '', onlyWithAccess: false });
+  const row = picked && matrix.rows.find((r) => r.key === picked.row.key);
+  const cell = picked ? matrix.cell(row ?? { ...picked.row, grants: [] }, picked.column) : undefined;
   const revoke = async (a: Approval) => {
     setBusy(true);
     try {
@@ -61,22 +69,21 @@ function Why({ picked, view, onClose, onChanged }: { picked: Picked | undefined;
         {picked && cell && <div data-slot="matrix-why" className="space-y-3 p-4 text-sm">
           <SheetHeader className="p-0">
             <SheetTitle className="pr-8 font-mono break-words">{picked.row.label} → {picked.column.asset.kind} {picked.column.asset.name}</SheetTitle>
-            <SheetDescription>Why this {picked.row.kind} may do each operation here, and who approved it.</SheetDescription>
+            <SheetDescription>Why this {picked.row.kind === 'machine' ? 'box' : picked.row.kind} may do each operation here, and who approved it.</SheetDescription>
           </SheetHeader>
-          {rowSteps(picked.row).length > 0 && <ul className="list-disc pl-4 text-xs text-muted-foreground">{rowSteps(picked.row).map((s) => <li key={s}>{s}</li>)}</ul>}
-          {cell.approved.length === 0 && cell.pending.length === 0 && <p className="text-muted-foreground">Nothing: template {picked.row.template} is approved for no operation on this asset.</p>}
+          {cell.entries.length === 0 && cell.pending.length === 0 && <p className="text-muted-foreground">Nothing: no approval reaches this asset from here.</p>}
           <ul className="space-y-2">
-            {cell.approved.map((a) => (
-              <li key={a.id} data-approval={a.id} className="space-y-1 rounded-lg border p-2">
+            {cell.entries.map((e) => (
+              <li key={e.operation} data-op={e.operation} {...(e.approval ? { 'data-approval': e.approval.id } : {})} className="space-y-1 rounded-lg border p-2">
                 <div className="flex items-center gap-2">
-                  <StatusBadge status="approved" tone="ok" label={a.profile.operation} />
-                  <Confirm title={`Revoke ${a.template}: ${profileText(a)}?`} action="Revoke" onConfirm={() => void revoke(a)}
-                    description={`Every machine and job of ${a.template} gets no new ${a.profile.operation} credential for ${a.profile.asset.kind} ${a.profile.asset.name} from the next request. Approving it again takes a new approval.`}>
+                  <StatusBadge status="approved" tone="ok" label={e.operation} />
+                  {e.approval && <Confirm title={`Revoke ${e.approval.template}: ${profileText(e.approval)}?`} action="Revoke" onConfirm={() => void revoke(e.approval!)}
+                    description={`Every box, job and user that reaches ${e.approval.template} gets no new ${e.operation} credential for ${e.approval.profile.asset.kind} ${e.approval.profile.asset.name} from the next request. Approving it again takes a new approval.`}>
                     <Button size="xs" variant="outline" className="ml-auto" disabled={busy}>Revoke</Button>
-                  </Confirm>
+                  </Confirm>}
                 </div>
-                <div className="text-xs break-words">{chainText(a.chain)}</div>
-                <div className="text-xs text-muted-foreground">approved by {a.approvedBy} at {clock(a.approvedAt)}</div>
+                <div className="text-xs break-words">{chainText(e.path)}</div>
+                {e.approval && <div className="text-xs text-muted-foreground">approved by {e.approval.approvedBy} at {clock(e.approval.approvedAt)}</div>}
               </li>
             ))}
             {cell.pending.map((p) => (
@@ -120,7 +127,7 @@ function Filters({ filter, onChange }: { filter: MatrixFilter; onChange: (f: Mat
 export function PermissionMatrix() {
   const [view, setView] = useState<AccessView | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [filter, setFilter] = useState<MatrixFilter>({ rows: 'templates', kind: ALL, operation: ALL, search: '', onlyWithAccess: false });
+  const [filter, setFilter] = useState<MatrixFilter>({ rows: 'requesters', kind: ALL, operation: ALL, search: '', onlyWithAccess: false });
   const [picked, setPicked] = useState<Picked | undefined>();
   const load = useCallback(async () => {
     try { setView(await get<AccessView>('/api/access')); setError(undefined); } catch (e) { setError((e as Error).message); }
@@ -134,7 +141,7 @@ export function PermissionMatrix() {
       <Panel title="Permission matrix" icon={Grid3x3} count={`${m.rows.length} × ${columns.length}`}>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            What each template, its machines and their live jobs may do on each asset. <span className="text-ok">Approved</span> operations are
+            What each template, its boxes, each user and each live job may do on each asset: the hopper's reading of its own rows. <span className="text-ok">Approved</span> operations are
             solid; ones that <span className="text-warn">wait for approval</span> are dashed. Click a cell to see why and to revoke.
           </p>
           <Filters filter={filter} onChange={setFilter} />
@@ -144,7 +151,7 @@ export function PermissionMatrix() {
                 <table className="border-separate border-spacing-0 text-xs">
                   <thead>
                     <tr>
-                      <th rowSpan={2} className="sticky top-0 left-0 z-30 min-w-48 border-r border-b bg-card px-2 py-1 text-left font-medium">{filter.rows === 'jobs' ? 'Job' : 'Template / machine'}</th>
+                      <th rowSpan={2} className="sticky top-0 left-0 z-30 min-w-48 border-r border-b bg-card px-2 py-1 text-left font-medium">{filter.rows === 'jobs' ? 'Job' : 'Template, box, user'}</th>
                       {m.groups.map((g) => <th key={g.kind} data-kind={g.kind} colSpan={g.columns.length} className="sticky top-0 z-20 h-7 border-b border-l bg-card px-2 text-left font-medium">{g.kind}</th>)}
                     </tr>
                     <tr>
@@ -161,7 +168,7 @@ export function PermissionMatrix() {
                             <td key={c.key} data-asset={c.key} className="border-b border-l p-0">
                               <button type="button" className="flex min-h-8 w-full min-w-20 flex-wrap items-center gap-1 px-2 py-1 text-left hover:bg-muted/60"
                                 aria-label={`${row.label} on ${c.asset.kind} ${c.asset.name}`} onClick={() => setPicked({ row, column: c })}>
-                                {cell.approved.map((a) => <span key={a.id} data-op={a.profile.operation} data-state="approved" className="rounded border border-ok/30 bg-ok/10 px-1 text-ok">{a.profile.operation}</span>)}
+                                {cell.entries.map((e) => <span key={e.operation} data-op={e.operation} data-state="approved" className="rounded border border-ok/30 bg-ok/10 px-1 text-ok">{e.operation}</span>)}
                                 {cell.pending.map((p) => <span key={p.operation} data-op={p.operation} data-state="pending" title="waits for approval" className="rounded border border-dashed border-warn/50 px-1 text-warn">{p.operation}</span>)}
                               </button>
                             </td>
