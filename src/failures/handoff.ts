@@ -9,7 +9,7 @@ export const RAN_AGAIN: readonly FailureOutcome[] = ['retried', 'redirected', 'r
  * The outcomes nothing waits on any more (issue #529): a newer job of its item exists, or its item is closed at its
  * source. Out of the action lists — Needs a person, Recent failures —, still in the profile.
  */
-export const SETTLED: readonly FailureOutcome[] = ['superseded', 'item_closed'];
+export const SETTLED: readonly FailureOutcome[] = ['superseded', 'item_closed', 'resolved'];
 
 /**
  * Why the record's job is handed off to a person, if it is: its retries used up or a job-specific failure (a

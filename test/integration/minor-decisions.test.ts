@@ -165,7 +165,7 @@ describe('a failed job no rule explains', () => {
     // Rules decided, and the hand-off stands: a person runs it again from Needs a person.
     const token = await a.login();
     const handoff = await waitFor(async () => (await a.api<{ handoffs: { id: string; jobId: string }[] }>('GET', '/api/failures')).body.handoffs.find((h) => h.jobId === job.id));
-    expect((await a.ui(`/ui/api/failures/handoffs/${handoff.id}/run-again`, {}, { token })).status).toBe(200);
+    expect((await a.ui(`/ui/api/failures/handoffs/${handoff.id}/resolve`, { action: 'fixed' }, { token })).status).toBe(200);
     const compared = await waitFor(async () => (await ofType(a, 'minor_decision.compared', job.id))[0]);
     expect(compared.data).toMatchObject({ pick: 'retry', actual: 'retry', agreed: true, decidedBy: 'person' });
   });

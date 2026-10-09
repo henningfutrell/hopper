@@ -54,6 +54,8 @@ export function createWorld(): World {
       list: () => [...jobs.values()],
       getBySourceKey: (key: string) => [...jobs.values()].filter((j) => j.source?.key === key).at(-1),
     },
+    // No hand-off is resolved here: nothing to tell a source (issue #551).
+    handoffs: { get: () => undefined, list: () => [] },
     questions: {
       get: (id: string) => questions.get(id),
       list: (f?: { jobId?: string; status?: string[] }) => [...questions.values()]
@@ -110,6 +112,12 @@ export function createWorld(): World {
       const job = host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!;
       emit('job.rerun', id, { by: 'user' });
       return job;
+    },
+    continueJob(id, brief, handoffId) {
+      if (jobs.get(id)?.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${id} is not failed` };
+      const job = patchJob(id, { status: 'queued', pendingAnswer: brief, continued: { at: iso(), handoffId } });
+      emit('job.continued', id, { handoffId });
+      return { ok: true, job };
     },
   };
 

@@ -7,15 +7,17 @@
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
 // away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
-// Run again (`takeBack`, issues #313, #354) is the one other issue write: a closed issue is reopened, the
-// end labels go and the source label comes back, so the new job runs and finishes against it. Rows written under
+// Run again (`takeBack`, issues #313, #354) is one other issue write: a closed issue is reopened, the
+// end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
+// of a hand-off (`writeResolution`, issue #551) is the other, and the hopper's only comment: one short comment saying
+// what was done, with the person's note and link, naming no person, and the end label it leaves the issue with. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
 import { RerunRefused } from '../../domain/rerun-refused.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import type { Job } from '../../domain/types.ts';
+import type { HandoffResolution, Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
@@ -102,6 +104,39 @@ export async function takeBack(ctx: ReportContext, label: string, job: Job, assi
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
     throw err instanceof RerunRefused ? err : sourceError(err);
+  }
+}
+
+/** What a resolution says it did, in the comment's first line. */
+const RESOLVED_AS: Record<HandoffResolution['action'], (r: HandoffResolution) => string> = {
+  continue: (r) => (r.resumed === false ? 'continued in a new job, with a note' : 'continued in the same session, with a note'),
+  fixed: () => 'the cause was fixed outside the job; it runs again',
+  done_by_hand: () => 'done by hand',
+  wont_do: () => 'won\'t do',
+};
+
+/** The comment: what was done, the note quoted, the link. Neutral: it names nobody, the resolver included. */
+export function resolutionComment(r: HandoffResolution): string {
+  const lines = [`Resolved from Needs a person: ${RESOLVED_AS[r.action](r)}.`];
+  if (r.note) lines.push('', ...r.note.split('\n').map((l) => `> ${l}`));
+  if (r.link) lines.push('', `Link: ${r.link}`);
+  return lines.join('\n');
+}
+
+/**
+ * Tell the issue a person's resolution of its job's hand-off (issue #551): Done by hand leaves it `hopper:done`, Won't
+ * do `hopper:rejected` — either way not taken again —, in place of `hopper:failed`; Continue and I fixed it took it back
+ * already (`takeBack`). Then the comment.
+ */
+export async function writeResolution(ctx: ReportContext, job: Job, r: HandoffResolution): Promise<void> {
+  try {
+    const { repo, number } = issueOf(job);
+    if (r.action === 'done_by_hand') await settle(ctx, repo, number, [LABEL_DONE]);
+    if (r.action === 'wont_do') await settle(ctx, repo, number, [LABEL_REJECTED]);
+    if (r.action === 'done_by_hand' || r.action === 'wont_do') await ctx.api.removeLabels(repo, number, [LABEL_FAILED]);
+    await ctx.api.postComment(repo, number, resolutionComment(r));
+  } catch (err) {
+    throw sourceError(err);
   }
 }
 

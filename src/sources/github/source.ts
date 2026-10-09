@@ -21,7 +21,7 @@ import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection
 import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { reportToGitHub, takeBack } from './report.ts';
+import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
@@ -288,6 +288,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
+    },
+    resolved(job, resolution) {
+      return writeResolution({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job, resolution);
     },
     notComplete(job) {
       return notComplete(api, job, config.completion);

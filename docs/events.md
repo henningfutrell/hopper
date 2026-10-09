@@ -873,6 +873,20 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job
 }
 ```
 
+## `job.continued`
+
+Version 1 (`docs/schemas/job.continued.v1.json`). A person resolved a failed job's hand-off with Continue (issue #551) and its own agent session can resume: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`), told the failure and the person's note. `handoffId`: the hand-off it resolved.
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+
+```json
+{
+  "handoffId": "h1"
+}
+```
+
 ## `source.stalled`
 
 Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in error since `since` for longer than the stall threshold (30 minutes): nothing new is pulled from it. Recorded once per run of failures; `error` is its last error. The notifiers send it.
@@ -1183,7 +1197,7 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
 
 ## `handoff.opened`
 
-Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person runs it again or clears it — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person resolves it (issue #551) or its item runs again — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|
@@ -1211,19 +1225,21 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 
 ## `handoff.closed`
 
-Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `cleared` (a person acknowledged it: no more work, its locked entry dismissed too), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone).
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone).
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | yes |
-| `end` | `run_again` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
+| `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
 | `nextJobId` | string | no |
+| `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
 
 ```json
 {
   "handoffId": "h1",
   "end": "run_again",
-  "nextJobId": "j2"
+  "nextJobId": "j2",
+  "resolution": "fixed"
 }
 ```
 

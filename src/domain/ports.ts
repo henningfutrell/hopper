@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -509,6 +509,13 @@ export interface JobSource {
    */
   rerun?(job: Job): Promise<SourceItem>;
   /**
+   * Tell the item what a person did about the job's hand-off (issue #551): on GitHub one short comment — what was
+   * done, the note and the link, naming no person — and the end label (done by hand `hopper:done`, won't do
+   * `hopper:rejected`; Continue and I fixed it took the item back already). Throws SourceError; the sync loop tries it
+   * again. Absent: the source takes no resolution.
+   */
+  resolved?(job: Job, resolution: HandoffResolution): Promise<void>;
+  /**
    * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
    * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the
    * job is recorded finished: a reason fails the job with it, and so does a throw (it could not
@@ -591,8 +598,16 @@ export interface SourceHost {
    * `ingest` does (routing rules, the queue gate) with `rerunOf` the ended job, and job.rerun on the
    * ended job, in one tx. The ended job stays as it ended. A newer job of the key that already exists
    * is answered instead of a second one. `by`: who asked, the user (the default) or the failure assessor (issue #509).
+   * `brief` (issue #551): what the new job is told after its item's prompt — a person's note and the failure before it.
    */
-  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy): Job;
+  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string): Job;
+  /**
+   * Its source gave a failed job's item back for a person's Continue (issue #551): the same job is queued again, in
+   * one tx, pinned to the machine it ran on with `brief` pending (`continued`), its end to be reported to its source
+   * again, so its claim resumes its own agent session. job.continued. Refused (not_found, conflict) when it is gone,
+   * no longer failed, or a newer job of its item exists.
+   */
+  continueJob(jobId: JobId, brief: string, handoffId: string): RerunResult;
 }
 
 /**
@@ -608,7 +623,12 @@ export interface SourceRegistry {
    * (`JobSource.rerun`) and the new job is queued at once; it answers the new job. The ended job is kept.
    * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
-  rerun(jobId: JobId, by?: RerunBy): Promise<RerunResult>;
+  rerun(jobId: JobId, by?: RerunBy, brief?: string): Promise<RerunResult>;
+  /**
+   * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
+   * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.
+   */
+  continueJob(jobId: JobId, brief: string, handoffId: string): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.

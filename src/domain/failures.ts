@@ -15,9 +15,10 @@ export type FailureClass = typeof FAILURE_CLASSES[number];
  * waits on its problem. `surfaced`: it waits on a person. `not_retried`: running it again was refused (`note`).
  * `superseded` (issue #517): a newer job of its item exists (`nextJobId`) — a person's Run again, or anything
  * else — so nothing is left to do for this one. `item_closed` (issue #529): its item is closed at its source, so
- * nothing waits on it either.
+ * nothing waits on it either. `resolved` (issue #551): a person resolved its hand-off without running it again — done
+ * by hand, or won't do (`note`).
  */
-export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded', 'item_closed'] as const;
+export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded', 'item_closed', 'resolved'] as const;
 export type FailureOutcome = typeof FAILURE_OUTCOMES[number];
 
 /** A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job. */
@@ -173,16 +174,47 @@ export const HANDOFF_REASONS = ['retry_limit', 'person', 'auto_off', 'not_retrie
 export type HandoffReason = typeof HANDOFF_REASONS[number];
 
 /**
- * How a hand-off ended: its item ran again, a person cleared it, or its job ended finished. Or, found stale by the
- * sweep or at start (issue #529): a newer job of its item exists (`superseded`), its item is closed at its source
- * (`item_closed`), or its job is gone (`job_gone`).
+ * How a hand-off ended: its item ran again (`nextJobId`), its job went on in its own agent session (`continued`, issue
+ * #551), a person did the work by hand (`done_by_hand`) or decided it is not to be done (`wont_do`), or its job ended
+ * finished. `cleared`: closed by the build before #551, with no resolution. Or, found stale by the sweep or at start
+ * (issue #529): a newer job of its item exists (`superseded`), its item is closed at its source (`item_closed`), or
+ * its job is gone (`job_gone`).
  */
-export const HANDOFF_ENDS = ['run_again', 'cleared', 'finished', 'superseded', 'item_closed', 'job_gone'] as const;
+export const HANDOFF_ENDS = ['run_again', 'continued', 'done_by_hand', 'wont_do', 'cleared', 'finished', 'superseded', 'item_closed', 'job_gone'] as const;
 export type HandoffEnd = typeof HANDOFF_ENDS[number];
 
 /**
+ * What a person did about a hand-off (issue #551). `continue`: the job goes on with their note — in its own agent
+ * session and work tree when it can resume, else a new job of its item told the failure and the note. `fixed`: they
+ * fixed the cause (its environment, credentials, repository); its item runs again, told the note. `done_by_hand`:
+ * they did the work themselves (a link to it, optional); its job ends finished. `wont_do`: it is not to be done, or it
+ * was no real failure (the note says why); its job leaves the queue.
+ */
+export const HANDOFF_RESOLUTIONS = ['continue', 'fixed', 'done_by_hand', 'wont_do'] as const;
+export type HandoffResolutionAction = typeof HANDOFF_RESOLUTIONS[number];
+
+/**
+ * A hand-off's resolution (issue #551): who resolved it, when, how, with their note and link. It goes back to the
+ * job's item at its source (`writeBack`): on GitHub, one comment and the end label. `pending` is tried again at each
+ * sync of the job's source, with the last error; `failed`: the source refused it for good (`writeBackError`); `none`:
+ * the job has no source to tell, or its source takes no resolution.
+ */
+export interface HandoffResolution {
+  action: HandoffResolutionAction;
+  /** Who resolved it: the name of the person the UI session signed in. Never written to the source. */
+  by: string;
+  at: string;
+  note?: string;
+  link?: string;
+  /** Continue only: true when the job's own agent session resumed, false when a new job ran instead. */
+  resumed?: boolean;
+  writeBack: 'pending' | 'written' | 'failed' | 'none';
+  writeBackError?: string;
+}
+
+/**
  * A hand-off (issue #516): a failed job automatic handling ended for, waiting on a person — Failures, Needs a person.
- * Open until a person runs it again or clears it; never dropped by age. It keeps what the assessment said, so it
+ * Open until a person resolves it (issue #551) or its item runs again; never dropped by age. It keeps what the assessment said, so it
  * outlives the failure record's retention.
  */
 export interface Handoff {
@@ -201,8 +233,10 @@ export interface Handoff {
   problemId?: string;
   closedAt?: string;
   end?: HandoffEnd;
-  /** Run again or superseded: the newer job. */
+  /** Run again, superseded or continued: the job that follows — for `continued`, its own job, going on. */
   nextJobId?: string;
+  /** What a person did about it (issue #551); absent for one closed by anything else. */
+  resolution?: HandoffResolution;
 }
 
 /** Whether the daemon takes an action now, and why not. */
@@ -214,9 +248,17 @@ export interface ProblemView extends Problem {
   actions: { resolve: Allowed; release: Allowed };
 }
 
-/** `priority`, `high` (issue #535): its job's live priority, and whether it is high priority; absent with its job gone. */
+/**
+ * `priority`, `high` (issue #535): its job's live priority, and whether it is high priority; absent with its job gone.
+ * `actions` (issue #551): whether each resolution is taken now, and why not. `continueResumes`: Continue resumes the
+ * job's own agent session; false, it runs a new job. `signature`, `causeName`: its failure record's, while the
+ * record is kept, so a person can name its cause from the card.
+ */
 export interface HandoffView extends Handoff {
-  actions: { runAgain: Allowed; clear: Allowed };
+  actions: { continue: Allowed; fixed: Allowed; doneByHand: Allowed; wontDo: Allowed };
+  continueResumes: boolean;
+  signature?: string;
+  causeName?: string;
   priority?: number;
   high?: boolean;
 }

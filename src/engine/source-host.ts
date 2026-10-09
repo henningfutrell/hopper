@@ -1,7 +1,7 @@
 // The engine as a SourceHost (ports.ts): everything the sync loop may do to the hopper. Each
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
-import type { SourceHost, SourceItem } from '../domain/ports.ts';
+import type { RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { asksOf, isRerunnable, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
@@ -10,6 +10,13 @@ import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
+
+/** The machine a failed job's agent session ran on (issue #551): its pane's lane's, else where it resumes or is pinned. */
+function machineRanOn(job: Job): string | undefined {
+  const lane = typeof job.executorState?.laneId === 'string' ? job.executorState.laneId : job.laneId;
+  const at = lane?.lastIndexOf('/lane-') ?? -1;
+  return lane && at > 0 ? lane.slice(0, at) : job.resumeOn ?? job.spec.machineId;
+}
 
 function refFor(item: SourceItem, source: { name: string; kind: string }): JobSourceRef {
   return {
@@ -223,13 +230,32 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    rerun(jobId, item, source, by = 'user') {
+    rerun(jobId, item, source, by = 'user', brief) {
       return store.tx(() => {
         if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
-        const job = ingest(item, source) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = ingest(brief ? { ...item, prompt: `${item.prompt}\n\n${brief}` } : item, source) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by } });
         return job;
+      });
+    },
+
+    continueJob(jobId, brief, handoffId) {
+      return store.tx((): RerunResult => {
+        const job = store.jobs.get(jobId);
+        if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
+        if (job.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${jobId} is ${job.status}: only a failed job can be continued` };
+        if (job.source && store.jobs.getBySourceKey(job.source.key)?.id !== jobId) return { ok: false, reason: 'conflict', message: `job ${jobId} cannot be continued: a newer job of its item exists` };
+        const machineId = machineRanOn(job);
+        // Its end is told to its source again: the claim, then however this run ends.
+        const sync = { ...(job.sourceState?.sync ?? {}), claimReported: false, finalReported: false };
+        const next = store.jobs.update(jobId, {
+          status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), handoffId }, ...(machineId ? { resumeOn: machineId } : {}),
+          error: undefined, errorTail: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
+          holdReason: undefined, waitReason: undefined, laneId: undefined, sourceState: { ...job.sourceState, sync },
+        });
+        store.events.append({ type: 'job.continued', jobId, data: { handoffId } });
+        return { ok: true, job: next };
       });
     },
   };

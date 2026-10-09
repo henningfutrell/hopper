@@ -9,6 +9,9 @@
       "type": "string",
       "enum": [
         "run_again",
+        "continued",
+        "done_by_hand",
+        "wont_do",
         "cleared",
         "finished",
         "superseded",
@@ -18,6 +21,15 @@
     },
     "nextJobId": {
       "type": "string"
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "continue",
+        "fixed",
+        "done_by_hand",
+        "wont_do"
+      ]
     }
   },
   "required": [

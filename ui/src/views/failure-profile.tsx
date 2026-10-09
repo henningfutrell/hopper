@@ -10,7 +10,7 @@ import { COLOR, StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DECISION_LABEL, plural } from '@/model/failures';
-import type { FailureDecision, FailuresView, SignatureStat } from '@/model/wire';
+import type { FailureDecision, FailuresView } from '@/model/wire';
 import { failureAct } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -32,17 +32,24 @@ function Breakdown({ title, rows }: { title: string; rows: { key: string; count:
   );
 }
 
-function NameCause({ s }: { s: SignatureStat }) {
+/**
+ * Name a signature's cause, with what to do next time (its description) and its default decision: the next failure
+ * of it follows that (admin). From the profile, and from a hand-off's card (issue #551: "this was X, next time do Y").
+ */
+export function NameCause({ signature, label = 'Name' }: { signature: string; label?: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [decision, setDecision] = useState<FailureDecision>('hold');
-  if (!open) return <Button size="xs" variant="ghost" onClick={() => setOpen(true)}>Name</Button>;
+  if (!open) return <Button size="xs" variant="ghost" onClick={() => setOpen(true)}>{label}</Button>;
   const save = async () => {
-    if (await failureAct('/ui/api/failures/causes', { signature: s.signature, name: name.trim(), decision }, 'Cause named')) setOpen(false);
+    const body = { signature, name: name.trim(), decision, ...(description.trim() ? { description: description.trim() } : {}) };
+    if (await failureAct('/ui/api/failures/causes', body, 'Cause named')) setOpen(false);
   };
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Input className="h-7 w-44 text-xs" aria-label="Cause name" placeholder="Cause name" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input className="h-7 w-44 text-xs" aria-label="Cause name" placeholder="This was…" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input className="h-7 w-56 text-xs" aria-label="Next time" placeholder="Next time…" value={description} onChange={(e) => setDescription(e.target.value)} />
       <select className={`${FIELD} h-7 w-40 text-xs`} aria-label="Its decision" value={decision} onChange={(e) => setDecision(e.target.value as FailureDecision)}>
         {DECISIONS.map((d) => <option key={d} value={d}>{DECISION_LABEL[d]}</option>)}
       </select>
@@ -73,7 +80,7 @@ export function FailureProfilePanel({ view }: { view: FailuresView }) {
                 <div className="flex items-center gap-2">
                   <div className="w-32 shrink-0"><Sparkline values={s.trend} color={COLOR.bad} height={18} /></div>
                   <span className="font-mono text-[11px] text-muted-foreground">{s.signature}</span>
-                  {canAdmin && !named.has(`named:${s.signature}`) && <span className="ml-auto"><NameCause s={s} /></span>}
+                  {canAdmin && !named.has(`named:${s.signature}`) && <span className="ml-auto"><NameCause signature={s.signature} /></span>}
                 </div>
               </li>
             ))}
