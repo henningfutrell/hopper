@@ -1,7 +1,7 @@
 // The job rules (issue #172): what every job is told before its work tree and the protocol — the config
 // record `job-rules`, a text, edited from the UI (POST /ui/api/job-rules) or with `hopper config set`.
 // Read when each job starts, so an edit reaches the next job without a restart. While none is saved, a
-// job gets the default: the publishing rule and the parallel-work rule. The work tree line and the
+// job gets the default: the publishing rule, the parallel-work rule and the writing style. The work tree line and the
 // protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
@@ -17,8 +17,11 @@ const PARALLEL_WORK = [
   'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
 ];
 
+/** The writing style (issue #571): every text a job writes for people is in Simplified Technical English. */
+export const STE_RULE = '[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.';
+
 /** What a job is told while no job rules are saved. */
-export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK].join('\n');
+export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE].join('\n');
 
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
@@ -46,7 +49,7 @@ export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth lo
 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
-  '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
+  '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION',
   // How to suggest research or a proposal first, on a question (issue #548).
   SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.

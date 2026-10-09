@@ -838,17 +838,18 @@ Running or installing what a job built, and reading files elsewhere, stays allow
 about where the work is done, not what is touched.
 
 **Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer, with the
-default job rules (the first three lines; "Job rules", issue #172):
+default job rules (the first four lines; "Job rules", issue #172):
 
 ```
 [hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
 [hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
+[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.
 [hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
-[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION
+[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
-When you are asked to research, do not do the work: research, then write a research report, each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
+When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
@@ -7415,7 +7416,7 @@ tree, parallel work, the protocol.
 
 - **The record.** A user's config record `job-rules` (`src/job-rules/`), a text of at most 16 KiB. It
   leads every job's footer. While none is saved, a job gets the **default job rules** — the publishing
-  rule and the parallel-work rule, the text the footer had. A saved empty text gives none. No migration:
+  rule and the parallel-work rule, the text the footer had (and, since issue #571, the writing style). A saved empty text gives none. No migration:
   a missing record is the default.
 - **What stays fixed.** The work tree line (the executor sets up that tree and its scratch dir) and the
   protocol lines (the markers `screen.ts` reads, the last line the turn anchor) follow the job rules
@@ -9129,3 +9130,21 @@ request and its GitHub failure; a pull request on another repository refused; an
 nothing else, both in the hopper's own user's log; a bad token and an ended job refused; the help and no GitHub token on
 the machine), `test/github-proxy/proxy.test.ts` (token, request, policy, limits, the broker's 400, 429, 503),
 `test/herdr/executor-login.test.ts` (a GitHub login steered, then taken when reported again).
+
+## Writing style: Simplified Technical English (issue #571, 2026-10-09)
+
+Owner direction: everything the hopper's agents write for people — questions, proposals, research reports, Needs a
+person notes, summaries, pull request and issue text — is in Simplified Technical English (ASD-STE100). A writing
+style, not a process: no review agent, no rewriting pass, no gate, no check by Jev or the escalation levels.
+
+- **The line.** `STE_RULE` (`src/job-rules/`), the last line of the default job rules: "[hopper writing style] Write
+  all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence,
+  active voice, simple common words, one meaning per word." The job rules are the owner's to edit; saved job rules
+  carry it only if the owner adds it.
+- **The protocol.** The fixed question line and the research and proposal protocol lines (`REVIEW_SECTIONS`) name STE
+  in a clause, and so do the research and proposal asks, so a job writes them in STE whatever its saved job rules say.
+  No dictionary or rule list goes into a prompt.
+- **What follows.** A summary a model writes for people later (the short summary of issue #569) names STE in its own
+  prompt the same way. If adherence is poor, that is raised again; nothing checks it now.
+
+**Verification.** `test/job-rules/writing-style.test.ts`, `test/herdr/screen.test.ts` (the footer verbatim).
