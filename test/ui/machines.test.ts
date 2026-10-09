@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -200,6 +200,14 @@ describe('clientReleaseText (issue #70)', () => {
     expect(clientReleaseText({ current: false })).toBe('none: older than releases, add it again: Add machine');
     expect(clientReleaseText({})).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();
+  });
+
+  it('a client the hopper could not update (issue #545): says so, and the line that reinstalls its client, with no join code', () => {
+    const update = { problem: 'its client still runs release 0123456789abcdef after 3 loads of the hopper\'s fedcba9876543210: whatever runs it did not start the new files' };
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false, update })).toBe('0123456789abcdef (not the hopper\'s, and it cannot be updated from here)');
+    expect(clientUpdateLine({ release: '0123456789abcdef', current: false, update }, 'https://hopper.example')).toBe("curl -fsSL 'https://hopper.example/client/install' | sh -s -- 'https://hopper.example'");
+    expect(clientUpdateLine({ release: '0123456789abcdef', current: false }, 'https://hopper.example')).toBeNull();
+    expect(clientUpdateLine(undefined, 'https://hopper.example')).toBeNull();
   });
 });
 

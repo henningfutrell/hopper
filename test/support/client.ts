@@ -31,7 +31,8 @@ export interface TestClient {
   stop(): Promise<void>;
 }
 
-export async function startTestClient(o: Omit<ClientOptions, 'dial' | 'installDir'> & { installDir?: string }): Promise<TestClient> {
+/** `start`: another client's startClient, such as a field release's (test/fixtures), run in place of this checkout's. */
+export async function startTestClient(o: Omit<ClientOptions, 'dial' | 'installDir'> & { installDir?: string; start?: (o: ClientOptions) => Client }): Promise<TestClient> {
   let link: Socket | undefined;
   const server = createServer((s) => { link?.destroy(); link = s; s.once('close', () => { if (link === s) link = undefined; }); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -41,7 +42,8 @@ export async function startTestClient(o: Omit<ClientOptions, 'dial' | 'installDi
     s.once('connect', () => resolve(s));
     s.once('error', reject);
   });
-  const client = startClient({ ...o, installDir: o.installDir ?? testInstallDir(), backoffMs: o.backoffMs ?? [50], dial });
+  const { start = startClient, ...options } = o;
+  const client = start({ ...options, installDir: o.installDir ?? testInstallDir(), backoffMs: o.backoffMs ?? [50], dial });
   await waitFor(() => link, { timeoutMs: 5000, what: 'the client to dial in' });
   return {
     client,

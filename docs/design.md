@@ -43,8 +43,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
@@ -4032,7 +4032,7 @@ the upgrade. Nothing listens on the machine.
 JSON). Checks node ≥ 24 and herdr on `PATH`, writes the release to `~/.local/lib/hopper-client`, joins,
 writes the units `hopper-client` and `hopper-client-herdr` (session `hopper-client`) with `PATH` holding
 herdr's dir — herdr is called from `PATH`, never a configured path (#311) — and starts them. Without a
-systemd user session it prints the two commands to run. Re-running keeps the link key: the same machine.
+systemd user session it prints the two commands to run. Re-running keeps the link key: the same machine. With the hopper's URL and no join code it only reinstalls a joined computer's client (issue #545, "Client releases" → "When it cannot update").
 
 **Sandbox box** (`scripts/box/`, published by the image workflow as tags `box-<agent>` and
 `box-<agent>-sha-<commit>` of the public `hopper` package). One agent CLI (claude: the agent an executor
@@ -4068,30 +4068,62 @@ refused, the install served. `test/client/link.test.ts` (the token), `test/adapt
 The hopper client is released from the hopper and loaded onto its client targets by the hopper: no
 client target runs a client the hopper did not release.
 
-- **The release** (`src/client/release.ts`) is the client's files — `CLIENT_FILES`: `main.ts`,
-  `release.ts`, `server.ts`, `signature.ts`, `ssh-options.ts`, `tunnel.ts`; never `relay.ts`, which runs
-  here — and an id, the first 16 hex of a SHA-256 over every name and content. Same files, same id. The
-  hopper's release is the client files of the install it runs from (`<app>/src/client`), read at boot:
-  `scripts/install.sh` and a self-update ("Self-update") release a new client whenever its files change.
-- **The calls**, signed like `POST /herdr`: `POST /release {}` → `{release, home}`, the id of the release the
-  client process runs (read from its install dir at start) and its user's home, where `~` in a job's
-  work tree resolves (issue #323; a client before it answers no home); `POST /load {release: {id, files}}` → the
-  client checks the release whole (exactly `CLIENT_FILES`, all text, the id its files') before writing a
-  byte, writes it to `<install>.next`, swaps it in (the one before kept as `<install>.prev`), answers
+- **The release** (`src/client/release.ts`) is the client's files — every `*.ts` file of the client's
+  directory, never `relay.ts`, which runs here — its **manifest** (each file's name and SHA-256) and an id,
+  the first 16 hex of a SHA-256 over the manifest. Same files, same id. The hopper's release is the client
+  files of the install it runs from (`<app>/src/client`), read at boot: `scripts/install.sh` and a
+  self-update ("Self-update") release a new client whenever its files change. No list of names is fixed in
+  the client (issue #545): a release may add, remove or rename files, and the manifest it carries says which.
+- **The calls**, signed like `POST /herdr`: `POST /release {}` → `{release, loads, home}`, the id of the release the
+  client process runs (read from its install dir at start), `loads: 'manifest'` (it loads by manifest; a
+  client before issue #545 says nothing) and its user's home, where `~` in a job's
+  work tree resolves (issue #323; a client before it answers no home); `POST /load {release: {id, manifest, files}}` → the
+  client checks the release whole before writing a byte — each name a plain client file name
+  (`[a-z0-9][a-z0-9-]*.ts`, at most 64), `main.ts` among them, every file named by the manifest and its
+  SHA-256 the manifest's, the id the manifest's — writes it to `<install>.next`, swaps it in (the one
+  before kept as `<install>.prev`), answers
   `{release}`, and 1 s after that answer has left (time for it to cross the tunnel) exits 75; its unit
   (`Restart=always`) starts the new files. A load of the release
-  already installed writes nothing. `POST /reap {jobId, scratch?}` and `POST /survey {roots}` (issue
+  already installed writes nothing. The request's signature covers the body's hash, so the manifest and
+  the files arrive as the hopper sent them. `POST /reap {jobId, scratch?}` and `POST /survey {roots}` (issue
   #410) run the client's own copy of the reap and the survey ("Work tree" → "The reap", "The sweep") with
   no shell of the request's: a job id (letters, digits, `-`), its own scratch dir
   (`…/.hopper-scratch/<job id>`), absolute work trees — anything else is refused 400 before a script runs;
-  the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`, so the release keeps its files.
+  the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
   release — never while a job runs on that machine (a running job's herdr calls must not meet a
   restarting client; it loads after). Each outcome is one log line per machine: `runs the hopper's
-  release`, `loaded release <id> (was <id>)`, `loading it once no job runs there`, a failed load, or a
-  client older than releases (it answers no release: still online; `scripts/attach-client.sh` installs it
-  again, once).
+  release`, `loaded release <id> (was <id>)`, `loaded the bridge`, `loading it once no job runs there`, a
+  failed load, `cannot update`, or a client older than releases (it answers no release: still online; add
+  it again with Add machine).
+- **Clients with a fixed file list** (issue #545). A client released before manifests checks a load
+  against the list of names fixed in its own `release.ts` (exactly those names, an id hashed over them in
+  order) and refuses anything else: on 2026-10-09 a client of seven files refused the hopper's ten, stayed
+  on its release, and every call it did not have answered an unsigned 404 the hopper reported as a
+  signature failure. The hopper knows such a client by its `/release` answer (no `loads`). It loads an
+  empty release first: the refusal names the client's list. Then it loads the **bridge**
+  (`src/machines/client-bridge.ts`): exactly those names, the id that client computes; its `main.ts`
+  carries the hopper's release, every other file is a placeholder. The client restarts into the bridge;
+  the bridge writes the hopper's release over the install dir (the release before the bridge stays as
+  `<install>.prev`) and exits 75; whatever runs the client — the unit, a box's entrypoint, the loop the
+  README gives a Windows computer — starts the hopper's release. Two restarts, no person. Should the
+  bridge fail to write, it puts back the release before it and exits 75. A client's herdr session is its
+  own unit, so a restart of the client leaves its panes, and the jobs in them, running; the load still
+  waits until no job runs there. The bridge stays while any client released before manifests may still
+  dial in.
+- **When it cannot update.** A machine whose client still runs another release after three loads (each
+  answered, or refused) is not loaded again until its client runs another release: the probe carries
+  `client.update.problem` — the client's own refusal, or that it still runs its release after the loads
+  — logged once as `cannot update`. Machines shows it with the line that reinstalls the client on that
+  computer: the install with no join code (`curl -fsSL '<origin>/client/install' | sh -s -- '<origin>'`),
+  which writes the hopper's release over the old one, joins nothing (it refuses a computer that has not
+  joined) and restarts the client. A sandbox box keeps its client in its home volume: removing
+  `~/.local/lib/hopper-client` there and restarting the box copies the image's client in again.
+- **Errors name the cause.** A client answers a route it does not know before it reads the signature, so
+  unsigned: an unsigned 404 is `client <machine> runs an older client release, which has no <call>`; any
+  other unsigned answer, or one whose signature is not this machine's link key's, `did not prove itself`
+  with which of the two.
 - **`/api/machines`**: a client target, once probed online, carries `client: {tokenEnv, release,
   current}` — the release its client runs and whether it is the hopper's; `release` absent for a client
   older than releases.

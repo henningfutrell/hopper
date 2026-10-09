@@ -10,6 +10,7 @@ import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
+import type { FixedListRelease } from '../machines/client-bridge.ts';
 import type { DiskReading } from '../domain/machines.ts';
 import { diskOf } from '../machines/disk.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
@@ -62,15 +63,19 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
   return clientCall<ClientAnswer>(t, '/level', { ...call, timeoutMs }, timeoutMs);
 }
 
-/** The id of the client release the client target runs, and its home when it says (a client before issue #323 does not). */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; home?: string; disk?: DiskReading }> {
-  const { release, home, disk } = await clientCall<{ release?: unknown; home?: unknown; disk?: unknown }>(t, '/release', {}, 15000);
+/**
+ * The id of the client release the client target runs, whether it loads any release its manifest vouches for
+ * (`manifest`, issue #545; a client before that checks a fixed list of file names), and its home when it says (a
+ * client before issue #323 does not).
+ */
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading }> {
+  const { release, loads, home, disk } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
   const read = d && typeof d.freeBytes === 'number' && typeof d.totalBytes === 'number' ? { disk: diskOf(d.freeBytes, d.totalBytes) } : {};
   const at = clientHome(home);
-  return { release, ...(at ? { home: at } : {}), ...read };
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read };
 }
 
 /**
@@ -98,8 +103,8 @@ export async function clientWorkTree(t: ClientTransport, workTree: string): Prom
   return typeof workTreeProblem === 'string' ? { workTreeProblem } : {};
 }
 
-/** Loads a client release onto the client target; it restarts to run it. */
-export async function loadClientRelease(t: ClientTransport, release: ClientRelease): Promise<void> {
+/** Loads a client release onto the client target — or, for one with a fixed file list, the bridge to it (issue #545); it restarts to run it. */
+export async function loadClientRelease(t: ClientTransport, release: ClientRelease | FixedListRelease): Promise<void> {
   await clientCall(t, '/load', { release }, 30000);
 }
 
@@ -127,7 +132,10 @@ async function clientCall<T>(t: ClientTransport, path: string, payload: unknown,
       if (status === 0) return reject(new ClientError(`client ${t.machine}: no answer: its link closed`));
       if (status === 401) return reject(new ClientError(`client ${t.machine} refused the hopper (401): ${text.slice(0, 200)}`));
       if (!verifyResponse(token, sig, nonceOf(auth), status, text)) {
-        return reject(new ClientError(`client ${t.machine}: the answer on its link did not prove itself (no valid client signature)`));
+        // A client answers a route it does not know before it reads the signature, so unsigned (issue #545).
+        if (sig === undefined && status === 404) return reject(new ClientError(`client ${t.machine} runs an older client release, which has no ${path}: the hopper loads its own release there once no job runs on it`));
+        if (sig === undefined) return reject(new ClientError(`client ${t.machine}: the answer on its link did not prove itself: it carries no client signature`));
+        return reject(new ClientError(`client ${t.machine}: the answer on its link did not prove itself: its client signature is not this machine's link key's`));
       }
       if (status !== 200) return reject(new ClientError(`client ${t.machine}: ${status} ${text.slice(0, 200)}`));
       try { resolve(JSON.parse(text) as T); } catch { reject(new ClientError(`client ${t.machine}: answer is not JSON`)); }
