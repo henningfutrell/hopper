@@ -182,7 +182,7 @@ describe('the skill catalog and broker (issue #582)', () => {
 
     const wrongKind = await skill(a, job, ['kube-diagnostics', 'aws-account/123456789012']);
     expect(wrongKind.code).toBe(1);
-    expect(wrongKind.stdout).toMatch(/^no: kube-diagnostics sets up a link to a cluster or namespace, not an aws-account/);
+    expect(wrongKind.stdout).toMatch(/^no: kube-diagnostics sets up a link to a cluster or namespace, not aws-account\/123456789012: name it/);
     expect(eventsOf(a, 'skill.refused')).toHaveLength(3);
 
     const stranger = await skill(a, job, [], 'bm8tb25l.not-a-job.mac');
