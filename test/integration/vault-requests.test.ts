@@ -144,7 +144,7 @@ function waiting(a: TestApp, creds: string, args: string[]): Promise<Run> {
 }
 
 async function requestFor(a: TestApp, skillName: string): Promise<CredentialRequest> {
-  return waitFor(async () => ((await a.api('GET', '/api/vault')).body as VaultView).requests.find((r) => r.skill === skillName), { timeoutMs: 10000, what: `a ${skillName} request` });
+  return waitFor(async () => ((await a.api('GET', '/api/vault')).body as VaultView).requests?.find((r) => r.skill === skillName), { timeoutMs: 10000, what: `a ${skillName} request` });
 }
 
 function nowhere(a: TestApp, box: string, value: string): void {

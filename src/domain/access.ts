@@ -3,6 +3,7 @@
 // asset. The types the model needs, kept minimal for the vault to adopt or extend: a template by name, an operation,
 // an asset, and the operation profile that is an operation on an asset. The approvals and the model are the hopper's,
 // rows in its database, pushed to OpenFGA; every decision is recorded.
+import type { TemplateRadius } from './blast-radius.ts';
 
 /** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
 export const OPERATIONS = ['read', 'write', 'sync', 'apply'] as const;
@@ -21,6 +22,14 @@ export interface OperationProfile { operation: Operation; asset: Asset }
 export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 /** An asset's name: letters, digits and `. _ / + = , -`. OpenFGA takes no `:`, `@`, `#` or space in an id, so an AWS role is `<account>/<role>`, not its ARN. */
 export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
+
+/** Why an operation profile is not one the model can hold, or undefined. */
+export function profileProblem(p: { operation: string; asset: { kind: string; name: string } }): string | undefined {
+  if (!(OPERATIONS as readonly string[]).includes(p.operation)) return `operation ${JSON.stringify(p.operation)} is not one of ${OPERATIONS.join(', ')}`;
+  if (!(ASSET_KINDS as readonly string[]).includes(p.asset.kind)) return `asset kind ${JSON.stringify(p.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
+  if (!ASSET_NAME.test(p.asset.name)) return `asset name ${JSON.stringify(p.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
+  return undefined;
+}
 
 /** One relationship, as OpenFGA keeps it: `subject` is `relation` of `object` (OpenFGA's user, relation, object). */
 export interface RelationshipTuple { subject: string; relation: string; object: string }
@@ -92,7 +101,8 @@ export interface AccessModelView {
 export interface AccessView {
   status: AccessStatus;
   model: AccessModelView;
-  templates: { template: string; approvals: Approval[] }[];
+  /** Each template with an approval or a vault template's name, its approvals and its blast radius (issue #584). */
+  templates: { template: string; approvals: Approval[]; radius: TemplateRadius }[];
   /** The newest revoked approvals. */
   revoked: RevokedApproval[];
   /** The newest decisions, newest first. */
@@ -105,6 +115,17 @@ export type AccessEdit =
   | { action: 'revoke'; approval: number }
   | { action: 'check'; template: string; operation: Operation; asset: Asset }
   | { action: 'model'; dsl: string; version: number };
+
+/**
+ * What the vault's gate (issue #584) reads and writes of access for a template: the operation profiles it is approved
+ * for now, an approval, and a revoke. Access is the one record of which profiles are approved.
+ */
+export interface TemplateApprovals {
+  approvedProfiles(template: string): OperationProfile[];
+  approve(template: string, profile: OperationProfile, by: string): Promise<void>;
+  /** Revokes the template's live approval of the profile; nothing when there is none. */
+  revokeProfile(template: string, profile: OperationProfile, by: string): Promise<void>;
+}
 
 // ---- Ports ---------------------------------------------------------------------------
 

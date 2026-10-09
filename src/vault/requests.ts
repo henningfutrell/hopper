@@ -6,7 +6,7 @@
 // request again after a restart.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
-import { CREDENTIAL_NOTE_MAX, CREDENTIAL_WHY_MAX, VAULT_SECRET_NAME, templateView, type CredentialRequest, type VaultSecret } from '../domain/vault.ts';
+import { CREDENTIAL_NOTE_MAX, CREDENTIAL_WHY_MAX, givesOf, VAULT_SECRET_NAME, type CredentialRequest, type VaultSecret } from '../domain/vault.ts';
 
 /** The kind a person gives in their own words, whatever the skill. */
 export const OTHER_KIND = 'other';
@@ -36,7 +36,7 @@ export type RequestResult = { ok: true } | { ok: false; code: 'invalid' | 'not_f
 export interface CredentialRequests {
   /** A job waits on a credential its template does not give: a request opened, or joined. */
   need(ask: CredentialAsk, asker: Asker): NeedAnswer;
-  give(id: string, g: Give, by: string): RequestResult;
+  give(id: string, g: Give, by: string): Promise<RequestResult>;
   decline(id: string, reason: string, by: string): RequestResult;
   /** The open requests, without the jobs no longer at work, and with the secrets a person may give again. */
   list(): CredentialRequest[];
@@ -54,8 +54,8 @@ export function createCredentialRequests(o: {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
   clock: Clock;
   idGen: () => string;
-  /** The vault's own set: sealed, never kept in clear (service.ts). */
-  set(s: { name: string; scope?: string; value: string }, by: string): RequestResult;
+  /** The vault's own set — in the hopper, or in the vault's container (issue #586): sealed, never kept in clear. */
+  set(s: { name: string; scope?: string; value: string }, by: string): Promise<RequestResult>;
 }): CredentialRequests {
   const { vault, events } = o.store;
   const open = new Map<string, CredentialRequest>();
@@ -89,7 +89,7 @@ export function createCredentialRequests(o: {
         return { declined: `the user declined to give a ${ask.title} credential: ${said}. Go on without it, or fail the job with that reason.` };
       }
       const t = vault.template(template);
-      const pending = t ? templateView(t).pending.secrets.map((n) => vault.get(n)).find((s) => s?.skill === ask.skill) : undefined;
+      const pending = t ? t.secrets.filter((n) => !givesOf(t).includes(n)).map((n) => vault.get(n)).find((s) => s?.skill === ask.skill) : undefined;
       if (pending) return { waiting: `the user gave ${pending.name} for ${ask.title}; template ${template} waits for a person's approval in Settings → Vault.` };
       prune();
       const at = now();
@@ -106,7 +106,7 @@ export function createCredentialRequests(o: {
       return { waiting: `the hopper asked the user for ${ask.kinds[0]?.title ?? 'a credential'} for ${ask.title} (they may give another kind).` };
     },
 
-    give(id, g, by) {
+    async give(id, g, by) {
       const r = byId(id);
       if (!r) return gone;
       if (!VAULT_SECRET_NAME.test(g.name)) return invalid('name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
@@ -117,16 +117,18 @@ export function createCredentialRequests(o: {
       const was = vault.get(g.name);
       if (g.value === undefined && !was) return invalid(`the vault holds no secret ${g.name}: give its value`);
       if (was?.skill !== undefined && was.skill !== r.skill) return invalid(`${g.name} is the ${was.skill} credential; give this one another name`);
-      const t = vault.template(r.template);
-      if (!t) return { ok: false, code: 'not_found', error: `no template ${r.template}` };
+      if (!vault.template(r.template)) return { ok: false, code: 'not_found', error: `no template ${r.template}` };
+      if (g.value !== undefined) {
+        const set = await o.set({ name: g.name, value: g.value, ...(g.scope !== undefined ? { scope: g.scope } : {}) }, by);
+        if (!set.ok) return set;
+      }
       return o.store.tx(() => {
-        if (g.value !== undefined) {
-          const set = o.set({ name: g.name, value: g.value, ...(g.scope !== undefined ? { scope: g.scope } : {}) }, by);
-          if (!set.ok) return set;
-        }
-        const s = vault.get(g.name)!;
+        const t = vault.template(r.template);
+        const s = vault.get(g.name);
+        if (!t || !s) return { ok: false, code: 'not_found', error: `no template ${r.template}, or no secret ${g.name}` } as const;
         const { note: _was, ...rest } = s;
-        vault.replace({ ...rest, skill: r.skill, kind: g.kind, ...(note ? { note } : {}) }, vault.sealed(s.id)!);
+        // Its metadata only: the value stays as the vault keeps it (sealed, or in a vault backend, issue #585).
+        vault.replace({ ...rest, skill: r.skill, kind: g.kind, ...(note ? { note } : {}) }, vault.sealed(s.id) ?? null);
         // The person gives it for this template's boxes: that approves the widening by this one secret, and nothing more.
         // A template never approved, or whose image changed, still waits for a person on Settings → Vault.
         const approves = t.approval !== undefined && t.approval.image === t.image;

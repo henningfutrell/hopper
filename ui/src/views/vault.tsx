@@ -1,49 +1,67 @@
 // Settings → Vault (issue #558): write-only secrets for jobs. Each is set once — a name, an optional scope saying what
 // it reaches, a value — and from then on only its metadata shows: no view, and no answer the page gets, holds a value.
 // Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
-// approved once by a person and again for a new secret or a new image. Editing is an admin's. Asked for (issue #583): the
-// credentials jobs on boxes asked for and the vault does not give; an admin gives one — of the kind suggested, or
+// approved once by a person and again for a new secret or a new image. A template's operation profiles (issue #584)
+// rate its blast radius with its secrets, shown next to it: approving the template approves its read profiles; a write,
+// sync or apply profile takes its own explicit approval. Editing is an admin's. A secret may instead be kept in a vault
+// backend (issue #585): the person names the backend and where the value is there, never the value. Asked for (issue #583):
+// the credentials jobs on boxes asked for and the vault does not give; an admin gives one — of the kind suggested, or
 // another — or declines.
-import { Boxes, Check, KeyRound, LockKeyhole, MessageSquareWarning, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
+import { FIELD } from '@/components/plugin-form';
+import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, giveProblem, kindChoices, nameProblem, requestWaiting, secretFacts } from '@/model/vault';
-import type { CredentialRequest, TemplateView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
+import type { AssetKind, Operation, OperationProfile, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
+import { AskedFor } from './vault-requests';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string } | { action: 'remove'; name: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[] } | { action: 'remove-template' | 'approve-template'; name: string }
+  | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template'; name: string }
+  | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
-type Send = (e: Edit, done: string) => Promise<boolean>;
+export type VaultEdit = Edit;
+export type Send = (e: Edit, done: string) => Promise<boolean>;
 
-function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-xs font-medium text-muted-foreground">{children}</div>;
-}
-
-/** A write-only value: never filled in from the hopper, never remembered by the browser. */
-function ValueInput({ value, onChange, required = true }: { value: string; onChange: (v: string) => void; required?: boolean }) {
+/** Where the value is kept: in the hopper (`''`), or in one of the vault backends, by name. */
+function KeptIn({ backends, kept, local, onChange }: { backends: VaultBackendView[]; kept: string; local: boolean; onChange: (k: string) => void }) {
+  const choices = [...(local ? [{ name: '', label: 'This hopper' }] : []), ...backends.map((b) => ({ name: b.name, label: b.name }))];
   return (
-    <Input className="h-9 font-mono text-sm" type="password" value={value} required={required} maxLength={65536}
-      autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
+    <div className="space-y-1"><Label>Kept in — this hopper, or a vault backend you added in Plugins</Label>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Kept in">
+        {choices.map((c) => (
+          <button key={c.name} type="button" role="radio" aria-checked={kept === c.name} onClick={() => onChange(c.name)}
+            className={`min-h-8 rounded-md border px-2 text-xs transition-colors ${kept === c.name ? 'border-primary bg-primary text-primary-foreground' : 'border-input text-muted-foreground hover:bg-muted'}`}>{c.label}</button>
+        ))}
+      </div>
+    </div>
   );
 }
 
-function SetForm({ secret, busy, send, onDone }: { secret?: VaultSecret; busy: boolean; send: Send; onDone: () => void }) {
+function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: VaultSecret; backends: VaultBackendView[]; local: boolean; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(secret?.name ?? '');
   const [scope, setScope] = useState(secret?.scope ?? '');
   const [value, setValue] = useState('');
+  const [kept, setKept] = useState(secret?.backend?.name ?? (local ? '' : backends[0]?.name ?? ''));
+  const [reference, setReference] = useState(secret?.backend?.reference ?? '');
+  const backend = backends.find((b) => b.name === kept);
   const problem = name ? nameProblem(name.trim()) : undefined;
+  const ready = backend ? reference.trim() !== '' : value !== '';
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
       const n = name.trim();
-      const ok = await send({ action: 'set', name: n, scope: scope.trim(), value }, secret ? `${n}: replaced` : `${n}: set`);
+      const edit: Edit = backend ? { action: 'set-in-backend', name: n, scope: scope.trim(), backend: backend.name, reference: reference.trim() } : { action: 'set', name: n, scope: scope.trim(), value };
+      const ok = await send(edit, secret ? `${n}: replaced` : `${n}: set`);
       setValue('');
       if (ok) onDone();
     }}>
@@ -55,29 +73,37 @@ function SetForm({ secret, busy, send, onDone }: { secret?: VaultSecret; busy: b
       )}
       <label className="block space-y-1"><Label>Scope — what it reaches, in your words (optional)</Label>
         <Input className="h-9 text-sm" value={scope} maxLength={200} placeholder="k3s lab, namespace default, read-only" onChange={(e) => setScope(e.target.value)} /></label>
-      <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone</Label>
-        <ValueInput value={value} onChange={setValue} /></label>
+      {backends.length > 0 && <KeptIn backends={backends} kept={kept} local={local} onChange={setKept} />}
+      {backend ? (
+        <label className="block space-y-1"><Label>Where it is in {backend.name} — read there each time a job asks; the hopper keeps no copy</Label>
+          <Input className="h-9 font-mono text-sm" value={reference} required maxLength={500} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder={referenceHint(backend.plugin)} onChange={(e) => setReference(e.target.value)} />
+          {(backend.problem ?? backend.setup) && <div className="text-xs text-warn break-words">{backend.problem ?? backend.setup}</div>}</label>
+      ) : (
+        <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone</Label>
+          <ValueInput value={value} onChange={setValue} /></label>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !value || !name.trim() || problem !== undefined}>{secret ? 'Replace value' : 'Set secret'}</Button>
+        <Button type="submit" disabled={busy || !ready || !name.trim() || problem !== undefined}>{secret ? 'Replace' : 'Set secret'}</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>
   );
 }
 
-function SecretItem({ s, can, busy, send }: { s: VaultSecret; can: boolean; busy: boolean; send: Send }) {
+function SecretItem({ s, backends, local, can, busy, send }: { s: VaultSecret; backends: VaultBackendView[]; local: boolean; can: boolean; busy: boolean; send: Send }) {
   const [replacing, setReplacing] = useState(false);
   return (
     <li className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <KeyRound className="size-4 text-muted-foreground" />
         <span className="font-mono text-sm font-medium break-all">{s.name}</span>
-        <span className="text-xs text-muted-foreground">value set · write-only</span>
+        <span className="text-xs text-muted-foreground">{keptText(s)}</span>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         {secretFacts(s).map((f) => <div key={f.label} className="contents"><dt className="text-muted-foreground">{f.label}</dt><dd className="break-words">{f.value}</dd></div>)}
       </dl>
-      {replacing ? <SetForm secret={s} busy={busy} send={send} onDone={() => setReplacing(false)} /> : (
+      {replacing ? <SetForm secret={s} backends={backends} local={local} busy={busy} send={send} onDone={() => setReplacing(false)} /> : (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" disabled={!can || busy} onClick={() => setReplacing(true)}><RefreshCw />Replace</Button>
           <Confirm title={`Remove ${s.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove', name: s.name }, `${s.name}: removed`)}
@@ -90,16 +116,58 @@ function SecretItem({ s, can, busy, send }: { s: VaultSecret; can: boolean; busy
   );
 }
 
-/** A template's form: its name (fixed once saved), its image, and the vault secrets its boxes may ask for. */
+const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
+const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+const sameProfile = (a: OperationProfile, b: OperationProfile) => profileText(a) === profileText(b);
+
+/** The operation profiles a template's boxes may ask for: each removable, and one more added from an operation, an asset kind and a name. */
+function ProfilesInput({ profiles, busy, onChange }: { profiles: OperationProfile[]; busy: boolean; onChange: (p: OperationProfile[]) => void }) {
+  const [operation, setOperation] = useState<Operation>('read');
+  const [kind, setKind] = useState<AssetKind>('cluster');
+  const [asset, setAsset] = useState('');
+  const add = () => {
+    const p = { operation, asset: { kind, name: asset.trim() } };
+    if (!profiles.some((x) => sameProfile(x, p))) onChange([...profiles, p]);
+    setAsset('');
+  };
+  return (
+    <div className="space-y-1"><Label>Operation profiles its boxes may ask for — write, sync and apply each need their own approval</Label>
+      {profiles.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Operation profiles">
+          {profiles.map((p) => (
+            <li key={profileText(p)} className={`flex min-h-8 items-center gap-1 rounded-md border px-2 font-mono text-xs ${highRadius(p) ? 'border-warn' : ''}`}>
+              {profileText(p)}
+              <button type="button" aria-label={`Remove ${profileText(p)}`} disabled={busy} onClick={() => onChange(profiles.filter((x) => !sameProfile(x, p)))}><X className="size-3" /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-end gap-2">
+        <select aria-label="Operation" className={`${FIELD} w-24`} value={operation} disabled={busy} onChange={(e) => setOperation(e.target.value as Operation)}>
+          {OPERATIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <select aria-label="Asset kind" className={`${FIELD} w-44`} value={kind} disabled={busy} onChange={(e) => setKind(e.target.value as AssetKind)}>
+          {ASSET_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <Input aria-label="Asset" className="h-8 w-40 font-mono text-xs" value={asset} placeholder="lab" maxLength={200} disabled={busy} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          onChange={(e) => setAsset(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (asset.trim()) add(); } }} />
+        <Button type="button" size="sm" variant="outline" disabled={busy || !asset.trim()} onClick={add}><Plus />Add profile</Button>
+      </div>
+    </div>
+  );
+}
+
+/** A template's form: its name (fixed once saved), its image, the vault secrets and the operation profiles its boxes may ask for. */
 function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(t?.name ?? '');
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
+  const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope }, `${name.trim()}: saved`)) onDone();
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -119,7 +187,8 @@ function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; se
           </div>
         )}
       </div>
-      <p className="text-xs text-muted-foreground">A new secret or a new image waits for your approval before any box gets it.</p>
+      <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
+      <p className="text-xs text-muted-foreground">A new secret, a new image or a new profile waits for your approval before any box gets it. A profile you remove loses its approval.</p>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || !name.trim() || !image.trim()}>Save template</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
@@ -130,17 +199,21 @@ function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; se
 
 function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
-  const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0;
+  const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.some((p) => !highRadius(p));
+  const explicit = explicitApprovals(t);
   return (
     <li className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Boxes className="size-4 text-muted-foreground" />
         <span className="font-mono text-sm font-medium break-all">{t.name}</span>
-        <span className={`text-xs ${waiting ? 'text-warn' : 'text-muted-foreground'}`}>{approvalText(t)}</span>
+        <TemplateRadiusBadge radius={t.radius} />
+        <span className={`text-xs ${waiting || explicit.length > 0 ? 'text-warn' : 'text-muted-foreground'}`}>{approvalText(t)}</span>
       </div>
+      <TemplateRadiusReasons radius={t.radius} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
+        <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
         {t.approval && <><dt className="text-muted-foreground">Approved by</dt><dd className="break-words">{t.approval.by} · {new Date(t.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
       </dl>
@@ -148,10 +221,16 @@ function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secret
         <div className="flex flex-wrap gap-2">
           {waiting && (
             <Confirm title={`Approve ${t.name}?`} action="Approve" onConfirm={() => void send({ action: 'approve-template', name: t.name }, `${t.name}: approved`)}
-              description={<>Boxes from <span className="font-mono">{t.image}</span> may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them.</>}>
+              description={<>Boxes from <span className="font-mono">{t.image}</span> may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{t.pending.profiles.some((p) => !highRadius(p)) ? <>, and read <span className="font-mono">{t.pending.profiles.filter((p) => !highRadius(p)).map(profileText).join(', ')}</span></> : null}. A write, sync or apply profile is not approved by this.</>}>
               <Button size="sm" disabled={!can || busy}><Check />Approve</Button>
             </Confirm>
           )}
+          {explicit.map((p) => (
+            <Confirm key={profileText(p)} title={`Approve ${t.name}: ${profileText(p)}?`} action="Approve" onConfirm={() => void send({ action: 'approve-profile', name: t.name, ...p }, `${t.name}: ${profileText(p)} approved`)}
+              description={<>This is a high-radius profile: it changes <span className="font-mono">{p.asset.kind} {p.asset.name}</span>. Every job in a box of <span className="font-mono">{t.name}</span> may then {p.operation} there. An approval for read does not cover this.</>}>
+              <Button size="sm" variant="outline" disabled={!can || busy}><ShieldAlert />Approve {profileText(p)}</Button>
+            </Confirm>
+          ))}
           <Button size="sm" variant="outline" disabled={!can || busy} onClick={() => setEditing(true)}><Pencil />Edit</Button>
           <Confirm title={`Remove ${t.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove-template', name: t.name }, `${t.name}: removed`)}
             description="Its boxes keep running, and get nothing from the vault.">
@@ -159,58 +238,6 @@ function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secret
           </Confirm>
         </div>
       )}
-    </li>
-  );
-}
-
-/** A credential request (issue #583): what jobs wait on, how to get the credential, and the admin's answer. */
-function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolean; busy: boolean; send: Send }) {
-  const [kind, setKind] = useState(r.kinds[0]?.id ?? 'other');
-  const [note, setNote] = useState('');
-  const [name, setName] = useState(r.existing[0] ?? r.secret);
-  const [value, setValue] = useState('');
-  const [reason, setReason] = useState('');
-  const problem = giveProblem({ name, kind, note, value }, r);
-  const existing = r.existing.includes(name.trim());
-  return (
-    <li className="space-y-3 rounded-md border border-warn/50 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <MessageSquareWarning className="size-4 text-warn" />
-        <span className="text-sm font-medium">{r.title}</span>
-        <span className="text-xs text-muted-foreground">for boxes of <span className="font-mono">{r.template}</span>{r.known ? '' : ' · the hopper has no skill for it: the job said what it takes'}</span>
-      </div>
-      <ul className="space-y-0.5 text-xs">{requestWaiting(r).map((w) => <li key={w} className="break-words">Waits: {w}</li>)}</ul>
-      <p className="text-xs text-muted-foreground break-words">How to get one: {r.setup}</p>
-      {can ? (
-        <form className="space-y-3" onSubmit={async (e) => {
-          e.preventDefault();
-          const ok = await send({ action: 'give-credential', request: r.id, name: name.trim(), kind, ...(note.trim() ? { note: note.trim() } : {}), ...(value ? { value } : {}) }, `${r.title}: given as ${name.trim()}`);
-          if (ok) setValue('');
-        }}>
-          <div className="space-y-1" role="radiogroup" aria-label="What you give"><Label>What you give — the first is the hopper's suggestion; any kind works</Label>
-            {kindChoices(r).map((k) => (
-              <label key={k.id} className="flex items-start gap-2 text-sm">
-                <input type="radio" name={`kind-${r.id}`} className="mt-1" checked={kind === k.id} onChange={() => setKind(k.id)} />{k.title}
-              </label>
-            ))}
-          </div>
-          {kind === 'other' && (
-            <label className="block space-y-1"><Label>What it is, in your words — the job reads this, never the value</Label>
-              <Input className="h-9 text-sm" value={note} maxLength={200} placeholder="a team key, read-only" onChange={(e) => setNote(e.target.value)} /></label>
-          )}
-          <label className="block space-y-1"><Label>Vault secret name{r.existing.length ? ` — or one you set before: ${r.existing.join(', ')}` : ''}</Label>
-            <Input className="h-9 font-mono text-sm" value={name} required maxLength={64} autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => setName(e.target.value)} /></label>
-          <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone{existing ? ' (empty: keep the one the vault holds)' : ''}</Label>
-            <ValueInput value={value} onChange={setValue} required={!existing} /></label>
-          <p className="text-xs text-muted-foreground">Boxes of {r.template} may then ask for it, whatever job runs in them.</p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" disabled={busy || problem !== undefined}><Check />Give</Button>
-            <Input className="h-9 w-56 text-sm" value={reason} maxLength={200} placeholder="Why not (for the job)" aria-label="Why not" onChange={(e) => setReason(e.target.value)} />
-            <Button type="button" variant="outline" disabled={busy} onClick={() => void send({ action: 'decline-credential', request: r.id, reason: reason.trim() }, `${r.title}: declined`)}><X />Decline</Button>
-          </div>
-          {problem && (value || note || kind === 'other') && <div className="text-xs text-muted-foreground">{problem}</div>}
-        </form>
-      ) : <p className="text-xs text-muted-foreground">An admin gives it here.</p>}
     </li>
   );
 }
@@ -241,22 +268,20 @@ export function Vault() {
 
   const secrets = view?.secrets ?? [];
   const templates = view?.templates ?? [];
+  const backends = view?.backends ?? [];
+  // A value kept in the hopper needs its token key; a secret kept in a backend does not.
+  const local = view !== null && view.problem === undefined;
   const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
-      {requests.length > 0 && (
-        <Panel title="Asked for" icon={MessageSquareWarning} count={requests.length} bodyClassName="space-y-3">
-          <p className="text-sm text-muted-foreground">Jobs on boxes need these credentials, and wait until you give one or decline. Give the kind the hopper suggests, or any other: the job is told what you gave, never the value.</p>
-          <ul className="space-y-2">{requests.map((r) => <RequestItem key={r.id} r={r} can={can} busy={busy} send={send} />)}</ul>
-        </Panel>
-      )}
+      <AskedFor requests={requests} can={can} busy={busy} send={send} />
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
-        action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || view?.problem !== undefined}><Plus />Add secret</Button> : undefined}>
-        <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database.</p>
+        action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
+        <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>
         {view?.problem && <p className="text-sm text-bad break-words">{view.problem}</p>}
-        {adding && <div className="rounded-md border p-3"><SetForm busy={busy} send={send} onDone={() => setAdding(false)} /></div>}
+        {adding && <div className="rounded-md border p-3"><SetForm backends={backends} local={local} busy={busy} send={send} onDone={() => setAdding(false)} /></div>}
         {view && secrets.length === 0 && !adding && <Empty>No secrets yet.</Empty>}
-        {secrets.length > 0 && <ul className="space-y-2">{secrets.map((s) => <SecretItem key={s.id} s={s} can={can} busy={busy} send={send} />)}</ul>}
+        {secrets.length > 0 && <ul className="space-y-2">{secrets.map((s) => <SecretItem key={s.id} s={s} backends={backends} local={local} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
       <Panel title="Templates" icon={Boxes} count={templates.length || ''} bodyClassName="space-y-3"
         action={can && !addingTemplate ? <Button size="sm" onClick={() => setAddingTemplate(true)} disabled={busy}><Plus />Add template</Button> : undefined}>

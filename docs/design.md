@@ -36,12 +36,12 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
-| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
+| `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
-| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
+| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -61,6 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -1407,7 +1408,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356) and its Run again half (`rerun.ts`, issues #362, #354); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -1804,6 +1805,34 @@ it with `could not confirm the work is complete: <error>`. Fail closed: a failed
 of no source, take every done job as complete. Before issue #171, a job that said it was done was closed as
 completed with nothing on the default branch.
 
+**Partly done** (issue #579). A job that ships part of its issue opens its pull request with `Part of #N` in its body
+in place of `Closes #N`, lists in it what is left, and ends done; its prompt's `done:` line says so. Not complete by
+the rule above, it is asked once more before it would fail (`JobSource.partlyDone`; the engine's verdict,
+`src/domain/pull-requests.ts` `judge`): the job's own pull request that mentions the issue (the issue's
+`CROSS_REFERENCED_EVENT` timeline, `GitHubApi.referencingPullRequests`), in the issue's repository, whose body says
+`Part of #N`, open and ready for review — not a draft, no merge conflicts — or merged already. Found, the job ends
+`finished` with `partlyDone` (its URL; on the job and on `job.finished`), never failed; the issue gets
+`hopper:partly-done`. The next part runs once that pull request is merged (below): the hopper does not split the issue
+and does not ask; a person who wants it split splits it.
+
+**After done** (issue #579, `src/sources/after-done.ts`, `src/sources/github/follow.ts`). A finished job's report
+keeps its pull request in the job's source state (`pullRequest`, `follow: open`, `part` for a part), and each sync of
+its source asks again where it is (`JobSource.follow`), on the job's report chain:
+
+| the pull request | then |
+|------------------|------|
+| still open | nothing |
+| merged — the issue closed as complete by it, or the pull request merged | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`. A part: `hopper:partly-done` only comes off, so the next sync offers the issue again and a new job takes the next part |
+| closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+
+The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper still never closes one.
+A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next
+sync. **A job that failed only for want of a merge** — its error `not complete: …`, from before a pull request was
+done — and still waiting on a person in Needs a person is judged again at each sync of its source: done or partly done
+now, it is finished (`SourceHost.finishComplete`), its hand-off closes on `job.finished`, and its end is reported again,
+so its issue loses `hopper:failed`. The failure assessor's `not-complete` cause says so: a pull request waiting for its
+merge is never a failure.
+
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
 expires while it waits on a question, or it closes its issue with a commit and then trips. Before
@@ -1819,7 +1848,7 @@ failed job failed.
 | report | on GitHub |
 |--------|-----------|
 | claimed | ensure labels `hopper:claimed`, `hopper:done`, `hopper:failed` exist (`gh label create --force`, once per repo per process); add `hopper:claimed`. **No comment** |
-| finished | **no comment**; remove `hopper:claimed`, add `hopper:done` (only a job whose work is complete is finished, above); never a close. Removing `hopper:done` from the open issue — reopened, when a merge closed it — is the re-run gesture |
+| finished | **no comment**; remove `hopper:claimed` (and `hopper:failed`, for a failed job found done later), add `hopper:pr-ready` while the issue is open — its pull request waits for review —, `hopper:partly-done` for a part, `hopper:done` when the issue is closed as complete already (only a job whose work is done or partly done is finished, above); never a close. The pull request is then followed ("After done"). Removing the end label from the open issue — reopened, when a merge closed it — is the re-run gesture |
 | failed | **no comment**; remove `hopper:claimed`, add `hopper:failed` (removing it is the re-run gesture) |
 | cancelled | **no comment**; remove `hopper:claimed` |
 | rejected | **no comment**; remove `hopper:claimed`, add `hopper:rejected`; the issue stays open (removing the label is the re-run gesture) |
@@ -2363,6 +2392,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | live (since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | live (since issue #356) |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | live (since issue #356) |
+| `vault-backend` | `VaultBackend { name; check(reference); read(reference) → value }` (issue #585, "Vault backends") | 0..n | `hashicorp-vault`, `1password`, `bitwarden` | live |
 
 A new agent CLI (codex, cursor-agent, opencode, hermes — all present on the hopper host) is a new
 `executor` plugin; nothing is generic over CLIs.
@@ -2569,6 +2599,7 @@ command, and the levels' fail-closed contract and the risk rules (code, not opti
 | escalation level | stays in its place and escalates every question it gets (`/api/plugins` `escalationLevels[].active: null`, `reason`); fail safe: a broken level never answers and never hides the levels above |
 | executor | jobs naming it `held`, reason `executor <name> unavailable`; never failed or re-routed |
 | job source / notifier | dropped; error in `/api/plugins` |
+| vault backend | dropped; error in `/api/plugins` and on Settings → Vault; a vault secret kept in it is refused at delivery, saying why |
 
 ### Persisted-state migrations
 
@@ -9099,7 +9130,8 @@ reading of its own live tuples: the job runs from the template → the template 
 profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
-status; each template's approvals with the chain and **Revoke** (asked once); the revoked ones; **Try a check** (a
+status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
+(issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
 decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
@@ -9319,7 +9351,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); the credential requests a skill load opens (`requests.ts`, issue #583) | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9332,12 +9364,10 @@ Owner constraint (issue #558): a key service (a cloud KMS, or a local one) is al
 the vault needs nothing outside the hopper to start, and a user hosting everything themselves has a vault that works.
 So the vault reaches its key through one small seam, the **key provider** — the `Sealer` interface of
 `src/secrets/sealer.ts` (`seal(value, context)`, `open(sealed, context)`, `current(sealed)`, `keyId`) — and
-`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, the
-only one built. A KMS mode would be another `Sealer`: it would wrap each value's key with the key service (or have it
-encrypt), record its own key id, and plug in where `sealerOf` is chosen; nothing in the vault, the store or the routes
-changes, and a value it cannot open is `SecretUnreadable` as now. Not built: it would add a cloud SDK or a network
-service, and the vault's purpose is getting secrets to boxes, not key management. `test/vault/key-seam.test.ts` keeps
-the vault working behind any key provider.
+`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, used
+when no KMS is named. Since issue #586 a **KMS** can stand behind it, optional ("The KMS: an optional key provider" below); nothing
+in the vault, the store or the routes changed for it, and a value it cannot open is `SecretUnreadable` as before.
+`test/vault/key-seam.test.ts` keeps the vault working behind any key provider.
 
 ### Templates (slice 2)
 
@@ -9361,19 +9391,62 @@ migration 29, a table only), the last approval in its body.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
-**Access (#559) is not asked in v1.** #559's access check (OpenFGA) decides each credential the vault would *mint*; v1
-mints nothing and, by owner constraint, needs no system outside the hopper — so the vault's gate is the template's
-approval above, rows in the hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559
-says. A template's vault approval is not an access approval (`approved_for` an operation profile on an asset): the two
-name the same template and nothing else.
+**Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
+would *mint*; v1 mints nothing, so a vault secret's delivery is decided by the template's approval above, rows in the
+hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559 says. A template's vault
+approval of its image and secrets is not an access approval (`approved_for` an operation profile on an asset). A
+template's **operation profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their
+access approvals, and access is the one record of which are approved.
 
-**Not built** (owner: keep the vault minimal; deferred): the template's scope as an input to the blast-radius rating
-(#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one
+**Not built** (owner: keep the vault minimal; deferred): a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
+
+### A template's blast radius (issue #584)
+
+Owner direction (issue #559, split into #584): a box's tools decide what it *could* do (a machine's blast radius, issue
+#542, from its discovery); its identity decides what it *may* do. So a template is rated too, from what its boxes may
+ask for, and a high-radius operation profile takes its own explicit approval.
+
+- **Declared profiles.** A template declares the operation profiles its boxes may ask for (`Template.profiles`, kept in
+  its body: no migration; absent on a template saved before, none). `save-template` takes `profiles` (absent: the ones
+  it has); each must be one the access model can hold (`profileProblem`, 400). A profile dropped from the template, or
+  the template removed, has its access approval revoked at once (`Access.revokeProfile`): access holds no approval the
+  template does not declare. A profile approved in access but not declared is rated too.
+- **Approval is in access.** Access (issue #559) is the one record of which profiles are approved: `pending.profiles`
+  is what the template declares and access does not approve, and a revoke in Settings → Access makes a profile wait
+  again. The vault reaches access through `TemplateApprovals` (`approvedProfiles`, `approve`, `revokeProfile`;
+  `src/domain/access.ts`), given to each user's runtime by the composition root. `approve-template` approves the image,
+  the secrets and every pending **read** profile. A **high-radius** profile — `write`, `sync` or `apply` — is approved
+  only by `approve-profile` (`name`, `operation`, `asset`), one profile at a time, behind a confirmation that says it
+  changes the asset: an approval for read never approves write. Each is `template.profile_approved` (template,
+  operation, asset, level, who).
+- **The rating** (`rateTemplate`, `src/blast-radius/template.ts`, pure; `TemplateRadius`). Each profile, declared or
+  approved: `read` is `low`, a high-radius one `high`, approved or waiting. Each vault secret in the scope is a
+  credential whose reach the hopper cannot see: an unconfirmed reach, rated by the user's blast-radius rules
+  (`reachLevel`: `medium` by default, `high` when its name or scope line holds a prod pattern, `low` when the rules
+  count unconfirmed as read). The level is the highest; the reasons are the lines that set it, a profile's saying
+  whether it is approved or waits. Rated at every view: a widening (a profile or a secret added) rates it again at
+  once, and the new profile waits for a person.
+- **Where it shows.** `GET /api/vault` and Settings → Vault: each template's `radius`, its badge and reasons, its
+  profiles marked as waiting, Approve (the template and its read profiles) and one *Approve write on …* per waiting
+  high-radius profile. `GET /api/access` and Settings → Access: each template with an approval or a vault template of
+  its name, its `radius` beside its approvals, and what waits for approval on the Vault page. Access rates a template
+  from every user's vault templates of that name (`VaultService.templateScopes`), each with its user's rules, and shows
+  the highest.
+
+**Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
+discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
+carries its `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+
+Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
+not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
+read profile rated low and its check allowed; a write profile added raises the rating, the template's approval does
+not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Settings → Access
+makes it wait again; narrowing and removal revoke; refusals), `test/integration/access.test.ts`, `test/ui/vault.test.ts`.
 
 ### Delivery to the box (slice 3)
 
@@ -9423,6 +9496,73 @@ the template is approved, then `get` and `kube`; a secret outside the scope, an 
 give, a computer of no template and an ask not signed by the machine refused; the value in no event, log line or file
 of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
 `test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.
+
+### The KMS: an optional key provider (issue #586, 2026-10-09)
+
+Owner rule (issue #586): extra compose services are allowed; nothing outside the hopper's compose stack is required;
+the KMS is always optional. So the KMS is a second key provider, chosen by one runtime setting, never a dependency.
+
+- **Envelope encryption, a data key per user.** With `HOPPER_KMS_URL` set, the vault asks the KMS once for a data key
+  (`GenerateDataKey`, AES-256, bound to the encryption context `hopper: vault data key v1`). It keeps only the wrapped
+  form, in the user schema's `config` table as the row `vault-data-key` (no config record names it, so no route or CLI
+  reads it). At each start the KMS opens it (`Decrypt`). The vault's sealer is then the usual one (`src/secrets/sealer.ts`)
+  under the data key: each value still gets its own key from a salt, AES-256-GCM, bound to `vault:<id>/value`. The data
+  key's id is its fingerprint, so a sealed value says which key it needs.
+- **Turning it on.** The token keys stay as previous keys, so a vault secret sealed before opens, and is sealed again
+  under the data key when the vault opens (`resealAll`). Two starts at once: the first to keep its data key wins
+  (`INSERT … ON CONFLICT DO NOTHING`), the other opens that one.
+- **Fails closed.** A KMS that gives no data key (down, refused, a changed wrapped key) leaves the vault with no sealer
+  and a problem naming the KMS: Settings → Vault says it, nothing is stored, nothing delivered. In the hopper, a restart
+  asks again; the vault container asks again at the next request.
+- **Turning it off** is not built: a value sealed under the data key does not open without the KMS, and is said so.
+  Set each secret again. A fold of users (issue #265) keeps the kept user's data key; the folded user's secrets sealed
+  under another data key are set again.
+- **The KMS built**: local-kms (`docker.io/nsmithuk/local-kms`, AWS KMS's API, keys in its `/data` volume), the
+  compose profile `kms`. The key is `HOPPER_KMS_KEY` (default `alias/hopper-vault`), made with its alias at the first
+  ask when the KMS has none. The client is AWS's own (`@aws-sdk/client-kms`), with fixed placeholder credentials:
+  local-kms checks none. A KMS that checks credentials (AWS) is not supported yet. Residual risk: local-kms keeps its key
+  material in clear in its volume; it parts the key from the database (a dump holds no usable value), not from the host.
+
+Tests: `test/vault/kms-keys.test.ts` (a fake KMS at the `KeyService` port: wrap once, open again, seal again, fail
+closed), `test/vault/local-kms.test.ts` (the adapter against a real local-kms, when `HOPPER_TEST_KMS_URL` names one).
+
+### The vault in a container of its own (issue #586, 2026-10-09)
+
+The vault can run as a separate compose container, `hopper-vault` (profile `hopper-vault`): the hopper's image, `node
+src/vault/main.ts`. With `HOPPER_VAULT_URL` set, the hopper builds no vault of its own and holds none of its keys: it
+asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopper, as before.
+
+- **The split.** The vault container holds the vault's key and the secret values: a secret set or removed, a delivery,
+  and whether the vault can be used now (`status`, shown as Settings → Vault's problem) go to it. The secrets' metadata
+  and the templates — whose operation profiles are approved in access (issue #584), the hopper's — are read and changed
+  in the hopper, by a vault service that holds no key. So is a secret kept in a vault backend (issue #585): its set and
+  its delivery run in the hopper, which runs the backends; the vault container never sees one. The service is named
+  `hopper-vault`, apart from `vault`, the HashiCorp Vault backend's service. `scopeOf` and `templateScopes` stay synchronous for the skill
+  broker (issue #582) and the access rating.
+- **The same checks.** The server (`src/vault/server.ts`) opens the user's store and runs the same vault service per
+  request: the write-only rule and every check of a delivery stay in the vault. What only the hopper knows travels with
+  an ask: the client target whose link signed it (name, machine key, template) and whether the job's token is one the
+  user's link key gives (issue #563). The vault decides the rest — the job at work, on that machine, the secret in the
+  template's approved scope, read from the user's store — and opens the value.
+- **The wire** (`src/vault/wire.ts`): `POST /vault/<op>` — `status`, `set`, `remove`, `deliver` — JSON, with the
+  preshared key `HOPPER_VAULT_KEY` as a bearer token (compared in constant time; the postgres service makes it on first
+  start, `vault_key`, uid 1000). The answer is `{ result, events }`. On the compose network only: no host port. Residual
+  risk: plain HTTP on that network, as for OpenFGA; a value crosses it when it is set and when it is delivered.
+- **The hopper keeps the event log.** The vault answers the events it would append (`vault.secret_set`,
+  `vault.delivered`, …); the hopper appends them, so webhooks and the UI see them as before. A vault edit and its event
+  are no longer one transaction.
+- **Not running, or the wrong key**: the view carries the problem ("not reachable", "refused the hopper"), an edit
+  answers 503, an ask is refused and recorded (`vault.refused`). Nothing else in the hopper waits on the vault.
+- **Its key provider** is chosen in the vault container: the token key (mounted read-only from the `secrets` volume), or
+  the KMS's data key with `HOPPER_KMS_URL`. The hopper's token key still seals what the hopper owns itself (webhook
+  signing secrets, the GitHub connection's tokens).
+- **Migrations stay the hopper's.** The vault server opens the store at its first request, after the hopper has
+  migrated it.
+
+Tests: `test/integration/vault-container.test.ts` (the hopper with no token key, the vault server with it: set, sealed
+under the vault's key, events in the hopper's log; a wrong key; no vault running and the hopper works),
+`test/integration/vault-delivery.test.ts` (a box's job gets a secret through the vault container),
+`test/scripts/compose.test.ts` (the profiles).
 
 ## Skills: what the hopper can set up for a box (issue #582, 2026-10-09)
 
@@ -9490,6 +9630,74 @@ skill and its link, never the value; a machine of no template, no asset, a wrong
 `test/integration/github-proxy.test.ts` (`HOPPER_SKILL` beside `HOPPER_GH`), `test/herdr/screen.test.ts` (the protocol
 line).
 
+### Vault backends (issue #585, 2026-10-09)
+
+Owner direction (issue #559, split out as #585): the vault can keep a secret's value in an outside secret manager the
+user prefers — 1Password, Bitwarden, HashiCorp Vault — as a **backend**, never as a replacement. Rule: nothing outside
+the hopper's compose stack is required; a backend is always optional, and the hopper works fully without one.
+
+**A plugin role.** A **vault backend** is a plugin of the role `vault-backend` ("Roles, plugins, instances"): 0..n
+instances in the plugins config's `vaultBackends`, added, edited and removed in Settings → Plugins, followed live. Port:
+`VaultBackend { name; check(reference); read(reference) }` (`src/domain/vault.ts`). `check` says why a reference is not
+one the backend reads, from its form alone (no network, no credential); `read` gives the value a reference points at,
+now, or throws saying why — never with a value. A built-in plugin is never written into a fresh store's plugins
+config: `vaultBackends` is absent until a person adds one, so a build from before it still reads that config.
+
+**What stays the same.** The hopper's vault stays the one front door. A secret kept in a backend is a vault secret like
+any other: a template's approved scope names it, a box's job asks for it with its proxy token, the client's link signs
+the ask, and the answer is sealed to that one request ("Delivery to the box"). Only where the value comes from
+changes: the vault service (`deliver`) reads it from the backend after every check has passed, at the moment of use,
+and keeps no copy — not in the database, an event, a log line or a cache. `vault.delivered` and `vault.refused` name
+the backend (`backend`); a backend that is gone, cannot run or cannot read the reference refuses the ask, saying why
+(`vault.refused`, a warning in the log naming the backend and the secret).
+
+**Kept.** A vault secret kept in a backend has `backend: { name, reference }` in its metadata, shown on Settings →
+Vault and in `GET /api/vault`, and no sealed value: tenant migration 31 lets `vault_secrets.sealed` be empty. The build
+before reads an empty value as one it cannot open, and refuses to deliver it. Set with `POST /ui/api/vault`
+`set-in-backend` (`name`, `scope?`, `backend`, `reference`): refused for a backend the plugins config does not name, one
+that cannot run, or a reference its `check` refuses. Setting a value again (`set`) keeps it in the hopper once more;
+`set-in-backend` over a secret kept in the hopper drops its sealed value. Such a secret needs no token key. A person
+adding a secret on the Vault page chooses where it is kept: this hopper (a value), or a backend (a reference).
+
+**The backend's own token** comes from the runtime, as every credential for an outside service does ("Secrets"): the
+variable its `tokenEnv` option names, or the file that variable's `_FILE` names, read at each use, so a rotated token
+applies without a restart. It is never in the plugins config, an event or a log line. Unset: the backend is
+`needs-setup` and still runs (each read fails, saying which variable to set). `tokenEnv` and every address are
+command-bearing options: a UI session cannot send the token somewhere else without an admin.
+
+| plugin | reference | reads with | notes |
+|---|---|---|---|
+| `hashicorp-vault` | `path#key` in the KV version 2 engine (`mount`, default `secret`) | `GET <address>/v1/<mount>/data/<path>`, header `X-Vault-Token` (`tokenEnv`, default `VAULT_TOKEN`); `namespace` optional | No client library: one GET with a header is all of it, and the Node libraries for Vault wrap the same call with more than they save. 10 s timeout. Default `address` `http://vault:8200`: the optional compose service. |
+| `1password` | `op://vault/item/field` (or with a section) | 1Password's SDK `@1password/sdk`, `secrets.resolve`, with a service account token (`tokenEnv`, default `OP_SERVICE_ACCOUNT_TOKEN`) | The SDK is loaded at the first read; one client per token. |
+| `bitwarden` | the secret's id in Bitwarden Secrets Manager | Bitwarden's SDK `@bitwarden/sdk-napi`, `secrets().get`, signed in with a machine account's access token (`tokenEnv`, default `BWS_ACCESS_TOKEN`) at `apiUrl` and `identityUrl` (default the US cloud) | The SDK is loaded at the first read; no state file, so nothing is written to disk; one client per token. A native module with no build for linux on arm64: there the plugin is unavailable, saying so. |
+
+**The optional compose service.** `compose.yaml`'s `vault` service (profile `vault`) runs HashiCorp Vault with file
+storage, started only with `podman compose --profile vault up -d`; the hopper has no `depends_on` on it. Its first
+start initializes Vault with one unseal key, keeps the unseal key and the root token in its own volume `vault-keys`,
+enables KV version 2 at `secret`, and makes a read-only token for the hopper (policy `hopper`: read on
+`secret/data/*`) in the volume `vault-token`, which the hopper mounts read-only as `VAULT_TOKEN_FILE`. Each start
+unseals it with that key, so whoever can read `vault-keys` can open it: a convenience for a single host, said in
+`docs/deploy.md`. No host port: only the hopper reaches it.
+
+**When the vault asks for a new credential**, the person enters its value or points the hopper at where it already is
+in their backend: the Vault page's form offers both.
+
+**Not built**: a backend that writes (the hopper only reads); a backend's credentials minted per job; a check-read when
+a secret is set (a wrong reference shows at the first delivery, in `vault.refused` and on the box); a list of a
+backend's items to pick from.
+
+**Seams.** `src/plugins/vault-backend/<id>/` (the plugins), `src/plugins/vault-backend/credential.ts` (the token from
+the runtime, one client per token), `src/plugins/source-slots.ts` (`applyVaultBackendSpecs`, `configuredBackend`), the
+host's `vaultBackends()`; `src/vault/` is given them as `ConfiguredBackend` (`src/domain/vault.ts`) and imports nothing
+of `src/plugins/`.
+
+Tests: `test/integration/vault-backends.test.ts` (a real HashiCorp Vault and a real joined box: a secret kept there is
+delivered just in time, a changed value delivered at the next ask, no value in the database, an event or a log line; with
+the backend removed the hopper's own secret is still delivered and the one kept there refused; a backend that cannot
+read refuses; a backend or reference it does not have refused when set), `test/plugins/vault-backends.test.ts` (each
+built-in plugin: HashiCorp Vault against a real server; 1Password and Bitwarden through a fake of their SDK),
+`test/ui/vault.test.ts`.
+
 ## The dynamic vault (issue #583, 2026-10-09)
 
 Owner direction (#559, "a dynamic vault that grows as it's needed"): the vault keeps no fixed list of keys. It grows from
@@ -9514,7 +9722,9 @@ takes>"` (`askedSkill`), and that is the suggested kind.
 
 **Asking.** The broker ("Skills", step 4 or 8) finds no vault secret given for the skill among what the box's template
 gives. On a machine of no template it says no: the vault gives credentials only to boxes of a template. Else it asks the
-vault (`VaultService.need`, `src/vault/requests.ts`), which answers:
+vault (`Vault.need`), which answers. The requests sit over the vault wherever it runs — in the hopper, or in a container
+of its own (issue #586) — in the hopper's process (`withCredentialRequests`, `src/vault/service.ts`; the requests
+themselves `src/vault/requests.ts`):
 
 - **declined**: a person declined the request this job waited on — **403** `no: the user declined …: <reason>`, told
   once to each job that waited;
@@ -9532,11 +9742,14 @@ runs on this store unchanged.
 `POST /ui/api/vault` `give-credential` / `decline-credential`, admin). The card shows who waits and why, and how to get
 the credential. The admin picks the kind — the suggestions first, or something else with a line saying what it is —, a
 vault secret name (the skill's by default, or one the vault holds that was given for the skill or has its name: then
-the value may stay empty), and the value. **Give**: the value is set as any vault secret (sealed, write-only); its
-metadata keeps `skill`, `kind` and `note`; it joins the template's scope; and when the template is approved and its
+the value may stay empty), and the value. **Give**: the value is set through the vault's own set, as any vault secret
+(sealed where the vault keeps its key, write-only); its metadata keeps `skill`, `kind` and `note`; it joins the
+template's scope; and when the template is approved and its
 image unchanged, the giving approves the widening by that one secret — the person gives it for that template's boxes,
 and nothing else is approved. A template never approved, or with a new image, still waits on its card, and the job is
-told so. An `access-key` must be the key pair as JSON, as the helper's `aws` form reads it. `vault.credential_given`
+told so. A credential the person keeps in a vault backend (issue #585) is given by name: set it on the Vault page as kept
+in the backend, then give that name with no value. An `access-key` must be the key pair as JSON, as the helper's `aws`
+form reads it. `vault.credential_given`
 names the secret, the kind, the template, whether it approved, and the jobs; never the value. **Decline**, with a
 reason: `vault.credential_declined`.
 

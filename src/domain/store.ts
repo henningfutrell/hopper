@@ -2,7 +2,7 @@
 // user's store and the instance store. Re-exported from ports.ts.
 
 import type { AccessRepository } from './access.ts';
-import type { Template, VaultSecret } from './vault.ts';
+import type { VaultRepository } from './vault.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion,
@@ -12,6 +12,7 @@ import type {
 import type { ConnectedAccountProvider, MachineSample, ResourceSeries } from './types.ts';
 
 export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
+export type { VaultRepository } from './vault.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -96,23 +97,6 @@ export interface WebhookRepository {
   /** Deliveries due at or before `now`: status pending|retrying and nextAttemptAt <= now. */
   dueDeliveries(now: Date): WebhookDelivery[];
   listDeliveries(filter?: { subscriptionId?: string; limit?: number }): WebhookDelivery[];
-}
-
-/** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. */
-export interface VaultRepository {
-  list(): VaultSecret[]; get(name: string): VaultSecret | undefined;
-  /** Keeps a new secret, its value already sealed for its id. False (nothing written) when the name is taken. */
-  add(secret: VaultSecret, sealed: string): boolean;
-  /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
-  replace(secret: VaultSecret, sealed: string): boolean;
-  /** The secret's sealed value; undefined when there is none. Never part of a secret. */
-  sealed(id: string): string | undefined;
-  /** True when there was one. */
-  remove(name: string): boolean;
-  /** The templates (issue #558), by name. */
-  templates(): Template[]; template(name: string): Template | undefined;
-  /** `removeTemplate`: true when there was one. */
-  saveTemplate(t: Template): void; removeTemplate(name: string): boolean;
 }
 
 export interface QuestionRepository {
