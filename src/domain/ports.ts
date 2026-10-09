@@ -220,10 +220,12 @@ export interface NotifierEvents {
   subscribe(listener: (event: DomainEvent) => void): () => void;
   job(id: JobId): Job | undefined;
   question(id: string): Question | undefined;
-  /** The questions open at the human stage, oldest first. */
+  /** The questions open at the human stage: high-priority jobs' first (issue #535), then oldest first. */
   waitingOnHuman(): Question[];
   /** Where the human answers a question. */
   answerUrl(questionId: string): string;
+  /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
+  highPriority?(): number;
 }
 
 /**
@@ -595,8 +597,9 @@ export interface SourceHost {
   ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
   cancel(jobId: JobId, reason: string): void;
   /**
-   * The item offered again for a waiting (queued/held) job (issue #375): its priority, from the item or a
-   * routing rule, as now (job.reprioritized); and, while it has not started, its spec's executor, model,
+   * The item offered again for a job not ended (issue #375): its priority, from the item or a routing rule, as
+   * now (job.reprioritized) — a started job's too, the live priority (issue #535); and, while it waits and has not
+   * started, its spec's executor, model,
    * work tree, default work tree and machine pin as its source and routing rules give them now, a part
    * changed on the job by hand kept (job.respecified). True when anything changed.
    */
@@ -617,7 +620,7 @@ export interface SourceHost {
 }
 
 /**
- * Discovery is re-run every poll; for items that already have a waiting job the sync loop
+ * Discovery is re-run every poll; for items that already have a job not ended the sync loop
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */

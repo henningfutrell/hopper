@@ -4,7 +4,7 @@
 // question, and are a logged no-op otherwise.
 import type { Question } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 
 export interface AnswerHandlers {
   /** Requeue the job with the answer (or, for a closed question, the close text) pending; the next claim resumes it. */
@@ -42,7 +42,7 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
       if (!waitingOn(q)) return;
       const error = 'question unanswered';
       store.jobs.update(q.jobId, { status: 'failed', error, finishedAt: nowIso(c) });
-      store.events.append({ type: 'job.failed', jobId: q.jobId, questionId: q.id, data: { error } });
+      store.events.append({ type: 'job.failed', jobId: q.jobId, questionId: q.id, data: { error, ...priorityTagOf(c, q.jobId) } });
       // After the surrounding tx commits.
       setImmediate(() => void cleanup(q.jobId));
     },

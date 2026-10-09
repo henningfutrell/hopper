@@ -5,7 +5,7 @@
 // `check` for what the user did (a new code, cancel), and the hopper expires a login at `expiresAt` itself.
 import type { Clock, RunLogins, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LOGIN_SETTINGS, type EventType, type Login, type LoginBlocks, type LoginCheck, type LoginReport, type LoginSettings, type LoginStatus, type LoginView,
+  DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginReport, type LoginSettings, type LoginStatus, type LoginView,
 } from '../domain/types.ts';
 import { LOGIN_KIND_HANDLERS } from './kinds.ts';
 
@@ -61,6 +61,10 @@ export function createLogins(o: LoginsOptions): Logins {
     warnSec: store.settings.getLoginWarnSec() ?? DEFAULT_LOGIN_SETTINGS.warnSec,
   });
 
+  /** The live priority of what waits on the login (issue #535): its job, or the job of the question it runs for. */
+  const tagOf = (l: Login): PriorityTag | undefined =>
+    jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), l.jobId ?? (l.questionId ? store.questions.get(l.questionId)?.jobId : undefined));
+
   const emit = (type: EventType, l: Login, data: Record<string, unknown>): void => {
     store.events.append({
       type, ...(l.jobId ? { jobId: l.jobId } : {}), ...(l.laneId ? { laneId: l.laneId } : {}), ...(l.machineId ? { machineId: l.machineId } : {}),
@@ -113,7 +117,7 @@ export function createLogins(o: LoginsOptions): Logins {
         if (unchanged) return same;
         return store.tx(() => {
           const next = store.logins.update(same.id, { ...blocks, ...fields, status: 'pending', newCodeAskedAt: undefined });
-          emit('auth.pending', next, { expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true });
+          emit('auth.pending', next, { expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true, ...tagOf(next) });
           return next;
         });
       }
@@ -121,7 +125,7 @@ export function createLogins(o: LoginsOptions): Logins {
       return store.tx(() => {
         const l = store.logins.create({ ...blocks, kind: r.kind, tool: r.tool, ...fields });
         secrets.set(l.id, secret);
-        emit('auth.pending', l, { expiresAt: l.expiresAt, ...(l.intervalSec ? { intervalSec: l.intervalSec } : {}), run: l.run, ...(l.questionId ? { questionId: l.questionId } : {}) });
+        emit('auth.pending', l, { expiresAt: l.expiresAt, ...(l.intervalSec ? { intervalSec: l.intervalSec } : {}), run: l.run, ...(l.questionId ? { questionId: l.questionId } : {}), ...tagOf(l) });
         return l;
       });
     },
@@ -187,7 +191,7 @@ export function createLogins(o: LoginsOptions): Logins {
 
     view(login, withSecrets) {
       const secret = OPEN.includes(login.status) ? secrets.get(login.id) : undefined;
-      return { ...login, codeKept: secret !== undefined, ...(withSecrets && secret ? secret : {}) };
+      return { ...login, ...tagOf(login), codeKept: secret !== undefined, ...(withSecrets && secret ? secret : {}) };
     },
 
     settings,

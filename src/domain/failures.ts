@@ -214,12 +214,17 @@ export interface ProblemView extends Problem {
   actions: { resolve: Allowed; release: Allowed };
 }
 
+/** `priority`, `high` (issue #535): its job's live priority, and whether it is high priority; absent with its job gone. */
 export interface HandoffView extends Handoff {
   actions: { runAgain: Allowed; clear: Allowed };
+  priority?: number;
+  high?: boolean;
 }
 
 export interface FailureRecordView extends FailureRecord {
   actions: { retry: Allowed };
+  priority?: number;
+  high?: boolean;
 }
 
 export interface ProfileCount { key: string; count: number }

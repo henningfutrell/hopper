@@ -4,7 +4,7 @@
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import type { Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
 export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string };
@@ -15,7 +15,7 @@ const TAIL_CHARS = 2000;
 
 function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string): Recorded {
   c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: at, pendingAnswer: undefined, ...(tail ? { errorTail: tail.slice(-TAIL_CHARS) } : {}) });
-  c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error } });
+  c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error, ...priorityTagOf(c, job.id) } });
   return TERMINAL;
 }
 
@@ -34,7 +34,7 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   });
   store.events.append({
     type: 'question.asked', jobId: job.id, laneId, questionId: q.id, ...(raised ? { machineId: raised.machineId } : {}),
-    data: { questionId: q.id, text: q.text, detectedBy: q.detectedBy, ...(raised ? { raisedBy: raised } : {}) },
+    data: { questionId: q.id, text: q.text, detectedBy: q.detectedBy, ...(raised ? { raisedBy: raised } : {}), ...priorityTagOf(c, job.id) },
   });
   return { kind: 'question', questionId: q.id };
 }

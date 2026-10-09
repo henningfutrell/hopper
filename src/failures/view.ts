@@ -3,7 +3,7 @@
 // newest assessed failures nothing settled (issue #529), the profile — and, on each problem and failure, whether the daemon takes each action now
 // and why not. The routes refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import type { Allowed, FailureCounts, FailureRecord, FailureSettings, FailuresView, Handoff, HandoffView, Job, Problem, ProblemView } from '../domain/types.ts';
+import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
 import { SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
@@ -74,15 +74,18 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
   const since = new Date(now.getTime() - PROFILE_DAYS * DAY_MS).toISOString();
+  // Each with its job's live priority (issue #535); the open hand-offs of high-priority jobs first.
+  const saved = store.settings.getPriorityLanes();
+  const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
   return {
     now: now.toISOString(),
     counts: countsOf(store),
     settings,
-    handoffs: handoffs.map((h) => handoffView(store, h)),
+    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, h), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on a settled one (issue #529): out of the list, still in the profile.
-    recent: store.failures.list({ limit: RECENT, notOutcome: [...SETTLED] }).map((r) => ({ ...r, actions: { retry: recordRetry(store, r) } })),
+    recent: store.failures.list({ limit: RECENT, notOutcome: [...SETTLED] }).map((r) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r) } })),
     profile: profileOf(store.failures.list({ since, limit: 5000 }), now.toISOString(), { days: PROFILE_DAYS, generalThreshold: settings.groupThreshold }),
   };
 }

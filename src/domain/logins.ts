@@ -76,6 +76,9 @@ export interface Login extends LoginBlocks {
  * pending or expired, and while this process holds them: `codeKept: false` when it does not (a restart drops them).
  */
 export interface LoginView extends Login {
+  /** The live priority of the job that waits on it, and whether it is high priority (issue #535); absent with no job. */
+  priority?: number;
+  high?: boolean;
   codeKept: boolean;
   verificationUrl?: string;
   userCode?: string;

@@ -6,7 +6,7 @@
 // answers.
 import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
-import type { Question, QuestionAttempt } from '../domain/types.ts';
+import { jobPriorityTag, type Question, type QuestionAttempt } from '../domain/types.ts';
 import { openOnEndedJobs } from './stale.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
@@ -70,7 +70,9 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function abortStage(id: string, reason: string) { inflight.get(id)?.abort(reason); inflight.delete(id); }
 
   function escalationData(q: Question, target: string, reason: string): Record<string, unknown> {
-    const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}) };
+    // The job's live priority (issue #535): a high-priority question is told apart wherever it goes.
+    const tag = jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId);
+    const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}), ...tag };
     if (target !== HUMAN) return base;
     return { ...base, goal: store.jobs.get(q.jobId)?.spec.goal, answerUrl: o.answerUrl(q.id), notifyCount: q.notifyCount };
   }
