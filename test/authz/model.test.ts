@@ -1,13 +1,15 @@
 // Issue #559: the access model the hopper keeps and asks OpenFGA with. The default model compiles and has every
 // relation the hopper writes or asks; a model edit that drops one is named; an operation profile's id round-trips.
+// Issue #581: the requesters — a user owns a job, a job runs on a machine, a machine is an instance of a template — are
+// tuples the hopper writes from who is live, and the path from a requester to an asset names each step.
 import { describe, expect, it } from 'vitest';
 import { compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps } from '../../src/authz/model.ts';
-import { profileId, profileOf, assetObject, approvalTuples } from '../../src/authz/objects.ts';
+import { profileId, profileOf, assetObject, approvalTuples, machineObject, relationshipPath, requesterObject, requesterTuples } from '../../src/authz/objects.ts';
 
 describe('the access model', () => {
   it('compiles the default model with no gap', () => {
     const json = compileAccessModel(DEFAULT_ACCESS_MODEL);
-    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['asset', 'job', 'operation_profile', 'template']);
+    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['asset', 'job', 'machine', 'operation_profile', 'template', 'user']);
     expect(modelGaps(json)).toEqual([]);
   });
 
@@ -16,6 +18,10 @@ describe('the access model', () => {
     expect(modelGaps(compileAccessModel(noApply))).toEqual(['asset#can_apply']);
     const noJobs = DEFAULT_ACCESS_MODEL.replace('define running: [job]', 'define running: [template]');
     expect(modelGaps(compileAccessModel(noJobs))).toEqual(['template#running accepts job']);
+    const noRunsOn = DEFAULT_ACCESS_MODEL.replace(/\n {4}define runs_on: .*\n/, '\n').replace(' or runs_on from instance_of', '').replace('define owner: owns from runs_on', 'define owner: [user]');
+    expect(modelGaps(compileAccessModel(noRunsOn))).toEqual(['machine#runs_on']);
+    const noInstances = DEFAULT_ACCESS_MODEL.replace('define instance_of: [machine]', 'define instance_of: [job]');
+    expect(modelGaps(compileAccessModel(noInstances))).toEqual(['template#instance_of accepts machine']);
   });
 
   it('says where a model does not parse', () => {
@@ -24,6 +30,42 @@ describe('the access model', () => {
 });
 
 describe('access objects', () => {
+  it('names each requester: a user, a job of a user, a machine of a user', () => {
+    expect(requesterObject({ kind: 'user', userId: 'admin' })).toBe('user:admin');
+    expect(requesterObject({ kind: 'job', userId: 'admin', jobId: 'j1' })).toBe('job:admin/j1');
+    expect(requesterObject({ kind: 'machine', userId: 'admin', machine: 'box' })).toBe('machine:admin/box');
+    // OpenFGA takes no space, ':' or '#' in an id: a machine's name is escaped.
+    expect(machineObject({ userId: 'bob', machine: 'my box#2' })).toBe('machine:bob/my%20box%232');
+  });
+
+  it('writes who is live as tuples: a user owns each live job, the job runs on its machine, a box is an instance of its template', () => {
+    expect(requesterTuples([
+      { userId: 'admin', jobs: [{ jobId: 'j1', machine: 'box' }, { jobId: 'j2' }], boxes: [{ machine: 'box', template: 'kube' }] },
+      { userId: 'bob', jobs: [], boxes: [] },
+    ])).toEqual([
+      { subject: 'user:admin', relation: 'owns', object: 'job:admin/j1' },
+      { subject: 'job:admin/j1', relation: 'runs_on', object: 'machine:admin/box' },
+      { subject: 'user:admin', relation: 'owns', object: 'job:admin/j2' },
+      { subject: 'machine:admin/box', relation: 'instance_of', object: 'template:kube' },
+    ]);
+  });
+
+  it('reads the path from a requester to an asset: user, job, machine, template, approval, grant', () => {
+    const profile = { operation: 'read', asset: { kind: 'cluster', name: 'x' } } as const;
+    const { grant, approval } = approvalTuples('kube', profile);
+    const live = [...requesterTuples([{ userId: 'admin', jobs: [{ jobId: 'j1', machine: 'box' }], boxes: [{ machine: 'box', template: 'kube' }] }]), grant, approval];
+    expect(relationshipPath(live, 'user:admin', profile)).toEqual([
+      { subject: 'user:admin', relation: 'owns', object: 'job:admin/j1' },
+      { subject: 'job:admin/j1', relation: 'runs_on', object: 'machine:admin/box' },
+      { subject: 'machine:admin/box', relation: 'instance_of', object: 'template:kube' },
+      approval, grant,
+    ]);
+    expect(relationshipPath(live, 'job:admin/j1', profile)).toHaveLength(4);
+    expect(relationshipPath(live, 'machine:admin/box', profile)).toEqual([{ subject: 'machine:admin/box', relation: 'instance_of', object: 'template:kube' }, approval, grant]);
+    expect(relationshipPath(live, 'job:admin/j1', { ...profile, operation: 'write' })).toBeUndefined();
+    expect(relationshipPath(live, 'user:bob', profile)).toBeUndefined();
+  });
+
   it('names an operation profile by its operation and asset, and reads it back', () => {
     const asset = { kind: 'aws-role', name: '123456789012/read-only' } as const;
     expect(profileId({ operation: 'read', asset })).toBe('read/aws-role/123456789012/read-only');
