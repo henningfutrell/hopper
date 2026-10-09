@@ -98,6 +98,18 @@ describe('a question answered with Switch', () => {
       .toEqual([['work', 'research'], ['research', 'proposal']]);
   });
 
+  it('accepted switched research may end the job: it ends with its decision, not by going on', async () => {
+    const a = await start();
+    const token = await a.login();
+    const job = await a.pull(ask());
+    const q = await openQuestion(a, job.id);
+    expect((await shift(a, token, q.id, 'research', { mode: 'switch' })).status).toBe(200);
+    const item = await waitForItem(a, 'research', job.id);
+    expect((await decide(a, token, 'research', item.id, 'accept', { then: 'end' })).status).toBe(200);
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ research: { id: item.id, version: 1, decision: 'accept' } });
+    expect(ofJob(await a.events(), job.id).filter((e) => e.type === 'job.requeued').map((e) => e.data.reason)).toEqual(['answered']);
+  });
+
   it('a person picks only for a switched phase: a review item no question switched to takes no `then`', async () => {
     const a = await start();
     const token = await a.login();
