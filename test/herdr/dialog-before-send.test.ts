@@ -84,4 +84,17 @@ describe('herdr-claude executor: a dialog before anything was sent (issue #534)'
     expect(herdr.prompts).toHaveLength(1);
     expect(herdr.prompts[0]!.text).toMatch(/^go\n\n/);
   });
+
+  it('never answers its own trust dialog when trustWorkdir is false: a person does, and the job runs', async () => {
+    const { herdr, executor } = setup({ trustDialogFor: CWD, turns: [DONE] }, { trustWorkdir: false });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    expect((await executor.run(first.ctx)).kind).toBe('question');
+    expect(herdr.prompts).toEqual([]);
+    const job = jobWith({ prompt: 'go' }, { executorState: first.saved.at(-1), status: 'running' });
+    const { ctx, progress } = contextFor(job);
+    expect((await executor.resume!(ctx, 'Yes, I trust this folder')).kind).toBe('finished');
+    expect(herdr.keys.map((k) => k.keys)).toEqual([['down', 'enter']]);
+    expect(progress.map((p) => p.message)).toContain('picked option 2 of the dialog');
+    expect(herdr.prompts).toHaveLength(1);
+  });
 });

@@ -26,4 +26,15 @@ describe('herdr-claude executor: the external CLAUDE.md imports dialog', () => {
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
   });
+
+  it('the imports dialog asked, its options numbered; the answer picks one with the arrow keys, then the job runs', async () => {
+    const { herdr, executor } = setup({ importsDialog: '/home/dev/work/AGENTS.md', turns: [DONE] }, { trustWorkdir: false });
+    const first = contextFor(jobWith({ prompt: 'go' }));
+    const out = await executor.run(first.ctx);
+    expect(out.kind === 'question' && out.question.text).toContain('1. No, disable external imports\n2. Yes, allow external imports');
+    const job = jobWith({ prompt: 'go' }, { executorState: first.saved.at(-1), status: 'running' });
+    expect((await executor.resume!(contextFor(job).ctx, '2')).kind).toBe('finished');
+    expect(herdr.keys.map((k) => k.keys)).toEqual([['down', 'enter']]);
+    expect(herdr.prompts).toHaveLength(1);
+  });
 });

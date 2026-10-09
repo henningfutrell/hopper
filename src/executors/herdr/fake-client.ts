@@ -6,32 +6,10 @@ import { HerdrError } from './client.ts';
 import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
-import type { FakeHerdrClient, FakeHerdrOptions } from './fake-options.ts';
+import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
 import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, importsDialog, trustDialog, wrap } from './fake-screens.ts';
 
-export type { FakeHerdrClient, FakeHerdrOptions };
-
-export interface FakeTurn {
-  /** Lines appended while working, one per poll. */
-  steps?: string[];
-  /** Lines appended when the turn ends (assistant output, markers). */
-  output: string[];
-  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
-  end?: 'idle' | 'blocked' | 'exit' | 'working';
-  /** With `end: 'blocked'`: the dialog, shown below the output until it is answered or lapses, then gone, as Claude Code does. */
-  dialog?: string[];
-  /**
-   * Claude Code's transcript stays scrolled up (seen live after a long prompt): the output is
-   * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
-   */
-  hiddenUntilScrolled?: boolean;
-  /**
-   * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
-   * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
-   * turn by itself, unless `wakes` is false.
-   */
-  background?: { work: string; polls: number; wakes?: boolean };
-}
+export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
 
 export { CTRL_END };
 
@@ -129,10 +107,8 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     if (p.lateIn !== undefined && p.status !== 'blocked' && !p.turn && --p.lateIn <= 0) {
       p.lateIn = undefined;
       p.lines.push(...o.lateDialog!.lines);
-      p.dialogLines = o.lateDialog!.lines.length;
-      p.mode = 'late';
-      settle(p, 'blocked');
-      return;
+      [p.dialogLines, p.mode] = [o.lateDialog!.lines.length, 'late'];
+      return settle(p, 'blocked');
     }
     if (p.echoPolls !== undefined) {
       if (--p.echoPolls > 0) return;
@@ -268,8 +244,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         if (p.mode === 'late') closeDialog(p);
         else p.lines = ['✻ Welcome to Claude Code'];
         p.mode = 'none';
-        settle(p, 'idle');
-        return;
+        return settle(p, 'idle');
       }
       if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none' && droppedPicks-- <= 0) {
         closeDialog(p);

@@ -253,20 +253,16 @@ describe('herdr-claude executor: run', () => {
     expect(progress.map((p) => p.message)).toContain(`trusted workdir ${CWD}`);
   });
 
-  it('refuses a trust dialog naming another path: failed with the screen, pane closed', async () => {
+  // Issue #534: a dialog the hopper may not answer is asked of a person, its options numbered; the pane stays.
+  it('never answers a trust dialog naming another path itself: asked as a question, with its options, pane kept', async () => {
     const { herdr, executor } = setup({ trustDialogFor: '/somewhere/else', turns: [DONE] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind).toBe('failed');
-    expect(out.kind === 'failed' && out.error).toContain('Quick safety check');
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'blocked' } });
+    expect(out.kind === 'question' && out.question.text).toContain('Quick safety check');
+    expect(out.kind === 'question' && out.question.text).toContain('1. No, exit\n2. Yes, I trust this folder');
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
-  });
-
-  it('refuses its own trust dialog when trustWorkdir is false', async () => {
-    const { herdr, executor } = setup({ trustDialogFor: CWD, turns: [DONE] }, { trustWorkdir: false });
-    expect((await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).kind).toBe('failed');
-    expect(herdr.prompts).toEqual([]);
+    expect(herdr.closed).toEqual([]);
   });
 
   // Issue #267: a yolo instance starts Claude with every permission granted; its warning never holds the job.
@@ -288,19 +284,19 @@ describe('herdr-claude executor: run', () => {
     expect(progress.map((p) => p.message)).toEqual(expect.arrayContaining([`trusted workdir ${CWD}`, 'accepted bypass permissions mode']));
   });
 
-  it('not yolo: the bypass permissions warning is never accepted: failed with the screen, pane closed', async () => {
+  it('not yolo: the bypass permissions warning is never accepted by the hopper: asked as a question, pane kept', async () => {
     const { herdr, executor } = setup({ bypassDialog: 'not-ready', turns: [DONE] }, { yolo: false });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toContain('Bypass Permissions mode');
+    expect(out.kind === 'question' && out.question.text).toContain('Bypass Permissions mode');
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.closed).toEqual([]);
   });
 
-  it('fails with the screen on any other startup block', async () => {
+  it('asks any other startup block as a question, the dialog its text', async () => {
     const { executor } = setup({ startupBlockedBy: ['─'.repeat(40), ' Claude Code needs to update', '', ' ❯ 1. Update now', '   2. Exit', '', ' Enter to confirm · Esc to cancel'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toContain('needs to update');
+    expect(out.kind === 'question' && out.question.text).toContain('needs to update');
   });
 
   it('never rejects: a herdr error becomes failed', async () => {

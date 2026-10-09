@@ -2,7 +2,29 @@
 // and herdr's own ways, and what a test reads and drives of it. Test support only.
 import type { Survey } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import type { FakeTurn } from './fake-client.ts';
+
+/** One scripted turn of Claude's: what it shows while working and when it ends, and how it ends. */
+export interface FakeTurn {
+  /** Lines appended while working, one per poll. */
+  steps?: string[];
+  /** Lines appended when the turn ends (assistant output, markers). */
+  output: string[];
+  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
+  end?: 'idle' | 'blocked' | 'exit' | 'working';
+  /** With `end: 'blocked'`: the dialog, shown below the output until it is answered or lapses, then gone, as Claude Code does. */
+  dialog?: string[];
+  /**
+   * Claude Code's transcript stays scrolled up (seen live after a long prompt): the output is
+   * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
+   */
+  hiddenUntilScrolled?: boolean;
+  /**
+   * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
+   * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
+   * turn by itself, unless `wakes` is false.
+   */
+  background?: { work: string; polls: number; wakes?: boolean };
+}
 
 export interface FakeHerdrOptions {
   turns?: FakeTurn[];
