@@ -162,6 +162,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
     reap: (jobId, scratch) => shell.reap(jobId, scratch),
     survey: (roots) => shell.survey(roots),
+    discover: () => shell.discover(),
     keepCredential: (jobId, dir, file, content, make) => shell.keepCredential(jobId, dir, file, content, make),
   };
 }

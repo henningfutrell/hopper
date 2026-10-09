@@ -18,6 +18,7 @@ import { createSerial } from './serial.ts';
 import { createSourceHost } from './source-host.ts';
 import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limits.ts';
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
+import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { renewCredentials } from './credentials.ts';
 
@@ -25,6 +26,7 @@ export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
 export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.ts';
+export type { BlastRadius, BlastRadiusSettingsPatch } from './blast-radius.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -34,12 +36,14 @@ const SHUTDOWN_WAIT_MS = 5000;
  * frees a waiting job of its item (issue #371); parking frees a lane and a re-queue queues a job (issue #501); a
  * problem grouped or resolved holds or frees jobs (issue #509); new usage limits change every lane cap (issue #522);
  * new priority lane settings change which lanes default jobs may take (issue #535); a proposal frees a lane, and one sent
- * back requeues its job (issue #537). */
+ * back requeues its job (issue #537); a discovery that changed a machine, new blast-radius settings and a job let through the
+ * gate change which machines a job may take (issue #542). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
   'job.parked', 'job.unparked', 'proposal.submitted', 'proposal.revision_requested', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
+  'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ProposalHandlers {
@@ -54,6 +58,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly sourceHost: SourceHost;
   /** The priority lanes and the high-priority threshold (issue #535): settings, choice, every lane's figures. */
   readonly priorityLanes: PriorityLanes;
+  /** Each machine's discovery and blast radius, the gate and the actor machines (issue #542). */
+  readonly blastRadius: BlastRadius;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -69,10 +75,11 @@ export function createEngine(o: EngineOptions): Engine {
   let stopping = false;
   let timer: NodeJS.Timeout | undefined;
   let sweepTimer: NodeJS.Timeout | undefined;
+  let discoverTimer: NodeJS.Timeout | undefined;
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes);
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius);
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
@@ -92,12 +99,14 @@ export function createEngine(o: EngineOptions): Engine {
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
   const priorityLanes = createPriorityLanes(c);
+  const blastRadius = createBlastRadius(c);
 
   return {
     get executorNames() { return o.executors.names(); },
     get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     sourceHost: createSourceHost(c, commands),
     priorityLanes,
+    blastRadius,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
@@ -111,6 +120,8 @@ export function createEngine(o: EngineOptions): Engine {
       // that stopped mid-job, a lost pane or a reboot left, the reap of a pane closing never saw.
       void Promise.all(recovered.toClean.map((jobId) => cleanup(jobId))).then(() => sweep.run(true));
       sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
+      // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
+      discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
       // Deferred before this start (issue #371): tried again now, and on every tick.
       cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
@@ -145,6 +156,7 @@ export function createEngine(o: EngineOptions): Engine {
       serial.close();
       if (timer) clearInterval(timer);
       if (sweepTimer) clearInterval(sweepTimer);
+      if (discoverTimer) clearInterval(discoverTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
       // In-flight classifications are not awaited: they write nothing once stopping.

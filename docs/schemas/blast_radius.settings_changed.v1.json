@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "gateAt": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "off"
+          ]
+        },
+        "pass": {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "repos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "minPriority": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "labels",
+            "repos"
+          ],
+          "additionalProperties": false
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "prodPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "prodAccounts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unconfirmed": {
+              "type": "string",
+              "enum": [
+                "write",
+                "read"
+              ]
+            }
+          },
+          "required": [
+            "prodPatterns",
+            "prodAccounts",
+            "unconfirmed"
+          ],
+          "additionalProperties": false
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "machineId": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            },
+            "required": [
+              "machineId",
+              "purpose",
+              "expected"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "everyMinutes": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "gateAt",
+        "pass",
+        "rules",
+        "actors",
+        "everyMinutes"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "gateAt": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "off"
+          ]
+        },
+        "pass": {
+          "type": "object",
+          "properties": {
+            "labels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "repos": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "minPriority": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "labels",
+            "repos"
+          ],
+          "additionalProperties": false
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "prodPatterns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "prodAccounts": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unconfirmed": {
+              "type": "string",
+              "enum": [
+                "write",
+                "read"
+              ]
+            }
+          },
+          "required": [
+            "prodPatterns",
+            "prodAccounts",
+            "unconfirmed"
+          ],
+          "additionalProperties": false
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "machineId": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              }
+            },
+            "required": [
+              "machineId",
+              "purpose",
+              "expected"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "everyMinutes": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "gateAt",
+        "pass",
+        "rules",
+        "actors",
+        "everyMinutes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "additionalProperties": false
+}

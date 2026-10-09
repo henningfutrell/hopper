@@ -1,5 +1,6 @@
-import type { CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
+import { gateHold, gateKeeps } from './gate.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
 
@@ -35,6 +36,8 @@ export interface MachineState {
   problems?: ProblemBlock[];
   /** Its priority lanes and which of its lanes are open or in use (issue #535). */
   slots: LaneSlots;
+  /** The blast-radius gate (issue #542): a job it keeps from this machine is placed elsewhere. */
+  gate?: BlastRadiusInput;
 }
 
 export interface Candidate {
@@ -191,9 +194,21 @@ export function problemHold(job: Job, machines: MachineSnapshot[], problems: rea
   return `held by problem: ${blocking[0]!.title}`;
 }
 
+/**
+ * Issue #542: the hold of a job the blast-radius gate keeps from every machine it could otherwise take a new job on,
+ * naming them; undefined when one is not gated for it, or it resumes.
+ */
+export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: readonly ProblemBlock[], gate: BlastRadiusInput | undefined): string | undefined {
+  if (!gate || job.pendingAnswer !== undefined) return undefined;
+  const pin = pinOf(job);
+  const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
+    && !homeless(m) && !workTreeHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
+  return gateHold(job, usable, gate);
+}
+
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
-  return problemFree(s, job) && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
+  return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
     && !workTreeHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }

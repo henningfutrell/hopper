@@ -25,6 +25,7 @@ const ALL: Record<EventType, true> = {
   'usage.limits_changed': true, 'priority_lanes.changed': true, 'priority_lanes.settings_changed': true,
   'proposal.asked': true, 'proposal.submitted': true, 'proposal.escalated': true, 'proposal.escalated_to_human': true, 'proposal.reviewed': true,
   'proposal.revision_requested': true, 'proposal.accepted': true, 'proposal.rejected': true, 'proposal.cancelled': true,
+  'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

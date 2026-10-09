@@ -62,6 +62,10 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   let claudeConfig: FakeClaudeConfig = o.claudeConfig ?? 'present';
   let signedIn = o.notSignedIn !== true;
 
+  const onMachine = (method: keyof HerdrClient, ...args: unknown[]): void => {
+    record(method, ...args);
+    if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+  };
   const record = (method: keyof HerdrClient, ...args: unknown[]): void => {
     fake.calls.push({ method, args });
     if (unreachable) throw new HerdrError('client', 'client is not dialled in');
@@ -305,20 +309,16 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (o.waitAnswersEarly) return o.waitAnswersEarly === 'matched';
       return fake.screen(paneId).includes(text);
     },
+    // The machine's fixed scripts (issues #410, #441, #542): recorded, and refused while it cannot be reached.
     async reap(jobId, scratch) {
-      record('reap', jobId, scratch);
-      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      onMachine('reap', jobId, scratch);
       fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}) });
       return { kept: [...(o.reapKeeps ?? [])] };
     },
-    async survey(roots) {
-      record('survey', roots);
-      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
-      return o.survey ?? { scopes: [], processes: [], scratch: [] };
-    },
+    survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),
+    discover: async () => (onMachine('discover'), o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } }),
     async keepCredential(jobId, dir, file, content, make) {
-      record('keepCredential', jobId, dir, file);
-      if (o.machineUnreachable) throw new Error('the machine cannot be reached');
+      onMachine('keepCredential', jobId, dir, file);
       fake.credentials.push({ jobId, dir, file, content, ...(make ? { make } : {}) });
     },
     async closePane(paneId) {

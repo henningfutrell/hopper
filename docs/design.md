@@ -43,13 +43,14 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree` over HTTP/2 on its link), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `dial.ts` (its dial-in to the hopper's URL), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/proposals/` | the proposal review (issue #537, "Proposals"): `ProposalService` (`service.ts`: the reviewer levels, lowest first → a person; a person's accept, reject, request changes; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), the proposal settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); proposals through the `ProposalRepository` port; the job's side (waiting, ending, re-queued with what to change) is the engine's (`src/engine/proposals.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
+| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
@@ -8581,3 +8582,112 @@ need a reason); a viewer sees a notice. Earlier proposals below, and for an admi
 counts the proposals waiting on a person (open, at the human stage), seen or not, as the Questions badge does (#499),
 marked when one is high priority. The Queue's waiting jobs get **Propose** (ask for a proposal) and a *proposal asked*
 tag.
+
+## Blast radius and actor machines (issue #542, 2026-10-09)
+
+Owner proposal: the hopper gives jobs read-only credentials to tools such as AWS, Terraform and kubectl, but did not
+know what each machine could reach, so a job could land on a machine whose access was much wider than it needed. Three
+layers, configuration the source of truth throughout: **discovery** of each machine, its **blast radius** rated from
+it, and the **gate** that keeps jobs off a high-radius machine; **actor machines** are machines set up for that work on
+purpose.
+
+**Discovery** (`src/client/discover.ts`, read by `src/blast-radius/read.ts`). A fixed POSIX sh script, run with no
+argument of the request's through the machine's own connection — this machine, ssh, or a client target's
+`POST /discover` — as the reap and the survey are (`MachineShell.discover`). It reads, and prints names only:
+
+| what | how |
+|---|---|
+| tools | every PATH directory and every executable in it; `aws --version`, `terraform version`, `tofu version`, `kubectl version --client` (first line) |
+| AWS | the environment's own identity, then each profile's (`aws configure list-profiles`, at most 8): `sts get-caller-identity`, the region; then `iam simulate-principal-policy` of the identity (an assumed role as its role) for `AWS_WRITE_ACTIONS` |
+| kubectl | each context (`config get-contexts`, at most 8), its cluster and namespace (`config view --minify`), and `auth can-i --all-namespaces` for `KUBE_CHECKS`: `create deployments`, `delete pods`, `get secrets`, `* *` |
+| credential sources | the names of credential variables set (`AWS_ACCESS_KEY_ID`, `AWS_PROFILE`, `KUBECONFIG`, `TF_TOKEN_*`, …) and labels of credential files present (`aws-credentials`, `kubeconfig`, `terraform-credentials`, `kubernetes-service-account`, …) — never a value, never a file's content |
+
+Every call is bounded at 10 s (`timeout`), the whole at `DISCOVER_TIMEOUT_MS` (120 s). Every call is a read:
+`test/client/discover.test.ts` runs the real script against stand-in `aws` and `kubectl` and checks each call they
+received, and that a secret in a credentials file or a variable never appears in what it prints. A container target
+has no shell the hopper reaches it by: it is shown as not discoverable, and is never gated by rating.
+
+Terraform state backends and workspaces live in each repository's configuration, not on the machine: the machine's
+Terraform reach is the cloud credentials it holds, which the AWS and credential-source rows find, and a Terraform
+Cloud token (`TF_TOKEN_*`, `terraform-credentials`), rated unconfirmed.
+
+**When.** A machine online and not yet discovered in this run is discovered at the next Decision (it attached, or the
+hopper started); each machine again every `everyMinutes` (default 60; checked each minute); one or every machine on
+demand (`POST /ui/api/blast-radius/discover`, operator: it only reads). Its **record** (`DiscoveryRecord`, the user's
+settings key `discovery:<machine>`, no schema change) keeps when, the facts, what **changed** since the one before
+(tools, AWS identities, contexts and credential sources that came or went, and the level when it moved), the level it
+gave, `grew` while a raised level stays, and an actor machine's `mismatch`. A discovery that fails keeps the facts
+before it and says why (`machine.discovery_failed`, once per error).
+
+**Rating** (`src/blast-radius/rate.ts`, pure). Each **reach** — an AWS identity with an ARN, a kubectl context, a
+credential source no discovered identity accounts for — is `read`, `write` (a simulated write action allowed; a
+`create` or `delete` can-i yes), `admin` (an IAM write allowed — `iam:CreateUser`, `iam:AttachRolePolicy`,
+`iam:PutRolePolicy` —, an account's root, can-i `* *`) or `unconfirmed` (simulation or can-i gave no answer; a credential
+source alone), and **prod** when a profile, account, ARN, context, cluster or namespace holds one of `prodPatterns`
+(default `prod`, `production`, `prd`, case ignored) or its account is in `prodAccounts`. The level: `high` for admin
+reach or write reach to prod; `medium` for any other write reach; `low` otherwise. `unconfirmed` counts as `write`
+(fail closed, the default) or `read`, as the rules say. Each machine is rated from its record with the rules now, at
+every Decision and every view: a rule change applies at once. The reasons are the reaches that set the level, each with
+its evidence.
+
+**The gate** (`src/decider/gate.ts`, pure; `DecisionInputs.blastRadius`). A machine is **gated** when it is an actor
+machine, or rated at or above `gateAt` (`high` by default; `medium`; `off`: only actor machines). Placement leaves a
+gated machine to the jobs that **pass**: let through by a person (`Job.gatePass`), with one of `pass.labels`, from one of
+`pass.repos`, or at or above `pass.minPriority` (none by default: only a person lets a job through until an admin names
+rules). A job resuming returns to its pane on its machine. A job every machine it could otherwise take a new job on
+(online, its executor, its pin, home known, work tree usable, disk not low, no open problem) keeps from it is held:
+`held at the blast-radius gate: desk is rated high; only a job let through the gate runs there`. Otherwise it goes to
+a machine that is not gated, or waits for a lane there. A gated machine's idle reason says it is gated. A machine never
+discovered is not gated by rating: discovery runs at the next Decision after it comes online.
+
+**Let through** (`POST /ui/api/jobs/:id/gate-pass`, admin — it widens what the job may reach): only a job held at the
+gate (409 otherwise); `gatePass { at }`, `job.gate_passed { reason }`, and it is placed at the next Decision. The
+Overview's Waiting panel shows the hold as every hold, and for an admin **Let through**, behind a confirmation that
+names what the machine is rated; Approve is not offered for a job held at the gate (approving would not move it), and a
+role the server refuses sees no button.
+
+**Actor machines.** Declared in the settings (`actors`: the machine, its purpose, the level it is expected to rate).
+Always gated. A rating other than the level declared is a **mismatch**: flagged on Machines, and told once per
+(expected, found) by `machine.actor_mismatch`.
+
+**Settings** (`blastRadius` in the user's settings, all live, admin; `BlastRadiusSettings`): `gateAt` (`high`),
+`pass { labels, repos, minPriority? }` (none), `rules { prodPatterns, prodAccounts, unconfirmed }`
+(`prod`/`production`/`prd`, none, `write`), `actors` (none), `everyMinutes` 5..1440 (60).
+`POST /ui/api/blast-radius/settings` takes any of them, each replaced whole (`pass.minPriority: null` clears it); names,
+repos (`owner/name`), account ids (12 digits), machines and bounds are checked (400). Saving is
+`blast_radius.settings_changed { from, to }`. `GET /api/blast-radius` answers `BlastRadiusView`: the settings and
+defaults, the curated AWS actions and kubectl checks, and per machine whether it can be discovered, its record, its
+rating now, its actor declaration with `mismatch`, and why it is gated.
+
+**Events.** `machine.discovered { machineId, level, changes }` (the first discovery, or one that changed something),
+`machine.discovery_failed`, `machine.radius_grew { from, to }`, `machine.actor_mismatch { expected, found }`,
+`blast_radius.settings_changed`, `job.gate_passed`. `machine.discovered`, the settings change and `job.gate_passed` wake
+the engine.
+
+**UI.** Machines: the Blast radius panel — the settings in a sentence; per machine its level, *gated* and why, *actor*
+and a mismatch, *grew*, when it was discovered and what changed, the reasons, and on demand every reach with its access,
+prod and evidence, its tools and its credential sources; Discover per machine and Discover all (operator); an admin edits
+the settings and the actor machines.
+
+**Owner decisions taken as defaults** (all settings, changed live on Machines): D1 levels low/medium/high by the rule
+above, the rules an admin's to change; D2 AWS reach confirmed by IAM policy simulation of a curated write list (strictly
+read-only; an identity that may not simulate is unconfirmed), not a probe list; D3 discovery through the machine's own
+connection (what a job there sees), not inside each job; every 60 minutes; D4 the known set is AWS, Terraform and
+kubectl — Helm, GCP, Azure, Vault and database clients are not rated yet (their credential files and variables are
+listed as credential sources); D5 nothing passes the gate by rule until an admin names one: a person lets each job
+through.
+
+**Not built — the owner's open question.** The hand-off to a person on an actor machine: what is handed over (work
+tree, branch, plan, commands), where the person picks it up, and how the job resumes or completes after. The gate is
+the core it would consume: today a job held at the gate waits (or is parked, issue #501), and a person either lets it
+through or does the step by hand (operator-led, issue #318).
+
+**Verification:** `test/client/discover.test.ts` (the real script: tools, identities, simulation, contexts, can-i,
+credential sources by name, every call a read, no secret printed), `test/blast-radius/rate.test.ts` (each level and its
+evidence, prod by name and account, admin, unconfirmed both ways, root, a refused identity, kubernetes, credential
+sources, what a discovery changed, which machines are gated), `test/decider/blast-radius-gate.test.ts` (another machine,
+held naming the machine, pinned, let through, pass by label, repo and priority, resuming, the gate holding beside a full
+disk), `test/integration/blast-radius.test.ts` (discovered on coming online, the rating and its evidence, held and let
+through, settings live, a radius that grew, an actor machine and its mismatch, refusals, roles, restart),
+`test/ui/blast-radius.test.ts` (the sentence, the changes, Let through behind a confirmation for an admin only, no
+Approve on a job held at the gate).

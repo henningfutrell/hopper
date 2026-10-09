@@ -8,6 +8,7 @@ import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { JobAssessment, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
+import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -143,6 +144,8 @@ export interface Job {
   errorTail?: string;
   /** The failure assessor's judgement of this failed job (issue #509): its decision, summary and reasons. */
   assessment?: JobAssessment;
+  /** Let through the blast-radius gate by a person (issue #542): it may run on a gated machine. */
+  gatePass?: GatePass;
   /**
    * `sync`: owned by the sync loop (claimReported, reportedQuestions, finalReported,
    * cancelReason). `source`: owned by the adapter; `report()` returns its whole new value,
@@ -254,6 +257,8 @@ export interface DecisionInputs {
   problems?: ProblemBlock[];
   /** The priority lanes and the high-priority threshold (issue #535). Absent on Decisions stored before it: none. */
   priorityLanes?: PriorityLanesInput;
+  /** The machines the blast-radius gate keeps from ordinary placement, and what may pass (issue #542). Absent on Decisions stored before it: none. */
+  blastRadius?: BlastRadiusInput;
   policy: DeciderPolicy;
 }
 
@@ -485,6 +490,7 @@ export * from './logins.ts';
 export * from './proposals.ts';
 export * from './failures.ts';
 export * from './priority.ts';
+export * from './blast-radius.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

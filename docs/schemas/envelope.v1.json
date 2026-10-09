@@ -94,6 +94,12 @@
         "proposal.accepted",
         "proposal.rejected",
         "proposal.cancelled",
+        "machine.discovered",
+        "machine.discovery_failed",
+        "machine.radius_grew",
+        "machine.actor_mismatch",
+        "blast_radius.settings_changed",
+        "job.gate_passed",
         "jev.mode_changed",
         "router.mode_changed"
       ]
