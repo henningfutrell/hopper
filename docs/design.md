@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482), ports (`ports.ts`, re-exporting the store's from `store.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `proposals.ts` proposals, their parts read from the text (pure) and their settings, issue #537; `sources.ts` a job source's status), ports (`ports.ts`, re-exporting the store's from `store.ts` and the escalation levels' and the proposal review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`) | http, decider |
@@ -47,6 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), keeping each client target on the hopper's client release (`client-release.ts`), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
+| `src/proposals/` | the proposal review (issue #537, "Proposals"): `ProposalService` (`service.ts`: the reviewer levels, lowest first → a person; a person's accept, reject, request changes; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), the proposal settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); proposals through the `ProposalRepository` port; the job's side (waiting, ending, re-queued with what to change) is the engine's (`src/engine/proposals.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and the person's actions, `handoffs.ts`) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
@@ -795,6 +796,7 @@ default job rules (the first three lines; "Job rules", issue #172):
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
 [hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION
+When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
@@ -1291,6 +1293,8 @@ another lane the tab label is stale; the job's `laneId` is authoritative.
 Op `ask`: `{ op: "ask", message?: string }` → outcome `question` (text = `message` ??
 "Which option?", `detectedBy: "test"`), saveState `{ asked: true }`. `resume(ctx, answer)` →
 `finished` `{ answer }`; resume on a job whose payload op is `fail-after-answer` → `failed`.
+Op `propose` (issue #537): outcome `proposal` (text = `message`); resumed (sent back), a proposal again: `message`
+then `Revised after: <answer>`.
 
 ## Settled in phase 2 (2026-10-02)
 
@@ -8440,3 +8444,82 @@ no flapping on one fault, a lane better by more than the margin, an admin's choi
 question at the next sync), `test/integration/priority-lanes.test.ts` (the API, reliability choice and its event, a high
 job takes the free priority lane ahead of waiting default jobs, share, bounds, roles, restart),
 `test/ui/high-priority.test.ts`, `test/ui/high-priority-views.test.ts`, `test/plugins/grokbot-payload.test.ts`.
+
+## Proposals (issue #537, 2026-10-09)
+
+Owner requirement: proposals are a category of their own, beside questions. A job — or a person in the UI — asks an
+agent for a proposal; the agent comes back with one (goal, approach, alternatives considered, risks, effort, the
+context it relied on) instead of doing the work, finishing or asking a question. It goes through configurable reviewer
+levels and then a person, with its trail on it, as a question does; it is signed off (who, when, which version),
+rejected, or sent back for a revision, the versions kept; it has its own view and badge; settings live in the database
+and apply live; priority (#535) applies.
+
+**Asking.** A job is asked for a proposal (`spec.proposal: true`) when its item carries the label `hopper:proposal`
+(`PROPOSAL_LABEL`, set at intake), or when a person asks a job that has not started (queued or held): `POST
+/ui/api/jobs/:id/propose`, `proposal.asked`. Its agent is told so after the job rules (`proposalAsk`,
+`withProposalAsk`, `src/job-rules/`). Every job's protocol names the marker: an agent asked for a proposal — by its
+job or by the issue's own text — writes each part on a line of its own starting with its label (`Goal:`, `Approach:`,
+`Alternatives considered:`, `Risks:`, `Effort:`, `Context:`) and ends with a line `HOPPER_PROPOSAL`.
+
+**The marker.** The herdr screen reads `HOPPER_PROPOSAL` as the marker `proposal`; the print-mode executors read it on
+the last line. Either returns the outcome `{ kind: 'proposal', proposal: { text, recentOutput } }` and keeps its
+resume state, as for a question. The parts are read from the text (`proposalSections`, `src/domain/proposals.ts`,
+pure): from a label (heading, list and emphasis marks aside; a heading on its own line too) to the next; a part left
+out or empty is listed in `missing`. Nothing is refused for a missing part: the reviewers and the person see it.
+
+**The job waits.** (Open decision D2, settled here: the job waits.) The outcome is recorded in the same tx as any
+(`recordProposal`, `src/engine/proposals.ts`): a new proposal at version 1, or — when the job's proposal was sent back
+(`revising`) — its next version. The job goes `waiting_answer` with `proposalId` (no `questionId`): it holds no lane,
+its pane stays, it can be parked (#501) and re-queued; re-queued while its proposal is in review, it waits on it again. A restart keeps it waiting (recovery leaves a `waiting_answer` job on an open proposal
+alone); a review a level held is started again from that level (`ProposalService.recover`).
+`proposal.submitted` (version, Goal, missing parts, the raising machine, the job's priority). A job cancelled or gone
+takes its open proposal with it (`proposal.cancelled`, the sweep on each tick and at start).
+
+**Review.** `ProposalService` (`src/proposals/service.ts`) runs the reviewer levels the proposal settings name, lowest
+first, then a person — the question pipeline's shape: each stage entered is `proposal.escalated { target }`, a person
+`proposal.escalated_to_human` once per version, every write one tx, compare-and-set on status, stage and version, a
+person's decision wins over a level in flight. A reviewer level is an **escalation level** reviewing: the
+`EscalationLevel` port's `review(req)` (`ReviewRequest`: the version, the job's prompt and goal — the item, its
+repository and context —, the owner's rules, the trail, its place). The built-in `claude-cli` and `anthropic-api` levels
+review with a prompt of their own (`review-prompt.ts`), every part from the job fenced as untrusted, and a JSON reply
+`{ verdict, notes }` validated by the service (`reply.ts`). Its verdict, recorded with its notes (`proposal.reviewed`):
+
+| verdict | then |
+|---|---|
+| `approve` | the next level up, the approval on the trail; at the top level with `signOff: top-level`, accepted by that level |
+| `request_changes` | sent back to the job with the notes, while the levels have sent it back fewer times than `levelRevisions`; past that, to a person |
+| `escalate`, an error, a timeout, a malformed reply, a level that cannot review or no longer exists | the next level up |
+
+**A person decides** (operator role, on an open proposal at any stage): `POST /ui/api/proposals/:id/accept` (optional
+`notes`), `/reject` (`notes` required: why), `/request-changes` (`notes` required: what to change). The decision goes on
+the trail with who (the session's sign-in name). Accepted or rejected, the proposal is signed off — `signOff { decision,
+stage, by, at, version, notes }`, `proposal.accepted` / `proposal.rejected`, delivered to webhooks like `question.*` —
+and its job ends `finished`, its result `{ proposal: { id, version, decision } }`, its pane cleaned up. No completion
+check runs: the decision is the job's end. Sent back, `proposal.revision_requested`; the job is re-queued with the
+revision brief (`revisionBrief`: who sent it back, the notes, "write the revised proposal in full … HOPPER_PROPOSAL"),
+its next proposal is the next version, reviewed from the first level again.
+
+**What an accepted proposal becomes** (open decision D1) is not decided: for now the proposal stays linked to its job
+and the job's item (`source { key, url, title }`), and the job ends. **Who may sign off** (open decision D3) is a
+setting.
+
+**Settings** (`ProposalSettings`, the user's `settings` row `proposalSettings`, read at each review): `reviewers` — the
+escalation levels that review, lowest first, by instance name (default none: a person reviews); `signOff` — `owner`
+(default: only a person accepts) or `top-level` (the top reviewer level's approval accepts too); `levelRevisions` (0 to
+5, default 1). `POST /ui/api/proposals/settings` (admin) refuses a reviewer that is not an escalation level now, so the
+UI offers only `levels`, the names `GET /api/proposals` answers with the settings.
+
+**Store.** Table `proposals` (tenant migration 24: a table only, so the build before runs on it): one row per
+proposal, its versions and review trail in its body.
+
+**API.** `GET /api/proposals` (`status`: `open` — open or revising, high-priority jobs' first, then oldest first — the
+default; any status or `all`, a history newest first) answers `{ proposals: ProposalView[], settings }`; `GET
+/api/proposals/:id`; `POST /ui/api/proposals/:id/seen`. `ProposalView` carries the job's live priority (#535), as
+`QuestionView` does.
+
+**UI.** The **Proposals** view, beside Questions: one card per open proposal — the newest version's parts, the parts
+left out, earlier versions folded, the review trail, the job — with Accept, Request changes and Reject (the last two
+need a reason); a viewer sees a notice. Earlier proposals below, and for an admin the proposal settings. Its nav badge
+counts the proposals waiting on a person (open, at the human stage), seen or not, as the Questions badge does (#499),
+marked when one is high priority. The Queue's waiting jobs get **Propose** (ask for a proposal) and a *proposal asked*
+tag.
