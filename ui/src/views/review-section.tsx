@@ -6,7 +6,9 @@
 // or at any stage, with exactly the decisions the server takes: those that need notes are offered only with them; a
 // research report's Dig deeper may name the open threads to go into. A session whose role cannot act (viewer) sees a
 // notice. Shown, the ones waiting on a person are marked seen; the nav badge counts them until they are decided, seen
-// or not. Below: the earlier ones, and for an admin the section's settings.
+// or not. Below: the earlier ones, and for an admin the section's settings. Phase shifts (issue #548): an item says
+// where it came from — a fork of another job's question, or a phase its job's question switched it to —, and Accept
+// on one of a switched phase asks what the job does next, exactly the choices the server takes (`then`).
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -20,7 +22,8 @@ import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import { awaitsDecision, digDeeperNotes, openThreadsOf, partLabel, REVIEW_UI, reviewOrder } from '@/model/reviews';
-import type { ReviewDecision, ReviewEntry, ReviewItemView, ReviewKind, ReviewSectionView, ReviewVersion } from '@/model/wire';
+import type { ReviewDecision, ReviewEntry, ReviewItemView, ReviewKind, ReviewSectionView, ReviewVersion, ShiftThen } from '@/model/wire';
+import { goalOf } from '@/model/job';
 import { actFor, useHopper } from '@/store';
 import { refreshReviews } from '@/store/reviews';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
@@ -35,6 +38,18 @@ const VERDICT_LABEL: Record<string, string> = {
   approve: 'approve', accept: 'accepted', request_changes: 'changes requested', reject: 'rejected', escalate: 'escalate', dig_deeper: 'dig deeper', steer: 'steered',
 };
 const DECISION_ICON: Record<ReviewDecision['effect'], LucideIcon> = { accept: Check, send_back: RotateCcw, reject: X };
+const THEN_LABEL: Record<ShiftThen, string> = { work: 'goes back to the work, with it as context', end: 'ends here', proposal: 'writes a proposal next, in the same session' };
+
+/** Where an item came from (issue #548): a fork of another job's question, or a phase its own job's question switched it to. */
+function Origin({ p }: { p: ReviewItemView }) {
+  const jobs = useJobIndex();
+  if (p.forkOf) {
+    const parent = jobs.get(p.forkOf.jobId);
+    return <div data-slot="origin" className="text-xs text-muted-foreground">Forked from a question of {parent ? goalOf(parent) : `job ${p.forkOf.jobId.slice(0, 8)}`}: its acceptance answers that question.</div>;
+  }
+  if (p.switchedFrom) return <div data-slot="origin" className="text-xs text-muted-foreground">Its job switched from its question to write this.</div>;
+  return null;
+}
 
 function Version({ v, type }: { v: ReviewVersion; type: ReviewSectionView }) {
   const shown = type.parts.filter(([k]) => v.sections[k] !== undefined);
@@ -78,6 +93,7 @@ function Decide({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: 
   const ui = REVIEW_UI[kind];
   const [notes, setNotes] = useState('');
   const [threads, setThreads] = useState<string[]>([]);
+  const [then, setThen] = useState<ShiftThen>('work');
   const [busy, setBusy] = useState(false);
   // Set at once, before the re-render that disables the buttons: a second click in between sends nothing.
   const inFlight = useRef(false);
@@ -88,7 +104,8 @@ function Decide({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: 
     if (inFlight.current || (d.notes === 'required' && !text)) return;
     inFlight.current = true;
     setBusy(true);
-    const r = await actFor(`/ui/api/${ui.section}/${encodeURIComponent(p.id)}/${d.route}`, text ? { notes: text } : {}, `${d.label}: done`);
+    const picks = d.effect === 'accept' && p.then !== undefined;
+    const r = await actFor(`/ui/api/${ui.section}/${encodeURIComponent(p.id)}/${d.route}`, { ...(text ? { notes: text } : {}), ...(picks ? { then } : {}) }, `${d.label}: done`);
     if (r.ok) { setNotes(''); setThreads([]); }
     inFlight.current = false;
     setBusy(false);
@@ -120,6 +137,17 @@ function Decide({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: 
           ))}
         </fieldset>
       )}
+      {p.then && (
+        <fieldset data-slot="then" className="grid gap-1 text-sm">
+          <legend className="text-xs text-muted-foreground">Once accepted, the job</legend>
+          {p.then.map((t) => (
+            <label key={t} className="flex items-center gap-2">
+              <input type="radio" name={`then-${p.id}`} value={t} checked={then === t} disabled={busy} onChange={() => setThen(t)} />
+              <span>{THEN_LABEL[t]}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       <Textarea rows={3} value={notes} disabled={busy} placeholder={kind === 'research' ? 'A note, what to dig into, or the direction to steer in' : 'A note with the acceptance, or the reason: what to change, or why it is rejected'}
         onChange={(e) => setNotes(e.target.value)} />
       <div className="flex flex-wrap gap-2">{type.decisions.map(button)}</div>
@@ -142,6 +170,7 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
       bodyClassName="space-y-3">
       {!job && p.high && <HighTag priority={p.priority} className="self-start" />}
       {job ? <JobTitle job={job} /> : p.source?.title && <div className="text-sm font-medium">{p.source.title}</div>}
+      <Origin p={p} />
       <Version v={latest} type={type} />
       {earlier.length > 0 && (
         <Collapsible>

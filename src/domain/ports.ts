@@ -118,6 +118,12 @@ export interface Executor {
    * running at a restart is never re-run: it is reattached (below) or cleaned up and failed.
    */
   readonly idempotent?: boolean;
+  /**
+   * It runs the research and proposal loop (issues #537, #543, #548): its agent is told the review markers and it comes
+   * back with a `report`. Only a job on such an executor may be asked for research or a proposal from its question.
+   * Absent: it cannot.
+   */
+  readonly reviews?: true;
   /** Validate a payload at push time; return an error string or null. */
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
@@ -391,6 +397,12 @@ export interface QuestionService {
    * is not open or has no countdown.
    */
   lapsedInPane(questionId: string): Question | undefined;
+  /**
+   * Settle an open question with `answer` given by `by` (issue #548): `human` for a person's switch, a level's name for
+   * its own, `fork:<job id>` for a fork's accepted result; `reason` goes on the trail. Then onAnswered resumes the job,
+   * or keeps the answer for a parked one. Synchronous; call inside the caller's tx. Undefined when it is not open.
+   */
+  settleWith(questionId: string, answer: string, by: string, reason: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
   /**

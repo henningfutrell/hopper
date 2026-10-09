@@ -6,7 +6,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { UserStore } from '../domain/ports.ts';
-import { highFirst, jobPriorityTag, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
+import { highFirst, jobPriorityTag, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
 import { reviewSettingsView } from '../review/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
@@ -18,9 +18,13 @@ export const reviewQuery = z.object({
 });
 const idParams = z.object({ id: z.string() });
 
-/** The item with its job's live priority: 0 and not high when its job is gone. */
+/**
+ * The item with its job's live priority: 0 and not high when its job is gone. While it is open and its job is in a
+ * phase a question switched it to (issue #548), `then`: what a person may pick for the job at Accept.
+ */
 export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView {
-  return { ...p, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }) };
+  const switched = p.status === 'open' && store.jobs.get(p.jobId)?.shift?.to === p.kind;
+  return { ...p, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}) };
 }
 
 export function reviewRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {

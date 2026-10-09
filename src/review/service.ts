@@ -8,7 +8,7 @@
 import type { Clock, ConfigRecords, EscalationLevel, ReviewActionResult, ReviewReply, ReviewRequest, ReviewService, ReviewServices, UserStore } from '../domain/ports.ts';
 import {
   jobPriorityTag, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
-  type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings,
+  thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 import { check } from '../questions/results.ts';
@@ -81,13 +81,13 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
   }
 
   /** Inside a tx. Accepted or rejected: signed off, and the job told. */
-  function signOff(p: ReviewItem, decision: 'accept' | 'reject', stage: string, notes: string | undefined, by?: string): ReviewItem {
+  function signOff(p: ReviewItem, decision: 'accept' | 'reject', stage: string, notes: string | undefined, by?: string, then?: ShiftThen): ReviewItem {
     const at = iso();
     const updated = items.update(p.id, {
       status: decision === 'accept' ? 'accepted' : 'rejected',
-      signOff: { decision, stage, at, version: p.versions.length, ...(by ? { by } : {}), ...(notes ? { notes } : {}) },
+      signOff: { decision, stage, at, version: p.versions.length, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}) },
     });
-    emit(updated, decision === 'accept' ? 'accepted' : 'rejected', { stage, ...(by ? { by } : {}), ...(notes ? { notes } : {}) });
+    emit(updated, decision === 'accept' ? 'accepted' : 'rejected', { stage, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}) });
     o.onDecided(updated);
     return updated;
   }
@@ -205,19 +205,26 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     },
     handle(id) { start(id, 'submitted'); },
     /** A person's decision on an open item, over any level in flight. */
-    decide(id, decision, by, notes) {
+    decide(id, decision, by, notes, then) {
       const offered = type.decisions.find((d) => d.id === decision);
       if (!offered) return { ok: false, reason: 'not_offered', message: `${type.noun}s are not decided by ${decision}` };
       return store.tx((): ReviewActionResult => {
         const p = items.get(id);
         if (!p) return { ok: false, reason: 'not_found', message: `${type.noun} ${id} not found` };
         if (p.status !== 'open') return { ok: false, reason: 'not_open', message: `${type.noun} ${id} is ${p.status}: only an open ${type.noun} can be decided` };
+        // What the job does next is picked only at Accept, and only in a phase a question switched it to (issue #548).
+        if (then !== undefined) {
+          const switched = store.jobs.get(p.jobId)?.shift?.to === kind;
+          if (offered.effect !== 'accept' || !switched || !thenChoices(kind).includes(then)) {
+            return { ok: false, reason: 'not_switched', message: switched ? `a ${type.noun} accepted in a switched phase may go on to ${thenChoices(kind).join(', ')}, not ${then}` : `${type.noun} ${id}: its job is not in a phase a question switched it to; there is nothing to pick` };
+          }
+        }
         abortReview(id, 'superseded');
         const at = iso();
         items.addReview(id, { version: p.versions.length, stage: HUMAN, role: 'human', verdict: decision, notes: notes ?? '', by, startedAt: at, finishedAt: at });
         const now = items.get(id)!;
         if (offered.effect === 'send_back') return { ok: true, item: sendBack(now, HUMAN, decision, notes ?? '', by) };
-        return { ok: true, item: signOff(now, offered.effect, HUMAN, notes, by) };
+        return { ok: true, item: signOff(now, offered.effect, HUMAN, notes, by, then) };
       });
     },
     markSeen(id) {

@@ -112,6 +112,10 @@
         "minor_decision.compared",
         "minor_decision.overridden",
         "minor_decision.settings_changed",
+        "job.phase_changed",
+        "job.forked",
+        "job.fork_resolved",
+        "phase_shifts.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

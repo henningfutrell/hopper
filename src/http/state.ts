@@ -56,13 +56,15 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
     if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, uptimeS };
+    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, reviewingExecutors: engine.reviewingExecutors, uptimeS };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
   // Priority lanes (issue #535): the settings, the lanes chosen, every lane's reliability and why.
   app.get('/api/priority-lanes', async (req) => o.tenant(req).engine.priorityLanes.view());
   // Blast radius (issue #542): each machine's discovery, rating and gate, the actor machines, the settings.
   app.get('/api/blast-radius', async (req) => o.tenant(req).engine.blastRadius.view());
+  // Phase shifts (issue #548): the default mode, what a parent does while its fork runs, the levels that may shift.
+  app.get('/api/phase-shifts', async (req) => { const t = o.tenant(req); return t.engine.phaseShifts.view(t.levelNames()); });
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "forkId": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string",
+      "enum": [
+        "research",
+        "proposal"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "const": "fork"
+    },
+    "questionId": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "parent": {
+      "type": "string",
+      "enum": [
+        "waiting",
+        "parked"
+      ]
+    },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "forkId",
+    "to",
+    "mode",
+    "questionId",
+    "by",
+    "parent"
+  ],
+  "additionalProperties": false
+}

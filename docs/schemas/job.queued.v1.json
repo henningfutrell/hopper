@@ -131,6 +131,30 @@
         "key"
       ],
       "additionalProperties": false
+    },
+    "forkOf": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "questionId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "research",
+            "proposal"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "questionId",
+        "kind"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

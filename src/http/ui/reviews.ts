@@ -1,12 +1,12 @@
 // The UI session's actions on a review item (issues #537, #543): a person takes one of the decisions its section
 // declares — Accept, Reject, Request changes for a proposal; Accept, Dig deeper, Steer for a research report —
 // (operator; who, by the session's sign-in), marks it seen; asks a job that has not started for the section's special
-// job (operator); and the section's settings (admin): the reviewer levels, who may sign off, how often the levels may
+// job (operator); Accept in a phase a question switched the job to names what it does next (issue #548); and the section's settings (admin): the reviewer levels, who may sign off, how often the levels may
 // send one back. A decision the section does not declare is no route: 404.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ReviewActionResult } from '../../domain/ports.ts';
-import { MAX_LEVEL_REVISIONS, REVIEW_KINDS, REVIEW_SECTIONS, REVIEW_SIGN_OFF } from '../../domain/types.ts';
+import { MAX_LEVEL_REVISIONS, REVIEW_KINDS, REVIEW_SECTIONS, REVIEW_SIGN_OFF, SHIFT_THEN } from '../../domain/types.ts';
 import { editReviewSettings } from '../../review/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { reviewItemView } from '../reviews.ts';
@@ -21,6 +21,8 @@ const NOTES_MAX = 16 * 1024;
 export const optionalNotesBody = z.strictObject({ notes: z.string().trim().max(NOTES_MAX).optional() });
 /** A rejection, a request for changes or a steer says why, or where: the job and the trail are told. */
 export const notesBody = z.strictObject({ notes: z.string().trim().min(1, 'say why').max(NOTES_MAX) });
+/** Accept: its notes, and — in a phase a question switched the job to (issue #548) — what the job does next. */
+export const acceptBody = optionalNotesBody.extend({ then: z.enum(SHIFT_THEN).optional() });
 /** Any part, or several; a part left out keeps its value. */
 export const reviewSettingsBody = z.strictObject({
   reviewers: z.array(z.string().min(1)).max(16).optional(),
@@ -28,7 +30,7 @@ export const reviewSettingsBody = z.strictObject({
   levelRevisions: z.number().int().min(0).max(MAX_LEVEL_REVISIONS).optional(),
 }).refine((b) => b.reviewers !== undefined || b.signOff !== undefined || b.levelRevisions !== undefined, { message: 'name reviewers, signOff or levelRevisions' });
 
-const STATUS = { not_found: 404, not_open: 409, not_offered: 404 } as const;
+const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409 } as const;
 
 export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
   const id = (req: FastifyRequest) => parseWith(idParams, req.params).id;
@@ -45,9 +47,11 @@ export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard;
       throw new HttpError(STATUS[r.reason], r.message);
     };
     for (const d of decisions) {
-      const body = d.notes === 'required' ? notesBody : optionalNotesBody;
-      app.post(`/ui/api/${section}/:id/${d.route}`, o.operator, async (req) =>
-        answer(req, o.tenant(req).reviews[kind].decide(id(req), d.id, who(req), parseWith(body, req.body ?? {}).notes || undefined)));
+      const body = d.effect === 'accept' ? acceptBody : d.notes === 'required' ? notesBody : optionalNotesBody;
+      app.post(`/ui/api/${section}/:id/${d.route}`, o.operator, async (req) => {
+        const b: { notes?: string; then?: (typeof SHIFT_THEN)[number] } = parseWith(body, req.body ?? {});
+        return answer(req, o.tenant(req).reviews[kind].decide(id(req), d.id, who(req), b.notes || undefined, b.then));
+      });
     }
     app.post(`/ui/api/${section}/:id/seen`, o.operator, async (req) => answer(req, o.tenant(req).reviews[kind].markSeen(id(req))));
     app.post(`/ui/api/jobs/:id/${askPath}`, o.operator, async (req) => o.tenant(req).engine.askFor(kind, id(req)));

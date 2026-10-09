@@ -2,7 +2,7 @@
 // answer a question, and to review a review item — a proposal or a research report (issues #537, #543, design.md
 // "Sections"); the document an executor reports; the review.
 import type { RunLogins } from './ports.ts';
-import type { Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion } from './types.ts';
+import type { Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
 
 /** Everything an escalation level is given. */
 export interface AnswerRequest {
@@ -35,6 +35,11 @@ export interface LevelReply {
   model?: string;
   /** The machine it ran on and why, when the level named none and picked it (issue #442): on the trail. */
   machine?: { id: string; why: string };
+  /**
+   * A phase shift it suggests (issue #548): research or a proposal first, about `note`. A level the phase-shift settings
+   * allow shifts the job itself, in the default mode; any other's suggestion is shown to the person.
+   */
+  suggest?: { to: ReviewKind; note?: string };
 }
 
 /**
@@ -93,7 +98,7 @@ export interface ReviewReply {
 
 export type ReviewActionResult =
   | { ok: true; item: ReviewItem }
-  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered'; message: string };
+  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched'; message: string };
 
 /**
  * Runs one review section's review (issues #537, #543): reviewer levels, lowest first, then a person. Every write is
@@ -106,8 +111,11 @@ export interface ReviewService {
   firstStage(): string;
   /** Start the review of an item's newest version. */
   handle(itemId: string): void;
-  /** A person's decision, one the section declares, at any stage: `by` is who. */
-  decide(itemId: string, decision: ReviewDecisionId, by: string, notes?: string): ReviewActionResult;
+  /**
+   * A person's decision, one the section declares, at any stage: `by` is who. `then` (issue #548): accepting an item
+   * whose job is in a switched phase of this kind, what the job does next (thenChoices); refused for any other.
+   */
+  decide(itemId: string, decision: ReviewDecisionId, by: string, notes?: string, then?: ShiftThen): ReviewActionResult;
   /** A person saw it in the UI: `seenAt` set once. */
   markSeen(itemId: string): ReviewActionResult;
   /** Cancel the open items whose job ended or is gone. Run on each tick and by `recover`. */

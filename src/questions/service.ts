@@ -5,15 +5,15 @@
 // (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
-import type { AnswerByHumanResult, AnswerRequest, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
+import type { AnswerByHumanResult, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
-import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt } from '../domain/types.ts';
+import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
-import { openOnEndedJobs } from './stale.ts';
+import { forkRuns, openOnEndedJobs } from './stale.ts';
+import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
 import { riskRules } from './risk.ts';
-import { readRules } from './rules.ts';
 
 export interface QuestionServiceOptions {
   store: UserStore;
@@ -37,6 +37,11 @@ export interface QuestionServiceOptions {
   logins?: Logins;
   /** Jev first (issue #550), asked first about a question that lists its options, and whether the blast-radius gate keeps a machine. Absent: the levels only. */
   minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
+  /**
+   * A level suggested a phase shift (issue #548). Inside the tx recording its reply: the engine shifts the job when the
+   * phase-shift settings allow the level — the mode it made — else undefined, and the suggestion is the person's to take.
+   */
+  onShift?: (q: Question, suggest: { to: ReviewKind; note?: string }, by: string) => ShiftMode | undefined;
 }
 
 export const HUMAN = 'human';
@@ -81,7 +86,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   function expire(id: string) {
     store.tx(() => {
       const q = store.questions.get(id);
-      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked') return;
+      if (!q || q.status !== 'open' || q.tier !== HUMAN || store.jobs.get(q.jobId)?.status === 'parked' || forkRuns(store, q)) return;
       const after = clock.now().getTime() - new Date(q.escalatedToHumanAt ?? q.createdAt).getTime();
       const updated = store.questions.update(id, { status: 'expired' });
       emit(updated, 'question.expired', { after_ms: Math.min(after, o.humanTimeoutMs) });
@@ -175,26 +180,6 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     }
   }
 
-  function requestFor(q: Question, number: number, of: number, level: string): { req: AnswerRequest; rulesNote: string } {
-    const rules = readRules(o.config);
-    const job = store.jobs.get(q.jobId);
-    const jobMachine = job?.resumeOn ?? job?.spec.machineId;
-    return {
-      req: {
-        question: q,
-        jobPrompt: typeof job?.spec.payload.prompt === 'string' ? job.spec.payload.prompt : '',
-        jobGoal: job?.spec.goal,
-        rules: rules.text,
-        previous: q.attempts,
-        level: { number, of },
-        ...(jobMachine ? { jobMachine } : {}),
-        // A login the level's run waits on (issue #476) names the question and the level, never the job: it waits on the answer.
-        ...(o.logins ? { logins: o.logins.forRun({ questionId: q.id, run: level }, () => !stopped) } : {}),
-      },
-      rulesNote: rules.missing ? ' (no rules yet)' : '',
-    };
-  }
-
   /**
    * One level holds the question: its reply is recorded, then the question is answered, goes to the
    * human (a risk rule hit), or climbs on. Returns why it climbs, or undefined when it does not
@@ -206,7 +191,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       return q && q.status === 'open' ? enter(q, level.name, reason) : undefined;
     });
     if (!entered) return undefined;
-    const { req, rulesNote } = requestFor(entered, number, of, level.name);
+    const { req, rulesNote } = levelRequest(o, entered, number, of, level.name, () => !stopped);
     const startedAt = iso();
     const replied = await call(id, (signal) => level.answer(req, signal));
     if (stopped) return undefined;
@@ -221,8 +206,17 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         store.questions.addAttempt(id, { ...base, error: reply.error, reason: `error${rulesNote}` });
         return `${level.name} failed: ${reply.error}`;
       }
-      const { answer, escalate, reason: why } = reply.value;
-      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}` };
+      const { answer, escalate, reason: why, suggest } = reply.value;
+      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}`, ...(suggest ? { suggest } : {}) };
+      // A suggested phase shift (issue #548): made by the level where the settings allow it, else shown to the person.
+      // A fork leaves the question open for its result, with a person, who may still answer it first.
+      const mode = suggest && o.onShift?.(q, suggest, level.name);
+      if (mode) {
+        store.questions.addAttempt(id, { ...base, ...replyFields, outcome: 'accepted' });
+        if (mode === 'fork') toHuman(store.questions.get(id)!, `${level.name} forked ${suggest.to === 'research' ? 'research' : 'a proposal'}: the question waits for its result`);
+        return undefined;
+      }
+      if (suggest && !q.suggestion) store.questions.update(id, { suggestion: { ...suggest, by: level.name } });
       if (escalate || answer === undefined) {
         store.questions.addAttempt(id, { ...base, ...replyFields });
         return `${level.name}: ${why}`;
@@ -269,18 +263,21 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     running.add(p);
   }
 
-  /** Inside a tx. The owner settles an open question — their answer, or the close text — over any level in flight; the caller decides what the job does. */
-  function settle(q: Question, answer: string, status: 'answered' | 'closed', via?: 'pane'): Question {
+  /**
+   * Inside a tx. The owner settles an open question — their answer, or the close text — over any level in flight; the
+   * caller decides what the job does. `by` (issue #548): a level's switch, or a fork's accepted result, settles it too.
+   */
+  function settle(q: Question, answer: string, status: 'answered' | 'closed', via?: 'pane', by = HUMAN, reason?: string): Question {
     abortStage(q.id, 'superseded');
     clearTimers(q.id);
     const at = iso();
     store.questions.addAttempt(q.id, {
-      tier: HUMAN, role: 'human', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
-      ...(status === 'closed' ? { reason: 'closed without answering' } : via ? { reason: 'answered in the pane' } : {}),
+      tier: by, role: by === HUMAN ? 'human' : by.startsWith('fork:') ? 'fork' : 'level', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
+      ...(reason ? { reason } : status === 'closed' ? { reason: 'closed without answering' } : via ? { reason: 'answered in the pane' } : {}),
     });
-    const updated = store.questions.update(q.id, { status, answer, answeredBy: HUMAN });
+    const updated = store.questions.update(q.id, { status, answer, answeredBy: by });
     if (status === 'closed') emit(updated, 'question.closed', { answer });
-    else emit(updated, 'question.answered', { by: HUMAN, answer, ...(via ? { via } : {}) });
+    else emit(updated, 'question.answered', { by, answer, ...(via ? { via } : {}) });
     return updated;
   }
 
@@ -307,6 +304,16 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
     answerByHuman: (id, answer) => byHuman(id, answer, 'answered'),
     closeByHuman: (id) => byHuman(id, CLOSED_ANSWER, 'closed'),
+
+    settleWith(id, answer, by, reason) {
+      return store.tx(() => {
+        const q = store.questions.get(id);
+        if (q?.status !== 'open') return undefined;
+        const updated = settle(q, answer, 'answered', undefined, by, reason);
+        o.onAnswered(updated);
+        return updated;
+      });
+    },
 
     dismissByHuman(id) {
       return store.tx(() => {

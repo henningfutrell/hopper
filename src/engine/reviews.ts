@@ -16,6 +16,7 @@ import {
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+import { afterSwitch, resolveFork } from './phase-shifts.ts';
 
 /** The job's review items, by kind, that it has. */
 export function itemsOfJob(c: EngineContext, job: Job): ReviewItem[] {
@@ -48,8 +49,14 @@ export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined,
     p = items.update(current.id, { status: 'open', stage });
   } else {
     const raised = raisedBy({ laneId, resumeOn: job.resumeOn, pin: job.spec.machineId, machines: new Map(machine ? [[machine.id, machine.label]] : []) });
-    const source = job.source ? { key: job.source.key, url: job.source.url, title: job.source.title } : undefined;
-    p = items.create({ jobId: job.id, stage, version: version(1), ...(raised ? { raisedBy: raised } : {}), ...(source ? { source } : {}) });
+    // A fork's item came from its parent's item (issue #548); one written in a switched phase, from the job's question.
+    const from = job.source ?? job.forkOf?.source;
+    const source = from ? { key: from.key, url: from.url, title: from.title } : undefined;
+    p = items.create({
+      jobId: job.id, stage, version: version(1), ...(raised ? { raisedBy: raised } : {}), ...(source ? { source } : {}),
+      ...(job.forkOf ? { forkOf: { jobId: job.forkOf.jobId, questionId: job.forkOf.questionId } } : {}),
+      ...(job.shift?.to === kind ? { switchedFrom: { jobId: job.id, questionId: job.shift.questionId } } : {}),
+    });
   }
   store.jobs.update(job.id, {
     status: 'waiting_answer', [type.jobField]: p.id, questionId: undefined, laneId: undefined, pendingAnswer: undefined,
@@ -108,11 +115,16 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
     onDecided(p) {
       const job = waitingOn(p);
       if (!job) return;
-      const next = p.status === 'accepted' ? nextAsk(job, p.kind) : undefined;
+      // A fork's result goes to its parent's question (issue #548); the fork itself ends as any job asked for one does.
+      if (job.forkOf) resolveFork(c, job, p);
+      // A phase a question switched the job to (issue #548): the person picked what it does next; `end` ends it here.
+      const switched = job.shift?.to === p.kind;
+      if (switched && afterSwitch(c, job, p, requeue, moveOnBrief)) return;
+      const next = p.status === 'accepted' && !switched ? nextAsk(job, p.kind) : undefined;
       if (next) return requeue(job, moveOnBrief(p, next), `${REVIEW_SECTIONS[p.kind].noun} accepted: on to the ${REVIEW_SECTIONS[next].noun}`);
       // Not asked for it: the item was part of the job's own work, which goes on where its type says so (issue #538).
       const type = REVIEW_SECTIONS[p.kind];
-      if (p.status === 'accepted' && type.goesOn && !job.spec[type.specFlag]) return requeue(job, goOnBrief(p), `${REVIEW_SECTIONS[p.kind].noun} accepted: the job goes on`);
+      if (p.status === 'accepted' && !switched && type.goesOn && !job.spec[type.specFlag]) return requeue(job, goOnBrief(p), `${REVIEW_SECTIONS[p.kind].noun} accepted: the job goes on`);
       const result = decidedResult(itemsOfJob(c, store.jobs.get(p.jobId)!));
       store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined });
       store.events.append({ type: 'job.finished', jobId: p.jobId, data: { result } });

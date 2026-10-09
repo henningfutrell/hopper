@@ -281,7 +281,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     answerUrl: o.answerUrl,
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
-    onDismissed: (q: Question) => engine.onDismissed(q),
+    // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
+    onDismissed: (q: Question) => engine.onDismissed(q), onShift: (q, suggest, by) => engine.phaseShifts.byLevel(q, suggest, by),
   });
   // Each review section's review (issues #537, #543): the escalation levels its settings name review; the engine ends,
   // moves on or re-queues the job.
@@ -311,7 +312,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Completion is the job's source's to judge (issues #171, #187); a job of no source, or of one that does not judge, is complete.
     notComplete: async (job) => sourceOf(job)?.notComplete?.(job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
-    credentials: async (job) => sourceOf(job)?.credentials?.(job),
+    // A fork (issue #548) acts through its parent's source's connection.
+    credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
     // Read at each Decision; reached only after `failures` exists.
     problems: () => failures.blocks(),
   });

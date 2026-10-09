@@ -7,6 +7,8 @@
 // the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
 // first, the longest waiting on top (issue #450).
+// Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
+// takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions.
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -26,8 +28,9 @@ import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
-import { useCanOperate, useJobIndex } from '@/store/selectors';
+import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { ParkButton } from '@/views/overview/lanes';
+import { PhaseShiftSettingsPanel, ShiftActions } from '@/views/phase-shifts';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -133,6 +136,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
               <Button variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
             </Confirm>
           </div>
+          {!movedOn && <ShiftActions q={q} busy={sending} />}
         </div>
       )}
       {!canAnswer && (
@@ -151,6 +155,7 @@ export function Questions() {
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.
   const canAnswer = useCanOperate();
+  const canAdmin = useCanAdmin();
   const unseen = questions.filter(unseenByOwner).map((q) => q.id).join(',');
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
@@ -158,6 +163,7 @@ export function Questions() {
       {ordered.length
         ? ordered.map((q) => <div key={q.id} data-question={q.id}><QuestionCard q={q} /></div>)
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}
+      {canAdmin && <PhaseShiftSettingsPanel />}
       {below > 0 && (
         <Button data-slot="new-questions" size="sm" onClick={showBelow} className="fixed bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full shadow-lg">
           <ArrowDown />{below} new below

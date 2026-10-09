@@ -43,6 +43,14 @@
     },
     "notes": {
       "type": "string"
+    },
+    "then": {
+      "type": "string",
+      "enum": [
+        "work",
+        "end",
+        "proposal"
+      ]
     }
   },
   "required": [

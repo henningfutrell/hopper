@@ -186,6 +186,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (job.priority !== priority) {
           store.jobs.update(jobId, { priority });
           store.events.append({ type: 'job.reprioritized', jobId, data: { from: job.priority, to: priority, reason } });
+          // Its forks carry its priority (issue #548): the ones still at work follow it.
+          for (const forkId of job.forks ?? []) {
+            const fork = store.jobs.get(forkId);
+            if (!fork || TERMINAL_STATUSES.includes(fork.status) || fork.priority === priority) continue;
+            store.jobs.update(forkId, { priority });
+            store.events.append({ type: 'job.reprioritized', jobId: forkId, data: { from: fork.priority, to: priority, reason: `its parent job ${jobId}: ${reason}` } });
+          }
           changed = true;
         }
         return changed;

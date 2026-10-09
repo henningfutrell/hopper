@@ -75,7 +75,9 @@ export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string
  * It keeps its `~`: workTreeOn resolves it on the lane's machine. `repo`: the job's GitHub repository, if
  * any: fetched or cloned in a work tree that is no repository (job-worktree.ts).
  */
-export function resolvePayload(job: Pick<Job, 'spec' | 'source'>, machine: Pick<MachineSnapshot, 'id' | 'workTree'>): ClaudeJobPayload {
+export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, machine: Pick<MachineSnapshot, 'id' | 'workTree'>): ClaudeJobPayload {
+  // A fork (issue #548) works in its parent's repository.
+  const source = job.source ?? job.forkOf?.source;
   const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; expectedMs?: number; timeoutMs?: number };
   const own = job.spec.machineId === machine.id ? p.cwd : undefined;
   return {
@@ -83,7 +85,7 @@ export function resolvePayload(job: Pick<Job, 'spec' | 'source'>, machine: Pick<
     cwd: own ?? machine.workTree ?? JOBS_DIR,
     ...(own === undefined ? { makeWorkTree: true } : {}),
     model: p.model,
-    ...(job.source?.repo && job.source.kind.startsWith('github') ? { repo: job.source.repo } : {}),
+    ...(source?.repo && source.kind.startsWith('github') ? { repo: source.repo } : {}),
     env: { ...(p.env ?? {}) },
     expectedMs: p.expectedMs ?? DEFAULT_EXPECTED_MS,
     timeoutMs: p.timeoutMs ?? DEFAULT_TIMEOUT_MS,

@@ -13,6 +13,7 @@ import type {
   SectionKind, SectionSummary,
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
+  ForkParent, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionShifts, ShiftMode, ShiftThen,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -28,6 +29,7 @@ export type {
   SectionKind, SectionSummary,
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
+  ForkParent, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionShifts, ShiftMode, ShiftThen,
 };
 
 export interface Queue {
@@ -67,6 +69,8 @@ export interface Health {
   executors: string[];
   /** The executors that can park a job (issue #530): Park is offered only for their jobs. */
   parkingExecutors?: string[];
+  /** The executors that write research reports and proposals (issue #548): only their jobs shift phase from a question. */
+  reviewingExecutors?: string[];
   uptimeS: number;
 }
 

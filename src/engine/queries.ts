@@ -2,7 +2,7 @@
 import { isLocked } from '../domain/locked.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, highFirst, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
@@ -59,7 +59,8 @@ export function createQueries(c: EngineContext): Queries {
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   return {
     getQueue() {
-      const all = c.store.jobs.list();
+      // Each with its phase named (issue #548): the views show it.
+      const all = c.store.jobs.list().map(withPhase);
       // The decider's own order: the queue sorter's, then effective priority, then age.
       const queued = all.filter((j) => j.status === 'queued' || j.status === 'held');
       const ids = queueOrder(c, queued).jobIds;
