@@ -44,6 +44,9 @@ function fakeDaemon(role: Role) {
     ] },
     '/api/accounts': { accounts: [] }, '/api/usage': { readings: [], sources: [], machines: [], limits: { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false } },
     '/api/logins': { now: T, settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
+    // The Overview's graphs: no samples.
+    '/api/usage/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T12:00:00.000Z', to: T, stepMs: 900000, retentionDays: 90, series: [] },
+    '/api/machines/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T12:00:00.000Z', to: T, stepMs: 900000, retentionDays: 90, series: [] },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const [path] = String(input).split('?') as [string];

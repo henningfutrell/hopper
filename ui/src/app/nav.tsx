@@ -1,7 +1,7 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
-// Research, Logins, Failures; issue #543) is a view whose badge follows the one section rule (useSectionBadges).
-import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+// Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
+import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -20,6 +20,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   research: { label: 'Research', icon: Telescope },
   logins: { label: 'Logins', icon: KeyRound },
   failures: { label: 'Failures', icon: OctagonAlert },
+  parked: { label: 'Parked', icon: CirclePause },
   decisions: { label: 'Decisions', icon: Scale },
   events: { label: 'Events', icon: ListTree },
   sources: { label: 'Sources', icon: Inbox },

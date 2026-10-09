@@ -40,7 +40,7 @@ export interface Queue {
   waitingAnswer: Job[];
   /** Jobs claimed as operator-led (issue #318). */
   operatorLed: Job[];
-  /** Parked jobs (issue #501): on no lane, until re-queued. */
+  /** Parked jobs (issue #501): on no lane, until picked up. */
   parked: Job[];
   /** The locked entries (issue #355): failed jobs kept in the queue until run again or dismissed, highest priority first. */
   locked: Job[];
