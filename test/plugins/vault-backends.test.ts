@@ -98,6 +98,13 @@ describe('bitwarden', () => {
     expect(made).toEqual([{ token: '0.abc', apiUrl: 'https://api.bitwarden.eu', identityUrl: 'https://identity.bitwarden.eu' }]);
   });
 
+  it('is unavailable where Bitwarden\'s SDK has no build (linux on arm64), saying so', async () => {
+    const def = bitwardenPlugin({ platform: 'linux-arm64' });
+    const kit = { env: () => '0.abc', secretName: (n: string) => n } as never;
+    expect(await def.detect(kit, def.options!(z).parse({}))).toMatchObject({ status: 'unavailable', reason: expect.stringMatching(/no build for linux-arm64/) });
+    expect(await bitwardenPlugin({ platform: 'linux-x64' }).detect(kit, def.options!(z).parse({}))).toMatchObject({ status: 'available' });
+  });
+
   it('checks a reference is a secret id, and says why it cannot read', async () => {
     const def = bitwardenPlugin({ connect: async () => ({ get: async () => { throw new Error('404 Not Found'); } }) });
     const b = await backend(def, {}, { BWS_ACCESS_TOKEN: '0.abc' });
