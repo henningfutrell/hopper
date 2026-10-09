@@ -1,8 +1,8 @@
 // Access (issue #559, design.md "Access: OpenFGA decides each mint"): before the vault (issue #558) mints or renews a
-// credential for a job, the hopper asks OpenFGA whether the job's template is approved for that operation on that
-// asset. The types the model needs, kept minimal for the vault to adopt or extend: a template by name, an operation,
-// an asset, and the operation profile that is an operation on an asset. The approvals and the model are the hopper's,
-// rows in its database, pushed to OpenFGA; every decision is recorded.
+// credential, the hopper asks OpenFGA whether the requester — a job, a machine or a user (issue #581) — reaches a
+// template approved for that operation on that asset. The types the model needs: a requester, a template by name, an
+// operation, an asset, and the operation profile that is an operation on an asset. The approvals and the model are the
+// hopper's, rows in its database, pushed to OpenFGA with the tuples of who is live; every decision is recorded.
 import type { TemplateRadius } from './blast-radius.ts';
 
 /** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
@@ -34,12 +34,33 @@ export function profileProblem(p: { operation: string; asset: { kind: string; na
 /** One relationship, as OpenFGA keeps it: `subject` is `relation` of `object` (OpenFGA's user, relation, object). */
 export interface RelationshipTuple { subject: string; relation: string; object: string }
 
-/** A job's request for a credential: which job, its template, and the operation profile it asks for. */
+/** Who asks in an access check (issue #581): a job, a machine (a box) or a user, each of one user. */
+export type Requester =
+  | { kind: 'job'; userId: string; jobId: string }
+  | { kind: 'machine'; userId: string; machine: string }
+  | { kind: 'user'; userId: string };
+
+/** A request for a credential: who asks, and the operation profile it asks for. The template comes from the requester's relations, never from the request. */
 export interface MintRequest {
-  job: { userId: string; jobId: string };
-  template: string;
+  requester: Requester;
   operation: Operation;
   asset: Asset;
+}
+
+/** Who is live now, of one user, as the hopper writes it to OpenFGA: each live job with the machine it runs on, and each box with the template it joined as. */
+export interface LiveRequesters {
+  userId: string;
+  jobs: { jobId: string; machine?: string }[];
+  boxes: { machine: string; template: string }[];
+}
+
+/** One row of the permission matrix (#559): a requester, the template it runs as now, and each operation profile it reaches, with the path. */
+export interface RequesterRow {
+  requester: Requester;
+  /** A job's or a box's template now; a job's machine. */
+  template?: string;
+  machine?: string;
+  grants: { profile: OperationProfile; path: RelationshipTuple[] }[];
 }
 
 /** The answer to a mint request: allowed or not, why, and the relationship path that allowed it when the hopper can name it. */
@@ -48,17 +69,17 @@ export interface MintDecision {
   at: string;
   allowed: boolean;
   reason: string;
-  /** From the job to the asset, when the approval rows explain the allow; absent on a deny, or when a model edit allowed it another way. */
+  /** From the requester to the asset, when the hopper's rows explain the allow; absent on a deny, or when a model edit allowed it another way. */
   path?: RelationshipTuple[];
   /** The OpenFGA authorization model asked. */
   modelId?: string;
 }
 
-/** A recorded decision: the request with its answer. A check tried from Settings → Access is a `trial`, by whom. */
+/** A recorded decision: the request with its answer, and the template the requester ran as. A check tried from Settings → Access is a `trial`, by whom. */
 export interface AccessDecisionRecord extends MintDecision {
-  job?: { userId: string; jobId: string };
+  requester?: Requester;
   trial?: { by: string };
-  template: string;
+  template?: string;
   operation: Operation;
   asset: Asset;
 }
@@ -105,6 +126,8 @@ export interface AccessView {
   templates: { template: string; approvals: Approval[]; radius: TemplateRadius }[];
   /** The newest revoked approvals. */
   revoked: RevokedApproval[];
+  /** Each requester now (issue #581) — every user, each live job, each box — and what it reaches: the permission matrix's rows. */
+  requesters: RequesterRow[];
   /** The newest decisions, newest first. */
   decisions: AccessDecisionRecord[];
 }

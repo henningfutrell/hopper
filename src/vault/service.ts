@@ -40,6 +40,8 @@ export interface VaultService {
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<VaultResult>;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
+  /** Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581). */
+  boxes(): { machine: string; template: string }[];
   /**
    * A machine's ask (slice 3), already proven to be the machine's (its link's signature): one secret, for the job whose
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
@@ -190,6 +192,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
+    boxes: () => (o.targets?.() ?? []).flatMap((m) => ('client' in m && m.client.template !== undefined ? [{ machine: m.name, template: m.client.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
