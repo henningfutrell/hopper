@@ -53,6 +53,19 @@ describe('herdr-claude job through the daemon', () => {
     await waitFor(() => herdr.closed.includes(paneId));
   });
 
+  // Issue #533: on a machine whose home has no Claude config (a fresh container), the default instance (unattended)
+  // seeds it, and the job runs with no key pressed: no first-run screen, no trust dialog.
+  it('a fresh home: Claude\'s config is seeded and the job runs with no key pressed', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', claudeConfig: 'absent', trustDialogFor: '/x', turns: [DONE] });
+    const a = await start(herdr);
+    const job = await a.pull({}, item());
+    await a.waitForStatus(job.id, 'finished', 15000);
+    expect(herdr.seeds).toHaveLength(1);
+    expect(herdr.keys.filter((k) => !k.keys.includes('ctrl+c') && !k.keys.includes('esc'))).toEqual([]);
+    const tab = herdr.calls.find((c) => c.method === 'createTab')!.args[0] as { env: Record<string, string> };
+    expect(tab.env.DISABLE_AUTOUPDATER).toBe('1');
+  });
+
   // Issue #163: a status note is progress, not a question.
   it('a turn that ends in a status note opens no question and sends no question webhook: the job is nudged and finishes', async () => {
     const note = { output: ['● The tests run in the background; I will report when they finish.'] };

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* global process, setInterval */
 // A stand-in for the agent CLIs the print-mode executors run (issue #307): `codex exec --json`,
-// `opencode run --format json` and `omp -p --mode json`, chosen by $FAKE_AGENT_KIND. Appends its argv,
+// `opencode run --format json`, `omp -p --mode json` and `claude -p --output-format json` (issue #533), chosen by $FAKE_AGENT_KIND. Appends its argv,
 // cwd and the environment the hopper sets to agent-calls.jsonl in $FAKE_AGENT_DIR, then answers as that
 // CLI does — JSON events, one per line, in the shapes each prints (taken from the real CLIs, 2026-10-07).
 // The reply is $FAKE_AGENT_REPLY; $FAKE_AGENT_REPLIES (a JSON array) gives the reply of each call in
@@ -80,7 +80,15 @@ else if (kind === 'codex') {
     ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'No API key found for anthropic' }
     : { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: reply }], stopReason: 'stop', errorMessage: null };
   out({ type: 'agent_end', messages: [user, { role: 'assistant', content: [{ type: 'text', text: 'Looking at it.' }], stopReason: 'toolUse' }, assistant] });
+} else if (kind === 'claude') {
+  // One JSON result, as claude 2.1.292 prints it (fields the hopper does not read left out); its own error says so with is_error.
+  const session = after('--resume') ?? 'claude-session-1';
+  if (mode === 'error') {
+    out({ type: 'result', subtype: 'success', is_error: true, api_error_status: 401, result: 'Invalid API key · Fix external API key', session_id: session, terminal_reason: 'api_error' });
+    process.exit(1);
+  }
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: reply, session_id: session, permission_denials: [] });
 } else {
-  process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode or omp, not ${kind}\n`);
+  process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode, omp or claude, not ${kind}\n`);
   process.exit(2);
 }

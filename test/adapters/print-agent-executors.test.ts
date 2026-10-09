@@ -1,4 +1,4 @@
-// Issue #307: every agent box runs jobs, so codex, opencode and omp have executors, as Cursor's agent
+// Issue #307: every agent box runs jobs, so codex, opencode and omp have executors (and, issue #533, Claude Code), as Cursor's agent
 // does (issue #142): the agent's CLI in print mode on the job's machine, in the job's work tree, one run
 // per turn; the hopper protocol's marker on its last message decides done, a question (answered by
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
@@ -71,6 +71,13 @@ const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => str
     first: (m) => ['-p', '--mode', 'json', '--no-title', '--auto-approve', '--model', m, '--'],
     resumed: (id) => ['-p', '--mode', 'json', '--no-title', '--auto-approve', '--resume', id, '--'],
     error: 'omp on local: No API key found for anthropic',
+  },
+  {
+    // Issue #533: Claude Code in print mode, never shows a screen: nothing to answer in a fresh home.
+    agent: 'claude', args: ['--dangerously-skip-permissions'], session: 'claude-session-1',
+    first: (m) => ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', m, '--'],
+    resumed: (id) => ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--resume', id, '--'],
+    error: 'claude exited 1 on local: Invalid API key · Fix external API key',
   },
 ];
 

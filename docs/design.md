@@ -495,7 +495,8 @@ HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
 (`herdr --session hopper server`). Every herdr call is `herdr --session <s> …`, JSON on
 stdout, errors JSON on stderr with exit 1. Never the default session — herdr's own doctrine
 forbids driving a user's session from outside it. Spawned processes get an environment with
-`CLAUDECODE` and every `CLAUDE_CODE_*` variable removed.
+`CLAUDECODE` and every `CLAUDE_CODE_*` variable removed but the claude CLI's credential
+`CLAUDE_CODE_OAUTH_TOKEN` (issue #533, "Startup screens").
 
 **Lanes → panes.** One herdr workspace labelled `hopper` (found by label, else created
 `--no-focus`). One **tab per job run**, created with `--cwd <job cwd>` and labelled
@@ -530,7 +531,7 @@ pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
 dialog names the job's cwd** and `HOPPER_TRUST_WORKDIR` is true → send `down enter`,
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Another dialog of Claude's
-blocking startup → a question to a person ("A dialog before the send"); a screen that shows none is looked at again ("Startup dialogs").
+blocking startup → a question to a person ("A dialog before the send"); a screen that shows none is looked at again ("Startup screens").
 
 **Yolo** (issue #267). Whether Claude has every permission is the herdr-claude instance's own
 option `yolo` (default on, command-bearing), never an argument in its `args`; it is picked like the
@@ -548,48 +549,93 @@ which one runs a job. `claudeArgsFor(yolo, args)` (`src/executors/herdr/start.ts
   question (`detectedBy: blocked`, the dialog as its text), and the escalation levels or the
   owner answer it.
 
-**Startup dialogs** (`settleStartup`). After `agent start` — refused with `agent_not_ready`, or
-started while a dialog is up — the executor polls `agent get` and judges each blocked screen once
-per `state_change_seq`, so keys meant for one dialog never land on the next: the folder-trust dialog
-naming the job's cwd (with `trustWorkdir`) → `down enter`, `trusted workdir <cwd>`; the bypass
-permissions warning ("WARNING: Claude Code running in Bypass Permissions mode", options `No, exit` /
-`Yes, I accept`) with `yolo` → `down enter`, `accepted bypass permissions mode`; Claude's external imports
-dialog ("Allow external CLAUDE.md file imports?", options `No, disable external imports` / `Yes, allow
-external imports`, the refusing one first and focused) with `trustWorkdir` → `down enter`, `allowed the
-external CLAUDE.md imports of the trusted work tree` (issue #518: a job worktree lies inside the work tree,
-so the work tree's `CLAUDE.md` importing its `AGENTS.md` imports a file outside the job's cwd; the owner
-trusts the work tree, and nothing is written into Claude's own files). Any other dialog of Claude's (`showsDialog`:
-its cursor on a numbered option, or its key hints "Enter to confirm" / "Esc to cancel"), the warning on an
-instance that is not yolo, the imports dialog without `trustWorkdir`, or more than 4 dialogs → Claude is up,
-at a dialog: the send asks it of a person ("A dialog before the send", issue #534). **A screen with no dialog is not one** (issue #527): on a Windows machine
-every job failed "blocked", the screen the base64 `-EncodedCommand` of the launch line herdr's agent start typed;
-on a wsl one, the dependency-sharing command still on screen. Such a screen — the launch or a setup command
-echoed, Claude still drawing — is looked at again at each poll until Claude is up, for up to 120 s
-(`SETTLE_TIMEOUT_MS`, twice the start deadline: a Windows launch is slow); then the start times out, `claude not
-ready at startup: <screen>`, and is tried again in a new pane. The screen is not cleared before the launch:
-herdr's agent start types the launch line after anything the hopper could clear, so only the positive
-markers above decide. **No marker is in the command that prints it** (issues #518, #527): each command typed
-into a pane builds the marker it is waited on for when it runs (`printf 'hopper-%s-%s' …`), so the echo of the
+**Startup screens** (issue #533, `src/executors/herdr/startup.ts`, `startup-screens.ts`, `claude-config.ts`). Owner
+requirement: a job never blocks on interactive input — on a container or any machine nobody watches, a key press
+nobody can give stalled or failed it, and each new screen of Claude's was a new failure (#288, #518, #527). So startup
+is non-interactive by construction, and "A dialog before the send" below is the guaranteed fallback.
+
+*By construction.* Before `agent start`, with the instance **unattended** (option `unattended`, default on; set per
+instance in Settings → Plugins, stored in the `plugins` config record and applied without a restart, as every executor
+option is), the pane's own shell seeds Claude's config where the machine has none: `$CLAUDE_CONFIG_DIR/.claude.json`,
+else `~/.claude.json`, written only when absent (noclobber, mode 600), never the user's existing one — onboarding done,
+the dark theme, `autoUpdates: false`; with `trustWorkdir`, trust and the external imports approval for the work tree,
+the directory Claude starts in and its git top (each by its real path, only the work tree or inside it; Claude keys
+trust by a directory or one above it, the imports approval by the repository's top); with yolo,
+`bypassPermissionsModeAccepted`; with `ANTHROPIC_API_KEY` in the pane's environment, that key approved (its last 20
+characters, as Claude records it). It prints `hopper-claude-config-seeded`, `-kept` or `-unwritable`; whatever it says,
+Claude starts. Unattended, the tab also gets `DISABLE_AUTOUPDATER=1`: Claude never updates itself in a job's pane. The
+yolo warning is accepted by `--settings` ("Yolo"). The claude CLI's credential `CLAUDE_CODE_OAUTH_TOKEN` is the one
+`CLAUDE_CODE_*` variable the scrubbed environment keeps (`src/executors/env.ts`): the herdr server, whose environment
+every pane inherits, started without it, so a hopper in a container given it had Claude stop at its login screen; a
+user added later never gets admin's (`userProcessEnv`). Checked live (Claude Code 2.1.292,
+`test/herdr/real-fresh-home.test.ts`, opt-in `HOPPER_REAL_CLAUDE`): in an empty home, a job worktree whose work tree's
+`CLAUDE.md` imports a file outside it reaches Claude's prompt with no key pressed.
+
+*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (`PROMPT_STEADY_MS`,
+counted in polls: Claude draws it before it says it is not signed in). Never herdr's word alone: herdr calls Claude
+`idle` and `interactive_ready` at its first-run theme picker (seen live), where the start before sent the job's prompt.
+
+*Each screen before it is decided on by its text* (`startupStep`), never by `state_change_seq`: herdr's does not move
+between Claude's startup dialogs (seen live: trust, imports and API key all at one seq, so a dialog after the first was
+never judged). The screen just answered is not answered again until it changes; at most 8 are answered. Defaults:
+
+| screen | how it is known | answered | when |
+|---|---|---|---|
+| folder trust naming the dir Claude starts in | `trust this folder`, `Accessing workspace:` that dir | `down enter` | `trustWorkdir` |
+| external CLAUDE.md imports (issue #518: a job worktree lies inside the work tree, so the work tree's `CLAUDE.md` importing its `AGENTS.md` imports a file outside the job's cwd) | `Allow external CLAUDE.md file imports?` | `down enter` | `trustWorkdir` |
+| bypass permissions warning (issue #267) | `running in Bypass Permissions mode` | `down enter` | yolo |
+| first-run theme | `Choose the text style` | `enter` (its default) | unattended |
+| the API key in Claude's environment | `Detected a custom API key` | `up enter` (Yes) | unattended |
+| a notice | `Press Enter to continue` | `enter` | unattended |
+| login method, or the prompt with `Not logged in · Run /login` | its text | — | never |
+| anything else that asks (`asksSomething`: a dialog's cursor or key hints, a cursor on an option outside the input box, Press Enter) | — | — | never |
+
+A screen the hopper may not answer — no default, or one the instance may not give (trust or imports without
+`trustWorkdir`, the warning when not yolo, a first-run screen when not unattended) — leaves Claude up at it: the send
+asks it of a person ("A dialog before the send"); with no credential the question says so first. **A screen that asks
+nothing is not one** (issue #527): on a Windows machine every job failed "blocked", the screen the base64
+`-EncodedCommand` of the launch line herdr's agent start typed; on a wsl one, the dependency-sharing command still on
+screen. Such a screen — the launch or a setup command echoed, Claude still drawing — is looked at again at each poll;
+with herdr calling Claude up and the screen unchanged for 5 s, Claude is taken as up (no input box found); else, after
+120 s (`SETTLE_TIMEOUT_MS`, a Windows launch is slow), the start times out, `claude not ready at startup: <screen>`, and
+is tried again in a new pane. The screen is not cleared before the launch: herdr's agent start types the launch line
+after anything the hopper could clear. **No marker is in the command that prints it** (issues #518, #527): each command
+typed into a pane builds the marker it is waited on for when it runs (`printf 'hopper-%s-%s' …`), so the echo of the
 command never answers herdr's `wait-output`; `test/herdr/markers-not-echoed.test.ts` checks every one.
+
+Not covered by the seed: Claude on a Windows client keys its projects by Windows paths, which the POSIX shell's `pwd -P`
+does not give, so there its trust and imports dialogs are answered on screen; a home where Claude ran but never
+finished onboarding keeps its config, and its theme picker is answered on screen. zsh's own new-user menu in an empty
+home eats the first command typed; the scratch command is typed again until it runs.
+
+**The other agents** (issues #295, #307) run in print mode, where no screen is shown: stdin `/dev/null`, so a CLI that
+would ask reads end of file and fails with its own error. Their default `args` skip their prompts (codex
+`--dangerously-bypass-approvals-and-sandbox`, cursor-agent `--force --trust`, opencode `--auto`, omp `--auto-approve`).
+Claude Code itself can run so too: the `claude` print-mode executor ("Print-mode agent executors").
 
 **A dialog before the send** (issue #534, `src/executors/herdr/before-send.ts`). A dialog is never a failure.
 Seen live: the trust dialog answered, Claude up, then a dialog of its own before the prompt went; the send
 pressed `esc`, herdr refused the prompt (`agent is blocked and requires interactive input`), the job failed
 and its pane was torn down, so there was nothing left to answer. Now, whenever Claude stands at a dialog
 before the hopper's text reached it — after startup, at the first send of a run or of a reopened parked job,
-or when herdr refuses a prompt with `agent_blocked` — the executor sends no `esc`. It looks again for up to
-10 polls, answering a startup dialog it may answer (as at startup: trust, imports, the bypass warning); one
-still standing is the job's question (`detectedBy: blocked`), the dialog its text, with its options. The
+or when herdr refuses a prompt with `agent_blocked` — the executor sends no `esc`. Standing at a dialog is herdr
+calling Claude blocked, or its screen showing one before its prompt (`standsBeforePrompt`, issue #533: herdr calls
+Claude idle at its first-run screens, and Claude not signed in shows its prompt with `Not logged in`). It looks again
+for up to 10 polls, answering a screen it has a default for, by its text ("Startup screens"); one still standing is
+the job's question (`detectedBy: blocked`), the dialog its text, with its options — prefixed, when Claude has no
+credential, by "Claude is not signed in on this machine". The
 job goes `waiting_answer` and keeps its pane; the question climbs the levels to a person as any other. The
 turn is saved **unsent** (`TurnAnchor.unsent`, its `text` the prompt): on `resume` the answer goes into the
 dialog — the option it names, by number or by its words; at a dialog without options, the answer and Enter;
 at a dialog with options that names none, the question again, saying so, nothing typed (Enter would pick
-whichever option has the cursor, often the one that quits) — then the text is sent, a new turn. Answered
+whichever option has the cursor, often the one that quits); at Claude's prompt (it was not signed in) nothing is
+typed, or the answer would be Claude's first message — then the text is sent, a new turn, once Claude is past it. Answered
 straight in the pane, Claude past the dialog is the answer, and the reattach sends the text. Claude's
 startup dialogs are selects without numbers (`❯ No, exit` / `Yes, I trust this folder`):
 `select-dialog.ts` reads one as a question with its options numbered from 1, and picks the option an answer
-names with arrow keys from the cursor, then Enter. Known safe startup dialogs answered up front by the
-launch itself (issue #533) appear less often; this is the fallback when one appears all the same.
+names with arrow keys from the cursor, then Enter; a select without key hints either (the theme picker) is read by
+`startup-screens.ts` `cursorPick`. Known safe startup screens answered up front by the launch itself ("Startup
+screens", issue #533) appear less often; this is the fallback when one appears all the same.
 
 **Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
 of its options — its number, or its own words, case and spacing aside (`dialogOption` in
@@ -3465,18 +3511,30 @@ Only the call and the reading differ (`src/executors/print-agents.ts`), taken fr
 | `codex` | `codex exec --json <args> [--model m] -- <text>` | `codex exec resume --json <args> [--model m] -- <thread> <text>` | JSON lines: `thread.started` `thread_id`; the last `item.completed` `agent_message` `text` | `turn.failed` `error.message` |
 | `opencode` | `opencode run --format json <args> [--model m] -- <text>` | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
 | `omp` | `omp -p --mode json --no-title <args> [--model m] -- <text>` | `--resume <id>` | JSON lines: `session` `id`; `agent_end`'s last assistant message, its `text` parts | `stopReason` `error`: `errorMessage` |
+| `claude` | `claude -p --output-format json <args> [--model m] -- <text>` | `--resume <id>` | one JSON result: `result`, `session_id` | `is_error` |
 
 A non-zero exit fails the job with the CLI's own error when it printed one, else its stderr. The CLI's stdin
 is `/dev/null`: codex and opencode read a stdin that is not a terminal to its end before the turn, and the
 pipe a run hands its child is never closed, so without it the turn never started (found on the agent
 boxes).
 
-Plugins `codex`, `opencode`, `omp` (`src/plugins/executor/<id>/`, each defined by
+**Claude Code in print mode** (`claude`, issue #533). The owner asked that headless interfaces be preferred where they fit,
+for containers. Evaluated against herdr-claude: print mode shows no startup screen at all — no onboarding, no trust
+dialog, no warning; checked live with 2.1.292 in an empty home, it answers its JSON result at once —, keeps session
+resume (`--resume`, the job's session id, issue #510) and the hopper protocol's markers, so `HOPPER_QUESTION` pauses the
+job and climbs the escalation levels as any print-mode question does. What it gives up is herdr-claude's: no pane to
+watch or attach to, no reattach after a daemon restart, a turn never waits on background work, and permission
+dialogs cannot be answered (default `args` `--dangerously-skip-permissions`, as yolo; in print mode nobody could
+answer). So it is offered as its own opt-in executor for machines nobody watches (an ssh agent box, a container's
+ssh target), and herdr-claude stays the default. The claude-plan usage source paces both (`executors` default
+`herdr-claude`, `claude`).
+
+Plugins `codex`, `opencode`, `omp`, `claude` (`src/plugins/executor/<id>/`, each defined by
 `src/plugins/executor/print-agent.ts`, as `cursor-agent` now is): options `bin` (the CLI's name, on
 `PATH`), `args`, `cwd` (the jobs directory) and `sshBin`, every one command-bearing. Default `args` run the
 agent's tools without asking: codex `--dangerously-bypass-approvals-and-sandbox --skip-git-repo-check`
 (its sandbox would refuse the network a push needs; the machine is the sandbox), opencode `--auto`, omp
-`--auto-approve`. Opt-in, as `cursor-agent`: switched on in Plugins, or by `scripts/agent-boxes.sh` for the
+`--auto-approve`, claude `--dangerously-skip-permissions`. Opt-in, as `cursor-agent`: switched on in Plugins, or by `scripts/agent-boxes.sh` for the
 box that runs it. Detection is `which` only and always `available`. Each agent signs in on the machine it
 runs on; the hopper holds no credential of theirs. opencode runs its own free models with no sign-in.
 
