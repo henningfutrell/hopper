@@ -1,6 +1,7 @@
 // What the fake herdr client simulates (fake-client.ts): Claude's turns and startup dialogs, the pane's shell,
 // and herdr's own ways, and what a test reads and drives of it. Test support only.
 import type { Survey } from '../../domain/ports.ts';
+import type { DiscoveryFacts } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
 
 /** One scripted turn of Claude's: what it shows while working and when it ends, and how it ends. */
@@ -84,6 +85,8 @@ export interface FakeHerdrOptions {
   machineUnreachable?: boolean;
   /** What the survey finds on the machine (issue #410). Default nothing. */
   survey?: Survey;
+  /** What a discovery finds on the machine (issue #542). Default nothing. */
+  discovery?: DiscoveryFacts;
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */

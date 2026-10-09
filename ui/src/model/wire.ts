@@ -11,6 +11,7 @@ import type {
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
   SectionKind, SectionSummary,
+  ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -24,6 +25,7 @@ export type {
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   ReviewDecision, ReviewEntry, ReviewItem, ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettings, ReviewSettingsView, ReviewSignOffBy, ReviewStatus, ReviewVersion,
   SectionKind, SectionSummary,
+  ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 };
 
 export interface Queue {

@@ -7,7 +7,8 @@
 // issue #74) — each applied by the
 // daemon without a restart (design.md "Machines from the UI", issue #18). The machine defaults — what a
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142). Below the machines, the
-// priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx).
+// priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
+// blast radius, the gate and the actor machines (issue #542, blast-radius.tsx).
 import { Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -26,6 +27,7 @@ import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, 
 import { useCanAdmin } from '@/store/selectors';
 import { JoinMachineForm } from './machine-join';
 import { PriorityLanesPanel } from './priority-lanes';
+import { BlastRadiusPanel } from './blast-radius';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -172,6 +174,7 @@ export function Machines() {
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
         : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
       {machines.length > 0 && <PriorityLanesPanel />}
+      {machines.length > 0 && <BlastRadiusPanel />}
     </div>
   );
 }

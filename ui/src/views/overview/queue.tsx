@@ -1,7 +1,10 @@
 // Waiting (queue order), the jobs on a question, the operator-led jobs, the parked jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
 import { AssessmentLine } from '@/components/assessment';
-import { Archive, Check, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
+import { Archive, Check, DoorOpen, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
+import { Confirm } from '@/components/confirm';
+import { heldAtGate } from '@/model/blast-radius';
+import { goalOf } from '@/model/job';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -12,7 +15,7 @@ import { canRerun, machineName, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
 import { act, rerun, useHopper } from '@/store';
-import { useCanOperate, useJobBoard } from '@/store/selectors';
+import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
 import { AskButton, CancelButton, OperatorLedButton, ParkButton, RequeueButton } from './lanes';
 
@@ -21,6 +24,21 @@ function RerunButton({ job }: { job: Job }) {
   return (
     <Button size="xs" variant="outline" title="Run again: a new job for its item joins the queue now"
       onClick={() => void rerun(job.id)}><RotateCcw />Run again</Button>
+  );
+}
+
+/**
+ * Issue #542: a job held at the blast-radius gate runs on a gated machine only once a person lets it through. An admin
+ * does, after a confirmation that says what it widens; anyone else sees the hold and no button.
+ */
+function GatePassButton({ job }: { job: Job }) {
+  const admin = useCanAdmin();
+  if (!admin || !heldAtGate(job)) return null;
+  return (
+    <Confirm title="Let this job through the gate?" action="Let it through" onConfirm={() => act(`/ui/api/jobs/${job.id}/gate-pass`, {}, 'Job let through the gate')}
+      description={<>“{goalOf(job)}” may then run on a gated machine, with everything that machine can reach: {job.holdReason?.replace(/^held at the blast-radius gate: /, '')}.</>}>
+      <Button size="xs" variant="outline" data-slot="gate-pass" title="Let through the blast-radius gate: it may run on a gated machine"><DoorOpen />Let through</Button>
+    </Confirm>
   );
 }
 
@@ -128,7 +146,8 @@ export function WaitingPanel() {
             <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground">{position}</span>
             <JobTitle job={job} className="flex-1" />
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
-            {authed && job.status === 'held' && !job.approved && job.accepted !== false && (
+            <GatePassButton job={job} />
+            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !heldAtGate(job) && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
             {authed && <RejectButton job={job} />}

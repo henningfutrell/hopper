@@ -7,7 +7,7 @@ import type {
   Identity, Login, LoginExpiryAction, LoginStatus, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, PluginStoreSource, User,
   UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, FailureSettings, Handoff, NamedCause, Problem,
 } from './types.ts';
-import type { ConnectedAccountProvider, PriorityLaneSettings, UsageLimitPair } from './types.ts';
+import type { BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, PriorityLaneSettings, UsageLimitPair } from './types.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
@@ -205,6 +205,12 @@ export interface UserSettingsRepository {
   /** The priority lanes last chosen (issue #535), so a restart keeps them and their hysteresis; absent: none yet. */
   getPriorityLaneChoice(): LaneId[] | undefined;
   setPriorityLaneChoice(lanes: readonly LaneId[]): void;
+  /** The blast-radius settings the user saved (issue #542); absent: never saved, the defaults apply. */
+  getBlastRadius(): BlastRadiusSettings | undefined;
+  setBlastRadius(settings: BlastRadiusSettings): void;
+  /** A machine's last discovery (issue #542); absent: never discovered. */
+  getDiscovery(machineId: string): DiscoveryRecord | undefined;
+  setDiscovery(record: DiscoveryRecord): void;
   /** The user's claim holder id (issue #440): made, random, the first time it is asked, then kept. */
   claimHolder(): string;
   /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */

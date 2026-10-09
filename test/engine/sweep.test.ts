@@ -62,6 +62,7 @@ describe('the sweep runner (issue #410)', () => {
       async survey(roots) { surveyed.push(roots); return o.found ?? none; },
       async reap(jobId, scratch) { reaps.push({ jobId, ...(scratch ? { scratch } : {}) }); return { kept: scratch && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] }; },
       async keepCredential() { throw new Error('not asked'); },
+      async discover() { throw new Error('not asked'); },
     };
     const executor = { name: 'x', validate: () => null, run: async () => ({ kind: 'failed' as const, error: '' }), machineShell: (m: MachineSnapshot) => (m.id === 'unreachable' ? undefined : shell) } satisfies Executor;
     const machines = o.machines ?? [{ id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['x'] }];

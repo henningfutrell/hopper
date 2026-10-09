@@ -11,7 +11,7 @@ import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
 import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, QuestionView, SessionUser, SessionView } from '@/model/wire';
+import type { BlastRadiusView, FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, QuestionView, SessionUser, SessionView } from '@/model/wire';
 import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes';
 import { refreshAllReviews, refreshReviewsSoon } from './reviews';
 import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
@@ -46,6 +46,7 @@ export interface HopperState {
   highPriority: number | null;
   /** GET /api/priority-lanes (issue #535): the settings, the lanes chosen, every lane's reliability; null until read. */
   priorityLanes: PriorityLanesView | null;
+  blastRadius: BlastRadiusView | null; // GET /api/blast-radius (issue #542); null until read
   machines: MachineView[];
   decisions: Decision[];
   /** Open questions, every stage, each with its job's live priority (issue #535). */
@@ -92,7 +93,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   usageRecorded: 0,

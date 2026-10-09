@@ -8,6 +8,7 @@
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
+// `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
@@ -23,6 +24,7 @@ import { homedir } from 'node:os';
 import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
+import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { workTreeCall } from './work-tree.ts';
@@ -97,7 +99,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -127,6 +129,8 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree') return fixed(path, body, answer);
+  // Discovery (issue #542): the fixed script, no argument of the request's.
+  if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }

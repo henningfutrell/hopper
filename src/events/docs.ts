@@ -86,6 +86,12 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'research.revision_requested': 'A research report was sent back for another round (issue #543): `decision` `dig_deeper` (a person: deeper on the whole report, or on the open threads `notes` names), `steer` (a person: `notes` is the new direction) or `request_changes` (a reviewer level). The job is re-queued with it, in the same session, and its next report is the next round.',
   'research.accepted': 'A research report was accepted (issue #543), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the research settings let it. A job that also asks for a proposal is re-queued to write it, in the same session; any other ends finished, with the decision as its result.',
   'research.cancelled': 'A research report waiting on a decision was cancelled because its job ended or is gone (issue #543).',
+  'machine.discovered': 'A machine\'s discovery (issue #542) found something new: the first one, or tools, AWS identities, kubectl contexts or credential sources that came (`changes.added`) or went (`changes.removed`), or a level that moved (`changes.level`). `level`: its blast radius, rated with the rules then. Names only: never a secret.',
+  'machine.discovery_failed': 'A machine\'s discovery (issue #542) did not finish: `error` says why. The facts of the one before are kept, and so is its rating.',
+  'machine.radius_grew': 'A discovery raised a machine\'s blast radius (issue #542), `from` one level `to` a higher one. The machine is flagged on Machines until its level drops.',
+  'machine.actor_mismatch': 'An actor machine\'s rating (issue #542) is not the level declared for it: `expected` the declared level, `found` the one its discovery gave.',
+  'blast_radius.settings_changed': 'An admin saved the blast-radius settings (issue #542): `from` and `to` where the gate stands (`gateAt`), what passes it (`pass`), the rating rules (`rules`), the actor machines and how often each machine is discovered (`everyMinutes`).',
+  'job.gate_passed': 'A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.',
   'queue.gate_changed': 'The queue gate was changed: its mode (`auto-accept` or `review`) or its throttle (`autoAcceptPerHour`, null for none).',
 };
 

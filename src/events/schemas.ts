@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, FAILURE_CLASSES, FAILURE_DECISIONS, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, EVENT_TYPES, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, ROLES, SESSION_END_REASONS, type EventType, type ReviewKind } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -51,6 +51,19 @@ const priority = { priority: z.number().optional(), high: z.boolean().optional()
 const priorityLaneSettings = strict({
   highPriority: z.number(), count: z.number().int(), whenIdle: z.enum(PRIORITY_LANE_IDLE), windowDays: z.number(), minRuns: z.number().int(),
   manual: z.array(z.string()).optional(),
+});
+
+// Blast radius (issue #542): a level, what a discovery changed, the settings an admin saves.
+const radiusLevel = z.enum(RADIUS_LEVELS);
+const discoveryChanges = strict({
+  first: z.boolean(), added: z.array(z.string()), removed: z.array(z.string()), level: strict({ from: radiusLevel, to: radiusLevel }).optional(),
+});
+const blastRadiusSettings = strict({
+  gateAt: z.enum(GATE_AT),
+  pass: strict({ labels: z.array(z.string()), repos: z.array(z.string()), minPriority: z.number().int().optional() }),
+  rules: strict({ prodPatterns: z.array(z.string()), prodAccounts: z.array(z.string()), unconfirmed: z.enum(UNCONFIRMED_AS) }),
+  actors: z.array(strict({ machineId: z.string(), purpose: z.string(), expected: radiusLevel })),
+  everyMinutes: z.number().int(),
 });
 
 const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().min(0).max(1) });
@@ -200,6 +213,15 @@ export const EVENT_SCHEMAS = {
   'research.revision_requested': research.revision_requested,
   'research.accepted': research.accepted,
   'research.cancelled': research.cancelled,
+  // Blast radius (issue #542): a machine's discovery changed what it holds, or could not run; a discovery raised its
+  // level; an actor machine's rating is not the level declared for it; an admin saved the settings; a person let a job
+  // held at the gate through.
+  'machine.discovered': strict({ machineId: z.string(), level: radiusLevel, changes: discoveryChanges }),
+  'machine.discovery_failed': strict({ machineId: z.string(), error: z.string() }),
+  'machine.radius_grew': strict({ machineId: z.string(), from: radiusLevel, to: radiusLevel }),
+  'machine.actor_mismatch': strict({ machineId: z.string(), expected: radiusLevel, found: radiusLevel }),
+  'blast_radius.settings_changed': strict({ from: blastRadiusSettings, to: blastRadiusSettings }),
+  'job.gate_passed': strict({ reason: z.string().optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({
