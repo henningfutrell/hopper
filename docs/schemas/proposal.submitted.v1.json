@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "proposalId": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "raisedBy": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "laneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
+    },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "goal",
+          "approach",
+          "alternatives",
+          "risks",
+          "effort",
+          "context"
+        ]
+      }
+    }
+  },
+  "required": [
+    "proposalId",
+    "version",
+    "missing"
+  ],
+  "additionalProperties": false
+}

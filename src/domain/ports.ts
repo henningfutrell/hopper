@@ -5,10 +5,12 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
   ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport,
 } from './types.ts';
 import type { UserStore } from './store.ts';
+import type { ExecutionProposal } from './escalation-ports.ts';
+export type * from './escalation-ports.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 
@@ -89,7 +91,9 @@ export type ExecutionOutcome =
   /** `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. */
   | { kind: 'failed'; error: string; tail?: string }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
-  | { kind: 'question'; question: ExecutionQuestion };
+  | { kind: 'question'; question: ExecutionQuestion }
+  /** The job is paused on its proposal (issue #537), as on a question: its executor state must allow resume. */
+  | { kind: 'proposal'; proposal: ExecutionProposal };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
@@ -311,52 +315,6 @@ export interface Clock {
 }
 
 // ---- Questions -----------------------------------------------------------------------
-
-/** Everything an escalation level is given. */
-export interface AnswerRequest {
-  question: Question;
-  /** The job's full prompt. */
-  jobPrompt: string;
-  jobGoal?: string;
-  /** The owner's standing rules, read from the rules file at ask time. */
-  rules: string;
-  /** The question's trail so far — earlier runs, and the levels below this one with their recommendations. */
-  previous: QuestionAttempt[];
-  /** Where this level stands: `number` of `of` (1 is the lowest). Above level `of` is the owner. */
-  level: { number: number; of: number };
-  /** The machine the job runs on, or waits on for the answer (issue #442): a level that names no machine runs there when it can. */
-  jobMachine?: string;
-  /** Where the level's run reports a login it waits on (issue #476): never an answer, never a climb of its own. */
-  logins?: RunLogins;
-}
-
-/**
- * An escalation level's reply: answer the question (`escalate: false`, with the `answer` to type
- * into the job), or send it to the next level up (`escalate: true`; `answer`, when given, is this
- * level's recommendation, on the trail).
- */
-export interface LevelReply {
-  answer?: string;
-  escalate: boolean;
-  reason: string;
-  /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
-  model?: string;
-  /** The machine it ran on and why, when the level named none and picked it (issue #442): on the trail. */
-  machine?: { id: string; why: string };
-}
-
-/**
- * The escalation-level role: one rung a question climbs. Never throws by contract; the question
- * service fails closed on its reply all the same: only a schema-valid `escalate: false` with an
- * answer answers; an error, a throw, a timeout or anything malformed escalates to the next level up.
- */
-export interface EscalationLevel {
-  /** The instance name (the plugins config), which is also the question's stage while this level holds it. */
-  readonly name: string;
-  /** The model it runs, for the trail. */
-  readonly model?: string;
-  answer(req: AnswerRequest, signal: AbortSignal): Promise<LevelReply | { error: string }>;
-}
 
 export type IdGen = () => string;
 

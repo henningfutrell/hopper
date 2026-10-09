@@ -20,10 +20,12 @@ import {
 import { answerBody, intakeActionBody, rejectBody, requeueBody } from './ui/job-bodies.ts';
 import { notifierActionBody, webhookTestBody, webhooksEditBody } from './ui/webhooks-notifiers.ts';
 import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
+import { proposalsQuery } from './proposals.ts';
+import { acceptBody, notesBody, proposalSettingsBody } from './ui/proposals.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Logins' | 'Failures' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
+type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Logins' | 'Failures' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Events' | 'Self-update' | 'Users' | 'Sign-in';
 
 interface Operation {
   method: 'get' | 'post';
@@ -83,6 +85,14 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/questions/:id/close', tag: 'Questions', summary: 'Close an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/dismiss', tag: 'Questions', summary: 'Dismiss an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/seen', tag: 'Questions', summary: 'Mark a question seen', role: 'operator', returns: 'the `Question`', errors: [404] },
+  { method: 'get', path: '/api/proposals', tag: 'Proposals', summary: 'List proposals, with the proposal settings', description: 'A proposal is what a job asked for one wrote instead of doing the work, ended with HOPPER_PROPOSAL: its versions (each with its parts — goal, approach, alternatives, risks, effort, context — and the parts it left out), its review trail (each reviewer level\'s verdict and notes, and a person\'s decision), and its sign-off (who, when, which version). `status` `open` (the default): in review or being revised, high-priority jobs\' first, then oldest first; any other is a history, newest first. `settings`: the reviewer levels, who may sign off, how often the levels may send one back, and `levels`, the escalation levels that may review.', query: proposalsQuery, returns: '`{ proposals: ProposalView[], settings: ProposalSettingsView }`' },
+  { method: 'get', path: '/api/proposals/:id', tag: 'Proposals', summary: 'One proposal, with its versions and review trail', returns: '`ProposalView`', errors: [404] },
+  { method: 'post', path: '/ui/api/proposals/:id/accept', tag: 'Proposals', summary: 'Accept a proposal', description: 'Signed off by the session\'s person, now, with optional `notes`, over any reviewer level in flight (`proposal.accepted`). Its job ends finished, the decision its result; the proposal stays linked to the job and its item. 409: it is not open (decided, cancelled, or being revised).', role: 'operator', body: acceptBody, returns: 'the `ProposalView`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/proposals/:id/reject', tag: 'Proposals', summary: 'Reject a proposal', description: '`notes` says why (`proposal.rejected`). Its job ends finished, the decision its result. 409: it is not open.', role: 'operator', body: notesBody, returns: 'the `ProposalView`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/proposals/:id/request-changes', tag: 'Proposals', summary: 'Send a proposal back for a revision', description: '`notes` is what to change: the job is re-queued with it, and its next proposal is the next version, reviewed from the first reviewer level again (`proposal.revision_requested`). 409: it is not open.', role: 'operator', body: notesBody, returns: 'the `ProposalView`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/proposals/:id/seen', tag: 'Proposals', summary: 'Mark a proposal seen', role: 'operator', returns: 'the `ProposalView`', errors: [404] },
+  { method: 'post', path: '/ui/api/jobs/:id/propose', tag: 'Proposals', summary: 'Ask a job that has not started for a proposal', description: 'When it starts, its agent is told to write a proposal instead of doing the work (`spec.proposal`, `proposal.asked`). An item labelled `hopper:proposal` asks it from the start. 409: the job has started.', role: 'operator', returns: 'the `Job`', errors: [404, 409] },
+  { method: 'post', path: '/ui/api/proposals/settings', tag: 'Proposals', summary: 'Change the proposal settings', description: 'Any part; one left out keeps its value. `reviewers`: the escalation levels that review, lowest first, by name (none, the default: a person reviews). `signOff` `owner` (the default): only a person accepts; `top-level`: the top reviewer level\'s approval accepts too. `levelRevisions` (0 to 5, default 1): how often the reviewer levels may send one proposal back before a person decides. Applies to the next review, without a restart. 400: a reviewer that is not an escalation level now.', role: 'admin', body: proposalSettingsBody, returns: '`ProposalSettingsView`', errors: [400] },
   { method: 'get', path: '/api/logins', tag: 'Logins', summary: 'List logins', description: 'The logins jobs and escalation runs wait on (a CLI showing a device code), newest first, with the server\'s time (`now`) for their countdowns and the logins settings. `status` `open`: pending or expired. A login\'s `verificationUrl` and `userCode` are answered only to a UI session of the user (the `' + SESSION_HEADER + '` header) whose role is operator or admin, while it is open and while the daemon holds them (`codeKept`; a restart drops them): never to an API token, never to a loopback read without a session.', query: loginsQuery, returns: '`{ now, settings: LoginSettings, logins: LoginView[] }`' },
   { method: 'get', path: '/api/logins/:id', tag: 'Logins', summary: 'One login', description: 'As in `GET /api/logins`, its URL and code to an operator or admin UI session of the user only.', returns: '`LoginView`', errors: [404] },
   { method: 'post', path: '/ui/api/logins/:id/cancel', tag: 'Logins', summary: 'Cancel a login', description: 'The login ends `cancelled` (`auth.cancelled`) and its code is dropped. A herdr job waiting on it is told to stop waiting and go on without it, or to fail. 409: it ended, or what waited on it is no longer running.', role: 'operator', returns: 'the `Login`', errors: [404, 409] },
@@ -153,6 +163,7 @@ const TAGS: Record<Tag, string> = {
   State: 'What the hopper is doing: health, the queue, decisions, the router.',
   Jobs: 'Jobs and the job sources they are pulled from.',
   Questions: 'Questions a running job asks, and the gates they pass.',
+  Proposals: 'Proposals a job wrote instead of doing the work: reviewed by the reviewer levels, signed off by a person. Never a question.',
   Logins: 'Logins a job or run waits on (a CLI showing a device code): never a question.',
   Failures: 'What the failure assessor made of the failed jobs: problems grouped from shared causes, assessed failures, the failure profile, and its settings.',
   'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
@@ -190,7 +201,7 @@ const openApiPath = (path: string): string => path.replace(/:([A-Za-z]+)/g, '{$1
 
 function parameters(op: Operation): unknown[] {
   const out: unknown[] = [];
-  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : op.tag === 'Logins' ? 'login' : op.tag === 'Failures' ? (op.path.includes('/problems/') ? 'problem' : op.path.includes('/handoffs/') ? 'hand-off' : 'failure record') : 'decision'));
+  if (op.path.includes(':id')) out.push(id(op.tag === 'Questions' ? 'question' : op.tag === 'Jobs' ? 'job' : op.tag === 'Logins' ? 'login' : op.tag === 'Proposals' ? 'proposal' : op.tag === 'Failures' ? (op.path.includes('/problems/') ? 'problem' : op.path.includes('/handoffs/') ? 'hand-off' : 'failure record') : 'decision'));
   if (op.path.includes(':name')) out.push(name);
   if (op.query) {
     const s = schemaOf(op.query) as { properties?: Record<string, Record<string, unknown>>; required?: string[] };

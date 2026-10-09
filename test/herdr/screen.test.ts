@@ -34,12 +34,13 @@ const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (c
 
 const WORK_TREE = "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.";
 const PROTOCOL = '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION\n'
+  + 'When you are asked for a proposal, do not do the work: write the proposal, each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.\n'
   + 'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.\n'
   + 'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE\n'
   + 'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.';
 
 describe('protocol footer', () => {
-  it('is the design text verbatim: the default job rules (publishing rule, parallel work), the work tree, then the four protocol lines', () => {
+  it('is the design text verbatim: the default job rules (publishing rule, parallel work), the work tree, then the five protocol lines', () => {
     expect(protocolFooter('/w/repo')).toBe(
       PUBLISHING_RULE + '\n'
       + '[hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.\n'

@@ -1,5 +1,5 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
-import { FolderOpen, Hand, Layers, Pause, Play, X } from 'lucide-react';
+import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, X } from 'lucide-react';
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -75,6 +75,18 @@ export function OperatorLedButton({ job }: { job: Job }) {
     <Confirm title="Claim this job as operator-led?" action="Claim as operator-led" onConfirm={() => act(`/ui/api/jobs/${job.id}/operator-led`, {}, 'Job claimed as operator-led')}
       description={<>“{goalOf(job)}” is worked by hand — in an IDE or a terminal. The hopper runs nothing for it and shows it as operator-led until its pull request closing the issue is done.</>}>
       <Button size="xs" variant="outline" aria-label={`Claim ${goalOf(job)} as operator-led`} title="Claim as operator-led: work it by hand"><Hand />Operator-led</Button>
+    </Confirm>
+  );
+}
+
+/** Ask a job that has not started for a proposal (issue #537): its agent writes one instead of doing the work. */
+export function ProposeButton({ job }: { job: Job }) {
+  const authed = useCanOperate();
+  if (!authed || job.spec.proposal || (job.status !== 'queued' && job.status !== 'held')) return null;
+  return (
+    <Confirm title="Ask this job for a proposal?" action="Ask for a proposal" onConfirm={() => act(`/ui/api/jobs/${job.id}/propose`, {}, 'The job will write a proposal')}
+      description={<>When “{goalOf(job)}” starts, its agent writes a proposal — goal, approach, alternatives, risks, effort, the context it relied on — instead of doing the work. It is reviewed and comes to Proposals for a decision.</>}>
+      <Button size="xs" variant="outline" aria-label={`Ask ${goalOf(job)} for a proposal`} title="Ask for a proposal instead of the work"><FileCheck />Propose</Button>
     </Confirm>
   );
 }

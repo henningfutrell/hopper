@@ -6,6 +6,7 @@ import { laneSpans, questionWaits, type LaneSpan, type QuestionWait } from '@/mo
 import { goalOf, issueRef } from '@/model/job';
 import { loginsBadge } from '@/model/logins';
 import { allows } from '@/model/roles';
+import { proposalsBadge } from '@/model/proposals';
 import { awaitsOwner } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
 import type { Job } from '@/model/wire';
@@ -40,6 +41,12 @@ export function useQuestionWaits(since: number): QuestionWait[] {
 
 /** How many open questions wait on the owner, seen or not: the nav badge (issue #499). */
 export const useAwaitingOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+
+/** How many proposals wait on a person, and how many of them are high priority: the nav badge (issue #537). */
+export function useProposalsBadge(): { n: number; high: number } {
+  const proposals = useHopper((s) => s.proposals);
+  return useMemo(() => proposalsBadge(proposals), [proposals]);
+}
 
 /** Server time, ticking each second: the browser's shared clock plus the offset read with the logins (issue #477). */
 export const useServerNow = (): number => useNow() + useHopper((s) => s.serverOffsetMs);

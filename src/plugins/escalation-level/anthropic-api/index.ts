@@ -8,8 +8,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { CLAUDE_TIMEOUT_MS } from '../../claude-print.ts';
-import type { LevelReply, PluginDefinition } from '../../sdk.ts';
+import { REVIEW_VERDICTS } from '../../../domain/types.ts';
+import type { LevelReply, PluginDefinition, ReviewReply } from '../../sdk.ts';
 import { buildLevelPrompt } from '../claude-cli/prompt.ts';
+import { buildReviewPrompt } from '../claude-cli/review-prompt.ts';
 
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -22,6 +24,8 @@ export interface AnthropicApiOptions {
 }
 
 const REPLY = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string() });
+/** A reviewer level's reply (issue #537). */
+const REVIEW = z.object({ verdict: z.enum(REVIEW_VERDICTS), notes: z.string() });
 
 const MAX_TOKENS = 16000;
 
@@ -45,38 +49,42 @@ const anthropicApi: PluginDefinition<'escalation-level', AnthropicApiOptions> = 
     return { status: 'available', detail: `${o.model} with the key in ${o.apiKeyEnv}` };
   },
   create(ctx, o) {
+    /** One request, its reply bound to `schema`; a refusal, an API error or a reply off the schema is an error. */
+    async function ask<T extends z.ZodType>(prompt: string, schema: T, signal: AbortSignal): Promise<(z.infer<T> & { model?: string }) | { error: string }> {
+      let apiKey: string | undefined;
+      try {
+        apiKey = ctx.env(o.apiKeyEnv);
+      } catch (e) {
+        return { error: message(e) };
+      }
+      if (!apiKey) return { error: `no API key: set ${o.apiKeyEnv} or ${o.apiKeyEnv}_FILE` };
+      // Read per question, so a rotated key is used at the next one.
+      const client = new Anthropic({ apiKey, ...(o.baseUrl ? { baseURL: o.baseUrl } : {}), maxRetries: 2 });
+      const timeout = AbortSignal.timeout(o.timeoutMs);
+      try {
+        const res = await client.messages.parse({
+          model: o.model,
+          max_tokens: MAX_TOKENS,
+          messages: [{ role: 'user', content: prompt }],
+          output_config: { format: zodOutputFormat(schema), ...(o.effort ? { effort: o.effort } : {}) },
+        }, { signal: AbortSignal.any([signal, timeout]) });
+        if (res.stop_reason === 'refusal') return { error: `the model refused${res.stop_details?.category ? ` (${res.stop_details.category})` : ''}` };
+        const parsed = schema.safeParse(res.parsed_output);
+        if (!parsed.success) return { error: 'structured output missing or invalid' };
+        return { ...(parsed.data as object), model: res.model } as z.infer<T> & { model?: string };
+      } catch (e) {
+        if (timeout.aborted) return { error: `timeout after ${o.timeoutMs}ms` };
+        if (signal.aborted) return { error: 'aborted' };
+        if (e instanceof Anthropic.APIError && e.status) return { error: `Claude API ${e.status}: ${message(e).slice(0, 300)}` };
+        return { error: `Claude API: ${message(e).slice(0, 300)}` };
+      }
+    }
     return {
       name: 'anthropic-api',
       model: o.model,
-      async answer(req, signal): Promise<(LevelReply & { model?: string }) | { error: string }> {
-        let apiKey: string | undefined;
-        try {
-          apiKey = ctx.env(o.apiKeyEnv);
-        } catch (e) {
-          return { error: message(e) };
-        }
-        if (!apiKey) return { error: `no API key: set ${o.apiKeyEnv} or ${o.apiKeyEnv}_FILE` };
-        // Read per question, so a rotated key is used at the next one.
-        const client = new Anthropic({ apiKey, ...(o.baseUrl ? { baseURL: o.baseUrl } : {}), maxRetries: 2 });
-        const timeout = AbortSignal.timeout(o.timeoutMs);
-        try {
-          const res = await client.messages.parse({
-            model: o.model,
-            max_tokens: MAX_TOKENS,
-            messages: [{ role: 'user', content: buildLevelPrompt(req) }],
-            output_config: { format: zodOutputFormat(REPLY), ...(o.effort ? { effort: o.effort } : {}) },
-          }, { signal: AbortSignal.any([signal, timeout]) });
-          if (res.stop_reason === 'refusal') return { error: `the model refused${res.stop_details?.category ? ` (${res.stop_details.category})` : ''}` };
-          const parsed = REPLY.safeParse(res.parsed_output);
-          if (!parsed.success) return { error: 'structured output missing or invalid' };
-          return { ...parsed.data, model: res.model };
-        } catch (e) {
-          if (timeout.aborted) return { error: `timeout after ${o.timeoutMs}ms` };
-          if (signal.aborted) return { error: 'aborted' };
-          if (e instanceof Anthropic.APIError && e.status) return { error: `Claude API ${e.status}: ${message(e).slice(0, 300)}` };
-          return { error: `Claude API: ${message(e).slice(0, 300)}` };
-        }
-      },
+      answer: (req, signal): Promise<(LevelReply & { model?: string }) | { error: string }> => ask(buildLevelPrompt(req), REPLY, signal),
+      // A proposal's review (issue #537): one request with the reviewer's prompt.
+      review: (req, signal): Promise<(ReviewReply & { model?: string }) | { error: string }> => ask(buildReviewPrompt(req), REVIEW, signal),
     };
   },
 };

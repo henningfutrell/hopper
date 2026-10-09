@@ -1295,3 +1295,218 @@ Version 1 (`docs/schemas/priority_lanes.settings_changed.v1.json`). An admin sav
   }
 }
 ```
+
+## `proposal.asked`
+
+Version 1 (`docs/schemas/proposal.asked.v1.json`). A person asked a job that has not started for a proposal (issue #537): when it starts, its agent is told to write one instead of doing the work. A job from an item labelled `hopper:proposal` is asked from the start, with no event.
+
+| field | type | required |
+|---|---|---|
+| `by` | `user` | yes |
+
+```json
+{
+  "by": "user"
+}
+```
+
+## `proposal.submitted`
+
+Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. `goal`: its Goal part; `missing`: the parts it left out.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `goal` | string | no |
+| `missing` | `goal` \| `approach` \| `alternatives` \| `risks` \| `effort` \| `context`[] | yes |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "goal": "Cache the board renders",
+  "missing": [
+    "effort"
+  ],
+  "raisedBy": {
+    "machineId": "desk",
+    "name": "Desk tower",
+    "laneId": "desk/lane-1"
+  },
+  "priority": 50,
+  "high": false
+}
+```
+
+## `proposal.escalated`
+
+Version 1 (`docs/schemas/proposal.escalated.v1.json`). A proposal entered a stage of its review (issue #537): `target` is the reviewer level (an escalation level named in the proposal settings) or `human`, and `reason` why it climbed.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `target` | string | yes |
+| `reason` | string | yes |
+| `goal` | string | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "target": "opus",
+  "reason": "submitted",
+  "goal": "Cache the board renders"
+}
+```
+
+## `proposal.escalated_to_human`
+
+Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `reason` | string | yes |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "reason": "fable approved: sound and small",
+  "priority": 80,
+  "high": true
+}
+```
+
+## `proposal.reviewed`
+
+Version 1 (`docs/schemas/proposal.reviewed.v1.json`). A reviewer level gave its verdict on a proposal (issue #537): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `verdict` | `approve` \| `request_changes` \| `escalate` | yes |
+| `notes` | string | yes |
+| `error` | string | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "stage": "opus",
+  "verdict": "request_changes",
+  "notes": "Say how the cache is invalidated."
+}
+```
+
+## `proposal.revision_requested`
+
+Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person): `notes` is what to change. The job is re-queued with it and writes the next version.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `notes` | string | yes |
+| `by` | string | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "stage": "opus",
+  "notes": "Say how the cache is invalidated."
+}
+```
+
+## `proposal.accepted`
+
+Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. Its job ends finished, with the decision as its result; the proposal stays linked to the job and its item.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `by` | string | no |
+| `notes` | string | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 2,
+  "stage": "human",
+  "by": "owner",
+  "notes": "Go ahead."
+}
+```
+
+## `proposal.rejected`
+
+Version 1 (`docs/schemas/proposal.rejected.v1.json`). A person rejected a proposal (issue #537), with why (`notes`). Its job ends finished, with the decision as its result.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `stage` | string | yes |
+| `by` | string | no |
+| `notes` | string | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 2,
+  "stage": "human",
+  "by": "owner",
+  "notes": "Not worth the effort now."
+}
+```
+
+## `proposal.cancelled`
+
+Version 1 (`docs/schemas/proposal.cancelled.v1.json`). A proposal waiting on a decision was cancelled because its job ended or is gone (issue #537).
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `raisedBy` | object | no |
+| `priority` | number | no |
+| `high` | boolean | no |
+| `reason` | string | yes |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 1,
+  "reason": "its job is cancelled"
+}
+```

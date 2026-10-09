@@ -1,21 +1,22 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it.
-import { ChevronsUp, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
+import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, Scale, Server, Settings, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
-import { useAwaitingOwner, useAwaitingSort, useLoginsBadge } from '@/store/selectors';
+import { useAwaitingOwner, useAwaitingSort, useLoginsBadge, useProposalsBadge } from '@/store/selectors';
 import { openHandoffs, openProblems, plural } from '@/model/failures';
 import { highHandoffs, highQuestions } from '@/model/priority';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'queue', 'questions', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', 'questions', 'proposals', 'logins', 'failures', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   queue: { label: 'Queue', icon: ListOrdered },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
+  proposals: { label: 'Proposals', icon: FileCheck },
   logins: { label: 'Logins', icon: KeyRound },
   failures: { label: 'Failures', icon: OctagonAlert },
   decisions: { label: 'Decisions', icon: Scale },
@@ -38,6 +39,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const sorting = useAwaitingSort();
   const logins = useLoginsBadge();
+  const proposals = useProposalsBadge();
   const problems = useHopper((s) => openProblems(s.failures));
   const handoffs = useHopper((s) => openHandoffs(s.failures));
   // A high-priority item waiting (issue #535): its badge is marked and says how many.
@@ -47,6 +49,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const badge: Partial<Record<View, { n: number; cls: string; title?: string; high?: number }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     questions: { n: questions, cls: 'bg-question text-background', title: `${questions} ${questions === 1 ? 'question waits' : 'questions wait'} on you${highOf(highQ)}`, high: highQ },
+    proposals: { n: proposals.n, cls: 'bg-question text-background', title: `${proposals.n} ${proposals.n === 1 ? 'proposal waits' : 'proposals wait'} on you${highOf(proposals.high)}`, high: proposals.high },
     logins: { n: logins.n, cls: logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${logins.n} ${logins.n === 1 ? 'login waits' : 'logins wait'} on you${logins.warn ? '; one expires soon' : ''}${highOf(logins.high)}`, high: logins.high },
     failures: { n: problems + handoffs, cls: 'bg-bad text-background', title: `${plural(problems, 'open problem')}, ${plural(handoffs, 'job needs', 'jobs need')} a person${highOf(highH)}`, high: highH },
     sources: { n: failedSources, cls: 'bg-bad text-background' },

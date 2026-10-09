@@ -161,6 +161,9 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent), tail: hideCodes(tail(recent, OUTPUT_LINES), recent) };
       } else if (turn.lastMarker === 'question') {
         return asked({ kind: 'question', question: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'marker' } });
+      } else if (turn.lastMarker === 'proposal') {
+        // A proposal (issue #537) waits like a question: the job resumes in this pane with the decision.
+        return asked({ kind: 'proposal', proposal: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent) } });
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {

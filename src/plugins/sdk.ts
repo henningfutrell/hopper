@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import type { IntakeContext } from '../domain/intake.ts';
 import type {
   AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
-  MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
+  MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, ReviewReply, ReviewRequest, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
@@ -14,7 +14,7 @@ import type { Rejection } from '../domain/rejection.ts';
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
   ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierActionResult, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry, RaisedBy,
-  QueueSorter, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
+  QueueSorter, ReviewReply, ReviewRequest, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */

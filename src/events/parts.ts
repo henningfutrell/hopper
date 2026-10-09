@@ -25,6 +25,8 @@ export const jobSpec = strict({
     rule: z.string(),
     set: strict({ machine: z.string().optional(), executor: z.string().optional(), priority: z.number().optional(), workTree: z.string().optional() }),
   }).optional(),
+  // Asked for a proposal (issue #537; additive).
+  proposal: z.literal(true).optional(),
 });
 
 // What a job's source and routing rules give its spec (issue #375). `defaultCwd` only in events recorded before issue #361.

@@ -85,6 +85,15 @@
         "usage.limits_changed",
         "priority_lanes.changed",
         "priority_lanes.settings_changed",
+        "proposal.asked",
+        "proposal.submitted",
+        "proposal.escalated",
+        "proposal.escalated_to_human",
+        "proposal.reviewed",
+        "proposal.revision_requested",
+        "proposal.accepted",
+        "proposal.rejected",
+        "proposal.cancelled",
         "jev.mode_changed",
         "router.mode_changed"
       ]

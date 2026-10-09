@@ -9,6 +9,7 @@ import type {
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
+  Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -20,6 +21,7 @@ export type {
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
+  Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
 };
 
 export interface Queue {

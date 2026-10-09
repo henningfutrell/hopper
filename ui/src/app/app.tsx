@@ -14,6 +14,7 @@ import { Failures } from '@/views/failures';
 import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
 import { Overview } from '@/views/overview';
+import { Proposals } from '@/views/proposals';
 import { Questions } from '@/views/questions';
 import { Queue } from '@/views/queue';
 import { Settings } from '@/views/settings';
@@ -25,7 +26,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, questions: Questions, logins: Logins, failures: Failures, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  overview: Overview, queue: Queue, questions: Questions, proposals: Proposals, logins: Logins, failures: Failures, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
 };
 
 function Loading() {

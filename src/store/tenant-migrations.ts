@@ -260,6 +260,18 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX handoffs_job ON handoffs (job_id);
   CREATE INDEX handoffs_status ON handoffs (status, opened_at)`,
+  // 24: Proposals (issue #537): a job's proposal, its versions and review trail in its body. A table only: the
+  // build before runs on it.
+  `CREATE TABLE proposals (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX proposals_job ON proposals (job_id);
+  CREATE INDEX proposals_status ON proposals (status, created_at)`,
 ];
 
 /** A user schema's version once migrated. */

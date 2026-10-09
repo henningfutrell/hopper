@@ -14,6 +14,8 @@ export const EVENT_TYPES = [
   'auth.pending', 'auth.completed', 'auth.expired', 'auth.cancelled', 'auth.failed',
   'job.assessed', 'failure.grouped', 'failure.resolved', 'handoff.opened', 'handoff.closed',
   'usage.limits_changed', 'priority_lanes.changed', 'priority_lanes.settings_changed',
+  'proposal.asked', 'proposal.submitted', 'proposal.escalated', 'proposal.escalated_to_human', 'proposal.reviewed',
+  'proposal.revision_requested', 'proposal.accepted', 'proposal.rejected', 'proposal.cancelled',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -36,4 +38,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'auth.pending': 1, 'auth.completed': 1, 'auth.expired': 1, 'auth.cancelled': 1, 'auth.failed': 1,
   'job.assessed': 1, 'failure.grouped': 1, 'failure.resolved': 1, 'handoff.opened': 1, 'handoff.closed': 1,
   'usage.limits_changed': 1, 'priority_lanes.changed': 1, 'priority_lanes.settings_changed': 1,
+  'proposal.asked': 1, 'proposal.submitted': 1, 'proposal.escalated': 1, 'proposal.escalated_to_human': 1, 'proposal.reviewed': 1,
+  'proposal.revision_requested': 1, 'proposal.accepted': 1, 'proposal.rejected': 1, 'proposal.cancelled': 1,
 };
