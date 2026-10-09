@@ -44,10 +44,10 @@ describe('runs from the event log', () => {
     ]);
     expect(runs).toEqual([
       { laneId: 'box/lane-1', machineId: 'box', endedAt: '2026-10-09T09:00:00.000Z', outcome: 'failed', error: 'tests fail' },
-      { laneId: 'desk/lane-1', machineId: 'desk', claimedAt: '2026-10-09T10:00:00.000Z', startedAt: '2026-10-09T10:00:30.000Z', endedAt: '2026-10-09T10:20:00.000Z', outcome: 'finished' },
       { laneId: 'desk/lane-2', machineId: 'desk', claimedAt: '2026-10-09T10:00:00.000Z', endedAt: '2026-10-09T10:01:00.000Z', outcome: 'failed', error: 'pane lost' },
-      { laneId: 'desk/lane-1', machineId: 'desk', claimedAt: '2026-10-09T11:00:00.000Z', startedAt: '2026-10-09T11:00:10.000Z', endedAt: '2026-10-09T11:05:00.000Z', outcome: 'question' },
+      { laneId: 'desk/lane-1', machineId: 'desk', claimedAt: '2026-10-09T10:00:00.000Z', startedAt: '2026-10-09T10:00:30.000Z', endedAt: '2026-10-09T10:20:00.000Z', outcome: 'finished' },
       { laneId: 'desk/lane-2', machineId: 'desk', claimedAt: '2026-10-09T11:00:00.000Z', endedAt: '2026-10-09T11:01:00.000Z', outcome: 'cancelled' },
+      { laneId: 'desk/lane-1', machineId: 'desk', claimedAt: '2026-10-09T11:00:00.000Z', startedAt: '2026-10-09T11:00:10.000Z', endedAt: '2026-10-09T11:05:00.000Z', outcome: 'question' },
     ]);
   });
 });
