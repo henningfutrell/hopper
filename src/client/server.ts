@@ -8,6 +8,7 @@
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
+// `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree

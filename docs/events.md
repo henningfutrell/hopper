@@ -1510,3 +1510,156 @@ Version 1 (`docs/schemas/proposal.cancelled.v1.json`). A proposal waiting on a d
   "reason": "its job is cancelled"
 }
 ```
+
+## `machine.discovered`
+
+Version 1 (`docs/schemas/machine.discovered.v1.json`). A machine's discovery (issue #542) found something new: the first one, or tools, AWS identities, kubectl contexts or credential sources that came (`changes.added`) or went (`changes.removed`), or a level that moved (`changes.level`). `level`: its blast radius, rated with the rules then. Names only: never a secret.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `level` | `low` \| `medium` \| `high` | yes |
+| `changes` | object | yes |
+
+```json
+{
+  "machineId": "desk",
+  "level": "high",
+  "changes": {
+    "first": false,
+    "added": [
+      "aws prod-deploy",
+      "credential file kubeconfig"
+    ],
+    "removed": [],
+    "level": {
+      "from": "medium",
+      "to": "high"
+    }
+  }
+}
+```
+
+## `machine.discovery_failed`
+
+Version 1 (`docs/schemas/machine.discovery_failed.v1.json`). A machine's discovery (issue #542) did not finish: `error` says why. The facts of the one before are kept, and so is its rating.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `error` | string | yes |
+
+```json
+{
+  "machineId": "desk",
+  "error": "the discovery on desk did not finish (exit 255): ssh: connect to host timed out"
+}
+```
+
+## `machine.radius_grew`
+
+Version 1 (`docs/schemas/machine.radius_grew.v1.json`). A discovery raised a machine's blast radius (issue #542), `from` one level `to` a higher one. The machine is flagged on Machines until its level drops.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | `low` \| `medium` \| `high` | yes |
+| `to` | `low` \| `medium` \| `high` | yes |
+
+```json
+{
+  "machineId": "desk",
+  "from": "medium",
+  "to": "high"
+}
+```
+
+## `machine.actor_mismatch`
+
+Version 1 (`docs/schemas/machine.actor_mismatch.v1.json`). An actor machine's rating (issue #542) is not the level declared for it: `expected` the declared level, `found` the one its discovery gave.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `expected` | `low` \| `medium` \| `high` | yes |
+| `found` | `low` \| `medium` \| `high` | yes |
+
+```json
+{
+  "machineId": "deploy-box",
+  "expected": "high",
+  "found": "medium"
+}
+```
+
+## `blast_radius.settings_changed`
+
+Version 1 (`docs/schemas/blast_radius.settings_changed.v1.json`). An admin saved the blast-radius settings (issue #542): `from` and `to` where the gate stands (`gateAt`), what passes it (`pass`), the rating rules (`rules`), the actor machines and how often each machine is discovered (`everyMinutes`).
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+
+```json
+{
+  "from": {
+    "gateAt": "high",
+    "pass": {
+      "labels": [],
+      "repos": []
+    },
+    "rules": {
+      "prodPatterns": [
+        "prod",
+        "production",
+        "prd"
+      ],
+      "prodAccounts": [],
+      "unconfirmed": "write"
+    },
+    "actors": [],
+    "everyMinutes": 60
+  },
+  "to": {
+    "gateAt": "high",
+    "pass": {
+      "labels": [
+        "hopper:actor"
+      ],
+      "repos": []
+    },
+    "rules": {
+      "prodPatterns": [
+        "prod",
+        "production",
+        "prd"
+      ],
+      "prodAccounts": [],
+      "unconfirmed": "write"
+    },
+    "actors": [
+      {
+        "machineId": "deploy-box",
+        "purpose": "production deploys",
+        "expected": "high"
+      }
+    ],
+    "everyMinutes": 60
+  }
+}
+```
+
+## `job.gate_passed`
+
+Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at the blast-radius gate through (issue #542): it may run on a gated machine. `reason`: the hold it had.
+
+| field | type | required |
+|---|---|---|
+| `reason` | string | no |
+
+```json
+{
+  "reason": "held at the blast-radius gate: desk is rated high; only a job let through the gate runs there"
+}
+```

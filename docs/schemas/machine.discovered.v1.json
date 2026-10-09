@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "changes": {
+      "type": "object",
+      "properties": {
+        "first": {
+          "type": "boolean"
+        },
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "level": {
+          "type": "object",
+          "properties": {
+            "from": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            },
+            "to": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high"
+              ]
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "first",
+        "added",
+        "removed"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "machineId",
+    "level",
+    "changes"
+  ],
+  "additionalProperties": false
+}

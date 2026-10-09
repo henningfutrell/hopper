@@ -69,7 +69,7 @@ let root: Root | undefined;
 async function boot(role: string, posts: string[] = []) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#queue';
+  window.location.hash = '#overview';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.stubGlobal('fetch', fakeDaemon(role, posts));
@@ -86,7 +86,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const row = () => document.querySelector('[data-job-id="g1"]');
+const row = () => document.querySelector('[data-job-group="waiting"][data-job-id="g1"]');
 const buttons = () => [...row()!.querySelectorAll('button')].map((b) => b.textContent?.trim());
 
 describe('a job held at the gate', () => {
@@ -98,6 +98,11 @@ describe('a job held at the gate', () => {
     expect(buttons()).not.toContain('Approve');
     const pass = row()!.querySelector<HTMLButtonElement>('[data-slot="gate-pass"]')!;
     await act(async () => { pass.click(); });
+    // A confirmation says what it widens first.
+    const confirm = await vi.waitFor(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent === 'Let it through'); expect(b).toBeDefined(); return b!; });
+    expect(document.body.textContent).toContain('desk is rated high');
+    expect(posts).not.toContain('/ui/api/jobs/g1/gate-pass');
+    await act(async () => { confirm.click(); });
     await vi.waitFor(() => expect(posts).toContain('/ui/api/jobs/g1/gate-pass'));
   });
 

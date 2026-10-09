@@ -10,6 +10,7 @@ import type {
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
+  ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -22,6 +23,7 @@ export type {
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
   Proposal, ProposalReview, ProposalSection, ProposalSettings, ProposalSettingsView, ProposalSignOffBy, ProposalStatus, ProposalVersion, ProposalView,
+  ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, Reach, UnconfirmedAs,
 };
 
 export interface Queue {
