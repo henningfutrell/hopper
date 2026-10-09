@@ -48,10 +48,11 @@ describe('herdr-claude executor: a start that times out is tried again (issue #4
     expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
   });
 
+  // Issue #534: it goes to a person as a question, in the pane it stands in.
   it('a startup blocked by a screen the hopper may not answer is not tried again', async () => {
     const { herdr, executor } = setup({ startupBlockedBy: ['─'.repeat(40), ' Claude Code needs to update', '', ' ❯ 1. Update now', '   2. Exit', '', ' Enter to confirm · Esc to cancel'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toMatch(/^claude blocked at startup/);
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'blocked' } });
     expect(herdr.calls.filter((c) => c.method === 'createTab')).toHaveLength(1);
   });
 

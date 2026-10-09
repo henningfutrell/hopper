@@ -2,7 +2,29 @@
 // and herdr's own ways, and what a test reads and drives of it. Test support only.
 import type { Survey } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
-import type { FakeTurn } from './fake-client.ts';
+
+/** One scripted turn of Claude's: what it shows while working and when it ends, and how it ends. */
+export interface FakeTurn {
+  /** Lines appended while working, one per poll. */
+  steps?: string[];
+  /** Lines appended when the turn ends (assistant output, markers). */
+  output: string[];
+  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
+  end?: 'idle' | 'blocked' | 'exit' | 'working';
+  /** With `end: 'blocked'`: the dialog, shown below the output until it is answered or lapses, then gone, as Claude Code does. */
+  dialog?: string[];
+  /**
+   * Claude Code's transcript stays scrolled up (seen live after a long prompt): the output is
+   * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
+   */
+  hiddenUntilScrolled?: boolean;
+  /**
+   * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
+   * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
+   * turn by itself, unless `wakes` is false.
+   */
+  background?: { work: string; polls: number; wakes?: boolean };
+}
 
 export interface FakeHerdrOptions {
   turns?: FakeTurn[];
@@ -19,8 +41,14 @@ export interface FakeHerdrOptions {
    * bypass permissions warning. Either answer goes on to the next.
    */
   importsDialog?: string;
-  /** Startup blocks on some other screen. */
+  /** Startup blocks on some other screen. Its option picked by number, Claude comes up; esc leaves it up. */
   startupBlockedBy?: string[];
+  /**
+   * Claude comes up ready, then, `after` looks later, shows `lines`, a dialog of its own, and blocks there (issue #534,
+   * seen live just after the trust dialog was answered): before the hopper sent anything. Its option picked by number,
+   * Claude is ready again; esc leaves it up, and herdr refuses a prompt while it is.
+   */
+  lateDialog?: { lines: string[]; after: number };
   /**
    * Before Claude draws anything, the pane shows `lines` — its launch line echoed (a Windows shell's
    * `-EncodedCommand`), or a setup command still on screen (issue #527) — and herdr calls the agent blocked, for

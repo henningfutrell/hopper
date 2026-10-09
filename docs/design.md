@@ -522,13 +522,13 @@ pauses are 10 s then 30 s, each longer by up to half at random, so lanes that fi
 start again at once. Each retry is a progress message, `claude did not start (attempt n of 3), trying
 again in a new pane in <s> s: <why>`, and the last failure is `claude did not start in 3 attempts:
 <why>`; `<why>` ends with the pane's last 30 lines when the pane was read. A startup dialog the hopper
-may not answer, an unusable work tree or a Windows shell is never tried again. **One pane per
+may not answer (asked of a person, "A dialog before the send"), an unusable work tree or a Windows shell is never tried again. **One pane per
 lane:** the executor refuses to map a pane already held by another lane (job `failed`,
 pane left untouched). `agent_not_ready` (blocked at startup): read the visible
 screen; if it is Claude's folder-trust dialog (contains `trust this folder`) **and the
 dialog names the job's cwd** and `HOPPER_TRUST_WORKDIR` is true → send `down enter`,
 log it via progress message `trusted workdir <cwd>`, wait for `idle`. Another dialog of Claude's
-blocking startup → `failed` with the screen text; a screen that shows none is looked at again ("Startup dialogs").
+blocking startup → a question to a person ("A dialog before the send"); a screen that shows none is looked at again ("Startup dialogs").
 
 **Yolo** (issue #267). Whether Claude has every permission is the herdr-claude instance's own
 option `yolo` (default on, command-bearing), never an argument in its `args`; it is picked like the
@@ -558,8 +558,8 @@ external CLAUDE.md imports of the trusted work tree` (issue #518: a job worktree
 so the work tree's `CLAUDE.md` importing its `AGENTS.md` imports a file outside the job's cwd; the owner
 trusts the work tree, and nothing is written into Claude's own files). Any other dialog of Claude's (`showsDialog`:
 its cursor on a numbered option, or its key hints "Enter to confirm" / "Esc to cancel"), the warning on an
-instance that is not yolo, the imports dialog without `trustWorkdir`, or more than 4 dialogs → `failed`,
-`claude blocked at startup: <screen>`. **A screen with no dialog is not one** (issue #527): on a Windows machine
+instance that is not yolo, the imports dialog without `trustWorkdir`, or more than 4 dialogs → Claude is up,
+at a dialog: the send asks it of a person ("A dialog before the send", issue #534). **A screen with no dialog is not one** (issue #527): on a Windows machine
 every job failed "blocked", the screen the base64 `-EncodedCommand` of the launch line herdr's agent start typed;
 on a wsl one, the dependency-sharing command still on screen. Such a screen — the launch or a setup command
 echoed, Claude still drawing — is looked at again at each poll until Claude is up, for up to 120 s
@@ -569,6 +569,25 @@ herdr's agent start types the launch line after anything the hopper could clear,
 markers above decide. **No marker is in the command that prints it** (issues #518, #527): each command typed
 into a pane builds the marker it is waited on for when it runs (`printf 'hopper-%s-%s' …`), so the echo of the
 command never answers herdr's `wait-output`; `test/herdr/markers-not-echoed.test.ts` checks every one.
+
+**A dialog before the send** (issue #534, `src/executors/herdr/before-send.ts`). A dialog is never a failure.
+Seen live: the trust dialog answered, Claude up, then a dialog of its own before the prompt went; the send
+pressed `esc`, herdr refused the prompt (`agent is blocked and requires interactive input`), the job failed
+and its pane was torn down, so there was nothing left to answer. Now, whenever Claude stands at a dialog
+before the hopper's text reached it — after startup, at the first send of a run or of a reopened parked job,
+or when herdr refuses a prompt with `agent_blocked` — the executor sends no `esc`. It looks again for up to
+10 polls, answering a startup dialog it may answer (as at startup: trust, imports, the bypass warning); one
+still standing is the job's question (`detectedBy: blocked`), the dialog its text, with its options. The
+job goes `waiting_answer` and keeps its pane; the question climbs the levels to a person as any other. The
+turn is saved **unsent** (`TurnAnchor.unsent`, its `text` the prompt): on `resume` the answer goes into the
+dialog — the option it names, by number or by its words; at a dialog without options, the answer and Enter;
+at a dialog with options that names none, the question again, saying so, nothing typed (Enter would pick
+whichever option has the cursor, often the one that quits) — then the text is sent, a new turn. Answered
+straight in the pane, Claude past the dialog is the answer, and the reattach sends the text. Claude's
+startup dialogs are selects without numbers (`❯ No, exit` / `Yes, I trust this folder`):
+`select-dialog.ts` reads one as a question with its options numbered from 1, and picks the option an answer
+names with arrow keys from the cursor, then Enter. Known safe startup dialogs answered up front by the
+launch itself (issue #533) appear less often; this is the fallback when one appears all the same.
 
 **Answering a dialog.** On `resume`, when Claude still waits at a dialog and the answer names one
 of its options — its number, or its own words, case and spacing aside (`dialogOption` in

@@ -20,6 +20,12 @@ export async function readPaneAnswer(herdr: HerdrClient, s: PaneState & { turn: 
   // Stopped before parkedSeq was saved: the send's seq (the turn had already ended past it).
   const stopped = s.parkedSeq ?? s.turn.seq;
   if (agent.stateChangeSeq <= stopped) return null;
+  // A dialog before the job's text was sent (issue #534): Claude past it is the answer; reattach sends the text.
+  if (s.turn.unsent) {
+    if (agent.status === 'blocked') return null;
+    const { parkedSeq: _seq, lapsesAt: _at, ...kept } = s;
+    return { executorState: { ...kept } };
+  }
   const recent = await herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
   const typed = typedAfterQuestion(recent, s.turn.anchor);
   // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner.

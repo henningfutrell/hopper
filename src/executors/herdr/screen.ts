@@ -2,6 +2,7 @@
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
 import { DEFAULT_JOB_RULES, PROTOCOL_LINES, jobWorktreeRule, workTreeRule } from '../../job-rules/index.ts';
+import { selectOf, selectText } from './select-dialog.ts';
 
 export { SCRATCH_DIR } from '../../job-rules/index.ts';
 
@@ -370,13 +371,17 @@ const MAX_DIALOG_LINES = 40;
  * any countdown and its options, without the transcript above it. The dialog is the lines up to the
  * last option the cursor (❯) is on, or the last line, and from the border or transcript line above
  * them: a ● line is the agent's own words or the tool call and is kept, a ⎿ line is earlier output
- * and is not. Gutter, box edges and the cursor are removed. Empty when the screen shows nothing.
+ * and is not. Gutter, box edges and the cursor are removed. A select without numbers is read by select-dialog.ts.
+ * Empty when the screen shows nothing.
  */
 export function dialogText(text: string): string {
   const lines = text.split('\n');
   const kept = (l: string): boolean => l.trim() !== '' && (DIALOG_OPTION.test(l) || !isChrome(l)) && !DIALOG_FRAME.test(l.trim());
   let at = -1;
   for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (DIALOG_OPTION.exec(lines[i]!)?.[1]) at = i;
+  // A select without numbers (a startup dialog, issue #534): its options numbered, so an answer can name one.
+  const select = at < 0 ? selectOf(lines) : undefined;
+  if (select) return selectText(lines, select);
   let end = lines.length;
   for (let i = Math.max(at, 0); i < lines.length; i++) if (SEPARATOR.test(lines[i]!) && i > at) { end = i; break; }
   if (at < 0) for (let i = end - 1; i >= 0 && at < 0; i--) if (kept(lines[i]!)) at = i;

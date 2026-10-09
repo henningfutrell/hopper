@@ -6,32 +6,10 @@ import { HerdrError } from './client.ts';
 import { shellSays } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
-import type { FakeHerdrClient, FakeHerdrOptions } from './fake-options.ts';
+import type { FakeHerdrClient, FakeHerdrOptions, FakeTurn } from './fake-options.ts';
 import { CHROME, WINDOWS_SHELLS, backgroundFooter, bypassDialog, importsDialog, trustDialog, wrap } from './fake-screens.ts';
 
-export type { FakeHerdrClient, FakeHerdrOptions };
-
-export interface FakeTurn {
-  /** Lines appended while working, one per poll. */
-  steps?: string[];
-  /** Lines appended when the turn ends (assistant output, markers). */
-  output: string[];
-  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
-  end?: 'idle' | 'blocked' | 'exit' | 'working';
-  /** With `end: 'blocked'`: the dialog, shown below the output until it is answered or lapses, then gone, as Claude Code does. */
-  dialog?: string[];
-  /**
-   * Claude Code's transcript stays scrolled up (seen live after a long prompt): the output is
-   * hidden behind "N new message (ctrl+End) ↓" until Ctrl+End (ESC [1;5F) is sent as text.
-   */
-  hiddenUntilScrolled?: boolean;
-  /**
-   * The turn started background work (issue #491): the footer names `work` for `polls` polls after the turn
-   * ends. Then the work ends and, as Claude Code's notification does, Claude goes on with the next scripted
-   * turn by itself, unless `wakes` is false.
-   */
-  background?: { work: string; polls: number; wakes?: boolean };
-}
+export type { FakeHerdrClient, FakeHerdrOptions, FakeTurn };
 
 export { CTRL_END };
 
@@ -42,7 +20,7 @@ interface Pane {
   agent?: string;
   status: AgentStatus;
   seq: number;
-  mode: 'none' | 'trust' | 'imports' | 'bypass' | 'startup';
+  mode: 'none' | 'trust' | 'imports' | 'bypass' | 'startup' | 'late';
   /** Startup dialogs still to come once the one on screen is answered. */
   dialogs?: ('trust' | 'imports' | 'bypass')[];
   /** Lines the shell prints after `lag` more waits (FakeHerdrOptions.worktreeLag). */
@@ -60,6 +38,8 @@ interface Pane {
   scoped?: boolean;
   /** Looks left before Claude draws over its echoed launch line (FakeHerdrOptions.startupEcho). */
   echoPolls?: number;
+  /** Looks left before the late dialog shows (FakeHerdrOptions.lateDialog). */
+  lateIn?: number;
   /** Background work the last turn started, still running (FakeTurn.background). */
   background?: { work: string; polls: number; wakes?: boolean };
 }
@@ -124,6 +104,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
   };
 
   const advance = (p: Pane): void => {
+    if (p.lateIn !== undefined && p.status !== 'blocked' && !p.turn && --p.lateIn <= 0) {
+      p.lateIn = undefined;
+      p.lines.push(...o.lateDialog!.lines);
+      [p.dialogLines, p.mode] = [o.lateDialog!.lines.length, 'late'];
+      return settle(p, 'blocked');
+    }
     if (p.echoPolls !== undefined) {
       if (--p.echoPolls > 0) return;
       p.echoPolls = undefined;
@@ -201,6 +187,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         settle(p, 'unknown');
         throw new HerdrError('timeout', 'timed out waiting for agent startup');
       }
+      if (o.lateDialog) p.lateIn = o.lateDialog.after;
       const dialogs = ([o.trustDialogFor !== undefined && 'trust', o.importsDialog !== undefined && 'imports', o.bypassDialog && 'bypass'] as const)
         .filter((m): m is 'trust' | 'imports' | 'bypass' => m !== false && m !== undefined);
       if (dialogs.length > 0) {
@@ -252,6 +239,13 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       fake.texts.push({ paneId, text });
       if (text === CTRL_END && p.hidden) { p.lines.push(...p.hidden); p.hidden = undefined; }
       // A digit at a dialog picks that option: Claude goes on with the next scripted turn.
+      // A digit at a dialog shown before anything was sent picks it: Claude is ready for the prompt.
+      if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && (p.mode === 'startup' || p.mode === 'late') && droppedPicks-- <= 0) {
+        if (p.mode === 'late') closeDialog(p);
+        else p.lines = ['✻ Welcome to Claude Code'];
+        p.mode = 'none';
+        return settle(p, 'idle');
+      }
       if (/^\d$/.test(text) && p.agent && p.status === 'blocked' && p.mode === 'none' && droppedPicks-- <= 0) {
         closeDialog(p);
         wake(p);
@@ -274,7 +268,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
             p.mode = 'none';
             if (goesOn) { p.lines = ['✻ Welcome to Claude Code']; settle(p, 'idle'); } else exit(p);
           }
-        } else if (key === 'esc' && p.agent && (p.status === 'blocked' || p.status === 'working')) {
+        } else if (key === 'esc' && p.agent && (p.status === 'blocked' || p.status === 'working') && p.mode !== 'startup' && p.mode !== 'late') {
           closeDialog(p);
           p.lines.push('  ⎿  Interrupted');
           p.turn = undefined;

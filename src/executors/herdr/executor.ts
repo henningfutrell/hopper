@@ -12,13 +12,13 @@ import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter } from './screen.ts';
 import { readPaneAnswer } from './pane-answer.ts';
+import { answerDialog, readyFor } from './before-send.ts';
 import { jobScratchOf, startInPane } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
 import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, type HeldPane, type PaneOn, type RemoteHerdr, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
-const UNBLOCK_POLLS = 10;
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
 const MAX_SENDS = 3;
 /** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
@@ -142,22 +142,23 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    */
   interface Notes { count: number; startedAt: number; lost?: number; quiet?: boolean; unreadable?: number }
 
+  /**
+   * Sends `text` as a new turn and watches it, once Claude is ready for it (before-send.ts `readyFor`: a dialog of
+   * the turn in flight dismissed, any other asked of a person, issue #534). herdr refusing the prompt because Claude
+   * went to a dialog between the look and the send is looked at again, once.
+   */
   async function send(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, text: string, anchor: string, notes?: Notes): Promise<ExecutionOutcome | Interrupt> {
-    const herdr = herdrOn(s);
-    let agent = await herdr.getAgent(s.agentName);
-    for (let i = 0; agent?.status === 'blocked' && i < UNBLOCK_POLLS; i++) {
-      if (i === 0) await herdr.sendKeys(s.paneId, ['esc']);
-      await sleep(o.pollMs, ctx.signal);
-      if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-      agent = await herdr.getAgent(s.agentName);
+    for (let refused = false; ; refused = true) {
+      const agent = await readyFor(depsOn(s), ctx, s, text, anchor);
+      if (!('stateChangeSeq' in agent)) return agent;
+      const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked', text };
+      // Saved before the prompt: a restart in between watches a turn never sent, which ends as a
+      // lost send and is sent again, never as a lost job.
+      ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
+      const err = await herdrOn(s).prompt(s.agentName, text).then(() => undefined, (e: unknown) => e);
+      if (err === undefined) return watch(ctx, s, p, turn, notes);
+      if (refused || !(err instanceof HerdrError) || err.code !== 'agent_blocked') throw err;
     }
-    if (!agent) return { kind: 'failed', error: 'pane lost' };
-    const turn: TurnAnchor = { seq: agent.stateChangeSeq, anchor, blockedAtSend: agent.status === 'blocked', text };
-    // Saved before the prompt: a restart in between watches a turn never sent, which ends as a
-    // lost send and is sent again, never as a lost job.
-    ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
-    await herdr.prompt(s.agentName, text);
-    return watch(ctx, s, p, turn, notes);
   }
 
   /**
@@ -326,6 +327,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         if (!agent) return { kind: 'failed', error: 'pane lost' };
         lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
         const s = { ...state, laneId: ctx.laneId };
+        // The question was a dialog before the job's text reached Claude (issue #534): the answer goes into the
+        // dialog, then the text.
+        if (s.turn?.unsent) return (agent.status === 'blocked' ? await answerDialog(depsOn(s), ctx, s, answer) : null) ?? send(ctx, s, p, s.turn.text ?? answer, s.turn.anchor);
         // Claude waits at a dialog (a permission it asks for without yolo, issue #267) and the answer
         // names one of its options: pick it, and the parked turn goes on. Any other answer dismisses
         // the dialog and goes to Claude as text.
@@ -355,6 +359,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const state = await liveTurn(ctx.job);
         if (!state) return { kind: 'failed', error: 'interrupted by daemon restart' };
         lanes.set(ctx.laneId, heldOf(state, ctx.job.id));
+        // A dialog before the send, answered in the pane (issue #534): the text goes now.
+        if (state.turn.unsent) return send(ctx, state, p, state.turn.text ?? '', state.turn.anchor);
         if (state.login) {
           // It waited on a login (issue #476): it waits on, its URL and code read back from the screen.
           restoreLogin(ctx, await herdrOn(state).read(state.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES }), state.turn.anchor, state.login, clock.now());
