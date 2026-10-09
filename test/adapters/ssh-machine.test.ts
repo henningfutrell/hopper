@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTarget } from '../../src/machines/index.ts';
 import { DF_COMMAND, diskOf } from '../../src/machines/disk.ts';
+import { RESOURCES_COMMAND } from '../../src/machines/resources.ts';
 import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -216,6 +217,17 @@ describe('probeSsh', () => {
     const { disk } = await probe('laptop');
     expect(disk?.totalBytes).toBeGreaterThan(0);
     expect(disk?.freeBytes).toBeLessThanOrEqual(disk!.totalBytes);
+  });
+
+  it('answers the machine\'s CPU, memory and swap too, from two reads of /proc a second apart (issue #560)', async () => {
+    const { resources } = await probe('laptop');
+    expect(resources?.cores).toBeGreaterThan(0);
+    expect(resources?.cpuBusyFrac).toBeGreaterThanOrEqual(0);
+    expect(resources?.cpuBusyFrac).toBeLessThanOrEqual(1);
+    expect(resources?.memTotalBytes).toBeGreaterThan(0);
+    expect(resources?.memAvailableBytes).toBeLessThanOrEqual(resources!.memTotalBytes);
+    const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
+    expect(argv.at(-1)).toContain(RESOURCES_COMMAND);
   });
 
   // Issue #361: the probe also makes the machine's work tree there (the jobs directory when it names none),
