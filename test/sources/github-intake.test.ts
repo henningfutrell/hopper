@@ -82,7 +82,7 @@ describe('claims name their holder (issue #440)', () => {
     await source.report({ kind: 'claimed', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:claimed', MINE]);
     await source.report({ kind: 'finished', job });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
   });
 
   it('the user\'s own claim with no job here is stale: released and taken again, with an event', async () => {

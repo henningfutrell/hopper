@@ -3,7 +3,7 @@ import { REPO, discoverOne, setup } from './fixtures/github-support.ts';
 
 const URL1 = `https://github.com/${REPO}/issues/1`;
 
-const DONE = 'done: once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done';
+const DONE = 'done: once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #1" in its body in place of "Closes #1", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged';
 const DONE_NO_MERGE = `${DONE}. Do not merge it: a person reviews and merges it`;
 const DONE_YOLO = `${DONE}. Yolo mode is on for this repo: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done`;
 

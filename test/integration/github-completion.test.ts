@@ -45,7 +45,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     await a.waitForStatus(job.id, 'finished');
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
     expect(gh.issue(REPO, issue.number).state).toBe('open');
     expect(bodies(gh, issue.number)).toEqual([]);
     await a.sync();
