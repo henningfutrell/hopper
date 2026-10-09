@@ -113,6 +113,9 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'vault.approved': 'A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.',
   'vault.delivered': 'A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client\'s own request, never in an environment or a file. The secret\'s name, the template, the machine and the job; never the value.',
   'vault.refused': 'A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give. `reason` says which; never a value.',
+  'skill.listed': 'A running job asked the hopper what it can set up (issue #582) and was answered the catalog. `machine` and `template`: the job\'s machine and the template it joined as, when it has one.',
+  'skill.loaded': 'A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access\'s `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value.',
+  'skill.refused': 'A running job asked for a skill and was told no (issue #582), with `reason`: a skill the hopper does not have, no asset or a wrong one, a machine of no template, Access denied it (`decision`), or no vault secret to give.',
 };
 
 type Prop = Record<string, unknown>;

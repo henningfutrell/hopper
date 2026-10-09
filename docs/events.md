@@ -2340,3 +2340,69 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
   "by": "owner"
 }
 ```
+
+## `skill.listed`
+
+Version 1 (`docs/schemas/skill.listed.v1.json`). A running job asked the hopper what it can set up (issue #582) and was answered the catalog. `machine` and `template`: the job's machine and the template it joined as, when it has one.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `template` | string | no |
+| `asset` | string | no |
+
+```json
+{
+  "requestId": "r4",
+  "machine": "hopper-sandbox-kube",
+  "template": "kube"
+}
+```
+
+## `skill.loaded`
+
+Version 1 (`docs/schemas/skill.loaded.v1.json`). A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access's `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `template` | string | no |
+| `asset` | string | no |
+| `skill` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "requestId": "r5",
+  "machine": "hopper-sandbox-kube",
+  "template": "kube",
+  "skill": "kube-diagnostics",
+  "asset": "cluster/prod",
+  "decision": "d1"
+}
+```
+
+## `skill.refused`
+
+Version 1 (`docs/schemas/skill.refused.v1.json`). A running job asked for a skill and was told no (issue #582), with `reason`: a skill the hopper does not have, no asset or a wrong one, a machine of no template, Access denied it (`decision`), or no vault secret to give.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `machine` | string | no |
+| `template` | string | no |
+| `asset` | string | no |
+| `skill` | string | yes |
+| `reason` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "requestId": "r6",
+  "machine": "desk",
+  "skill": "render",
+  "reason": "the hopper has no skill render. It has: github, kube-diagnostics, aws-diagnostics. Find another way."
+}
+```
