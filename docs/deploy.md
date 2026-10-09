@@ -81,6 +81,8 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
 | `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
 | `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. |
 | `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
+| `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
+| `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
@@ -162,6 +164,27 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 **From the earlier container deploy** (`deploy/compose.yaml --profile container`, removed): its database
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
+
+## Access: OpenFGA
+
+Before the vault gives a job a credential, access asks OpenFGA whether the job's template is approved for it
+(issue #559, docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach,
+every credential is denied, and Settings → Access says why.
+
+- **In containers** it is set up: `compose.yaml` runs `docker.io/openfga/openfga` as `openfga-migrate` and `openfga`,
+  with its tables in the `openfga` schema of the hopper's Postgres. The `postgres` service writes OpenFGA's config
+  (`/run/hopper-secrets/openfga/config.yaml`: the database URL, the preshared key; uid 65532 only) and the key the
+  hopper sends (`openfga_key`, uid 1000 only) at each start, and makes the schema once it takes connections. The
+  hopper gets `HOPPER_OPENFGA_URL=http://openfga:8080` and `HOPPER_OPENFGA_KEY_FILE`. A stack from before picks
+  it up with the new `compose.yaml` and `podman compose up -d`: the `postgres` service is recreated (a restart of
+  the database) and writes the new files.
+- **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
+  `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
+  The key is read at each call: rotate it in OpenFGA and the runtime together.
+- **Update OpenFGA** by changing the image tag in `compose.yaml` (`openfga-migrate` and `openfga` together), then
+  `podman compose up -d`.
+- **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
+  filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
 
 ## This host (systemd --user)
 
