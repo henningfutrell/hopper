@@ -102,7 +102,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
 /** One op on the vault service, its body already parsed. `status`: why no secret can be stored now, or nothing. */
 function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unknown {
   const body = b as never as {
-    by: string; name: string; secret: { name: string; scope?: string; value: string }; ask: { name: string; token: string }; machine?: { key: string };
+    by: string; name: string; secret: { name: string; scope?: string; value: string; mints?: { kind: 'aws-account' | 'cluster'; name: string } | null }; ask: { name: string; token: string }; machine?: { key: string };
     credential: string; target: MintTarget; sessionName: string;
   };
   switch (op) {

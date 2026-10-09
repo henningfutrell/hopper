@@ -28,7 +28,7 @@ const mintsFor = z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().ma
  */
 export const vaultOps = {
   status: z.strictObject({ user }),
-  set: z.strictObject({ user, by, secret: z.strictObject({ name, scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }) }),
+  set: z.strictObject({ user, by, secret: z.strictObject({ name, scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX), mints: mintsFor.nullable().optional() }) }),
   remove: z.strictObject({ user, by, name }),
   deliver: z.strictObject({
     user,

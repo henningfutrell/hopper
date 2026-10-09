@@ -64,7 +64,7 @@ export function remoteVault(o: {
       return 'problem' in r ? r.problem : r.result ?? undefined;
     },
     set: async (s, by) => ('value' in s
-      ? edit('set', { secret: { name: s.name, value: s.value, ...(s.scope !== undefined ? { scope: s.scope } : {}) }, by })
+      ? edit('set', { secret: { name: s.name, value: s.value, ...(s.scope !== undefined ? { scope: s.scope } : {}), ...(s.mints !== undefined ? { mints: s.mints } : {}) }, by })
       : o.local.set(s, by)),
     remove: (name, by) => edit('remove', { name, by }),
     async deliver(ask, machineKey) {
