@@ -30,6 +30,9 @@ export interface FakeIssue {
   state?: 'open' | 'closed';
 }
 
+/** A pull request opened on the fake (issue #563). */
+interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string }
+
 export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string }
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
@@ -124,6 +127,7 @@ const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCode
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
 export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number }): Promise<FakeForge> {
   const issues = o.issues ?? [];
+  const pulls: FakePull[] = [];
   const tokens = new Map<string, string>();
   const refreshTokens = new Map<string, { login: string; web: boolean }>();
   /** The access token each refresh token came with: GitHub refuses it once the refresh token is used. */
@@ -165,6 +169,10 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       repository_url: `${base}/api/v3/repos/${i.repo}`,
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
+    const restPull = (p: FakePull) => ({
+      number: p.number, title: p.title, body: p.body, state: 'open', draft: false, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
+      head: { ref: p.head }, base: { ref: p.base },
+    });
     return (r, login) => {
       if (r.method === 'POST' && r.path === '/login/device/code') {
         if (r.body.client_id !== o.clientId || 'client_secret' in r.body) return { status: 401, body: { error: 'incorrect_client_credentials' } };
@@ -256,18 +264,43 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author)));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
-      const m = /^\/repos\/([^/]+\/[^/]+)\/(.*)$/.exec(path);
+      const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(.*))?$/.exec(path);
       if (!m) return { status: 404, body: { message: 'Not Found' } };
-      const [, repo, rest] = m as unknown as [string, string, string];
+      const repo = m[1]!;
+      const rest = m[2] ?? '';
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
       }
+      // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
+      const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
+      if (r.method === 'GET' && rest === '') return { status: 200, body: { full_name: repo, default_branch: 'dev' } };
+      if (r.method === 'POST' && rest === 'issues') {
+        const issue: FakeIssue = {
+          repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), author: login,
+          labels: (r.body.labels as string[] | undefined) ?? [], assignees: (r.body.assignees as string[] | undefined) ?? [],
+        };
+        issues.push(issue);
+        return { status: 201, body: restIssue(issue) };
+      }
+      if (r.method === 'POST' && rest === 'pulls') {
+        if (r.body.head === r.body.base) return { status: 422, body: { message: 'Validation Failed', errors: [{ message: `No commits between ${String(r.body.base)} and ${String(r.body.head)}` }] } };
+        const pull = { repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), head: String(r.body.head), base: String(r.body.base) };
+        pulls.push(pull);
+        return { status: 201, body: restPull(pull) };
+      }
+      const pm = /^pulls\/(\d+)$/.exec(rest);
+      const pull = pm ? pulls.find((p) => p.repo === repo && p.number === Number(pm[1])) : undefined;
+      if (r.method === 'GET' && pm) return pull ? { status: 200, body: restPull(pull) } : { status: 404, body: { message: 'Not Found' } };
       const im = /^issues\/(\d+)(?:\/(comments|labels)(?:\/(.+))?)?$/.exec(rest);
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
       if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: [] };
+      if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
+        const id = ++n;
+        return { status: 201, body: { id, body: r.body.body, user: { login }, created_at: '2026-10-09T00:00:00Z', html_url: `${base}/${repo}/issues/${issue.number}#issuecomment-${id}` } };
+      }
       if (r.method === 'POST' && im[2] === 'labels') {
         for (const l of (r.body.labels as string[] | undefined) ?? []) if (!issue.labels.includes(l)) issue.labels.push(l);
         return { status: 200, body: issue.labels.map((name) => ({ name })) };

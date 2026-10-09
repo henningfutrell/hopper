@@ -35,7 +35,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). One exception, a
   machine's (issue #308, `docs/design.md` "Joining a machine"): `POST /client/join` adds the one client target a join
   code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
-  a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. Every other mutation is the UI's
+  a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
+  `docs/design.md` "GitHub through the hopper"): `POST /job/github`, with the job's proxy token — derived, never stored,
+  honoured only while the job is at work — asks the hopper to act on GitHub with its own connection; it changes no job,
+  question, webhook or setting, only records what it did. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
@@ -51,7 +54,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (issue #354) reopens the job's closed issue, so the new job can finish against it; Assign to me in Sources (issue #440)
   assigns a labelled issue to the user's connected account; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
-  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
+  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`. A job's own request through the GitHub proxy (issue #563) is
+the job's act, as when it pushes: its text is the job's, under the publishing rule; an issue filed that way ends with the
+hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values
   (`plugins`, `rules`, `job-rules`, `sign-in`), every setting edited in the UI, none set only in a file, no YAML

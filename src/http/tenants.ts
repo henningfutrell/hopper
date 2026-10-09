@@ -24,6 +24,7 @@ import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
+import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
 
@@ -57,6 +58,8 @@ export interface TenantParts {
   usageHistory: Pick<UsageRecorder, 'onRecorded'>;
   /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */
   machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
+  /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
+  githubProxy: UserGitHubProxy;
 }
 
 /** The users and their running parts. */

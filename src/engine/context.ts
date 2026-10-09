@@ -1,7 +1,7 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, JobCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
+  Clock, ExecutorRegistry, IdGen, JobCredentials, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import { jobPriorityTag, type DeciderPolicy, type Job, type PriorityTag, type ProblemBlock } from '../domain/types.ts';
+import { jobPriorityTag, type DeciderPolicy, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -42,6 +42,8 @@ export interface EngineOptions {
   notComplete: (job: Job) => Promise<string | undefined>;
   /** What a job's processes act with, from its source's connection (JobSource.credentials, issues #214, #441). */
   credentials: (job: Job) => Promise<JobCredentials | undefined>;
+  /** What a job on this machine asks the hopper's GitHub proxy with (issue #563); undefined: the machine cannot reach the hopper. Absent: none. */
+  jobProxy?: (job: Job, machine: MachineSnapshot) => JobProxyCredentials | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
   problems: () => ProblemBlock[];
 }

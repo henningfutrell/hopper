@@ -1,7 +1,8 @@
 // Issue #476: a herdr-claude job that waits on a device login goes to the logins, never to the questions. Its URL
 // and code reach only a UI session of the user; no event, progress line or question carries them. The job waits
 // without nudges; Claude going on completes the login. Expiry fails the job (or holds it), cancel and a new code
-// are typed into its pane, and a second code for the same tool updates the login.
+// are typed into its pane, and a second code for the same tool updates the login. (A GitHub login is steered to the
+// hopper's GitHub proxy instead, issue #563: test/herdr/executor-login.test.ts; these use another CLI's.)
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EscalationLevel, SourceItem } from '../../src/domain/ports.ts';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
@@ -15,16 +16,19 @@ const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plu
 const CODE = 'WDJB-MJHT';
 const DONE: FakeTurn = { steps: ['● Pushing'], output: ['● Pushed the branch.', '  HOPPER_DONE'] };
 
-/** A turn that ends on a login while gh waits in the background; the work wakes Claude after `polls` polls, unless never. */
+/** A turn that ends on a login while codex waits in the background; the work wakes Claude after `polls` polls, unless never. */
 const authTurn = (o: { code?: string; expiresIn?: number; polls?: number; wakes?: boolean } = {}): FakeTurn => ({
   output: [
-    '● Bash(gh auth login --web &)',
-    `  ⎿  ! First copy your one-time code: ${o.code ?? CODE}`,
-    '     Open this URL to continue in your web browser: https://github.com/login/device',
-    '● gh waits for a login.',
+    '● Bash(codex login --device-auth &)',
+    '  ⎿  Follow these steps to sign in with ChatGPT using device code authorization:',
+    '     1. Open this link in your browser and sign in to your account',
+    '        https://auth.openai.com/codex/device',
+    '     2. Enter this one-time code (expires in 15 minutes)',
+    `        ${o.code ?? CODE}`,
+    '● codex waits for a login.',
     '  HOPPER_AUTH_PENDING',
-    '  tool: gh',
-    '  url: https://github.com/login/device',
+    '  tool: codex',
+    '  url: https://auth.openai.com/codex/device',
     `  code: ${o.code ?? CODE}`,
     `  expires_in: ${o.expiresIn ?? 900}`,
   ],
@@ -61,11 +65,11 @@ describe('a job that waits on a device login', () => {
     const a = await start(herdr);
     const job = await a.pull({}, item());
     const login = await pendingLogin(a);
-    expect(login).toMatchObject({ kind: 'device_code', tool: 'gh', status: 'pending', jobId: job.id, run: 'herdr-claude', renewable: true, codeKept: true });
+    expect(login).toMatchObject({ kind: 'device_code', tool: 'codex', status: 'pending', jobId: job.id, run: 'herdr-claude', renewable: true, codeKept: true });
     expect(login).not.toHaveProperty('userCode');
     const token = await a.login();
     const seen = (await loginsOf(a, token)).logins[0]!;
-    expect(seen).toMatchObject({ verificationUrl: 'https://github.com/login/device', userCode: CODE });
+    expect(seen).toMatchObject({ verificationUrl: 'https://auth.openai.com/codex/device', userCode: CODE });
     expect((await a.api('GET', `/api/logins/${String(login.id)}`, undefined, { 'x-hopper-session': token })).body).toMatchObject({ userCode: CODE });
     expect((await a.api('GET', `/api/logins/${String(login.id)}`)).body).not.toHaveProperty('userCode');
     expect((await a.job(job.id)).status).toBe('running');
@@ -78,7 +82,7 @@ describe('a job that waits on a device login', () => {
     expect(after).not.toHaveProperty('userCode');
     const events = (await a.events()).filter((e) => e.jobId === job.id);
     expect(events.map((e) => e.type).filter((type) => type.startsWith('auth.') || type.startsWith('question.'))).toEqual(['auth.pending', 'auth.completed']);
-    expect(events.find((e) => e.type === 'auth.pending')!.data).toMatchObject({ loginId: login.id, kind: 'device_code', tool: 'gh', run: 'herdr-claude' });
+    expect(events.find((e) => e.type === 'auth.pending')!.data).toMatchObject({ loginId: login.id, kind: 'device_code', tool: 'codex', run: 'herdr-claude' });
     // Not in any event — the webhook body is the event —, nor in the job's progress.
     expect(JSON.stringify(await a.events())).not.toContain(CODE);
     expect(JSON.stringify(await a.job(job.id))).not.toContain(CODE);
@@ -88,7 +92,7 @@ describe('a job that waits on a device login', () => {
     const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), DONE] }));
     const job = await a.pull({}, item());
     const failed = await a.waitForStatus(job.id, 'failed', 8000);
-    expect(failed.error).toMatch(/the gh login expired at .* before it was completed/);
+    expect(failed.error).toMatch(/the codex login expired at .* before it was completed/);
     // Nothing waits on it any more: it leaves the open logins, so no Cancel or New code is offered that does nothing.
     const login = await waitFor(async () => { const l = (await loginsOf(a)).logins[0]!; return l.status === 'failed' ? l : undefined; }, { timeoutMs: 8000 });
     expect(login.reason).toMatch(/^the job ended/);
@@ -107,7 +111,7 @@ describe('a job that waits on a device login', () => {
     expect((await a.job(job.id)).status).toBe('running');
     expect((await a.ui(`/ui/api/logins/${String(login.id)}/new-code`, {}, { token })).status).toBe(200);
     await waitFor(() => herdr.prompts.length === 2, { timeoutMs: 8000 });
-    expect(herdr.prompts[1]!.text).toContain('asked for a new code for the gh login');
+    expect(herdr.prompts[1]!.text).toContain('asked for a new code for the codex login');
     await waitFor(async () => (await loginsOf(a, token)).logins[0]!.userCode === 'QRST-2345', { timeoutMs: 8000 });
     const logins = (await loginsOf(a, token)).logins;
     expect(logins).toHaveLength(1);
@@ -125,7 +129,7 @@ describe('a job that waits on a device login', () => {
     const token = await a.login();
     expect((await a.ui(`/ui/api/logins/${String(login.id)}/cancel`, {}, { token })).body).toMatchObject({ status: 'cancelled' });
     await a.waitForStatus(job.id, 'finished', 8000);
-    expect(herdr.prompts[1]!.text).toContain('The user cancelled the gh login');
+    expect(herdr.prompts[1]!.text).toContain('The user cancelled the codex login');
     expect((await loginsOf(a, token)).logins[0]).toMatchObject({ status: 'cancelled', codeKept: false });
     expect((await a.ui(`/ui/api/logins/${String(login.id)}/cancel`, {}, { token })).status).toBe(409);
     expect((await a.events()).filter((e) => e.type.startsWith('auth.')).map((e) => e.type)).toEqual(['auth.pending', 'auth.cancelled']);
