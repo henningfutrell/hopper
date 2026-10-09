@@ -40,3 +40,12 @@ describe('a template on the page', () => {
     expect(approvalText({ ...base, approval: { image: 'old', secrets: ['A'], by: 'Ada', at: '' }, pending: { secrets: ['B'], image: true }, gives: [] })).toBe('waits for approval: a new image; B added');
   });
 });
+
+describe('a delivered secret on the page', () => {
+  it('says when it was last delivered, to which machine and job', () => {
+    const facts = secretFacts({ id: 'a', name: 'KUBE_TOKEN', setBy: 'Ada', createdAt: '2026-10-09T10:00:00Z', changedBy: 'Ada', changedAt: '2026-10-09T10:00:00Z', lastUsed: { at: '2026-10-09T12:00:00Z', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' } });
+    expect(facts.map((f) => f.label)).toEqual(['Set by', 'Last delivered']);
+    expect(facts[1]!.value).toContain('hopper-sandbox-kube');
+    expect(facts[1]!.value).toContain('f3b1c2d4');
+  });
+});

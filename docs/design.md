@@ -9275,7 +9275,8 @@ key service, minted short-lived credentials, per-operation profiles, boxes the h
 2. **Templates**: an image and the vault secrets its boxes may ask for, approved once by a person; the scope comes
    from the template, never from the job ("Templates (slice 2)" below).
 3. **Delivery**: a box's job asks the hopper client over a socket; the client asks the hopper over its signed link with
-   a job-bound token, as the GitHub proxy (issue #563) does; nothing in the environment or on disk. Not built yet.
+   a job-bound token, as the GitHub proxy (issue #563) does; nothing in the environment or on disk ("Delivery to the
+   box (slice 3)" below).
 
 ### Write-only vault secrets (slice 1)
 
@@ -9356,6 +9357,55 @@ name the same template and nothing else.
 (#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
 
-Tests: `test/integration/box-templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
+Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
+
+### Delivery to the box (slice 3)
+
+A job on a box gets a vault secret at the moment a tool asks for it, and only then. Nothing is set in its environment
+or written to its disk: the value is in memory, in the client and the helper, for the one call.
+
+**On the box.** The hopper client (`src/client/vault.ts`) serves a Unix socket, `vault.sock` in its client dir (the
+dir 700, the socket 600), and writes the helper `hopper-secret` beside it at each start: a short sh script that runs
+the client's `secret.ts` with node, the socket named. The client's `/release` answer says the helper's path (`vault`);
+the hopper keeps it on the machine (`MachineSnapshot.client.vault`) and gives each job there `HOPPER_SECRET`, beside the
+GitHub proxy's `HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). A machine whose client says no helper (an
+ssh target, this machine, a client from before) gets none.
+
+| run | prints |
+|-----|--------|
+| `$HOPPER_SECRET get NAME` | the value, as it is: for one command, `$("$HOPPER_SECRET" get NAME)` |
+| `$HOPPER_SECRET kube NAME` | a kubeconfig `exec` credential plugin's `ExecCredential` (the API version kubectl asked for), the secret as the token |
+| `$HOPPER_SECRET git NAME [USER] get` | a git credential helper's answer, the secret as the password (user `x-access-token` unless named); `store`, `erase` ignored |
+| `$HOPPER_SECRET aws NAME` | an AWS `credential_process` answer; the secret holds the key pair as JSON (`AccessKeyId`, `SecretAccessKey`, optional `SessionToken`, `Expiration`) |
+
+**The ask.** The helper reads the job's proxy token from `HOPPER_TOKEN_FILE` and asks the socket `{name, token}`; the
+client posts it to the hopper's `POST /client/vault` (at the URL it joined), signed with the client token over the
+user, its machine key and the body (`signVault`, label `hopper-vault`: never taken for a request of the hopper's or a
+dial-in), once, within 30 s. The hopper (`VaultService.deliver`) gives the value only when all of these hold — else
+**403** saying why, and a `vault.refused` event:
+
+1. a client target holds the machine key, and the signature is its token's (else **401**);
+2. the proxy token is one this user's link key gives the job (issue #563): it dies with the job;
+3. the job is at work (`running`, `waiting_answer`): ended, failed or parked, nothing;
+4. the job runs on that machine (its lane's, or where its pane waits);
+5. the machine is a box of a template, and the secret is in the template's approved scope now (`scopeOf`, slice 2);
+6. the vault holds the secret and the key provider opens it.
+
+**The answer** is sealed to that one request: AES-256-GCM under a key HKDF-derived from the client token, a fresh salt
+and the request's nonce, with the secret's name and the job's token as authenticated data, and `cache-control:
+no-store`. It crosses no wire in clear, even over plain HTTP on a LAN; only the client opens it. The delivery is
+recorded: `vault.delivered` (secret, template, machine, job) and the secret's `lastUsed`, shown on the Vault page —
+never the value.
+
+**What a job can still do.** A tool, or the agent, that receives a secret can keep it for the rest of its job: the
+value delivered is the stored one. The scope per template and the audit bound this; minting short-lived credentials
+would close it, and is not built. Several jobs on one box share its user and its socket: a job can ask only with its
+own token, but a box of a template with secrets is best run one job at a time (one lane).
+
+Tests: `test/integration/vault-delivery.test.ts` (a real joined box of a template and the real helper: refused until
+the template is approved, then `get` and `kube`; a secret outside the scope, an ended job, a token the hopper did not
+give, a computer of no template and an ask not signed by the machine refused; the value in no event, log line or file
+of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
+`test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.

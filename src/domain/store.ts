@@ -98,8 +98,7 @@ export interface WebhookRepository {
 
 /** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. */
 export interface VaultRepository {
-  list(): VaultSecret[];
-  get(name: string): VaultSecret | undefined;
+  list(): VaultSecret[]; get(name: string): VaultSecret | undefined;
   /** Keeps a new secret, its value already sealed for its id. False (nothing written) when the name is taken. */
   add(secret: VaultSecret, sealed: string): boolean;
   /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
@@ -110,9 +109,8 @@ export interface VaultRepository {
   remove(name: string): boolean;
   /** The templates (issue #558), by name. */
   templates(): Template[]; template(name: string): Template | undefined;
-  saveTemplate(t: Template): void;
-  /** True when there was one. */
-  removeTemplate(name: string): boolean;
+  /** `removeTemplate`: true when there was one. */
+  saveTemplate(t: Template): void; removeTemplate(name: string): boolean;
 }
 
 export interface QuestionRepository {

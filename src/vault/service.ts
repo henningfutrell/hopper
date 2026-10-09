@@ -2,6 +2,10 @@
 // user's store under the token key (src/secrets/sealer.ts, bound to `vault:<id>/value`). Nothing here logs, answers or
 // appends a value: a set or a removal is an event naming the secret and who did it, never what it holds.
 import { randomUUID } from 'node:crypto';
+import type { AttachedMachine } from '../domain/machines.ts';
+import { machineOfLane } from '../domain/raised-by.ts';
+import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
+import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { TEMPLATE_NAME } from '../domain/access.ts';
 import { templateView, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type VaultView } from '../domain/vault.ts';
@@ -25,24 +29,42 @@ export interface VaultService {
   approveTemplate(name: string, by: string): VaultResult;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
+  /**
+   * A machine's ask (slice 3), already proven to be the machine's (its link's signature): one secret, for the job whose
+   * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
+   */
+  deliver(ask: { name: string; token: string }, machineKey: string): { value: string } | { refused: string };
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
 
+/** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
+const AT_WORK = ['running', 'waiting_answer'];
+
 const fail = (code: 'invalid' | 'not_found' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
 
 export function createVaultService(o: {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx'>;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
   keys: SealerState;
   clock: Clock;
   idGen: () => string;
   logger: { warn(line: string): void };
-  /** The template a machine joined as (its join line named it); undefined for a machine of none. */
-  templateOf?: (machine: string) => string | undefined;
+  /** The attached machines now: a client target's key and the template it joined as (its join line named it). */
+  targets?: () => AttachedMachine[];
+  /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
+  holds?: (parts: ProxyTokenParts) => boolean;
 }): VaultService {
+  const clientOf = (match: (m: { name: string; key: string }) => boolean) =>
+    (o.targets?.() ?? []).flatMap((m) => ('client' in m && match({ name: m.name, key: m.client.key }) ? [{ name: m.name, template: m.client.template }] : []))[0];
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
+
+  function scopeOf(machine: string): { template?: string; secrets: string[] } {
+    const name = clientOf((m) => m.name === machine)?.template;
+    const t = name === undefined ? undefined : vault.template(name);
+    return { ...(name !== undefined ? { template: name } : {}), secrets: t ? templateView(t).gives : [] };
+  }
 
   return {
     view: () => ({ secrets: vault.list(), templates: vault.templates().map(templateView), ...(sealer ? {} : { problem: unavailable() }) }),
@@ -109,10 +131,43 @@ export function createVaultService(o: {
       });
     },
 
-    scopeOf(machine) {
-      const name = o.templateOf?.(machine);
-      const t = name === undefined ? undefined : vault.template(name);
-      return { ...(name !== undefined ? { template: name } : {}), secrets: t ? templateView(t).gives : [] };
+    scopeOf,
+
+    deliver(ask, machineKey) {
+      const m = clientOf((x) => x.key === machineKey);
+      const parts = parseProxyToken(ask.token);
+      const job = parts && parts.userId !== undefined ? o.store.jobs.get(parts.jobId) : undefined;
+      const at = o.clock.now().toISOString();
+      const machine = m?.name ?? 'a machine that is gone';
+      const refuse = (reason: string): { refused: string } => {
+        events.append({
+          type: 'vault.refused', ...(job ? { jobId: job.id } : {}), ...(m ? { machineId: m.name } : {}),
+          data: { name: ask.name, machine, ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), reason },
+        });
+        return { refused: reason };
+      };
+      if (!m) return refuse('no joined machine holds that key');
+      if (!parts || !o.holds?.(parts)) return refuse('not a token the hopper gave a job of this user');
+      if (!job || !AT_WORK.includes(job.status)) return refuse(`the job is not at work (${job?.status ?? 'no such job'}): a vault secret is given only while it runs`);
+      if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return refuse(`the job does not run on ${m.name}`);
+      if (!m.template) return refuse(`${m.name} is no box of a template: only a box joined with a template's line gets vault secrets`);
+      if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
+      const secret = vault.get(ask.name);
+      if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
+      if (!sealer) return refuse(unavailable());
+      let value: string;
+      try {
+        value = sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id));
+      } catch (e) {
+        if (!(e instanceof SecretUnreadable)) throw e;
+        o.logger.warn(`hopper: vault secret ${ask.name}: ${e.message}`);
+        return refuse(`the vault secret ${ask.name} cannot be opened: set it again`);
+      }
+      o.store.tx(() => {
+        vault.replace({ ...secret, lastUsed: { at, machine: m.name, job: job.id } }, vault.sealed(secret.id)!);
+        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template!, machine: m.name, job: job.id } });
+      });
+      return { value };
     },
 
     resealAll() {
@@ -134,7 +189,7 @@ export function createVaultService(o: {
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
-export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; templateOf: (machine: string) => string | undefined }): VaultService {
+export function openVault(o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; keys: SealerState; clock: Clock; logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
   if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);

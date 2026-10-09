@@ -266,6 +266,8 @@ export const EVENT_SCHEMAS = {
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
+  'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string() }),
+  'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string() }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),

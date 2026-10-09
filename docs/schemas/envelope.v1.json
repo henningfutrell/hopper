@@ -125,6 +125,8 @@
         "template.saved",
         "template.removed",
         "vault.approved",
+        "vault.delivered",
+        "vault.refused",
         "jev.mode_changed",
         "router.mode_changed"
       ]

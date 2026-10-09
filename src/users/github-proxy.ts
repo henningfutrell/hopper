@@ -4,6 +4,7 @@
 // for every job when this is its oldest user.
 import type { ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import type { Job, MachineSnapshot, User } from '../domain/types.ts';
+import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import {
   createProxyApi, holdsProxyToken, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
@@ -34,7 +35,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       return {
         files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT },
         paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE },
-        vars: { [PROXY_URL_VARIABLE]: url },
+        // The vault's helper (issue #558), where the machine's client serves one: it asks with this job's proxy token.
+        vars: { [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}) },
       };
     },
     githubProxy: {

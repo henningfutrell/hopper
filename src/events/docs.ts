@@ -110,6 +110,8 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'template.saved': 'A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).',
   'template.removed': 'A template was removed (issue #558): its boxes are given nothing from the vault.',
   'vault.approved': 'A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.',
+  'vault.delivered': 'A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client\'s own request, never in an environment or a file. The secret\'s name, the template, the machine and the job; never the value.',
+  'vault.refused': 'A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give. `reason` says which; never a value.',
 };
 
 type Prop = Record<string, unknown>;

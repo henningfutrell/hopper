@@ -18,16 +18,28 @@ import { dialIn } from './dial.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
 import { linkToken } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
+import { askHopper, HELPER_FILE, startVault } from './vault.ts';
 
 /** A machine's name as the hopper takes it: letters, digits, `_` and `-`. */
 export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^[-_]+|-+$/g, '') || 'machine';
 
-/** The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's public half. */
+/**
+ * The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's
+ * public half; and its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through.
+ */
 export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
   const link = readLink(o.dir);
   const token = linkToken(readFileSync(linkKeyFile(o.dir), 'utf8'), link.hopperKey);
-  const { dir: _dir, ...rest } = o;
-  return startClient({ ...rest, token: () => token, dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }) });
+  const { dir, ...rest } = o;
+  const vault = startVault({ dir, installDir: o.installDir, ask: askHopper({ url: link.url, user: link.user, key: link.key, token: () => token }), ...(o.log ? { log: o.log } : {}) });
+  vault.catch((e: unknown) => o.log?.(`hopper-client: the vault's socket could not be served: ${(e as Error).message}`));
+  const client = startClient({ ...rest, vaultHelper: join(dir, HELPER_FILE), token: () => token, dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }) });
+  return {
+    async stop() {
+      await client.stop();
+      await vault.then((v) => v.stop(), () => undefined);
+    },
+  };
 }
 
 const say = (line: string): void => { process.stdout.write(`${line}\n`); };
