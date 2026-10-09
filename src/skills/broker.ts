@@ -2,14 +2,16 @@
 // what it can set up, or loads one skill. The request is the job's, on its machine — its identity: the job's proxy token
 // (issue #563) and, on a box, the template the box joined as. In order: the token (its job at work), the skill (one the
 // hopper has), the asset a link needs, the box's template, Access (issue #559, `decideMint`), then the vault secrets the
-// template may be given (issue #558). Every answer is plain text, and every no says why (`skill.refused`); every
-// outcome but a token that names no job is an event on the job's timeline.
+// template may be given (issue #558). A skill that needs a credential the template does not give opens a credential
+// request in the vault (issue #583, "The dynamic vault"): the answer is 202, waiting, until a person gives one or
+// declines. Every answer is plain text, and every no says why (`skill.refused`); every outcome but a token that names no
+// job, and a wait, is an event on the job's timeline.
 import { randomUUID } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, type Asset, type AssetKind, type MintDecision, type MintRequest } from '../domain/access.ts';
 import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
-import { catalogText, kindsInWords, linkText, skillOf, SKILLS, type Skill } from './catalog.ts';
+import { askedSkill, catalogText, credentialText, kindsInWords, linkText, skillOf, SKILLS, type Skill, type SkillCredential } from './catalog.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
@@ -21,8 +23,16 @@ export interface SkillUser {
   job(jobId: string): Job | undefined;
   record(event: NewEvent): void;
   /** The template `machine` joined as, and the vault secrets it may be given now (metadata, never a value). */
-  box(machine: string): { template?: string; secrets: { name: string; scope?: string }[] };
+  box(machine: string): { template?: string; secrets: BoxSecret[] };
+  /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
+  need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
 }
+
+/** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
+export interface BoxSecret { name: string; scope?: string; skill?: string; kind?: string; note?: string }
+
+/** What a skill load asks the vault for (src/vault/requests.ts CredentialAsk). */
+export interface CredentialNeed { skill: string; title: string; known: boolean; kinds: { id: string; title: string }[]; setup: string; why?: string }
 
 export interface SkillAnswer { status: number; text: string }
 
@@ -40,6 +50,8 @@ export interface SkillBrokerOptions {
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+/** A skill's name a job may ask by, for one the hopper does not have (issue #583). */
+const SKILL_NAME = /^[a-z][a-z0-9-]{0,39}$/;
 const field = (body: unknown, key: string): string | undefined => {
   const v = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[key] : undefined;
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
@@ -70,6 +82,8 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const machine = machineOfLane(job.laneId) ?? job.resumeOn;
       const name = field(body, 'name');
       const said = field(body, 'asset');
+      const why = field(body, 'why');
+      const own = field(body, 'credential');
       const box = machine === undefined ? { secrets: [] } : user.box(machine);
       const at = { requestId, ...(machine ? { machine } : {}), ...(box.template ? { template: box.template } : {}), ...(name ? { skill: name } : {}), ...(said ? { asset: said } : {}) };
       const record = (type: 'skill.listed' | 'skill.loaded' | 'skill.refused', data: Record<string, unknown> = {}): void => {
@@ -84,14 +98,31 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         record('skill.listed');
         return { status: 200, text: catalogText() };
       }
-      const skill = skillOf(name);
-      if (!skill) return no(404, `the hopper has no skill ${name}. It has: ${SKILLS.map((s) => s.name).join(', ')}. Find another way.`);
+      const known = skillOf(name);
+      const skill = known ?? (own && SKILL_NAME.test(name) ? askedSkill(name, own.slice(0, 200)) : undefined);
+      if (!skill) {
+        return no(404, `the hopper has no skill ${name}. It has: ${SKILLS.map((s) => s.name).join(', ')}. For another service, say what credential it takes: sh "$HOPPER_SKILL" ${SKILL_NAME.test(name) ? name : 'NAME'} --credential "<what it takes>". Else find another way.`);
+      }
       const loaded = (text: string, decision?: MintDecision): SkillAnswer => {
         record('skill.loaded', decision ? { decision: decision.id } : {});
         return { status: 200, text: `${text}\n` };
       };
-      if (!skill.link) return loaded(skill.text);
-      return link(skill, skill.link);
+      if (skill.link) return link(skill, skill.link);
+      if (!skill.credential) return loaded(skill.text);
+      const given = box.secrets.filter((s) => s.skill === skill.name);
+      return given.length > 0 ? loaded(`${skill.text}\n\n${given.map((s) => credentialText(skill.credential!, s)).join('\n')}`) : ask(skill, skill.credential);
+
+      /** No credential for the skill on this box (issue #583): the vault asks a person; the job waits, or is told they declined. */
+      function ask(s: Skill, c: SkillCredential, decision?: MintDecision): SkillAnswer {
+        if (!box.template || machine === undefined) {
+          return no(403, `${machine ?? 'this machine'} is no box of a template: the vault gives a credential only to a box of a template, so the hopper asks nobody for one here. Find another way, or run on a box of a template.`, decision);
+        }
+        const r = user!.need({
+          skill: s.name, title: s.name, known: known !== undefined, kinds: c.kinds.map((k) => ({ id: k.id, title: k.title })), setup: c.setup, ...(why ? { why } : {}),
+        }, { job: job!, machine, template: box.template });
+        if ('declined' in r) return no(403, r.declined, decision);
+        return { status: 202, text: `waiting: ${r.waiting} Run the same command again to see whether it is ready, or add --wait to wait for it.\n` };
+      }
 
       async function link(s: Skill, l: NonNullable<Skill['link']>): Promise<SkillAnswer> {
         const how = `sh "$HOPPER_SKILL" ${s.name} ${l.example}`;
@@ -103,10 +134,15 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         }
         const decision = await o.decide({ job: { userId: user!.id, jobId: job!.id }, template: box.template, operation: l.operation, asset });
         if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Settings → Access; until then, find another way.`, decision);
-        if (box.secrets.length === 0) {
+        // The secrets given for this skill (issue #583); else, as before it, every secret of the template given for none.
+        const tagged = box.secrets.filter((x) => x.skill === s.name);
+        const secrets = tagged.length > 0 ? tagged : box.secrets.filter((x) => x.skill === undefined);
+        if (secrets.length === 0) {
+          if (s.credential) return ask(s, s.credential, decision);
           return no(403, `Access allows it, but template ${box.template} may be given no vault secret: a person adds one to the template in Settings → Vault and approves it.`, decision);
         }
-        return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${linkText(l.form, box.secrets)}`, decision);
+        const notes = tagged.filter((x) => x.note).map((x) => `${x.name}: the user says: ${x.note}`).join('\n');
+        return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${linkText(l.form, secrets)}${notes ? `\n${notes}` : ''}`, decision);
       }
     },
   };

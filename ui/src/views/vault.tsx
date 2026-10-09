@@ -1,8 +1,10 @@
 // Settings → Vault (issue #558): write-only secrets for jobs. Each is set once — a name, an optional scope saying what
 // it reaches, a value — and from then on only its metadata shows: no view, and no answer the page gets, holds a value.
 // Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
-// approved once by a person and again for a new secret or a new image. Editing is an admin's.
-import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+// approved once by a person and again for a new secret or a new image. Editing is an admin's. Asked for (issue #583): the
+// credentials jobs on boxes asked for and the vault does not give; an admin gives one — of the kind suggested, or
+// another — or declines.
+import { Boxes, Check, KeyRound, LockKeyhole, MessageSquareWarning, Pencil, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -10,13 +12,14 @@ import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, nameProblem, secretFacts } from '@/model/vault';
-import type { TemplateView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, DEFAULT_BOX_IMAGE, giveProblem, kindChoices, nameProblem, requestWaiting, secretFacts } from '@/model/vault';
+import type { CredentialRequest, TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string } | { action: 'remove'; name: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[] } | { action: 'remove-template' | 'approve-template'; name: string };
+  | { action: 'save-template'; name: string; image: string; secrets: string[] } | { action: 'remove-template' | 'approve-template'; name: string }
+  | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 type Send = (e: Edit, done: string) => Promise<boolean>;
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -24,9 +27,9 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 
 /** A write-only value: never filled in from the hopper, never remembered by the browser. */
-function ValueInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ValueInput({ value, onChange, required = true }: { value: string; onChange: (v: string) => void; required?: boolean }) {
   return (
-    <Input className="h-9 font-mono text-sm" type="password" value={value} required maxLength={65536}
+    <Input className="h-9 font-mono text-sm" type="password" value={value} required={required} maxLength={65536}
       autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
   );
 }
@@ -160,6 +163,58 @@ function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secret
   );
 }
 
+/** A credential request (issue #583): what jobs wait on, how to get the credential, and the admin's answer. */
+function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolean; busy: boolean; send: Send }) {
+  const [kind, setKind] = useState(r.kinds[0]?.id ?? 'other');
+  const [note, setNote] = useState('');
+  const [name, setName] = useState(r.existing[0] ?? r.secret);
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState('');
+  const problem = giveProblem({ name, kind, note, value }, r);
+  const existing = r.existing.includes(name.trim());
+  return (
+    <li className="space-y-3 rounded-md border border-warn/50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <MessageSquareWarning className="size-4 text-warn" />
+        <span className="text-sm font-medium">{r.title}</span>
+        <span className="text-xs text-muted-foreground">for boxes of <span className="font-mono">{r.template}</span>{r.known ? '' : ' · the hopper has no skill for it: the job said what it takes'}</span>
+      </div>
+      <ul className="space-y-0.5 text-xs">{requestWaiting(r).map((w) => <li key={w} className="break-words">Waits: {w}</li>)}</ul>
+      <p className="text-xs text-muted-foreground break-words">How to get one: {r.setup}</p>
+      {can ? (
+        <form className="space-y-3" onSubmit={async (e) => {
+          e.preventDefault();
+          const ok = await send({ action: 'give-credential', request: r.id, name: name.trim(), kind, ...(note.trim() ? { note: note.trim() } : {}), ...(value ? { value } : {}) }, `${r.title}: given as ${name.trim()}`);
+          if (ok) setValue('');
+        }}>
+          <div className="space-y-1" role="radiogroup" aria-label="What you give"><Label>What you give — the first is the hopper's suggestion; any kind works</Label>
+            {kindChoices(r).map((k) => (
+              <label key={k.id} className="flex items-start gap-2 text-sm">
+                <input type="radio" name={`kind-${r.id}`} className="mt-1" checked={kind === k.id} onChange={() => setKind(k.id)} />{k.title}
+              </label>
+            ))}
+          </div>
+          {kind === 'other' && (
+            <label className="block space-y-1"><Label>What it is, in your words — the job reads this, never the value</Label>
+              <Input className="h-9 text-sm" value={note} maxLength={200} placeholder="a team key, read-only" onChange={(e) => setNote(e.target.value)} /></label>
+          )}
+          <label className="block space-y-1"><Label>Vault secret name{r.existing.length ? ` — or one you set before: ${r.existing.join(', ')}` : ''}</Label>
+            <Input className="h-9 font-mono text-sm" value={name} required maxLength={64} autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => setName(e.target.value)} /></label>
+          <label className="block space-y-1"><Label>Value — kept encrypted; never shown again, to anyone{existing ? ' (empty: keep the one the vault holds)' : ''}</Label>
+            <ValueInput value={value} onChange={setValue} required={!existing} /></label>
+          <p className="text-xs text-muted-foreground">Boxes of {r.template} may then ask for it, whatever job runs in them.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={busy || problem !== undefined}><Check />Give</Button>
+            <Input className="h-9 w-56 text-sm" value={reason} maxLength={200} placeholder="Why not (for the job)" aria-label="Why not" onChange={(e) => setReason(e.target.value)} />
+            <Button type="button" variant="outline" disabled={busy} onClick={() => void send({ action: 'decline-credential', request: r.id, reason: reason.trim() }, `${r.title}: declined`)}><X />Decline</Button>
+          </div>
+          {problem && (value || note || kind === 'other') && <div className="text-xs text-muted-foreground">{problem}</div>}
+        </form>
+      ) : <p className="text-xs text-muted-foreground">An admin gives it here.</p>}
+    </li>
+  );
+}
+
 export function Vault() {
   const can = useCanAdmin();
   const [view, setView] = useState<VaultView | null>(null);
@@ -186,8 +241,15 @@ export function Vault() {
 
   const secrets = view?.secrets ?? [];
   const templates = view?.templates ?? [];
+  const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
+      {requests.length > 0 && (
+        <Panel title="Asked for" icon={MessageSquareWarning} count={requests.length} bodyClassName="space-y-3">
+          <p className="text-sm text-muted-foreground">Jobs on boxes need these credentials, and wait until you give one or decline. Give the kind the hopper suggests, or any other: the job is told what you gave, never the value.</p>
+          <ul className="space-y-2">{requests.map((r) => <RequestItem key={r.id} r={r} can={can} busy={busy} send={send} />)}</ul>
+        </Panel>
+      )}
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || view?.problem !== undefined}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database.</p>

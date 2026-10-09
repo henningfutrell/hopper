@@ -2315,6 +2315,86 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 }
 ```
 
+## `vault.credential_asked`
+
+Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `skill` | string | yes |
+| `template` | string | yes |
+| `machine` | string | yes |
+| `job` | string | yes |
+| `why` | string | no |
+
+```json
+{
+  "request": "c9d0e1f2-0000-4000-8000-000000000583",
+  "skill": "render",
+  "template": "web",
+  "machine": "hopper-sandbox-web",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "why": "deploy the web service"
+}
+```
+
+## `vault.credential_given`
+
+Version 1 (`docs/schemas/vault.credential_given.v1.json`). A person gave a credential for a credential request (issue #583): a vault secret, added to the template's scope. The secret's name, the kind they gave, whether the giving approved it for the template (an approved template whose image is unchanged), and the jobs that waited; never the value.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `skill` | string | yes |
+| `name` | string | yes |
+| `kind` | string | yes |
+| `template` | string | yes |
+| `by` | string | yes |
+| `approved` | boolean | yes |
+| `jobs` | string[] | yes |
+
+```json
+{
+  "request": "c9d0e1f2-0000-4000-8000-000000000583",
+  "skill": "render",
+  "name": "render",
+  "kind": "api-key",
+  "template": "web",
+  "by": "github:octocat",
+  "approved": true,
+  "jobs": [
+    "f3b1c2d4-0000-4000-8000-000000000001"
+  ]
+}
+```
+
+## `vault.credential_declined`
+
+Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined a credential request (issue #583): each job that waited on it is told the reason when it asks again, and goes on without it or fails.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `skill` | string | yes |
+| `template` | string | yes |
+| `reason` | string | yes |
+| `by` | string | yes |
+| `jobs` | string[] | yes |
+
+```json
+{
+  "request": "c9d0e1f2-0000-4000-8000-000000000583",
+  "skill": "render",
+  "template": "web",
+  "reason": "deploy by hand this time",
+  "by": "github:octocat",
+  "jobs": [
+    "f3b1c2d4-0000-4000-8000-000000000001"
+  ]
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.

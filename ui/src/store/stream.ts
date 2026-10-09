@@ -4,6 +4,7 @@ import { readToken } from '@/lib/api';
 import { refreshAllReviews } from './reviews';
 import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
+import { announceCredentialAsked } from './vault';
 import { onDelivery, onDomainEvent, onRecorded, onSource, refreshFailures, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
 
 export function connect(): () => void {
@@ -26,6 +27,8 @@ export function connect(): () => void {
   es.addEventListener('usage.recorded', () => onRecorded('usage'));
   es.addEventListener('machine.recorded', () => onRecorded('machine'));
   for (const t of EVENT_TYPES) es.addEventListener(t, (m) => onDomainEvent(JSON.parse(m.data) as DomainEvent));
+  // A job asks the user for a credential (issue #583): said as it comes, never on a replay of what the page holds.
+  es.addEventListener('vault.credential_asked', (m) => { const e = JSON.parse(m.data) as DomainEvent; if (e.seq > after) announceCredentialAsked(e); });
   const health = setInterval(() => { refreshHealth().catch(() => {}); refreshUpdate().catch(() => {}); }, 10_000);
   return () => { clearInterval(health); es.close(); };
 }

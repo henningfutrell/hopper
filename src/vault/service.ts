@@ -11,6 +11,7 @@ import { TEMPLATE_NAME } from '../domain/access.ts';
 import { templateView, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type VaultView } from '../domain/vault.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
+import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 
 /** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
 export const vaultContext = (id: string): string => `vault:${id}/value`;
@@ -34,6 +35,15 @@ export interface VaultService {
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
    */
   deliver(ask: { name: string; token: string }, machineKey: string): { value: string } | { refused: string };
+  /**
+   * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
+   * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.
+   */
+  need(ask: CredentialAsk, asker: Asker): NeedAnswer;
+  /** A person gives a credential for a request: a vault secret, added to its template's scope. */
+  give(id: string, g: Give, by: string): VaultResult;
+  /** A person declines a request: each job that waits on it is told why. */
+  decline(id: string, reason: string, by: string): VaultResult;
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
@@ -66,8 +76,10 @@ export function createVaultService(o: {
     return { ...(name !== undefined ? { template: name } : {}), secrets: t ? templateView(t).gives : [] };
   }
 
-  return {
-    view: () => ({ secrets: vault.list(), templates: vault.templates().map(templateView), ...(sealer ? {} : { problem: unavailable() }) }),
+  const requests = createCredentialRequests({ store: o.store, clock: o.clock, idGen: o.idGen, set: (x, by) => service.set(x, by) });
+
+  const service: VaultService = {
+    view: () => ({ secrets: vault.list(), templates: vault.templates().map(templateView), requests: requests.list(), ...(sealer ? {} : { problem: unavailable() }) }),
 
     set({ name, scope, value }, by) {
       if (!VAULT_SECRET_NAME.test(name)) return fail('invalid', 'name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
@@ -133,6 +145,10 @@ export function createVaultService(o: {
 
     scopeOf,
 
+    need: (ask, asker) => requests.need(ask, asker),
+    give: (id, g, by) => (sealer || g.value === undefined ? requests.give(id, g, by) : fail('unavailable', unavailable())),
+    decline: (id, reason, by) => requests.decline(id, reason, by),
+
     deliver(ask, machineKey) {
       const m = clientOf((x) => x.key === machineKey);
       const parts = parseProxyToken(ask.token);
@@ -186,6 +202,7 @@ export function createVaultService(o: {
       return n;
     },
   };
+  return service;
 }
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */

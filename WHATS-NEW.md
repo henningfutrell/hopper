@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job in a sandbox box that needs a credential the hopper does not have, for example for Render, now asks you for it: Settings → Vault shows what the job needs, why, and how to get one. Give the kind the hopper suggests or any other kind, or say no. The job gets it at the moment it needs it, and the value is never shown again. Render is now one of the things the hopper can set up for a job.
 - A job can ask the hopper what it can set up for it, such as a read-only link to a cluster or an AWS account. The hopper sets it up only when Access allows it, and otherwise says no and why.
 - A job is now done when its pull request is open and ready for review: it no longer has to be merged, so a job that waits for your review ends done instead of failed. Jobs no longer merge their own pull requests unless you turn on yolo mode in Settings → Yolo mode, for every repository or only some; read its warning first.
 - Jobs in a sandbox box can now use the Vault: a job asks for a secret at the moment a tool needs it — kubectl, git or the AWS tools can ask by themselves — and gets it only if the box's template is approved for it, and only while the job runs. The secret is never put in the box's environment or written to its disk, and the Vault shows when each secret was last used and by which job.
