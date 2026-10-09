@@ -12,7 +12,7 @@ import {
 const rankOf = (level: RadiusLevel): number => RADIUS_LEVELS.indexOf(level);
 
 /** Whether a name is prod by the rules: one of the patterns in it, case ignored. */
-function prodName(names: (string | undefined)[], rules: RadiusRules): boolean {
+export function prodName(names: (string | undefined)[], rules: RadiusRules): boolean {
   const patterns = rules.prodPatterns.map((p) => p.toLowerCase()).filter((p) => p.length > 0);
   return names.some((n) => n !== undefined && patterns.some((p) => n.toLowerCase().includes(p)));
 }

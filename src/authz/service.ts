@@ -1,11 +1,14 @@
 // Access (issue #559, design.md "Access: OpenFGA decides each mint"): the decision point the vault (issue #558) asks
 // before every credential it mints or renews — `decideMint` —, the approvals and the model the hopper keeps and pushes
 // to OpenFGA, and Settings → Access's view. Fail closed: with no OpenFGA set up, OpenFGA not reached, a change it has
-// not taken yet, a model it refused, or a job that is not live, the answer is a deny, recorded like any other.
+// not taken yet, a model it refused, or a job that is not live, the answer is a deny, recorded like any other. Each
+// template shows with its blast radius (issue #584), rated from its approvals and the vault templates of that name.
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
+import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import {
-  OPERATIONS, ASSET_KINDS, ASSET_NAME, TEMPLATE_NAME,
+  DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
+  type RadiusRules, type TemplateApprovals, type TemplateRadius,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
   type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
@@ -30,7 +33,7 @@ export class AccessEditError extends Error {
   }
 }
 
-export interface Access {
+export interface Access extends TemplateApprovals {
   /** Allowed or denied, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
@@ -56,6 +59,8 @@ export interface AccessOptions {
   jobStatus(userId: string, jobId: string): string | undefined;
   logger: { warn(line: string): void };
   syncMs?: number;
+  /** Every user's vault templates (issue #584), each with that user's blast-radius rules: what a template's rating reads beside its approvals. */
+  templates?: () => { name: string; scope: TemplateScope; rules: RadiusRules }[];
 }
 
 const KEY_STORE = 'storeId';
@@ -65,14 +70,12 @@ const SYSTEM = 'hopper';
 const tupleKey = (t: RelationshipTuple) => `${t.subject} ${t.relation} ${t.object}`;
 const plain = (t: StoredTuple): RelationshipTuple => ({ subject: t.subject, relation: t.relation, object: t.object });
 const describeAsset = (t: Asset) => `${t.kind} ${t.name}`;
+const rank = (r: TemplateRadius): number => RADIUS_LEVELS.indexOf(r.level);
 
 /** Why a request names no template, operation or asset the model can hold, or undefined. */
 export function requestProblem(r: { template: string; operation: string; asset: { kind: string; name: string } }): string | undefined {
   if (!TEMPLATE_NAME.test(r.template)) return `template ${JSON.stringify(r.template)} is not a template name (lowercase letters, digits, . _ -)`;
-  if (!(OPERATIONS as readonly string[]).includes(r.operation)) return `operation ${JSON.stringify(r.operation)} is not one of ${OPERATIONS.join(', ')}`;
-  if (!(ASSET_KINDS as readonly string[]).includes(r.asset.kind)) return `asset kind ${JSON.stringify(r.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
-  if (!ASSET_NAME.test(r.asset.name)) return `asset name ${JSON.stringify(r.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
-  return undefined;
+  return profileProblem(r);
 }
 
 export function createAccess(o: AccessOptions): Access {
@@ -175,7 +178,24 @@ export function createAccess(o: AccessOptions): Access {
     return { id: approval.seq, template, profile, approvedBy: approval.writtenBy, approvedAt: approval.writtenAt, chain: [plain(approval), grant] };
   };
 
+  const approvals = (): Approval[] =>
+    o.repo.liveTuples().filter((t) => t.relation === 'approved_for').map(approvalOf).filter((a): a is Approval => a !== undefined);
+
+  /** A template's rating: from its approvals and each vault template of its name; the highest when users' templates share it. */
+  const radiusOf = (template: string, approved: OperationProfile[], scopes: { name: string; scope: TemplateScope; rules: RadiusRules }[]): TemplateRadius => {
+    const mine = scopes.filter((s) => s.name === template);
+    const rated = mine.length ? mine.map((s) => rateTemplate(s.scope, approved, s.rules)) : [rateTemplate({ secrets: [], profiles: [] }, approved, DEFAULT_BLAST_RADIUS_SETTINGS.rules)];
+    return rated.reduce((a, b) => (rank(b) > rank(a) ? b : a));
+  };
+
   return {
+    approvedProfiles: (template) => approvals().filter((a) => a.template === template).map((a) => a.profile),
+    async revokeProfile(template, profile, by) {
+      const { approval } = approvalTuples(template, profile);
+      const live = o.repo.liveTuples().find((t) => t.relation === 'approved_for' && t.subject === approval.subject && t.object === approval.object);
+      if (!live || !o.repo.revokeTuple(live.seq, by, now())) return;
+      await changed();
+    },
     async decideMint(request) {
       const { job, template, operation, asset } = request;
       const base = { job: { userId: job.userId, jobId: job.jobId }, template, operation, asset };
@@ -229,9 +249,12 @@ export function createAccess(o: AccessOptions): Access {
     },
     sync: async () => { await running; await sync(); },
     view() {
-      const live = o.repo.liveTuples();
-      const approvals = live.filter((t) => t.relation === 'approved_for').map(approvalOf).filter((a): a is Approval => a !== undefined);
-      const templates = [...new Set(approvals.map((a) => a.template))].sort().map((template) => ({ template, approvals: approvals.filter((a) => a.template === template) }));
+      const all = approvals();
+      const scopes = o.templates?.() ?? [];
+      const templates = [...new Set([...all.map((a) => a.template), ...scopes.map((s) => s.name)])].sort().map((template) => {
+        const mine = all.filter((a) => a.template === template);
+        return { template, approvals: mine, radius: radiusOf(template, mine.map((a) => a.profile), scopes) };
+      });
       const revoked = o.repo.revoked('approved_for', REVOKED_SHOWN).flatMap((t): RevokedApproval[] => {
         const a = approvalOf(t);
         return a ? [{ ...a, revokedBy: t.revokedBy!, revokedAt: t.revokedAt! }] : [];

@@ -2215,13 +2215,14 @@ Version 1 (`docs/schemas/vault.secret_removed.v1.json`). A vault secret was remo
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
 | `secrets` | string[] | yes |
+| `profiles` | object[] | no |
 | `by` | string | yes |
 
 ```json
@@ -2230,6 +2231,15 @@ Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #
   "image": "localhost/box-kubectl:1",
   "secrets": [
     "KUBE_TOKEN"
+  ],
+  "profiles": [
+    {
+      "operation": "read",
+      "asset": {
+        "kind": "cluster",
+        "name": "lab"
+      }
+    }
   ],
   "by": "Ada"
 }
@@ -2253,7 +2263,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
 
 | field | type | required |
 |---|---|---|
@@ -2269,6 +2279,31 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
   "secrets": [
     "KUBE_TOKEN"
   ],
+  "by": "Ada"
+}
+```
+
+## `template.profile_approved`
+
+Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profile of a template was approved in access (issue #584): with the template for a read profile (level low), or by its own explicit approval for a write, sync or apply profile (level high). Access then allows the template's jobs that operation on that asset.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `asset` | object | yes |
+| `level` | `low` \| `medium` \| `high` | yes |
+| `by` | string | yes |
+
+```json
+{
+  "template": "kube",
+  "operation": "write",
+  "asset": {
+    "kind": "cluster",
+    "name": "lab"
+  },
+  "level": "high",
   "by": "Ada"
 }
 ```
