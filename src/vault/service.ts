@@ -55,6 +55,50 @@ export interface VaultService {
   resealAll(): number;
 }
 
+/**
+ * The vault as the hopper's parts reach it (issue #586): in the hopper (`localVault`), or with its secrets in a container
+ * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
+ * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
+ */
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'templateScopes'> {
+  /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
+  view(): VaultView;
+  /** Why no vault secret can be stored or delivered now; undefined when one can. */
+  status(): Promise<string | undefined>;
+  set(s: SetSecret, by: string): Promise<VaultResult>;
+  remove(name: string, by: string): Promise<VaultResult>;
+  deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
+}
+
+/** The vault in the hopper's own process. */
+export const localVault = (v: VaultService): Vault => ({
+  view: () => v.view(),
+  status: async () => v.view().problem,
+  set: async (s, by) => v.set(s, by),
+  remove: async (name, by) => v.remove(name, by),
+  deliver: (ask, key) => v.deliver(ask, key),
+  saveTemplate: (t, by) => v.saveTemplate(t, by),
+  removeTemplate: (name, by) => v.removeTemplate(name, by),
+  approveTemplate: (name, by) => v.approveTemplate(name, by),
+  approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
+  scopeOf: (machine) => v.scopeOf(machine),
+  templateScopes: () => v.templateScopes(),
+});
+
+/** What `GET /api/vault` and each edit answer: the view, with the vault's status as its problem. */
+export async function vaultView(v: Vault): Promise<VaultView> {
+  const problem = await v.status();
+  const { problem: _local, ...view } = v.view();
+  return { ...view, ...(problem !== undefined ? { problem } : {}) };
+}
+
+/** An attached machine as the vault knows it (issue #558): a client target's name, its machine key, its template. */
+export interface ClientTarget { name: string; key: string; template?: string }
+
+/** The client targets among the attached machines. */
+export const clientTargets = (machines: readonly AttachedMachine[]): ClientTarget[] =>
+  machines.flatMap((m) => ('client' in m ? [{ name: m.name, key: m.client.key, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []));
+
 /** A secret to set: its value, or (issue #585) the vault backend that keeps it and where. */
 export type SetSecret = { name: string; scope?: string } & ({ value: string } | { backend: string; reference: string });
 
@@ -71,15 +115,14 @@ export function createVaultService(o: {
   /** Access, where a template's operation profiles are approved (issue #584). Absent: no profile can be approved. */
   access?: TemplateApprovals;
   logger: { warn(line: string): void };
-  /** The attached machines now: a client target's key and the template it joined as (its join line named it). */
-  targets?: () => AttachedMachine[];
+  /** The client targets now: each one's key and the template it joined as (its join line named it). */
+  targets?: () => ClientTarget[];
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
   /** The vault backends the plugins config names now (issue #585); none when absent. */
   backends?: () => ConfiguredBackend[];
 }): VaultService {
-  const clientOf = (match: (m: { name: string; key: string }) => boolean) =>
-    (o.targets?.() ?? []).flatMap((m) => ('client' in m && match({ name: m.name, key: m.client.key }) ? [{ name: m.name, template: m.client.template }] : []))[0];
+  const clientOf = (match: (m: ClientTarget) => boolean): ClientTarget | undefined => (o.targets?.() ?? []).find(match);
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -307,7 +350,7 @@ export function createVaultService(o: {
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
 export function openVault(o: {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; keys: SealerState; clock: Clock;
-  logger: { info(line: string): void; warn(line: string): void }; targets: () => AttachedMachine[]; holds: (parts: ProxyTokenParts) => boolean;
+  logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
   backends: () => ConfiguredBackend[];
 }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });

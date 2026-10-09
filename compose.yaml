@@ -20,12 +20,30 @@
 #   podman image prune -f --filter label=org.opencontainers.image.title=hopper
 # (docker compose / docker image prune the same). Recreating ends jobs a restart would lose: when an update
 # is out, the UI shows how many; wait until none.
+#
+# Required services: postgres, hopper, openfga (and openfga-migrate, which runs once). A plain `podman compose up -d`
+# starts only these, and the vault works: it runs in the hopper, under the token key.
+#
+# Optional services (issue #586, docs/deploy.md "Optional services"), each behind a compose profile; the hopper starts
+# and works without them. Turn them on with lines in .env, then `podman compose up -d`:
+#   hopper-vault  the hopper's vault in a container of its own, so the hopper holds none of its keys:
+#                   COMPOSE_PROFILES=hopper-vault
+#                   HOPPER_VAULT_URL=http://hopper-vault:4791
+#   kms           a local KMS (local-kms) the vault's data key is wrapped by, envelope encryption:
+#                   COMPOSE_PROFILES=hopper-vault,kms
+#                   HOPPER_VAULT_URL=http://hopper-vault:4791
+#                   HOPPER_KMS_URL=http://kms:8080
+#                 (the KMS also works with the vault in the hopper: COMPOSE_PROFILES=kms and HOPPER_KMS_URL alone.)
+#   vault         HashiCorp Vault, a vault backend secrets may be kept in (issue #585): see the service below.
+# Turn the KMS on with the vault holding secrets: they are sealed again under the data key at its first use. Turn it
+# off again: set each vault secret again (a value sealed under the data key does not open without the KMS).
 name: hopper
 
 services:
   # Postgres makes the database password on its first start, kept in the secrets volume, before the
   # database starts, and the hopper's token key with it (issue #441). Each file is readable only by the one service that needs it (postgres: uid 70;
-  # the hopper: uid 1000; OpenFGA: uid 65532). No one-shot service for it: podman-compose cannot start a container whose
+  # the hopper and hopper-vault: uid 1000; OpenFGA: uid 65532). hopper-vault's preshared key (issue #586) is made the
+  # same way. No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   postgres:
@@ -41,12 +59,13 @@ services:
           printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat $$s/postgres_password)" > $$s/database_url
           [ -s $$s/token_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/token_key
           [ -s $$s/openfga_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/openfga_key
+          [ -s $$s/vault_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/vault_key
           mkdir -p $$s/openfga
           printf 'datastore:\n  engine: postgres\n  uri: postgres://hopper:%s@postgres:5432/hopper?sslmode=disable&search_path=openfga\nauthn:\n  method: preshared\n  preshared:\n    keys: ["%s"]\nplayground:\n  enabled: false\n' \
             "$$(cat $$s/postgres_password)" "$$(cat $$s/openfga_key)" > $$s/openfga/config.yaml
         )
         chown 70:70 $$s/postgres_password
-        chown 1000:1000 $$s/database_url $$s/token_key $$s/openfga_key
+        chown 1000:1000 $$s/database_url $$s/token_key $$s/openfga_key $$s/vault_key
         chown -R 65532:65532 $$s/openfga
         (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga') &
         exec docker-entrypoint.sh postgres
@@ -79,6 +98,11 @@ services:
       # OpenFGA, asked before every credential a job is given (issue #559), and its preshared key.
       HOPPER_OPENFGA_URL: ${HOPPER_OPENFGA_URL:-http://openfga:8080}
       HOPPER_OPENFGA_KEY_FILE: /run/hopper-secrets/openfga_key
+      # The vault in its own container (profile `hopper-vault`, issue #586) and its preshared key; unset: it runs here.
+      HOPPER_VAULT_URL: ${HOPPER_VAULT_URL:-}
+      HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
+      # The KMS (profile `kms`), used here only when the vault runs here; unset: the token key.
+      HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
       # The token of the optional `vault` service below (issue #585): read-only, made by that service on its first
       # start. Nothing reads it until a hashicorp-vault vault backend is added in Settings → Plugins.
       VAULT_TOKEN_FILE: ${VAULT_TOKEN_FILE:-/run/hopper-vault/token}
@@ -124,6 +148,43 @@ services:
     volumes:
       - secrets:/run/hopper-secrets:ro
 
+  # Optional (profile `hopper-vault`, issue #586): the hopper's vault in a container of its own, from the hopper's image.
+  # It holds the vault's key — the token key, or the data key the KMS opens — and the secret values, in the hopper's
+  # Postgres; the templates stay in the hopper. The hopper asks it at HOPPER_VAULT_URL with the preshared key. On no
+  # host port: only the hopper reaches it.
+  hopper-vault:
+    profiles: [hopper-vault]
+    image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
+    restart: unless-stopped
+    command: [node, src/vault/main.ts]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
+      HOPPER_TOKEN_KEY_FILE: /run/hopper-secrets/token_key
+      HOPPER_TOKEN_KEY_PREVIOUS: ${HOPPER_TOKEN_KEY_PREVIOUS:-}
+      HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
+      HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
+      HOPPER_KMS_KEY: ${HOPPER_KMS_KEY:-}
+    volumes:
+      - secrets:/run/hopper-secrets:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4791/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional (profile `kms`, issue #586): a local KMS that speaks AWS KMS's API (local-kms). The vault asks it for a
+  # data key per user, wrapped by its key `alias/hopper-vault` (made at the first ask), and to open that data key at
+  # each start. Its keys are in the `kms` volume: remove that volume and every value sealed under a data key is lost.
+  # It checks no credentials, so it is on no host port: only the compose network reaches it.
+  kms:
+    profiles: [kms]
+    image: docker.io/nsmithuk/local-kms:3.12.0
+    restart: unless-stopped
+    volumes:
+      - kms:/data
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
   # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
   #   podman compose --profile vault up -d
@@ -177,3 +238,4 @@ volumes:
   vault-data:
   vault-keys:
   vault-token:
+  kms:

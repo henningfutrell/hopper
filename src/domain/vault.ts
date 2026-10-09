@@ -125,3 +125,24 @@ export function templateView(t: Template, approvedProfiles: readonly OperationPr
     radius,
   };
 }
+
+/** The vault (issue #558): its secrets, each one's value sealed, kept apart from its metadata and answered only by `sealed`. Kept beside the vault's types; domain/store.ts re-exports it. */
+export interface VaultRepository {
+  list(): VaultSecret[]; get(name: string): VaultSecret | undefined;
+  /** Keeps a new secret, its value already sealed for its id (null: kept in a vault backend, issue #585). False when the name is taken. */
+  add(secret: VaultSecret, sealed: string | null): boolean;
+  /** Its value, sealed again or replaced, and its metadata; false when there is no such secret. */
+  replace(secret: VaultSecret, sealed: string | null): boolean;
+  /** The secret's sealed value; undefined when there is none. Never part of a secret. */
+  sealed(id: string): string | undefined;
+  /** True when there was one. */
+  remove(name: string): boolean;
+  /** The templates (issue #558), by name. */
+  templates(): Template[]; template(name: string): Template | undefined;
+  /** `removeTemplate`: true when there was one. */
+  saveTemplate(t: Template): void; removeTemplate(name: string): boolean;
+  /** The user's data key, wrapped by the KMS (issue #586); undefined until a KMS made one. */
+  dataKey(): string | undefined;
+  /** Keeps the wrapped data key; false (nothing written) when one is kept already. */
+  keepDataKey(wrapped: string): boolean;
+}
