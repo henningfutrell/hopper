@@ -90,7 +90,7 @@ describe('GitHub completion: merge or a pull request open for review', () => {
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
     const ends = (await a.events('types=job.failed,job.finished')).filter((e) => e.jobId === job.id);
     expect(ends.map((e) => [e.type, e.data])).toEqual([
-      ['job.failed', { error: 'pane ended' }],
+      ['job.failed', { error: 'pane ended', priority: 50, high: false }],
       ['job.finished', { result: 'issue closed as complete' }],
     ]);
   });

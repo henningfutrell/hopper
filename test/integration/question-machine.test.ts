@@ -49,7 +49,7 @@ describe('a question records and shows the machine that raised it (issue #485)',
     const events = (await a.events()).filter((e) => e.questionId === q!.id && e.type.startsWith('question.'));
     const asked = events.find((e) => e.type === 'question.asked')!;
     expect(asked).toMatchObject({ machineId: 'local', laneId: 'local/lane-1' });
-    expect(asked.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy });
+    expect(asked.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy, priority: 50, high: false });
     expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['question.asked', 'question.escalated', 'question.answered']));
     for (const e of events) expect(e, e.type).toMatchObject({ machineId: 'local', laneId: 'local/lane-1', data: { raisedBy } });
     // GET /api/questions/:id answers the same snapshot.

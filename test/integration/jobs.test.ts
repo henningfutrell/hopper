@@ -199,7 +199,7 @@ describe('jobs pulled from a source', () => {
     expect(ended).toEqual(ids.slice(1).reverse());
   });
 
-  it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {
+  it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), and a running one: the live priority (issue #535)', async () => {
     t.setUsage(100);
     const waiting = await t.pull({ op: 'echo' }, { key: 'resort-1', priority: 40 });
     t.source.add(manualItem({ key: 'resort-1', prompt: '{"op":"echo"}', priority: 80, priorityReason: 'label:hopper:high' }));
@@ -215,7 +215,8 @@ describe('jobs pulled from a source', () => {
     await t.waitForStatus(running.id, 'running');
     t.source.add(manualItem({ key: 'resort-2', prompt: '{"op":"sleep","ms":5000}', priority: 90 }));
     await t.sync();
-    expect((await t.job(running.id)).priority).toBe(30);
+    expect((await t.job(running.id)).priority).toBe(90);
+    expect((await t.job(running.id)).status).toBe('running');
   });
 
   it('serves health', async () => {

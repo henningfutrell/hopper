@@ -54,7 +54,7 @@ describe('a question a level answers', () => {
     expect(types.indexOf('question.answered')).toBeLessThan(types.indexOf('job.requeued'));
     expect(types.filter((x) => x === 'job.started')).toHaveLength(2);
     expect(types.at(-1)).toBe('job.finished');
-    expect(events.find((e) => e.type === 'question.asked')!.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy: q!.raisedBy });
+    expect(events.find((e) => e.type === 'question.asked')!.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy: q!.raisedBy, priority: 50, high: false });
     expect(events.find((e) => e.type === 'question.answered')).toMatchObject({ schemaVersion: 2, data: { by: 'opus', answer: 'fake opus answer' } });
     expect(events.find((e) => e.type === 'job.requeued')!.data).toEqual({ from: 'waiting_answer', reason: 'answered' });
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus']);
@@ -281,7 +281,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated', jobId: job.id, questionId: q.id, schemaVersion: 2 });
     expect(body.data).toEqual({
       questionId: q.id, target: 'human', reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy,
+      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
   });
 
@@ -297,7 +297,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated_to_human', jobId: job.id, questionId: q.id, schemaVersion: 1 });
     expect(body.data).toEqual({
       questionId: q.id, reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy,
+      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
     const events = ofJob(await a.events(), job.id);
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);
