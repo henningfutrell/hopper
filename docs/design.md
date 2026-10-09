@@ -8209,8 +8209,8 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 (issue #483, not built): parking is a person shelving a job, and holds nothing live.
 
 - **Park.** `POST /ui/api/jobs/:id/park` (least role `operator`, the same as cancel). Accepted for a `running`
-  job or a `waiting_answer` one whose executor has `park` and recorded its **agent session**
-  (`job.agentSession`); else 409 with the reason (`parkRefusal`, `src/engine/park.ts`). A running job is
+  job or a `waiting_answer` one whose executor has `park` (`parkingExecutors` of `GET /api/health`), with or
+  without an **agent session** (issue #530); else 409 with the reason (`parkRefusal`, `src/engine/park.ts`). A running job is
   interrupted at once (abort reason `park`): the herdr-claude executor leaves its pane as it is, the runner
   records the park and frees the lane in one transaction (`recordPark`), then `Executor.park` ends Claude,
   stops the job's scope and processes through the machine's own connection (the reap without a scratch dir),
@@ -8236,15 +8236,31 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
 - **Resume.** The claim calls `Executor.resume`; with `job.parked` set, herdr-claude reopens: it stops
   whatever of the job still runs there (two agents in one session would interleave), opens a new pane in the
   recorded work tree, enters the same job worktree (the worktree command uses the one there), starts
-  `claude --resume <agentSession>`, and sends the answer. No session recorded fails the job; it never
-  starts fresh. The next outcome clears `job.parked`.
+  `claude --resume <agentSession>`, and sends the answer. The next outcome clears `job.parked`.
+- **Fresh start** (issue #530). A parked job with no agent session (`startsFresh`: started before the session
+  was recorded) cannot resume one. Its re-queue is refused (409) unless the request says `freshSession: true`,
+  the person's confirmation from the UI's Re-queue dialog: never a silent fresh start. Its claim then opens
+  the new pane in the kept work tree as above, starts Claude with a new `--session-id` (recorded, so a later
+  park resumes it), and sends the task, then `freshStartBrief` (`src/engine/park.ts`, wrapped around the
+  pending answer by the runner: no history, look at the work tree first, and — parked on a question — the
+  question and the answer, or that none was given), then the protocol footer. With its question still open it
+  waits on it again first, as any; the answer then starts it fresh the same way.
 - **Agent session.** herdr-claude starts Claude with a session id it chose (`--session-id`, a UUID) and
-  reports it once Claude is up (`ExecutionContext.agentSession`). Jobs started before this change have none
-  and cannot be parked; executors that record none (the print-mode agent executors, the test executor) do not
-  offer it.
-- **UI.** Park on a running lane's job and on a job on a question; Re-queue and Cancel on a parked job; both
-  only where `canPark` / `canRequeue` (`ui/src/model/board.ts`) say the daemon takes them, and only for a role
-  that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
+  reports it once Claude is up (`ExecutionContext.agentSession`). Jobs started before that have none; they
+  park all the same, and start fresh at the re-queue. Executors that cannot park (the print-mode agent
+  executors, the test executor) are not in `parkingExecutors`.
+- **Machine and lanes** (issue #530). Capacity is lanes: the decider counts busy and draining lanes, and a
+  job on a question or a parked one holds none, so neither counts against its machine's lane cap.
+  `jobsOnMachine` (`src/engine/queries.ts`) is not capacity: it keeps a client machine's connection and
+  refuses removing a machine while jobs need it. A job on a question stays in it — its pane and Claude are
+  live there, and the answer is typed into them. A parked job is not in it: nothing of it runs, and parking
+  ends its pane and agent, so the machine is free of it at once.
+- **UI.** Park on a running lane's job, on a job on a question in the Waiting panel, and on its question card
+  (For you / Questions, issue #530), where a person decides a job must wait; Re-queue and Cancel on a parked
+  job. Park only where `canPark` (`ui/src/model/board.ts`, from `parkingExecutors`) says the daemon takes it;
+  on a running job or one on a question it does not apply to, the job says why instead (`parkRefusal`).
+  Re-queue of a job that starts fresh asks first, saying it starts a fresh session in the kept work tree with
+  its question and answer as context. Only for a role that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
 - **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
   ended`); the resumed session meets its tool again and reports a new one.

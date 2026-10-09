@@ -11,7 +11,7 @@ import { nowIso, type EngineContext } from './context.ts';
 import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
-import { recordPark, releaseParked } from './park.ts';
+import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
 
 const PROGRESS_EVERY_MS = 500;
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
@@ -52,12 +52,13 @@ const SHUTDOWN = 'shutdown';
 /** How a launch begins: a fresh run (or resume), a reattach, or a reattach once the machine answers. */
 type Launch = 'run' | 'reattach' | 'reattach-when-reachable';
 
-async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext, reattach: boolean): Promise<ExecutionOutcome> {
+/** `answer`: the pending answer as the executor gets it — for a parked job starting fresh, wrapped in its brief (issue #530). */
+async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionContext, reattach: boolean, answer: string | undefined): Promise<ExecutionOutcome> {
   if (!executor) return { kind: 'failed', error: `executor ${job.spec.executor} is not registered` };
   if (reattach) return executor.reattach ? executor.reattach(ctx) : { kind: 'failed', error: `executor ${executor.name} cannot reattach` };
-  if (job.pendingAnswer === undefined) return executor.run(ctx);
+  if (answer === undefined) return executor.run(ctx);
   if (!executor.resume) return { kind: 'failed', error: `executor ${executor.name} cannot resume` };
-  return executor.resume(ctx, job.pendingAnswer);
+  return executor.resume(ctx, answer);
 }
 
 /**
@@ -157,7 +158,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
         workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
         agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
-      }, reattach);
+      }, reattach, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer);
     } catch (e) {
       outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
     }

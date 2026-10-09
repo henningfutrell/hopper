@@ -270,11 +270,12 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   /**
    * A parked job re-queued (issue #501): whatever of it still runs on its machine is stopped first — two agents in
    * one session would interleave —, then a new pane opens in its work tree, Claude resumes its recorded session
-   * there (its worktree found where it was left), and the answer goes to it. Never a fresh session.
+   * there (its worktree found where it was left), and the answer goes to it. With none recorded (issue #530), a fresh
+   * session starts there instead, sent its task, `answer` (the engine's brief: its question and answer) and the footer.
    */
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
     const session = ctx.job.agentSession;
-    if (!saved || !session) return Promise.resolve({ kind: 'failed', error: 'the parked job has no agent session to resume' });
+    if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
     ctx.workTree(saved.jobWorktree ?? saved.cwd);
     let state: PaneState | undefined;
@@ -282,8 +283,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       await herdrOn(whereOn(ctx.machine)).reap(ctx.job.id);
       const started = await startIn(ctx, p, (s) => { state = s; }, session);
       if ('kind' in started || 'interrupt' in started) return started;
-      ctx.progress(0, `resumed agent session ${session}`);
-      return send(ctx, started, p, answer, lastLineOf(answer));
+      ctx.progress(0, session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded');
+      return session ? send(ctx, started, p, answer, lastLineOf(answer)) : send(ctx, started, p, `${p.prompt}\n\n${answer}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), started.jobWorktree, started.sharedDependencies === true, started.checkout)}`, FOOTER_ANCHOR);
     });
   }
 

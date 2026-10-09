@@ -41,6 +41,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   /** Registered executor names. */
   /** The runnable executors now: they follow the plugins config (issue #142). */
   readonly executorNames: string[];
+  /** Of those, the ones that can park a job (issue #530): the UI offers Park only for their jobs. */
+  readonly parkingExecutors: string[];
   /** What the sync loop may do to the hopper (ingest, cancel, answer, refresh, setSourceState). */
   readonly sourceHost: SourceHost;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
@@ -83,6 +85,7 @@ export function createEngine(o: EngineOptions): Engine {
 
   return {
     get executorNames() { return o.executors.names(); },
+    get parkingExecutors() { return o.executors.names().filter((n) => o.executors.get(n)?.park !== undefined); },
     sourceHost: createSourceHost(c, commands),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),

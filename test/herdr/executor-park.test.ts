@@ -1,6 +1,7 @@
 // Parking (issue #501), the herdr-claude executor's side over the fake herdr: `park` ends the pane and Claude and
 // stops the job's processes, never naming its scratch dir (its worktree) to the reap; a resume of the parked job
-// opens a new pane, enters the same worktree, and resumes the recorded session, then sends the answer.
+// opens a new pane, enters the same worktree, and resumes the recorded session, then sends the answer; with no session
+// recorded (issue #530), it starts a fresh one there and sends the task, the engine's brief and the footer.
 import { describe, expect, it } from 'vitest';
 import { jobWorktreeOf } from '../../src/executors/herdr/job-worktree.ts';
 import type { PaneState } from '../../src/executors/herdr/start.ts';
@@ -71,10 +72,29 @@ describe('herdr-claude executor: park and resume (issue #501)', () => {
     expect(herdr.reaps.at(-1)).toEqual({ jobId: JOB_ID, scratch: `${CWD}/.hopper-scratch/${JOB_ID}` });
   });
 
-  it('a parked job with no recorded session fails its resume, never starting fresh', async () => {
+  it('a parked job with no recorded session (issue #530) starts a fresh one in the same worktree: its task, the brief, the footer', async () => {
+    const { herdr, executor } = setup({ turns: [ASK, DONE], repositories: [CWD] }, { jobWorktrees: true });
+    const first = contextFor(jobWith({ prompt: 'Paint the shed' }));
+    await executor.run(first.ctx);
+    const state = first.saved.at(-1) as unknown as PaneState;
+    const parkedJob = jobWith({ prompt: 'Paint the shed' }, { status: 'claimed', executorState: { ...state }, parked: PARKED });
+    await executor.park!(parkedJob);
+
+    const again = contextFor(parkedJob);
+    expect(await executor.resume!(again.ctx, 'BRIEF: it asked which colour; the answer: Blue.')).toMatchObject({ kind: 'finished' });
+    expect(herdr.agentStarts[1]!.args).not.toContain('--resume');
+    expect(herdr.agentStarts[1]!.args).toContain('--session-id');
+    expect(again.sessions).toHaveLength(1);
+    expect(again.saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: JOB_TREE });
+    const sent = herdr.prompts.at(-1)!.text;
+    expect(sent.indexOf('Paint the shed')).toBeLessThan(sent.indexOf('BRIEF:'));
+    expect(sent).toContain('HOPPER_DONE');
+  });
+
+  it('a parked job with no pane state fails its resume: its work tree is not known', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
-    const job = jobWith({ prompt: 'go' }, { status: 'claimed', executorState: { paneId: 'w1:p9', agentName: 'jh-abcdef12', cwd: CWD }, parked: PARKED });
-    expect(await executor.resume!(contextFor(job).ctx, 'go on')).toEqual({ kind: 'failed', error: 'the parked job has no agent session to resume' });
+    const job = jobWith({ prompt: 'go' }, { status: 'claimed', parked: PARKED });
+    expect(await executor.resume!(contextFor(job).ctx, 'go on')).toEqual({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     expect(herdr.agentStarts).toEqual([]);
   });
 });
