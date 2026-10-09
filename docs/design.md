@@ -8997,9 +8997,29 @@ leaves the original job as it was; D2 under Fork the parent waits on its questio
 a setting; D3 under Switch the person picks at each Accept, back to work preselected; D4 a research phase may go on to a
 proposal in the same job, and each step is the person's pick at Accept.
 
+**A fork on its question** (issue #570). Owner report: a fork made from a question showed nowhere on it, so it looked as
+if nothing happened; the question was reminded "still unanswered", answered directly, and the same feedback given again in
+the fork's review, whose acceptance then delivered nothing. The fork and its question are now linked both ways.
+`QuestionView.forks` lists the jobs forked from the question (`forksOf`, `src/questions/stale.ts`): each one's kind, note,
+job status, `running`, and its review item and status once written; the card shows each as a line ("Proposal in
+progress: <note>", its status, a link to its section or, before it wrote one, to the queue). While a fork of a kind runs,
+a second fork of that kind is refused (`refusal(q, to, mode)`, 409) and not offered; a switch, or a fork of the other
+kind, still is. While any fork of it runs, the question is not reminded (`renotify` checks `forkRuns`, as `expire` does,
+and looks again a period later, so a fork that ended without a decision lets the reminders resume). The question can still
+be answered directly: inside the settling tx (`forksOnAnswered`, called by the engine's `onAnswered`) each running fork
+keeps the answer (`forkOf.answered { answer, by, at }`), and the parent's answer carries `forkRunningBrief` — the fork
+still runs, its result no longer comes to it, and its reviewer is told so. The fork is told the answer once
+(`forkResume`, at its next start: a fresh start by `forkBrief`, a resume before what it resumes with; `answered.told`). A
+fork's review item carries `forkQuestion` (the question's status now, and who answered it), and the item says that
+accepting it delivers nothing; `job.fork_resolved` carries `question`, the question's status at the decision. A fork made
+from the card toasts "Proposal forked" or "Research forked" with a link, and the jobs and the review section are read
+again. No schema change: `answered` is in the fork's body.
+
 Tests: `test/integration/phase-shifts.test.ts` (switch and back to work; research then proposal then end; `then` only in
 a switched phase; fork, its link, priority and accepted result answering the parent; a rejected forked proposal; the
-settings live; refusals; suggestions by a job and by levels, allowed and not), `test/ui/phase-shifts.test.ts`,
+settings live; refusals; suggestions by a job and by levels, allowed and not; issue #570: the fork on its question and a
+second one refused, no reminders while it runs, a direct answer told to the parent, the fork and the reviewer),
+`test/ui/phase-shifts.test.ts`, `test/job-rules/job-rules.test.ts` (a fork's brief with the answer),
 `test/plugins/claude-cli-prompt.test.ts` (the level may suggest).
 
 ## Machine resources over time (issue #560, 2026-10-09)

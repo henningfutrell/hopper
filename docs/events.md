@@ -2049,7 +2049,7 @@ Version 1 (`docs/schemas/job.forked.v1.json`). A separate research or proposal j
 
 ## `job.fork_resolved`
 
-Version 1 (`docs/schemas/job.fork_resolved.v1.json`). A fork's research report or proposal was decided (issue #548). Accepted, it is the answer to the parent's question when that is still open (`delivered`); rejected, the question stays open.
+Version 1 (`docs/schemas/job.fork_resolved.v1.json`). A fork's research report or proposal was decided (issue #548). Accepted, it is the answer to the parent's question when that is still open (`delivered`); rejected, the question stays open. `question`: the question's status at the decision (issue #570): `answered` when a person or a level answered it while the fork ran, and an acceptance delivered nothing.
 
 | field | type | required |
 |---|---|---|
@@ -2058,6 +2058,7 @@ Version 1 (`docs/schemas/job.fork_resolved.v1.json`). A fork's research report o
 | `questionId` | string | yes |
 | `decision` | `accept` \| `reject` | yes |
 | `delivered` | boolean | yes |
+| `question` | `open` \| `answered` \| `closed` \| `dismissed` \| `expired` \| `lapsed` \| `cancelled` \| `missing` | no |
 
 ```json
 {
@@ -2065,7 +2066,8 @@ Version 1 (`docs/schemas/job.fork_resolved.v1.json`). A fork's research report o
   "kind": "research",
   "questionId": "q1",
   "decision": "accept",
-  "delivered": true
+  "delivered": true,
+  "question": "open"
 }
 ```
 

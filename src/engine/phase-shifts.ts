@@ -4,12 +4,15 @@
 // the sync never reports it to the parent's item. Its parent waits on its question, or is parked where the settings say
 // so and its executor can park. A switch answers the question with what the job is to do now and moves the job into the
 // phase. Each is one transaction with the question; the settings are read at each shift, so a change applies at once.
-import { REVIEW_SECTIONS, backToWorkBrief, DEFAULT_PHASE_SHIFT_SETTINGS, forkAnswer, phaseOf, switchBrief, thenChoices,
+// A fork shows on its question (issue #570), and a second fork of its kind waits until it ends. Answered without it,
+// the question's answer is kept on the fork, which is told it at its next start; its parent is told the fork still runs.
+import { REVIEW_SECTIONS, backToWorkBrief, DEFAULT_PHASE_SHIFT_SETTINGS, forkAnswer, forkAnsweredBrief, forkRunningBrief, phaseOf, switchBrief, thenChoices,
   type ForkOf, type Job, type JobPhase, type JobSpec, type PhaseShiftSettings, type PhaseShiftSettingsView, type Question, type QuestionShifts,
   type ReviewItem, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { parkRefusal, recordPark, releaseParked } from './park.ts';
+import { forksOf, running } from '../questions/stale.ts';
 
 /** Who shifts: a person (by name), or an escalation level the settings allow. */
 export interface ShiftBy { person: string }
@@ -47,11 +50,14 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
     return job && (job.status === 'waiting_answer' || job.status === 'parked') && job.questionId === q.id ? job : undefined;
   };
 
-  function refusal(q: Question): string | undefined {
+  /** Why the question takes no shift; given `to` and `mode`, why it takes no such shift: a fork of its kind still runs (issue #570). */
+  function refusal(q: Question, to?: ReviewKind, mode?: ShiftMode): string | undefined {
     if (q.status !== 'open') return `question ${q.id} is ${q.status}: only an open question can shift its job`;
     const job = waitingJob(q);
     if (!job) return `its job ${q.jobId} no longer waits on it`;
     if (!c.executors.get(job.spec.executor)?.reviews) return `its executor ${job.spec.executor} cannot write a research report or a proposal`;
+    const forked = mode === 'fork' ? forksOf(store, q).find((f) => f.forkOf!.kind === to && running(f)) : undefined;
+    if (forked) return `a ${noun(to!)} forked from it still runs: job ${forked.id}`;
     return undefined;
   }
 
@@ -115,10 +121,10 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
       const result = store.tx((): ShiftResult => {
         const q = store.questions.get(questionId);
         if (!q) throw new EngineError('not_found', `question ${questionId} not found`);
-        const why = refusal(q);
+        const mode = req.mode ?? settings().defaultMode;
+        const why = refusal(q, req.to, mode);
         if (why) throw new EngineError('conflict', why);
         const job = waitingJob(q)!;
-        const mode = req.mode ?? settings().defaultMode;
         if (mode === 'switch') {
           const next = switchJob(q, job, req.to, req.note, by.person, 'human');
           return { question: store.questions.get(q.id)!, job: next };
@@ -132,7 +138,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
     },
     byLevel(q, suggest, level) {
       const s = settings();
-      if (!s.levels.includes(level) || refusal(q)) return undefined;
+      if (!s.levels.includes(level) || refusal(q, suggest.to, s.defaultMode)) return undefined;
       const job = waitingJob(q)!;
       if (s.defaultMode === 'switch') switchJob(q, job, suggest.to, suggest.note, level, level);
       else {
@@ -152,8 +158,10 @@ export function resolveFork(c: EngineContext, fork: Job, p: ReviewItem): void {
   const f = fork.forkOf!;
   const q = c.store.questions.get(f.questionId);
   const accepted = p.status === 'accepted';
+  const was = q?.status ?? 'missing';
   const delivered = accepted && q?.status === 'open' && c.questions.settleWith(q.id, forkAnswer(p, f), `fork:${fork.id}`, `the ${noun(p.kind)} forked from this question was accepted`) !== undefined;
-  c.store.events.append({ type: 'job.fork_resolved', jobId: f.jobId, questionId: f.questionId, data: { forkId: fork.id, kind: p.kind, questionId: f.questionId, decision: accepted ? 'accept' : 'reject', delivered } });
+  // `question`: its status at the decision (issue #570) — an answered one is why an acceptance delivered nothing.
+  c.store.events.append({ type: 'job.fork_resolved', jobId: f.jobId, questionId: f.questionId, data: { forkId: fork.id, kind: p.kind, questionId: f.questionId, decision: accepted ? 'accept' : 'reject', delivered, question: was } });
   // Not answered by it: the question waits on a person again, its timeout from now.
   if (!delivered && q?.status === 'open') setImmediate(() => c.questions.unparked(q.id));
 }
@@ -174,4 +182,26 @@ export function afterSwitch(c: EngineContext, job: Job, p: ReviewItem, requeue: 
   c.store.events.append({ type: 'job.phase_changed', jobId: job.id, data: { from: p.kind, to, reason, ...(p.signOff?.by ? { by: p.signOff.by } : {}) } });
   requeue(next, to === 'work' ? backToWorkBrief(p) : moveOnBrief(p, to), reason);
   return true;
+}
+
+/**
+ * Inside the tx that settles a question (issue #570): answered without its forks, each still running keeps the answer,
+ * to be told it at its next start. What the parent is told of them beside its answer, or undefined when none runs.
+ */
+export function forksOnAnswered(c: EngineContext, q: Question): string | undefined {
+  const by = q.answeredBy ?? 'human';
+  const forks = forksOf(c.store, q).filter((f) => running(f) && by !== `fork:${f.id}`);
+  for (const f of forks) c.store.jobs.update(f.id, { forkOf: { ...f.forkOf!, answered: { answer: q.answer ?? '', by, at: nowIso(c) } } });
+  return forks.length > 0 ? forks.map((f) => forkRunningBrief(f.id, f.forkOf!)).join('\n') : undefined;
+}
+
+/**
+ * At a fork's start (issue #570): its question answered without it and the fork not told yet. A fresh start is told by
+ * its brief (forkBrief); a resume, before what it resumes with. Marks it told. The message to resume with.
+ */
+export function forkResume(c: EngineContext, job: Job, message: string | undefined): string | undefined {
+  const f = job.forkOf;
+  if (!f?.answered || f.answered.told) return message;
+  c.store.jobs.update(job.id, { forkOf: { ...f, answered: { ...f.answered, told: true } } });
+  return message === undefined ? undefined : `${forkAnsweredBrief(f)}\n\n${message}`;
 }

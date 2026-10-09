@@ -108,7 +108,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'job.phase_changed': { from: 'work', to: 'research', reason: 'research only the auth part', mode: 'switch', questionId: 'q1', note: 'research only the auth part', by: 'owner' },
   'job.forked': { forkId: 'j2', to: 'research', mode: 'fork', questionId: 'q1', note: 'only the token lifetime', by: 'owner', parent: 'waiting', priority: 50, high: false },
-  'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true },
+  'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true, question: 'open' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {

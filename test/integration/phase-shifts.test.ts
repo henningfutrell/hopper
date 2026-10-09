@@ -248,3 +248,88 @@ describe('a suggested phase shift', () => {
     expect((await a.job(forked)).forkOf).toMatchObject({ jobId: second.id, kind: 'research' });
   });
 });
+
+describe('a fork on its question (issue #570)', () => {
+  it('the question shows its fork and the fork\'s item; no second fork of that kind runs beside it', async () => {
+    const a = await start();
+    const token = await a.login();
+    const parent = await a.pull(ask());
+    const q = await openQuestion(a, parent.id);
+    expect(q.forks).toBeUndefined();
+    const fork = (await shift(a, token, q.id, 'propose', { note: 'options for the schema' })).body.fork!;
+    const p = await waitForItem(a, 'proposals', fork.id);
+    const shown = (await a.api<QuestionView>('GET', `/api/questions/${q.id}`)).body;
+    expect(shown.status).toBe('open');
+    expect(shown.forks).toEqual([{ jobId: fork.id, kind: 'proposal', note: 'options for the schema', jobStatus: 'waiting_answer', running: true, itemId: p.id, itemStatus: 'open' }]);
+    // The open questions list carries it too.
+    expect((await a.api<{ questions: QuestionView[] }>('GET', '/api/questions')).body.questions.find((x) => x.id === q.id)!.forks).toEqual(shown.forks);
+    // A second proposal fork is refused while the first runs; research, or a switch, is still taken.
+    const again = await shift(a, token, q.id, 'propose', { mode: 'fork' });
+    expect(again.status).toBe(409);
+    expect(JSON.stringify(again.body)).toContain(fork.id);
+    expect((await shift(a, token, q.id, 'research', { mode: 'fork' })).status).toBe(200);
+  });
+
+  it('sends no "still unanswered" reminder while its fork runs', async () => {
+    const a = await start({ env: { HOPPER_HUMAN_RENOTIFY_MS: '150', HOPPER_HUMAN_TIMEOUT_MS: '60000' } });
+    const token = await a.login();
+    const parent = await a.pull(ask());
+    const q = await openQuestion(a, parent.id);
+    // Without a fork, it is reminded.
+    await waitFor(async () => ofJob(await a.events(), parent.id).some((e) => e.type === 'question.escalated' && e.data.renotify === true), { what: 'a reminder' });
+    const fork = (await shift(a, token, q.id, 'propose', { note: 'options for the schema' })).body.fork!;
+    await waitForItem(a, 'proposals', fork.id);
+    const reminders = async () => ofJob(await a.events(), parent.id).filter((e) => e.type === 'question.escalated' && e.data.renotify === true).length;
+    const before = await reminders();
+    await new Promise((r) => setTimeout(r, 600));
+    expect(await reminders()).toBe(before);
+  });
+
+  it('answered directly while its fork runs: the parent is told of the fork, the fork of the answer, the reviewer that it delivers nothing', async () => {
+    const a = await start();
+    const token = await a.login();
+    const parent = await a.pull(ask());
+    const q = await openQuestion(a, parent.id);
+    const fork = (await shift(a, token, q.id, 'propose', { note: 'options for the schema' })).body.fork!;
+    const p = await waitForItem(a, 'proposals', fork.id);
+    expect(p.forkQuestion).toEqual({ status: 'open' });
+    expect((await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Use OAuth' }, { token })).status).toBe(200);
+    // The parent resumes with the answer, told a proposal about the aspect still runs and where its result goes.
+    const told = ((await a.waitForStatus(parent.id, 'finished')).result as { answer: string }).answer;
+    expect(told).toContain('Use OAuth');
+    expect(told).toContain('options for the schema');
+    expect(told).toContain(fork.id);
+    // The card still shows the fork, now beside the answer.
+    const shown = (await a.api<QuestionView>('GET', `/api/questions/${q.id}`)).body;
+    expect(shown).toMatchObject({ status: 'answered', forks: [{ jobId: fork.id, kind: 'proposal', running: true }] });
+    // The fork keeps the answer, and is told it when it next resumes.
+    expect((await a.job(fork.id)).forkOf!.answered).toMatchObject({ answer: 'Use OAuth', by: 'human' });
+    const item = await waitForItem(a, 'proposals', fork.id, (x) => x.status === 'open' && x.stage === 'human');
+    expect(item.forkQuestion).toEqual({ status: 'answered', answeredBy: 'human' });
+    expect((await decide(a, token, 'proposals', item.id, 'request-changes', { notes: 'shorter' })).status).toBe(200);
+    const v2 = await waitForItem(a, 'proposals', fork.id, (x) => x.versions.length === 2 && x.status === 'open');
+    expect(v2.versions[1]!.text).toContain('Use OAuth');
+    // Accepted, it delivers nothing to the parent: the decision says so.
+    const accepted = await decide(a, token, 'proposals', item.id, 'accept');
+    expect(accepted.body.forkQuestion).toEqual({ status: 'answered', answeredBy: 'human' });
+    await waitFor(async () => ofJob(await a.events(), parent.id).find((e) => e.type === 'job.fork_resolved'), { what: 'job.fork_resolved' });
+    expect(ofJob(await a.events(), parent.id).find((e) => e.type === 'job.fork_resolved')!.data).toMatchObject({ delivered: false, question: 'answered' });
+    expect((await a.api<QuestionView>('GET', `/api/questions/${q.id}`)).body).toMatchObject({ status: 'answered', answeredBy: 'human' });
+  });
+});
+
+describe('a fork that ends without a decision (issue #570)', () => {
+  it('its question is reminded again, its timeout from then', async () => {
+    const a = await start({ env: { HOPPER_HUMAN_RENOTIFY_MS: '150', HOPPER_HUMAN_TIMEOUT_MS: '60000' } });
+    const token = await a.login();
+    const parent = await a.pull(ask());
+    const q = await openQuestion(a, parent.id);
+    const fork = (await shift(a, token, q.id, 'propose', { note: 'options for the schema' })).body.fork!;
+    await waitForItem(a, 'proposals', fork.id);
+    const reminders = async () => ofJob(await a.events(), parent.id).filter((e) => e.type === 'question.escalated' && e.data.renotify === true).length;
+    const before = await reminders();
+    expect((await a.ui(`/ui/api/jobs/${fork.id}/cancel`, {}, { token })).status).toBe(200);
+    await waitFor(async () => (await reminders()) > before, { what: 'a reminder after the fork ended' });
+    expect((await a.job(parent.id)).status).toBe('waiting_answer');
+  });
+});
