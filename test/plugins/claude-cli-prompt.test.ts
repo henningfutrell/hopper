@@ -23,6 +23,12 @@ describe('buildLevelPrompt (claude-cli)', () => {
     expect(p).toMatch(/even when you escalate/i);
   });
 
+  it('a level may suggest research or a proposal first, as a suggestion to the owner, never an answer (issue #548)', () => {
+    const p = buildLevelPrompt(req());
+    expect(p).toMatch(/"suggest"\?: \{"to": "research" \| "proposal", "note": string\}/);
+    expect(p).toMatch(/never an answer by itself/);
+  });
+
   it('a lower level says a more capable level is above it, and escalates what it cannot settle with confidence', () => {
     const p = buildLevelPrompt(req({ level: { number: 1, of: 2 } }));
     expect(p).toContain('escalation level 1 of 2');

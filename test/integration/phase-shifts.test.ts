@@ -28,7 +28,8 @@ afterEach(async () => {
 });
 
 type Section = 'research' | 'proposals';
-const ask = (message = 'Which auth scheme should the API use?') => ({ op: 'ask', message });
+// `hard`: the default fake escalation levels pass it to a person (test/support/fake-questions.ts).
+const ask = (message = 'A hard one: which auth scheme should the API use?') => ({ op: 'ask', message });
 const itemsOf = async (a: TestApp, section: Section, jobId: string): Promise<ReviewItemView[]> =>
   (await a.api<{ items: ReviewItemView[] }>('GET', `/api/${section}?status=all`)).body.items.filter((p) => p.jobId === jobId);
 const waitForItem = (a: TestApp, section: Section, jobId: string, ok: (p: ReviewItemView) => boolean = (p) => p.status === 'open' && p.stage === 'human') => waitFor(async () => {
@@ -162,7 +163,7 @@ describe('a question answered with Fork', () => {
 describe('phase-shift settings and refusals', () => {
   const plain: Executor = {
     name: 'plain', validate: () => null,
-    run: async (): Promise<ExecutionOutcome> => ({ kind: 'question', question: { text: 'Which one?', recentOutput: '', detectedBy: 'test' } }),
+    run: async (): Promise<ExecutionOutcome> => ({ kind: 'question', question: { text: 'A hard one: which one?', recentOutput: '', detectedBy: 'test' } }),
     resume: async (_ctx, answer): Promise<ExecutionOutcome> => ({ kind: 'finished', result: { answer } }),
   };
 
@@ -208,7 +209,7 @@ describe('phase-shift settings and refusals', () => {
 describe('a suggested phase shift', () => {
   it('a job suggests research on its question; the card offers it, and only a person shifts', async () => {
     const a = await start();
-    const job = await a.pull(ask('Which cache should we use?\nSuggest: research — the cache eviction options'));
+    const job = await a.pull(ask('A hard one: which cache should we use?\nSuggest: research — the cache eviction options'));
     const q = await openQuestion(a, job.id);
     expect(q.suggestion).toEqual({ to: 'research', note: 'the cache eviction options', by: 'job' });
     expect((await a.job(job.id)).phase).toBe('work');
