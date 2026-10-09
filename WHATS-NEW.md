@@ -8,7 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
-- Settings has a permission matrix: see at a glance which templates, machines and running jobs may do what on each cluster, account or app, click a cell to see why and who approved it, and revoke it there.
+- Settings has a permission matrix: see at a glance which templates, boxes, people and running jobs may do what on each cluster, account or app, click a cell to see why and who approved it, and revoke it there.
+- Settings → Access shows who may do what: every person, each running job and each box, with what each may do on each cluster or account, and why. A job gets access only through the box it runs on, and loses it when it ends.
 - In containers, the Vault can now run in a container of its own, so the hopper itself holds none of its keys, and a local key service can protect the Vault's secrets on top. Both are optional and off by default: turn each on with two lines next to your compose file. Without them everything works as before.
 - The Vault can now keep a secret in HashiCorp Vault, 1Password or Bitwarden: add one in Plugins, then point a secret at where it is there. The hopper reads it each time a job asks and keeps no copy. You can also run HashiCorp Vault beside the hopper in the same container setup; nothing needs it.
 - A finished job's issue now shows where its pull request is: ready for your review, merged, or closed without a merge. A job that ships only part of an issue ends partly done, not failed, and the next part starts once that part is merged. Jobs that failed earlier only because their pull request was not merged yet now end done.

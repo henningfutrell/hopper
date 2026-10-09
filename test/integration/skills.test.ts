@@ -152,7 +152,7 @@ describe('the skill catalog and broker (issue #582)', () => {
     const refused = eventsOf(a, 'skill.refused')[0]!;
     expect(refused).toMatchObject({ jobId: job, data: { skill: 'kube-diagnostics', asset: 'cluster/prod', template: 'kube', machine: 'hopper-sandbox-kube', decision: expect.any(String) } });
     const [decision] = (await access(a, session)).decisions;
-    expect(decision).toMatchObject({ id: (refused.data as { decision: string }).decision, allowed: false, template: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'prod' }, job: { jobId: job } });
+    expect(decision).toMatchObject({ id: (refused.data as { decision: string }).decision, allowed: false, template: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'prod' }, requester: { kind: 'job', jobId: job } });
 
     await a.ui('/ui/api/access', { action: 'approve', template: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'prod' } }, { token: session });
     const allowed = await skill(a, job, ['kube-diagnostics', 'cluster/prod']);
@@ -163,7 +163,7 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(allowed.stdout).toMatch(/args: \[kube, KUBE_TOKEN\]/);
     expect(allowed.stdout).not.toContain(VALUE);
     expect(eventsOf(a, 'skill.loaded')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'kube-diagnostics', asset: 'cluster/prod', template: 'kube', decision: expect.any(String) }) })]);
-    expect((await access(a, session)).decisions[0]).toMatchObject({ allowed: true, job: { jobId: job } });
+    expect((await access(a, session)).decisions[0]).toMatchObject({ allowed: true, requester: { kind: 'job', jobId: job } });
     expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(VALUE);
   });
 
