@@ -7,6 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { JobAssessment, ProblemBlock } from './failures.ts';
+import type { PriorityLanesInput } from './priority.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -247,6 +248,8 @@ export interface DecisionInputs {
   cleanupDue?: CleanupDue[];
   /** Open problems that hold or redirect jobs (issue #509). Absent on Decisions stored before it. */
   problems?: ProblemBlock[];
+  /** The priority lanes and the high-priority threshold (issue #535). Absent on Decisions stored before it: none. */
+  priorityLanes?: PriorityLanesInput;
   policy: DeciderPolicy;
 }
 
@@ -271,6 +274,8 @@ export interface LanePlan {
 export interface StartPlan {
   jobId: JobId;
   laneId: LaneId | null; // null: start on a lane opened by this Decision (engine assigns)
+  /** With `laneId` null: the lane to open, a priority lane or one kept off them (issue #535). Absent: the lowest free number. */
+  opens?: LaneId;
   machineId: MachineId;
   effectivePriority: number;
   reason: string;
@@ -492,6 +497,7 @@ export type { GateActor, PreSort, PreSortReject, QueueGate, QueueGateMode } from
 
 export * from './logins.ts';
 export * from './failures.ts';
+export * from './priority.ts';
 export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES } from './queue-gate.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
