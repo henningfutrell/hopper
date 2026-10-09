@@ -226,3 +226,45 @@ describe('the published image (issue #125)', () => {
     expect(workflow).toContain('secrets.GITHUB_TOKEN');
   });
 });
+
+describe('optional services (issue #586): each behind a compose profile, none required', () => {
+  const plain = render();
+  const on = render('COMPOSE_PROFILES=vault,kms\nHOPPER_VAULT_URL=http://vault:4791\nHOPPER_KMS_URL=http://kms:8080\n');
+
+  it('a plain `compose up` starts only the required services, and the vault runs in the hopper', () => {
+    expect(Object.keys(plain.services)).not.toContain('vault');
+    expect(Object.keys(plain.services)).not.toContain('kms');
+    expect(svc(plain, 'hopper').environment?.HOPPER_VAULT_URL ?? '').toBe('');
+    expect(svc(plain, 'hopper').environment?.HOPPER_KMS_URL ?? '').toBe('');
+  });
+
+  it('the profiles `vault` and `kms` add the vault, from the hopper\'s image, and a local KMS; neither on a host port', () => {
+    const vault = svc(on, 'vault');
+    const kms = svc(on, 'kms');
+    expect(vault.image).toBe(IMAGE);
+    expect(vault.command).toEqual(['node', 'src/vault/main.ts']);
+    expect(kms.image).toMatch(/^docker\.io\/nsmithuk\/local-kms:\d+\.\d+\.\d+$/);
+    expect(kms.volumes).toContainEqual(expect.objectContaining({ source: 'kms', target: '/data' }));
+    for (const s of [vault, kms]) expect(s.ports ?? []).toEqual([]);
+    // Nothing required waits on an optional service.
+    for (const name of ['hopper', 'postgres', 'openfga', 'openfga-migrate']) {
+      expect(Object.keys(svc(on, name).depends_on ?? {})).not.toContain('vault');
+      expect(Object.keys(svc(on, name).depends_on ?? {})).not.toContain('kms');
+    }
+  });
+
+  it('the vault holds the keys and the KMS\'s URL; the hopper asks it with a preshared key made on first start', () => {
+    const vault = svc(on, 'vault');
+    const hopper = svc(on, 'hopper');
+    expect(vault.environment).toMatchObject({
+      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key',
+      HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key', HOPPER_KMS_URL: 'http://kms:8080',
+    });
+    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+    expect(vault.depends_on?.postgres?.condition).toBe('service_healthy');
+    expect(hopper.environment).toMatchObject({ HOPPER_VAULT_URL: 'http://vault:4791', HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key' });
+    const script = svc(on, 'postgres').command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/vault_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/chown 1000:1000 [^\n]*\$\$?s\/vault_key/);
+  });
+});

@@ -24,6 +24,7 @@ const VALUE = 'vault-container-value-0123456789abcdef-never-read-back';
 let t: TestApp | undefined;
 const stops: (() => Promise<void> | void)[] = [];
 let logged: string[] = [];
+let vaultUrl = '';
 
 beforeEach(() => {
   logged = [];
@@ -41,7 +42,7 @@ afterEach(async () => {
 
 type View = { secrets: Record<string, unknown>[]; templates: unknown[]; problem?: string };
 
-/** A hopper with no token key of its own, told the vault is at `vaultUrl`; then, unless `noVault`, the vault container. */
+/** The vault container (unless `noVault`), then a hopper with no token key of its own, told the vault's URL. */
 async function boot(o: { hopperKey?: string; noVault?: boolean } = {}): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
   stops.push(db.cleanup);
@@ -49,6 +50,7 @@ async function boot(o: { hopperKey?: string; noVault?: boolean } = {}): Promise<
   // first (over a database the hopper has not made yet, it only listens), then the hopper told its URL.
   const vault = o.noVault ? undefined : await startVaultContainer(db.dbPath, { HOPPER_TOKEN_KEY: KEY });
   if (vault) stops.push(() => vault.stop());
+  vaultUrl = vault?.url ?? '';
   t = await startTestApp({
     dbPath: db.dbPath,
     env: { HOPPER_VAULT_URL: vault?.url ?? 'http://127.0.0.1:9' },
@@ -73,6 +75,7 @@ describe('the vault in a container of its own (issue #586)', () => {
     expect(r.body.secrets).toMatchObject([{ name: 'DEPLOY_KEY', scope: 'k3s lab' }]);
     expect(JSON.stringify(r.body)).not.toContain(VALUE);
     expect((await view(a)).problem).toBeUndefined();
+    expect((await fetch(new URL('/health', vaultUrl))).status).toBe(200);
 
     const [row] = rows(a);
     expect(String(row!.sealed)).not.toContain(VALUE);
