@@ -1,9 +1,9 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the question history, the minor decisions (issue #550), the job rules (issue #172), routing, plugins, webhooks, the users (issue #158) and
+// risk rules), the question history, the minor decisions (issue #550), the job rules (issue #172), routing, plugins, webhooks, the vault (issue #558), the users (issue #158) and
 // sign-in (issue #185) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version.
-import { History, Info, KeyRound, ListChecks, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
+import { History, Info, KeyRound, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, type LucideIcon } from 'lucide-react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
@@ -15,10 +15,11 @@ import { QuestionHistory } from '@/views/question-history';
 import { Realms } from '@/views/realms';
 import { Routing } from '@/views/routing';
 import { Users } from '@/views/users';
+import { Vault } from '@/views/vault';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'minor-decisions', 'job-rules', 'routing', 'plugins', 'webhooks', 'users', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'minor-decisions', 'job-rules', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -30,6 +31,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   routing: { label: 'Routing', icon: Route, view: Routing },
   plugins: { label: 'Plugins', icon: Puzzle, view: Plugins },
   webhooks: { label: 'Webhooks', icon: Webhook, view: Webhooks },
+  vault: { label: 'Vault', icon: LockKeyhole, view: Vault },
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
 };

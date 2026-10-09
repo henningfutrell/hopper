@@ -307,6 +307,15 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   CREATE INDEX machine_samples_at ON machine_samples (at)`,
   // 27: the logins a device-flow polling loop flooded collapse into one per real prompt (issue #567).
   collapseFloodedLogins,
+  // 28: The vault (issue #558): each secret's sealed value (`sealed`, never read into its metadata) beside its metadata.
+  // A table only: the build before runs on it.
+  `CREATE TABLE vault_secrets (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL UNIQUE,
+    sealed TEXT NOT NULL,
+    body TEXT NOT NULL
+  )`,
 ];
 
 /** A user schema's version once migrated. */

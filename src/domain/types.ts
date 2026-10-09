@@ -464,3 +464,4 @@ export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, t
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
+export * from './vault.ts';
