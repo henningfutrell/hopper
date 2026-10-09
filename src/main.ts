@@ -5,8 +5,10 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
+import { createAccess, type Access } from './authz/service.ts';
+import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
-import type { InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { AuthorizationServer, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
@@ -37,6 +39,8 @@ export interface App {
   /** The instance store: users, identity links, sessions, login codes, the sign-in config, instance settings. */
   instance: InstanceStore;
   updater: Updater;
+  /** Access (issue #559): the decision the vault asks before every mint, the approvals, the model. */
+  access: Access;
   /** Every user, oldest first. */
   users(): User[];
   /** A running user's parts (store, engine, sources, plugins) — for tests; throws for a user with none. */
@@ -59,6 +63,8 @@ export interface AppSeams extends UserSeams {
   pluginStoreDefault?: string | null;
   /** The built UI bundle; default UI_DIR. */
   uiDir?: string;
+  /** OpenFGA (issue #559); default the server HOPPER_OPENFGA_URL names, else none. */
+  authorizationServer?: AuthorizationServer;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
@@ -79,7 +85,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -184,13 +190,20 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
   });
+  // Access (issue #559): the instance's. A job is live by its status in its user's store.
+  const fgaKey = runtimeSecrets(env);
+  const access = createAccess({
+    repo: instance.access, clock, logger,
+    server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
+    jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
+  });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
     await runtimes.ensure(user);
     return user;
   };
   const server = createServer({
-    instance, clock, version: VERSION, pluginStore, updater,
+    instance, clock, version: VERSION, pluginStore, updater, access,
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -215,6 +228,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Before listening: the boot after an update records update.applied before anything is answered.
   updater.start();
   pluginStore.start();
+  access.start();
   await server.listen({ host: config.host, port: config.port });
   port = (server.server.address() as { port: number }).port;
   await runtimes.start();
@@ -228,6 +242,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     answerUrl,
     instance,
     updater,
+    access,
     users: () => instance.users.list(),
     user(id) {
       const rt = runtimes.get(id);
@@ -238,6 +253,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     stop() {
       stopped ??= (async () => {
         updater.stop();
+        access.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
         await server.close();

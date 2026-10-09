@@ -86,8 +86,31 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(script).toMatch(/chown 1000:1000 \$\$?s\/database_url \$\$?s\/token_key/);
   });
 
-  it('has no one-shot service: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
-    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'postgres']);
+  it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
+    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres']);
+    for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
+  });
+
+  it('runs OpenFGA beside the hopper, in a schema of its Postgres, behind a preshared key made on first start (issue #559)', () => {
+    const openfga = svc(r, 'openfga');
+    const migrate = svc(r, 'openfga-migrate');
+    expect(openfga.image).toMatch(/^docker\.io\/openfga\/openfga:v\d+\.\d+\.\d+$/);
+    expect(migrate.image).toBe(openfga.image);
+    expect(openfga.command).toEqual(['run']);
+    expect(migrate.command).toEqual(['migrate']);
+    expect(openfga.ports ?? []).toEqual([]);
+    expect(hopper.environment?.HOPPER_OPENFGA_URL).toBe('http://openfga:8080');
+    expect(hopper.environment?.HOPPER_OPENFGA_KEY).toBeUndefined();
+    expect(hopper.environment?.HOPPER_OPENFGA_KEY_FILE).toBe('/run/hopper-secrets/openfga_key');
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/openfga_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/search_path=openfga/);
+    expect(script).toMatch(/chown -R 65532:65532 \$\$?s\/openfga/);
+    expect(script).toContain('CREATE SCHEMA IF NOT EXISTS openfga');
+    for (const s of [openfga, migrate]) {
+      expect(s.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+      expect(s.depends_on?.postgres?.condition).toBe('service_healthy');
+    }
   });
 
   it('keeps Postgres off every host port', () => {

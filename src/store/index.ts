@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { INSTANCE_CONFIG, type Clock, type IdGen, type InstanceStore } from '../domain/ports.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
+import { createAccessRepository } from './access.ts';
 import { createConfigRecords } from './config.ts';
 import { createJoinCodeRepository, createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
@@ -43,6 +44,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     config,
     signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),
+    access: createAccessRepository(ctx),
     userStore,
     // Session-level: held while this connection lives, one key per instance schema.
     holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,

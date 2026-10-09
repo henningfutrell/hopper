@@ -439,6 +439,7 @@ export * from './failures.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
+export * from './access.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

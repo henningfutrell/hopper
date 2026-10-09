@@ -351,8 +351,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   return {
     githubProxy: proxy.githubProxy,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
-    levelNames: () => levels().map((l) => l.name),
-    connectedAccounts,
+    levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub),

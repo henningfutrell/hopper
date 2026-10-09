@@ -1,6 +1,7 @@
 // The store's ports (design.md "Database", "Users: one hopper, separate users"): the repositories, a
 // user's store and the instance store. Re-exported from ports.ts.
 
+import type { AccessRepository } from './access.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { VaultSecret } from './vault.ts';
 import type {
@@ -523,6 +524,8 @@ export interface InstanceStore {
   /** The sign-in config: the `sign-in` record with the password accounts. */
   signInConfig: SignInConfigRepository;
   settings: InstanceSettingsRepository;
+  /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */
+  access: AccessRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */

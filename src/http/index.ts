@@ -2,7 +2,9 @@
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
+import { accessRoutes } from './access.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
+import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
@@ -50,6 +52,8 @@ export interface ServerOptions {
   pluginStore: PluginStoreView;
   /** Self-update (the instance's): GET /api/update, POST /ui/api/update. */
   updater: Updater;
+  /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
+  access: Access;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -115,13 +119,14 @@ export function createServer(o: ServerOptions): FastifyInstance {
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
   realmRoutes(app, { realms, instanceAdmin });
+  accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater, instanceAdmin,
+    updater: o.updater, instanceAdmin, access: o.access,
   });
   return app;
 }
