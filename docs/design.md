@@ -51,7 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
-| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); all pure | everything but `domain/` and `client/discover.ts` |
+| `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
@@ -59,6 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog and a link's text (`catalog.ts`, pure), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -9126,7 +9127,8 @@ reading of its own live tuples: the job runs from the template → the template 
 profile grants the operation on the asset. When a model edit allowed it another way, no path is given.
 
 **Settings → Access** (`GET /api/access`, `POST /ui/api/access`; the instance admin's alone, issue #240): the
-status; each template's approvals with the chain and **Revoke** (asked once); the revoked ones; **Try a check** (a
+status; each template's approvals with the chain and **Revoke** (asked once), and its blast radius with the reasons
+(issue #584, "A template's blast radius"); the revoked ones; **Try a check** (a
 made-up live job of a template, asked of OpenFGA as for a real credential and recorded as a trial); the newest
 decisions; and the model, saved against its version. An edit must keep every relation the hopper writes or asks
 (`modelGaps`), and OpenFGA must take it when it can be asked; it applies from the next check. `approve` is in the
@@ -9272,8 +9274,8 @@ to stop the login without entering the code and ask the hopper (`githubLoginNote
 input (#533). Reported again at once — the proxy is not set up there, or cannot do what it needs — it goes to the
 Logins as before (issue #476), so a person still decides. A print-mode run is not steered: it cannot be typed into.
 
-**Not built.** The identity checks are the policy above, behind one function, until #559 (OpenFGA) decides them; the
-skill catalog of #559 ("what can you set up for me?") has one entry, `hopper-gh help`. No UI of its own: the events
+**Not built.** The identity checks are the policy above, behind one function, until #559 (OpenFGA) decides them. The
+skill catalog of #559 ("what can you set up for me?") is issue #582's: `hopper-gh`'s help is its `github` skill. No UI of its own: the events
 show on the job's timeline and the event log. Rate limits are not settings.
 
 | dir | owns | must not import |
@@ -9388,19 +9390,62 @@ migration 29, a table only), the last approval in its body.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
-**Access (#559) is not asked in v1.** #559's access check (OpenFGA) decides each credential the vault would *mint*; v1
-mints nothing and, by owner constraint, needs no system outside the hopper — so the vault's gate is the template's
-approval above, rows in the hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559
-says. A template's vault approval is not an access approval (`approved_for` an operation profile on an asset): the two
-name the same template and nothing else.
+**Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
+would *mint*; v1 mints nothing, so a vault secret's delivery is decided by the template's approval above, rows in the
+hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559 says. A template's vault
+approval of its image and secrets is not an access approval (`approved_for` an operation profile on an asset). A
+template's **operation profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their
+access approvals, and access is the one record of which are approved.
 
-**Not built** (owner: keep the vault minimal; deferred): the template's scope as an input to the blast-radius rating
-(#542) and its gate; a template per agent CLI (a box of a template runs the template's image, whose agent is the one
+**Not built** (owner: keep the vault minimal; deferred): a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
+
+### A template's blast radius (issue #584)
+
+Owner direction (issue #559, split into #584): a box's tools decide what it *could* do (a machine's blast radius, issue
+#542, from its discovery); its identity decides what it *may* do. So a template is rated too, from what its boxes may
+ask for, and a high-radius operation profile takes its own explicit approval.
+
+- **Declared profiles.** A template declares the operation profiles its boxes may ask for (`Template.profiles`, kept in
+  its body: no migration; absent on a template saved before, none). `save-template` takes `profiles` (absent: the ones
+  it has); each must be one the access model can hold (`profileProblem`, 400). A profile dropped from the template, or
+  the template removed, has its access approval revoked at once (`Access.revokeProfile`): access holds no approval the
+  template does not declare. A profile approved in access but not declared is rated too.
+- **Approval is in access.** Access (issue #559) is the one record of which profiles are approved: `pending.profiles`
+  is what the template declares and access does not approve, and a revoke in Settings → Access makes a profile wait
+  again. The vault reaches access through `TemplateApprovals` (`approvedProfiles`, `approve`, `revokeProfile`;
+  `src/domain/access.ts`), given to each user's runtime by the composition root. `approve-template` approves the image,
+  the secrets and every pending **read** profile. A **high-radius** profile — `write`, `sync` or `apply` — is approved
+  only by `approve-profile` (`name`, `operation`, `asset`), one profile at a time, behind a confirmation that says it
+  changes the asset: an approval for read never approves write. Each is `template.profile_approved` (template,
+  operation, asset, level, who).
+- **The rating** (`rateTemplate`, `src/blast-radius/template.ts`, pure; `TemplateRadius`). Each profile, declared or
+  approved: `read` is `low`, a high-radius one `high`, approved or waiting. Each vault secret in the scope is a
+  credential whose reach the hopper cannot see: an unconfirmed reach, rated by the user's blast-radius rules
+  (`reachLevel`: `medium` by default, `high` when its name or scope line holds a prod pattern, `low` when the rules
+  count unconfirmed as read). The level is the highest; the reasons are the lines that set it, a profile's saying
+  whether it is approved or waits. Rated at every view: a widening (a profile or a secret added) rates it again at
+  once, and the new profile waits for a person.
+- **Where it shows.** `GET /api/vault` and Settings → Vault: each template's `radius`, its badge and reasons, its
+  profiles marked as waiting, Approve (the template and its read profiles) and one *Approve write on …* per waiting
+  high-radius profile. `GET /api/access` and Settings → Access: each template with an approval or a vault template of
+  its name, its `radius` beside its approvals, and what waits for approval on the Vault page. Access rates a template
+  from every user's vault templates of that name (`VaultService.templateScopes`), each with its user's rules, and shows
+  the highest.
+
+**Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
+discovered rating only. The permission matrix (#559) is not built yet: it reads `GET /api/access`, where each template
+carries its `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+
+Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
+not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
+read profile rated low and its check allowed; a write profile added raises the rating, the template's approval does
+not approve it, its check is denied until `approve-profile`; a vault secret in the scope; a revoke in Settings → Access
+makes it wait again; narrowing and removal revoke; refusals), `test/integration/access.test.ts`, `test/ui/vault.test.ts`.
 
 ### Delivery to the box (slice 3)
 
@@ -9450,3 +9495,65 @@ the template is approved, then `get` and `kube`; a secret outside the scope, an 
 give, a computer of no template and an ask not signed by the machine refused; the value in no event, log line or file
 of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
 `test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.
+
+## Skills: what the hopper can set up for a box (issue #582, 2026-10-09)
+
+Owner direction (#559, "hopper's skill system, how a box phones home"): the hopper is the broker between all boxes. A
+box does not wire itself to other boxes or to outside systems; it asks the hopper. Like MCP, without MCP: a small
+catalog that costs few tokens, the full text of a skill only when a box asks for it, a small API and CLI, and a clear
+no with a reason when the hopper cannot or may not — never a silent failure, never a hang.
+
+**The way in.** Beside `hopper-gh` (issue #563) the engine keeps a third file in the job's credentials dir,
+`hopper/skill`, and sets `HOPPER_SKILL` to it. It asks with the same **proxy token** (`HOPPER_TOKEN_FILE`) and the same
+`HOPPER_URL`. One protocol line (`SKILL_LINE`, `src/job-rules/`) tells the job to run it when it needs something set up.
+
+| call | answer (plain text) |
+|------|---------------------|
+| `sh "$HOPPER_SKILL"` | the **skill catalog**: `name: one line` per skill, then `Load one: sh "$HOPPER_SKILL" NAME [ASSET]` |
+| `sh "$HOPPER_SKILL" NAME` | the skill's full text, when it needs no asset |
+| `sh "$HOPPER_SKILL" NAME ASSET` | the skill's text and its **link** for this box, when Access allows it |
+| any no | `no: <reason>`, exit 1 |
+
+**`POST /job/skill`** (`src/http/job-skill.ts`): outside the UI session, behind the Host guard, like `POST /job/github`
+(`AGENTS.md`). `Authorization: Bearer <proxy token>`; no fields for the catalog, else `name` and `asset`, as a form or
+JSON. The broker (`src/skills/broker.ts`), in order:
+
+1. the token: its user, its link key, its job, at work — else **401**, logged only;
+2. no `name`: the catalog — **200**, `skill.listed`;
+3. a skill the hopper has — else **404** `no: the hopper has no skill NAME. It has: … Find another way.`;
+4. a skill with no link: its text — **200**, `skill.loaded`;
+5. a link: the `asset` (`kind/name`, as Access names assets: `cluster/prod`, `namespace/prod/web`, `aws-account/ID`,
+   `aws-role/ID/ROLE`) of a kind the skill takes — else **400** with how to name it;
+6. the box's identity: the job's machine (its lane's, else where it resumes) and the **template** that machine joined as
+   (`VaultService.scopeOf`) — a machine of no template: **403**, Access checks a box by its template;
+7. Access (issue #559): `decideMint({ job, template, operation, asset })`, the skill's operation (`read` for both
+   diagnostics skills). Recorded in Access's decisions, so it feeds the permission matrix — a deny: **403**
+   `no: Access denied it: <Access's reason>`, `skill.refused` with `decision`;
+8. the vault secrets the template may be given now (its approved scope, issue #558) — none: **403** saying a person adds
+   one; else **200**: the text, Access's reason, and the link — the secrets by name and scope line, and the stanza the
+   tool runs (`exec: … args: [kube, NAME]`, `credential_process = … aws NAME`) through `$HOPPER_SECRET`. Never a value:
+   the vault gives it just in time, with its own checks, when the tool runs.
+
+**The skills** (`src/skills/catalog.ts`, baked in): `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
+on a cluster or namespace) and `aws-diagnostics` (read on an AWS account or role). The catalog stays under 800
+characters.
+
+**Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
+(`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
+same row Settings → Access shows.
+
+**Not built.** Minting (#580): the link uses the vault secret as it is, delivered just in time. Skills a user or a plugin
+adds; a skill the hopper learns (#583, Render). A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
+link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
+their approvals (#581 makes identity richer).
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/skills/` | the skills, the catalog, `hopper-skill`, the broker | engine, http, store, plugins, executors, decider |
+
+Tests: `test/integration/skills.test.ts` (the real daemon, a real joined box and client, OpenFGA as a double; the job runs
+the real `hopper-skill`: the catalog in short lines; `github` loaded; a skill the hopper does not have refused with the
+list; on a box of a template, Access denies with its reason and the decision is recorded, then after an approval the
+skill and its link, never the value; a machine of no template, no asset, a wrong asset kind and a bad token refused),
+`test/integration/github-proxy.test.ts` (`HOPPER_SKILL` beside `HOPPER_GH`), `test/herdr/screen.test.ts` (the protocol
+line).

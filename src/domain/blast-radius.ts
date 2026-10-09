@@ -2,6 +2,7 @@
 // tools and the access it holds, names and identities only, never a secret —, the reach rated from it, the gate that
 // keeps jobs off a machine whose radius is at or above a level, and the actor machines kept for that work on purpose.
 // Re-exported by types.ts.
+import type { OperationProfile } from './access.ts';
 import type { MachineId } from './types.ts';
 
 /** A machine's blast radius, least first. */
@@ -186,6 +187,25 @@ export interface BlastRadiusView {
   awsActions: { write: string[]; admin: string[] };
   /** The kubectl checks every context is asked. */
   kubeChecks: string[];
+}
+
+/** One operation profile in a template's rating (issue #584): its level, and whether access holds an approval for it. */
+export interface TemplateProfileRadius {
+  profile: OperationProfile;
+  level: RadiusLevel;
+  approved: boolean;
+}
+
+/**
+ * A template's blast radius (issue #584): what its boxes may do, rated from its operation profiles — declared on the
+ * template or approved in access, approved or waiting — and its credential scope, the vault secrets its boxes may ask
+ * for. A box's tools decide what it could do (a machine's `Rating`); its template decides what it may do.
+ */
+export interface TemplateRadius {
+  level: RadiusLevel;
+  /** One line per profile or vault secret that set the level. */
+  reasons: string[];
+  profiles: TemplateProfileRadius[];
 }
 
 /** A job held at the gate, and whether a person may let it through: waiting, and held there. */

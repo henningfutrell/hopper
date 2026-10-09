@@ -66,7 +66,7 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
         { subject: 'template:kubectl-diag', relation: 'approved_for', object: 'operation_profile:read/cluster/x' },
         { subject: 'operation_profile:read/cluster/x', relation: 'grants_read', object: 'asset:cluster/x' },
       ],
-    })] }]);
+    })], radius: { level: 'low', reasons: ['read on cluster x: read only'], profiles: [{ profile: { operation: 'read', asset: CLUSTER_X }, level: 'low', approved: true }] } }]);
     expect(v.decisions.map((d) => [d.operation, d.allowed])).toEqual([['write', false], ['read', true]]);
     expect(v.decisions[0]!.trial).toEqual({ by: expect.any(String) });
   });
