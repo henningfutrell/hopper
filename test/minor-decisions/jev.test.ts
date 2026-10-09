@@ -30,6 +30,11 @@ describe('Jev through TypeSafe', () => {
     expect(await j.pick(ASK)).toEqual({ ok: false, why: 'Jev is off until TYPESAFE_API_KEY is set' });
   });
 
+  it('names the variable as the runtime knows it: a user added later has their own prefix', async () => {
+    const j = createJev({ python: 'python3', timeoutMs: 5000, secret: () => undefined, secretName: (n) => `HOPPER_USER_ANA_${n}`, env: {} });
+    expect(j.available()).toEqual({ available: false, why: 'Jev is off until HOPPER_USER_ANA_TYPESAFE_API_KEY is set' });
+  });
+
   it('with the key: one Choice over the options, keyed by option id; the pick and its confidence', async () => {
     const { j, out } = jev({ TYPESAFE_API_KEY: 'ts-test' });
     expect(j.available()).toEqual({ available: true });

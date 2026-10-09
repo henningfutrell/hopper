@@ -11,7 +11,6 @@ const SCRIPT = fileURLToPath(new URL('./jev_pick.py', import.meta.url));
 /** Jev's own default model (grok-bot-jev's config). */
 export const JEV_MODEL = 'jev-latest';
 export const KEY = 'TYPESAFE_API_KEY';
-const OFF = `Jev is off until ${KEY} is set`;
 
 export interface JevOptions {
   /** The Python that runs the script. */
@@ -19,6 +18,8 @@ export interface JevOptions {
   timeoutMs: number;
   /** A runtime secret by name (TYPESAFE_API_KEY). */
   secret(name: string): string | undefined;
+  /** The runtime's name for a secret: the user's secret prefix and the name. Default: the name. */
+  secretName?(name: string): string;
   /** The script's environment, besides the key: PATH, HOME, PYTHONPATH. Nothing else of the daemon's. */
   env: Record<string, string | undefined>;
 }
@@ -46,11 +47,12 @@ function run(o: JevOptions, key: string, request: unknown, signal?: AbortSignal)
 
 export function createJev(o: JevOptions): JevChooser {
   const key = () => o.secret(KEY) || undefined;
+  const off = `Jev is off until ${o.secretName?.(KEY) ?? KEY} is set`;
   return {
-    available: () => (key() ? { available: true } : { available: false, why: OFF }),
+    available: () => (key() ? { available: true } : { available: false, why: off }),
     async pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick> {
       const k = key();
-      if (!k) return { ok: false, why: OFF };
+      if (!k) return { ok: false, why: off };
       try {
         const stdout = await run(o, k, {
           model: JEV_MODEL, instructions: ask.instructions, state: ask.state,
