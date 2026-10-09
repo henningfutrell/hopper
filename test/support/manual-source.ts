@@ -2,7 +2,9 @@
 // Integration tests pull every non-GitHub job through it (nothing pushes jobs to the hopper).
 // Like the GitHub source's markers (hopper:done, hopper:failed, hopper:rejected), a reported finished, failed or rejected end
 // stops the item being offered; add it again to re-run it, or run its job again (`rerun` offers it again and answers it).
+// A hand-off's resolution (issue #551) is kept in `resolutions`.
 import type { JobSource, SourceItem, SourceReport, SourceSignal } from '../../src/domain/ports.ts';
+import type { HandoffResolution } from '../../src/domain/types.ts';
 
 export interface ManualSource extends JobSource {
   /** Offer an item from the next sync on (replaces one with the same key). */
@@ -13,6 +15,8 @@ export interface ManualSource extends JobSource {
   /** Close the item at the source, as an issue closed on GitHub (issue #529): `itemClosed` answers true. */
   close(key: string): void;
   readonly reports: SourceReport[];
+  /** The hand-off resolutions it was told (issue #551), in order. */
+  readonly resolutions: { jobId: string; resolution: HandoffResolution }[];
 }
 
 let counter = 0;
@@ -32,10 +36,13 @@ export function createManualSource(name = 'manual'): ManualSource {
   const closed = new Set<string>();
   let signals: SourceSignal[] = [];
   const reports: SourceReport[] = [];
+  const resolutions: { jobId: string; resolution: HandoffResolution }[] = [];
   return {
     name,
     kind: 'manual',
     reports,
+    resolutions,
+    async resolved(job, resolution) { resolutions.push({ jobId: job.id, resolution }); },
     describe: () => ({ items: items.size }),
     add(item) { items.set(item.key, item); },
     remove(key) { items.delete(key); },
