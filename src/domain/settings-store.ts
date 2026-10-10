@@ -84,4 +84,6 @@ export interface InstanceSettingsRepository {
   /** The plugin store setting (issue #445); undefined: never set. */
   getPluginStoreSource(): PluginStoreSource | undefined;
   setPluginStoreSource(source: PluginStoreSource): void;
+  /** This hopper's id (issue #603), made at its first ask and kept: the label of the sandbox boxes it launches. */
+  instanceId(): string;
 }

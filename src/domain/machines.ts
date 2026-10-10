@@ -57,8 +57,11 @@ export interface ContainerMachine extends AttachedBase {
  */
 export interface ClientMachine extends AttachedBase {
   /** `key`: its machine key, the public half of its link key — who it is when it dials in. */
-  /** Its machine key; and the template its join line named (issue #558), when it is a sandbox box of one. */
-  client: { key: string; template?: string };
+  /**
+   * Its machine key; the template its join line named (issue #558), when it is a sandbox box of one; the box the
+   * hopper started for it (issue #603), when it did.
+   */
+  client: { key: string; template?: string; container?: string };
 }
 
 /**
@@ -140,6 +143,12 @@ export interface MachinesConfig {
    */
   thisMachineRefused?: string;
 }
+
+/** A sandbox box the hopper could not stop or remove (issue #603): shown on Machines until it goes. */
+export interface CleanupProblem { container: string; reason: string; at: string }
+
+/** GET /api/sandboxes (issue #603): whether the hopper can start a sandbox box now, why not, and the user's cleanup problems. */
+export interface SandboxesView { launch: { available: boolean; problem?: string }; problems: CleanupProblem[] }
 
 export type MachineEditOutcome =
   | { ok: true; config: MachinesConfig }

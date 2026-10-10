@@ -740,6 +740,10 @@ export interface ConnectedAccountTokens {
   jobRepositories(provider: ConnectedAccountProvider): string[];
 }
 
+// ---- Sandbox boxes the hopper launches: src/domain/sandboxes.ts (re-exported here, one vocabulary) ----
+
+export type * from './sandboxes.ts';
+
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
 export type * from './store.ts';

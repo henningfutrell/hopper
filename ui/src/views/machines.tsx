@@ -9,8 +9,9 @@
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142). Below the machines, the
 // priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
 // blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
-// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx).
-import { Activity, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
+// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). A sandbox box the
+// hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes).
+import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -23,7 +24,7 @@ import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries } from '@/model/wire';
+import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
@@ -34,6 +35,26 @@ import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-res
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
+
+/** The sandbox boxes the hopper could not remove (issue #603): each with the reason, until it goes. */
+function CleanupProblems({ problems }: { problems: CleanupProblem[] }) {
+  return (
+    <Panel title="Sandbox boxes not removed" icon={Box}>
+      <div role="alert" className="grid gap-2 text-sm">
+        <p className="text-xs text-muted-foreground">Their machines are gone, but the hopper could not stop or remove these boxes. It tries again every few seconds. To remove one by hand: <code className="font-mono">podman rm -f &lt;box&gt;</code>, then <code className="font-mono">podman volume rm &lt;box&gt;-home</code>.</p>
+        <ul className="grid gap-1.5">
+          {problems.map((p) => (
+            <li key={p.container} className="text-xs break-words">
+              <span className="font-mono font-medium text-foreground">{p.container}</span>
+              <span className="text-destructive">: {p.reason}</span>
+              <span className="text-muted-foreground"> (since {new Date(p.at).toLocaleTimeString()})</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Panel>
+  );
+}
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -140,7 +161,11 @@ export function Machines() {
   const open = useRef(false);
   useEffect(() => { open.current = adding !== false || defaulting || editing !== null; }, [adding, defaulting, editing]);
 
-  const load = useCallback(() => fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }), []);
+  const [cleanup, setCleanup] = useState<CleanupProblem[]>([]);
+  const load = useCallback(() => Promise.all([
+    fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }),
+    get<SandboxesView>('/api/sandboxes').then((v) => setCleanup(v.problems), () => setCleanup([])),
+  ]), []);
   useEffect(() => {
     void load();
     const t = setInterval(() => { if (!open.current) void load(); }, REFRESH_MS);
@@ -195,6 +220,7 @@ export function Machines() {
       {authed && config && adding === 'ssh' && !defaulting && (
         <Panel title="Attach a machine over ssh" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
+      {cleanup.length > 0 && <CleanupProblems problems={cleanup} />}
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
