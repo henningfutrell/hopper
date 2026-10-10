@@ -59,3 +59,23 @@ export function maskLogLine(text: string, held: Iterable<string>): string {
   for (const secret of held) result = maskSecret(result, secret, 'secret');
   return maskKeys(maskGitHubTokens(result));
 }
+
+/**
+ * The address patterns Report a bug masks (issue #694): an IPv4 address; an IPv6 address, full or with `::` (so a time
+ * such as 12:30:45 is none); a host name under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, a
+ * tailnet's `.ts.net`); and the user's name in a home directory (`/home/<name>`, `/Users/<name>`).
+ */
+const H = '[0-9A-Fa-f]{1,4}';
+const ADDRESS_PATTERNS: [RegExp, string][] = [
+  [/(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\w.])/g, '[IP address, masked]'],
+  [new RegExp(`(?<![\\w:])(?:(?:${H}:){7}${H}|(?:${H}:){1,6}:(?:${H}(?::${H}){0,5})?|::${H}(?::${H}){0,6})(?![\\w:])`, 'g'), '[IP address, masked]'],
+  [/(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:local|lan|home|internal|corp|ts\.net)\b/g, '[host, masked]'],
+  [/(?<=\/(?:home|Users)\/)[^/\s'"]+/g, '[user, masked]'],
+];
+
+/** `text` with each IP address, private host name and home directory's user name masked (issue #694). */
+export function maskAddresses(text: string): string {
+  let result = text;
+  for (const [pattern, mask] of ADDRESS_PATTERNS) result = result.replace(pattern, mask);
+  return result;
+}

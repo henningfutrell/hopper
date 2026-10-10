@@ -273,8 +273,12 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const label = /label:"?([^"\s]+)"?/.exec(q)?.[1];
         const users = [...q.matchAll(/user:(\S+)/g)].map((m) => m[1]);
         const authors = [...q.matchAll(/author:(\S+)/g)].map((m) => m[1]);
+        const repos = [...q.matchAll(/repo:(\S+)/g)].map((m) => m[1]);
+        // `in:title` with words joined by OR (issue #694: Report a bug's duplicate search): a title with any of them.
+        const words = q.includes('in:title') ? q.replace(/\S+:\S+/g, ' ').replace(/[()"]/g, ' ').split(/\s+/).filter((w) => w && w !== 'OR').map((w) => w.toLowerCase()) : [];
         const found = issues.filter((i) => (i.state ?? 'open') === 'open' && (!label || i.labels.includes(label))
-          && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author)));
+          && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author))
+          && (repos.length === 0 || repos.includes(i.repo)) && (words.length === 0 || words.some((w) => i.title.toLowerCase().includes(w))));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
       if (r.method === 'POST' && path === '/graphql') {

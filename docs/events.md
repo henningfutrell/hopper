@@ -3345,3 +3345,46 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
   "by": "admin"
 }
 ```
+
+## `bug_report.filed`
+
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. Never its text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `kind` | `issue` \| `comment` | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "kind": "issue",
+  "number": 712,
+  "url": "https://github.com/henningfutrell/hopper/issues/712",
+  "jobId": "b3f1c2d4",
+  "by": "octocat"
+}
+```
+
+## `bug_report.failed`
+
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId` and `by` as in `bug_report.filed`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `error` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "error": "your GitHub is not connected: connect it in Sources → Connect GitHub",
+  "by": "octocat"
+}
+```

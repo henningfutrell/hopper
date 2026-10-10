@@ -79,10 +79,12 @@ function errorOf(err: unknown, r: ProxyRequest): ProxyGitHubError {
   return new ProxyGitHubError(`GitHub answered ${status ?? 'no status'} to ${r.op} on ${r.repo}: ${message}${detail ? ` (${detail})` : ''}`, status);
 }
 
-export function createProxyApi(o: { apiUrl: string; token(): Promise<string>; renew(refused: string): Promise<string> }): ProxyApi {
-  const req = makeRequest(o.apiUrl);
-  /** One call with the token; GitHub refusing it (401) renews it once and the call is made again. */
-  async function withToken<T>(fn: (token: string) => Promise<T>, fail: (err: unknown) => Error): Promise<T> {
+/** The user's token as asked at each call: renewed once when GitHub refuses it (401), and the call made again. */
+export interface TokenSource { token(): Promise<string>; renew(refused: string): Promise<string> }
+
+/** `fn` with the token; GitHub refusing it (401) renews it once and `fn` runs again. Every other failure is `fail(err)`. */
+export function tokenCaller(o: TokenSource): <T>(fn: (token: string) => Promise<T>, fail: (err: unknown) => Error) => Promise<T> {
+  return async (fn, fail) => {
     const token = await o.token();
     try {
       return await fn(token);
@@ -97,7 +99,12 @@ export function createProxyApi(o: { apiUrl: string; token(): Promise<string>; re
       if (statusOf(err) === 401) await o.renew(renewed).catch(() => undefined);
       throw fail(err);
     }
-  }
+  };
+}
+
+export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
+  const req = makeRequest(o.apiUrl);
+  const withToken = tokenCaller(o);
   return {
     perform: (r) => withToken((token) => call(req, token, r), (err) => errorOf(err, r)),
     defaultBranch: (repo) => withToken(

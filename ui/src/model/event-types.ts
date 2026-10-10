@@ -41,6 +41,7 @@ const ALL: Record<EventType, true> = {
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
   'lanes.recommended': true, 'lanes.tuning_changed': true,
+  'bug_report.filed': true, 'bug_report.failed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 
