@@ -14,6 +14,15 @@ import { reconcilePass, type Problems } from './reconcile.ts';
 
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, USER_LABEL, type LaunchRequest } from './launch.ts';
 
+/** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
+export const COMPOSE_NETWORK = 'hopper_default';
+
+/**
+ * The hopper's network (issues #708, #711): HOPPER_SANDBOX_NETWORK, else the compose network for a hopper in its
+ * container, `host` for one on the host. The boxes it starts join it; a machine off it is shown the command that joins it.
+ */
+export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMachine: boolean }): string => c.sandboxNetwork ?? (c.localMachine ? 'host' : COMPOSE_NETWORK);
+
 /** How often the hopper checks its boxes against their records and the machines. */
 export const RECONCILE_MS = 10_000;
 

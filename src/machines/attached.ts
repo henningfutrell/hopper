@@ -21,7 +21,7 @@ import type { ClientTransport } from '../executors/client.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
-import { isAddressLine, addressCommand, readAddress } from './hopper-address.ts';
+import { isAddressLine, addressCommand, networkFix, readAddress } from './hopper-address.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -52,6 +52,8 @@ interface AttachedOptions {
   logger?: Logger;
   /** Why a box of this template takes no new job now (issue #602), or undefined when the template is approved. Read at every list(). */
   templateWait?: (template: string) => string | undefined;
+  /** The hopper's network (issue #711): a machine off it is given the command that joins it. Absent or `host`: none. */
+  network?: string;
 }
 
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
@@ -124,10 +126,12 @@ export function createAttachedMachineSource(o: AttachedOptions & {
         const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
         return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
       }
-      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem } : {}) }];
+      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
     },
   };
 }
+
+const withFix = (addressFix: string | undefined): { addressFix?: string } => (addressFix ? { addressFix } : {});
 
 /** Whether the machine's herdr session is running: `herdr --session <s> status server` over ssh. Rejects when ssh fails. */
 export async function probeHerdrOverSsh(o: { target: string; session: string; controlDir: string; sshBin?: string; auth: () => SshAuth }): Promise<boolean> {

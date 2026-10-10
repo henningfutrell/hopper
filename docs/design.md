@@ -4127,8 +4127,8 @@ below has none of them because the machine reaches *out*.
 about where a machine can reach the hopper from, so both were run, not assumed:
 
 - A container on a user-defined network resolves another container on it by name (`getent hosts
-  <name>` answered the peer's address; an HTTP fetch by name answered). The compose file's `name:
-  hopper` makes its network `hopper_default` on every run: a box started with `--network
+  <name>` answered the peer's address; an HTTP fetch by name answered). The compose file names
+  its network `hopper_default` (issue #711; before it, the project name `hopper` made that name) on every run: a box started with `--network
   hopper_default` reaches the hopper as `http://hopper:<port>`, and a re-run or rebuild changes nothing.
 - `host.containers.internal` from a container reaches a host service that listens on every interface
   (an HTTP fetch answered) and **not** one bound to the host's loopback (connection refused). The compose
@@ -10032,6 +10032,20 @@ job there is never given an address it was not seen to reach. Taken conservative
 tunnelled. A reverse forward over the ssh connection (`ssh -R`) would need no reachable address, but the hopper's ssh
 connections forward nothing (`HARDENED_SSH_OPTIONS`); opening one is a security change of its own. A container target
 still gets the public URL, else the first LAN name.
+
+**The hopper's network and off-network machines** (issue #711). The release `compose.yaml` makes its own network and
+names it, `hopper_default` (`networks.default.name`), so a whole-stack `up` always makes it, under the same name whatever
+the project is called, and never needs a network made first. Every service is on it, and each sandbox box the hopper
+starts joins it (`hopperNetwork`, `src/sandbox/service.ts`, the one place its name is decided; `HOPPER_SANDBOX_NETWORK`
+names another). There `http://hopper:<port>` resolves with no `HOPPER_PUBLIC_URL`. A machine with an address problem is
+**off-network**: the Machines view shows it so, and when the ssh target's host is a container's name (no dot, not
+`localhost`) the snapshot carries `addressFix`, `podman network connect <network> <container>`, shown with a Copy
+button (`networkFix`, `src/machines/hopper-address.ts`). Its jobs are held with `… is off-network: <why>. Fix: <command>`.
+No fix is offered for a host name or an address, or for a hopper on the host network: the fix there is a link base the
+machine reaches (`HOPPER_PUBLIC_URL`), which the address problem already names. A seat in another Podman engine cannot
+join the network; its fallback is `host.containers.internal`, with the port published on that engine's gateway address
+and the name in `HOPPER_LAN_NAMES` (docs/deploy.md "The hopper's network"). The compose file keeps publishing on
+loopback only.
 
 **When the hopper cannot be reached anyway** (issue #698): the job rules' GitHub line (`GITHUB_PROXY_LINE`) tells the job
 to end with `HOPPER_FAILED`, saying the machine cannot reach the hopper, and never to sign in to GitHub another way. The token is never in an environment variable, a command line or the

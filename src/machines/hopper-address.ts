@@ -18,6 +18,21 @@ export const isAddressLine = (line: string): boolean => line.startsWith(`${LINE}
 
 const SET_ADDRESS = 'set HOPPER_PUBLIC_URL to an address it reaches, or add a name it resolves to HOPPER_LAN_NAMES';
 
+/** A container's name: no dot, so not a host name, not an address. */
+const CONTAINER = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+/**
+ * The command that joins a machine off the hopper's network to it (issue #711), or undefined: the hopper is on no
+ * network of its own (`host`), or the ssh target's host is not a container's name (a host name, an address,
+ * `localhost`). An ssh target named by its container, a seat for one, is on the hopper's network once connected, and
+ * resolves the hopper by name there.
+ */
+export function networkFix(ssh: string, network: string | undefined): string | undefined {
+  if (network === undefined || network === 'host') return undefined;
+  const host = ssh.slice(ssh.indexOf('@') + 1);
+  return CONTAINER.test(host) && host !== 'localhost' ? `podman network connect ${network} ${host}` : undefined;
+}
+
 /** The hopper's addresses a machine may reach it at, in order: the public URL, then each LAN name with the port. */
 export function hopperAddresses(o: { publicUrl?: string | undefined; lanNames: readonly string[]; port: number }): string[] {
   return [...(o.publicUrl ? [o.publicUrl.replace(/\/+$/, '')] : []), ...o.lanNames.map((n) => `http://${n}:${o.port}`)];

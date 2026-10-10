@@ -35,7 +35,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { createSandboxes, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperNetwork, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -197,7 +197,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls, access, minter, instanceSecrets: secrets.system,
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls, network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -263,7 +263,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const sandboxes = createSandboxes({
     runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
     repo: instance.sandboxes, instanceId: instance.settings.instanceId(),
-    network: config.sandboxNetwork ?? (config.localMachine ? 'host' : 'hopper_default'),
+    network: hopperNetwork(config),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
     // A user the instance no longer has keeps no box; one whose runtime cannot say now keeps all of them.

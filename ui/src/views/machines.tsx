@@ -22,7 +22,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
@@ -87,6 +87,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const editing = ctx.editing === m.id;
   const [graph, setGraph] = useState(false);
   const res = resourcesText(m.resources);
+  const off = offNetwork(m);
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
     <>
       <Button size="sm" variant="outline" disabled={ctx.busy} onClick={() => ctx.setEditing(m.id)} aria-label={`Edit ${m.id}`}><Pencil />Edit</Button>
@@ -99,7 +100,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
         <div><div className="text-[11px] text-muted-foreground">open</div><div className="num text-lg font-semibold">{m.lanes.length}</div></div>
@@ -137,8 +138,19 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
       )}
-      {m.addressProblem && (
-        <p role="alert" className="text-sm text-destructive">Takes no new job: {m.addressProblem}. Its jobs wait for another machine.</p>
+      {off && (
+        <div role="alert" className="grid gap-1.5 text-sm">
+          <p className="text-destructive">Off-network, takes no new job: {off.problem}. Its jobs wait for another machine.</p>
+          {off.fix && (
+            <>
+              <p className="text-xs text-muted-foreground">Run this on the computer its container runs on, to join it to the hopper's network (Docker: <code>docker network connect</code>). Or set HOPPER_PUBLIC_URL to an address it reaches.</p>
+              <div className="flex flex-wrap items-start gap-2 text-xs">
+                <code className="min-w-0 flex-1 rounded-md border bg-muted/40 p-2 font-mono break-all">{off.fix}</code>
+                <Button type="button" size="sm" variant="outline" className="min-h-9" aria-label={`Copy the network fix for ${m.id}`} onClick={() => void navigator.clipboard?.writeText(off.fix!).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'))}>Copy</Button>
+              </div>
+            </>
+          )}
+        </div>
       )}
       {m.hopperUrl && <p className="text-xs text-muted-foreground">Its jobs reach the hopper at <code>{m.hopperUrl}</code>.</p>}
       <CpuSparkline series={ctx.sparks} machineId={m.id} />

@@ -243,6 +243,16 @@ services:
       - vault-keys:/vault/keys
       - vault-token:/run/hopper-vault
 
+# The hopper's network (issue #711): made by this file, under this name, on every `up`, whatever the project is called.
+# Every service is on it, and so is each box the hopper starts (HOPPER_SANDBOX_NETWORK): there `http://hopper:<port>`
+# reaches the hopper, with no HOPPER_PUBLIC_URL. A container started apart joins it:
+#   podman network connect hopper_default <container>
+# The Machines view shows that line for a machine whose jobs cannot reach the hopper ("off-network").
+# A seat in another Podman engine cannot join it: docs/deploy.md "The hopper's network" has the fallback.
+networks:
+  default:
+    name: hopper_default
+
 volumes:
   secrets:
   postgres:

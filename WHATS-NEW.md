@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A machine whose jobs cannot reach the hopper now shows as off-network on Machines, with why. When it is a container, you also get the one command that joins it to the hopper's network, ready to copy. Its jobs wait and say why. The container setup now always makes the hopper's network under the same name, so new boxes reach the hopper with no extra step.
 - Sandbox boxes the hopper starts now have CPU and memory limits, and a template can set a time limit after which its boxes stop by themselves. A box that is removed keeps its home, so a new box of the same name is still signed in. The hopper can now also start boxes through rootless Docker when Podman is not there.
 - A Windows computer now joins only from inside WSL: run the Add machine line in your Linux distro there, with Podman. Windows itself is not supported, and the hopper now says so at once in place of failing every job.
 - A machine can now keep a separate folder for each repository: a job for that repository works in its own folder, which the hopper makes and fills when it is missing, and jobs for other repositories keep the machine's usual folder.
