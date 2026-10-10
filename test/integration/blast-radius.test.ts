@@ -36,6 +36,7 @@ function reacher(facts: { now: DiscoveryFacts; calls: number }): Executor {
     async reap() { return { kept: [] }; },
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
     async keepCredential() {},
+    async reach() { return undefined; },
     async discover() { facts.calls += 1; return facts.now; },
   };
   return { name: 'reach', validate: () => null, run: async () => ({ kind: 'failed', error: 'not run' }), machineShell: () => shell };

@@ -70,8 +70,8 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
  * (`manifest`, issue #545; a client before that checks a fixed list of file names), and its home when it says (a
  * client before issue #323 does not).
  */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string }> {
-  const { release, loads, home, disk, resources, vault } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown }>(t, '/release', {}, 15000);
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string; door?: string }> {
+  const { release, loads, home, disk, resources, vault, door } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown; door?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
@@ -81,7 +81,9 @@ export async function clientRunningRelease(t: ClientTransport): Promise<{ releas
   const res = resourcesOf(resources);
   // Its vault's helper (issue #558): an absolute path, one line; a client older than this says none.
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};
-  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper };
+  // Its client door (issue #695): a loopback URL there; a client older than this says none.
+  const open = typeof door === 'string' && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(door) ? { door } : {};
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper, ...open };
 }
 
 /**
@@ -96,7 +98,7 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover', body: Record<string, unknown>): Promise<ClientAnswer> {
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach', body: Record<string, unknown>): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : 60000);
 }
 

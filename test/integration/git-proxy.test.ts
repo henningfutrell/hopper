@@ -76,6 +76,7 @@ async function start() {
   const shell: MachineShell = {
     async reap() { return { kept: [] }; },
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
+    async reach() { return undefined; },
     async keepCredential(_jobId, dir, file, content) {
       const path = join(root, dir, file);
       mkdirSync(dirname(path), { recursive: true });

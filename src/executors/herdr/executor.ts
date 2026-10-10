@@ -182,7 +182,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const unreadable = (notes.unreadable ?? 0) + 1;
       const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true, login);
       if ('failed' in taken) return { kind: 'failed', error: taken.failed };
-      // A GitHub login steered to the hopper (issue #563): the same login reported next goes to the user.
+      // A GitHub login steered to the hopper (issue #563): the same login reported next fails the job (issue #695).
       if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, ...(taken.steered ? { steered: true } : { unreadable }) });
       const waiting = { ...s, turn, login: taken.login, parkedSeq: undefined, lapsesAt: undefined };
       ctx.saveState(waiting);
