@@ -1,6 +1,7 @@
 // The assessor's judgement of one failed job (issue #509, design.md "Failure assessment"), rules first. Pure: the
 // service gathers the evidence and acts on the result. In order: the open problem of its signature takes it; a
-// known shared cause opens a problem; a signature on enough items flags a general cause; a transient cause runs
+// known shared cause opens a problem; a signature on enough items of one machine or executor flags a general cause,
+// unless its cause is job-specific (issue #625); a transient cause runs
 // again with backoff within the retry limit; anything else goes to a person. Two cases act on nothing (issue #517):
 // a failure whose item already ran again is superseded, and one that failed more than a day before it was
 // assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others.
@@ -132,9 +133,11 @@ function judge(i: AssessInput): Assessment {
     return done('shared', decision, { problem: { kind: 'open', title, scope, general: false, decision: planned, causeId: i.cause.id }, title });
   }
   const items = i.recent.length + 1;
-  if (items >= s.groupThreshold) {
+  const scope = sharedScope([...i.recent, { jobId: '', executor: i.job.executor, ...(i.job.machineId !== undefined ? { machineId: i.job.machineId } : {}) }]);
+  // A job-specific cause belongs to its one job, and a recurrence with no machine or executor in common has no
+  // shared place to hold: neither is a general cause (issue #625).
+  if (items >= s.groupThreshold && i.cause?.cls !== 'job' && (scope.machineId !== undefined || scope.executor !== undefined)) {
     reasons.push(`${items} jobs failed with this signature within ${s.groupWindowMin} min: flagged as a general cause`);
-    const scope = sharedScope([...i.recent, { jobId: '', executor: i.job.executor, ...(i.job.machineId !== undefined ? { machineId: i.job.machineId } : {}) }]);
     const title = `Recurring: ${headline(i.error).slice(0, 80)}`;
     return done('shared', 'hold', { problem: { kind: 'open', title, scope, general: true, decision: 'hold', ...(i.cause ? { causeId: i.cause.id } : {}) }, title });
   }
