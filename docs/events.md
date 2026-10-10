@@ -2249,7 +2249,7 @@ Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #
 
 ## `template.removed`
 
-Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (issue #558): its boxes are given nothing from the vault.
+Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (issue #558): only when no box of it was attached (issue #604); its access approvals are revoked.
 
 | field | type | required |
 |---|---|---|

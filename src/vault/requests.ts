@@ -31,7 +31,7 @@ export type NeedAnswer = { waiting: string } | { declined: string };
 /** A person's answer: a vault secret name, the kind they give, their words for it, and a value (or none: the secret named exists). */
 export interface Give { name: string; kind: string; note?: string; value?: string; scope?: string }
 
-export type RequestResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'unavailable'; error: string };
+export type RequestResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
 export interface CredentialRequests {
   /** A job waits on a credential its template does not give: a request opened, or joined. */

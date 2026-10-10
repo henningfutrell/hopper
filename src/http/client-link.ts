@@ -29,6 +29,7 @@ import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
+import { holdsTemplate } from '../vault/service.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;
@@ -70,6 +71,8 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const { userId, template } = taken;
     const tenant = o.tenants.user(userId);
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
+    // The template may have been removed since the code was minted (issue #604): no box joins as one that is not there.
+    if (template && !holdsTemplate(tenant.vault, template)) throw new HttpError(409, `no template ${template}: it was removed after the join line was made. Add machine shows a fresh line`);
     const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };

@@ -194,6 +194,7 @@ describe('requesters in Access (issue #581)', () => {
     const { a, session, server } = await boot();
     await joinBox(a, session, 'kbox', 'kube');
     const user = a.user().user.id;
+    await waitFor(() => held(server).includes(`machine:${user}/kbox instance_of template:kube`), { timeoutMs: 10000, what: 'the box\'s tuple' });
     const refused = await a.ui<{ error: string }>('/ui/api/vault', { action: 'remove-template', name: 'kube' }, { token: session });
     expect(refused.status).toBe(409);
     expect(refused.body.error).toMatch(/kbox/);
