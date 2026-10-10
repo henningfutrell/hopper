@@ -82,8 +82,9 @@ describe('the hopper client, released from the hopper and loaded onto client tar
     const install = installDir(false);
     const { a, loaded } = await boot(install);
     const m = await waitFor(async () => { const s = await studio(a); return s?.client?.release ? s : undefined; }, { timeoutMs: 10000, what: 'studio\'s release' });
-    // Its vault's helper too (issue #558): the path the hopper gives its jobs as HOPPER_SECRET.
-    expect(m.client).toEqual({ release: HOPPERS.id, current: true, vault: expect.stringMatching(/\/hopper-secret$/) });
+    // Its vault's helper too (issue #558): the path the hopper gives its jobs as HOPPER_SECRET; and its client door
+    // (issue #695), on loopback there: the URL the hopper gives its jobs as HOPPER_URL.
+    expect(m.client).toEqual({ release: HOPPERS.id, current: true, vault: expect.stringMatching(/\/hopper-secret$/), door: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/) });
     expect(loaded).toEqual([]);
   });
 });

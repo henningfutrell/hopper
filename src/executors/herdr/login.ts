@@ -36,7 +36,10 @@ export function isGitHubLogin(r: Pick<LoginReport, 'tool' | 'verificationUrl'>):
 }
 
 /** Typed in, once, when a job reports a GitHub login (issue #563): ask the hopper instead. */
-export const githubLoginNote = (tool: string): string => `[hopper] Do not log in to GitHub on this machine: stop the ${tool} login (the command waiting for it) without entering the code. The hopper does GitHub for this job with its own connection: run sh "$HOPPER_GH" help to see how, and use it for what you needed the login for. If HOPPER_GH is not set, or the hopper cannot do what you need, say why and report the login again; then it goes to the user.`;
+export const githubLoginNote = (tool: string): string => `[hopper] Do not log in to GitHub on this machine: stop the ${tool} login (the command waiting for it) without entering the code. The hopper does GitHub for this job with its own connection: run sh "$HOPPER_GH" help to see how, and use it for what you needed the login for. If HOPPER_GH is not set, the hopper cannot be reached from this machine, or it cannot do what you need, end with a line HOPPER_FAILED followed by the reason. Never report a GitHub login again and never ask for one: the job fails if you do.`;
+
+/** Why a job that reports a GitHub login again, after it was steered, fails (issue #695): a job never signs in to GitHub. */
+export const GITHUB_LOGIN_AGAIN = 'the job reported a GitHub login again after it was told to use the hopper: a job never signs in to GitHub, not even to get around a hopper it cannot reach (issue #695). Look at the job\'s last progress for why the hopper did not serve it';
 
 /** Typed in when the login the job reported cannot be taken. */
 export const loginUnreadableNote = (problem: string): string => `[hopper] The login you reported could not be taken: ${problem}. Report it again: end your message with ${HOW}.`;
@@ -70,12 +73,14 @@ export function loginReportOf(f: AuthFields, now: Date): LoginReport | { problem
 /**
  * A turn that ended on a login: reported to the logins (the job then waits), or said back to the job when it
  * cannot be taken, `unreadable` times in a row at most before the job fails. A GitHub login is steered to the
- * hopper's GitHub proxy instead (`steered`, issue #563), unless the job was steered the turn before and reports it again,
- * or already waits on it. The login it already waits on, reported again (a script polling, Claude checking on it,
+ * hopper's GitHub proxy instead (`steered`, issue #563); reported again right after, the job fails (issue #695): a GitHub
+ * sign-in never goes to the user. The login it already waits on, reported again (a script polling, Claude checking on it,
  * issue #567), is the same login and says nothing new.
  */
 export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false, waitsOn?: LoginRef): { login: LoginRef } | { say: string; steered?: true } | { failed: string } {
   const report = loginReportOf(fields, now);
+  // Reported again right after it was steered (issue #695): never taken to the user; the job fails.
+  if (!('problem' in report) && steered && isGitHubLogin(report)) return { failed: GITHUB_LOGIN_AGAIN };
   if (!('problem' in report) && !steered && !waitsOn && isGitHubLogin(report)) {
     ctx.progress(0, `the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
     return { say: githubLoginNote(report.tool), steered: true };

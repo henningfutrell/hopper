@@ -32,6 +32,7 @@ function reacher(): Executor {
     async reap() { return { kept: [] }; },
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
     async keepCredential() {},
+    async reach() { return undefined; },
     async discover() { return NOTHING; },
   };
   return { name: 'reach', validate: () => null, run: async () => ({ kind: 'failed', error: 'not run' }), machineShell: () => shell };
