@@ -2,8 +2,8 @@
 // show — only what the daemon says it takes now (`actions`) and the session's role allows — and the nav badge.
 import type { Allowed, FailureDecision, FailureRecordView, FailuresView, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView } from './wire';
 
-export const DECISION_LABEL: Record<FailureDecision, string> = { retry: 'retry', hold: 'held', redirect: 'redirected', person: 'needs a person' };
-export const DECISION_TONE: Record<FailureDecision, 'warn' | 'bad' | 'busy' | 'question'> = { retry: 'busy', hold: 'warn', redirect: 'warn', person: 'question' };
+export const DECISION_LABEL: Record<FailureDecision, string> = { retry: 'retry', hold: 'held', redirect: 'redirected', person: 'needs a person', continue: 'continued' };
+export const DECISION_TONE: Record<FailureDecision, 'warn' | 'bad' | 'busy' | 'question'> = { retry: 'busy', hold: 'warn', redirect: 'warn', person: 'question', continue: 'busy' };
 
 const OUTCOME_LABEL: Record<NonNullable<FailureRecordView['outcome']>, string> = {
   retried: 'ran again', redirected: 'ran again elsewhere', released: 'released', held: 'waits on its problem', surfaced: 'waits on a person', not_retried: 'not run again',
@@ -43,23 +43,19 @@ export function handoffEndText(h: HandoffView): string {
 }
 
 /**
- * What to do about a hand-off, by why it was handed off (issue #551): the plain next step the card says first.
+ * The resolutions with their button labels (issue #621: Done, Continue, Run again, Won't do), the card's recommended one
+ * first (`card.recommended`), then the rest in this order.
  */
-export const HANDOFF_NEXT_STEP: Record<HandoffReason, string> = {
-  person: 'The job hit a problem of its own: its code, its tests, or the task as written. Read the error and the assessment, then Continue with a note that tells it what to do differently — or do it yourself and mark it Done by hand.',
-  retry_limit: 'It failed the same way every time it ran again, so the cause is likely outside the job: a machine, a credential, a service or the repository. Fix that, then say I fixed it — or Continue with a note if the job should work around it.',
-  auto_off: 'Automatic handling is switched off for this kind of failure (Failures settings), so it waits for you. Run it again when the cause is gone (I fixed it), Continue with a note, or close it.',
-  not_retried: 'The hopper tried to run it again and was refused (the assessment says why). Remove what refused it, then I fixed it — or close it as Done by hand or Won\'t do.',
-  dismissed: 'It was dismissed from the queue with its failure unresolved. Close it as Done by hand or Won\'t do, or run it again.',
-};
-
-/** The resolutions in the order the card offers them, with their button labels. */
 export const RESOLUTIONS: { action: HandoffResolutionAction; key: keyof HandoffView['actions']; label: string }[] = [
   { action: 'continue', key: 'continue', label: 'Continue' },
-  { action: 'fixed', key: 'fixed', label: 'I fixed it' },
-  { action: 'done_by_hand', key: 'doneByHand', label: 'Done by hand' },
+  { action: 'fixed', key: 'fixed', label: 'Run again' },
+  { action: 'done_by_hand', key: 'doneByHand', label: 'Done' },
   { action: 'wont_do', key: 'wontDo', label: 'Won\'t do' },
 ];
+
+/** The resolutions as the card offers them: the recommended one first. */
+export const resolutionsFor = (h: Pick<HandoffView, 'card'>): typeof RESOLUTIONS =>
+  [...RESOLUTIONS].sort((a, b) => Number(b.action === h.card.recommended) - Number(a.action === h.card.recommended));
 
 /** What each resolution will lead to, for this hand-off: Continue resumes its own session, or runs a new job. */
 export function resolutionLeadsTo(action: HandoffResolutionAction, h: Pick<HandoffView, 'continueResumes'>): string {
@@ -67,8 +63,8 @@ export function resolutionLeadsTo(action: HandoffResolutionAction, h: Pick<Hando
     case 'continue': return h.continueResumes
       ? 'Its own session goes on in its work tree, told the error and your note.'
       : 'Its session cannot resume, so a new job of its item runs, told the error, the assessment and your note.';
-    case 'fixed': return 'You fixed the cause (environment, credentials, repository): a new job of its item runs, told your note.';
-    case 'done_by_hand': return 'You did the work: the job ends finished, with your note and link.';
+    case 'fixed': return 'A new job of its item runs, told your note. Fix the cause first (environment, credentials, repository).';
+    case 'done_by_hand': return 'The work is done, by the job or by you: the job ends finished, with your note and the link.';
     case 'wont_do': return 'Not to be done, or not a real failure: closed with your reason (required); it is not taken again.';
   }
 }

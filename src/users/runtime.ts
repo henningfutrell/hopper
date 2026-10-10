@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
-import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
+import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -319,6 +319,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     verdict: (job) => judge(sourceOf(job), job),
+    // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
+    overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [],
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     // A fork (issue #548) acts through its parent's source's connection.
     credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
@@ -337,8 +339,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const failures = createFailures({
     store, clock, logger, sweepMs: config.tickMs,
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
-    rerun: sync.rerun, continueJob: sync.continueJob, resumable: (job) => engine.resumable(job), dismiss: (jobId) => { engine.dismiss(jobId); },
-    machines: () => host.machines().list(), itemClosed: async (job) => sourceOf(job)?.itemClosed?.(job),
+    rerun: sync.rerun, continueJob: sync.continueJob, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
+    resumable: (job) => engine.resumable(job), dismiss: (jobId) => { engine.dismiss(jobId); }, machines: () => host.machines().list(),
+    workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
@@ -352,11 +355,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
-  let started = false;
-  let stopped: Promise<void> | undefined;
+  let started = false, stopped: Promise<void> | undefined;
   return {
-    jobStream, artifacts,
-    githubProxy: proxy.githubProxy,
+    jobStream, artifacts, githubProxy: proxy.githubProxy,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,

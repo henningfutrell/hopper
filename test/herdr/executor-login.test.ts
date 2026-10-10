@@ -5,8 +5,7 @@
 // Issue #563: a GitHub login is not a job's to make. The job is told to ask the hopper's GitHub proxy instead;
 // only when it reports the same login again, right after, does it go to the logins.
 import { describe, expect, it } from 'vitest';
-import type { RunLogins } from '../../src/domain/ports.ts';
-import type { LoginReport } from '../../src/domain/types.ts';
+import type { LoginReport, RunLogins } from '../../src/domain/types.ts';
 import { githubLoginNote, isGitHubLogin } from '../../src/executors/herdr/login.ts';
 import { contextFor, jobWith, setup, until } from './support.ts';
 

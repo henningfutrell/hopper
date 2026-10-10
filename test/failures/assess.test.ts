@@ -124,13 +124,13 @@ describe('assess', () => {
   });
 
   it('automatic actions off: the decision stands, but waits for a person', () => {
-    const off = { auto: { retry: false, hold: false, redirect: false } };
+    const off = { auto: { retry: false, hold: false, redirect: false, continue: false } };
     expect(assess(input('read ECONNRESET', {}, off))).toMatchObject({ decision: 'retry', auto: false });
     expect(assess(input('no space left on device', {}, off))).toMatchObject({ decision: 'hold', auto: false });
   });
 
   it('redirect off: held instead', () => {
-    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false } }))).toMatchObject({ decision: 'hold', auto: true });
+    expect(assess(input('no space left on device', {}, { auto: { retry: true, hold: true, redirect: false, continue: true } }))).toMatchObject({ decision: 'hold', auto: true });
   });
 
   it('a job with no machine is held, never redirected', () => {
@@ -188,5 +188,91 @@ describe('assess: a failure older than a day when assessed (issue #517)', () => 
 
   it('a day or less is not old', () => {
     expect(assess(input('read ECONNRESET', { failedAgoMs: STALE_AFTER_MS }))).toMatchObject({ decision: 'retry', auto: true });
+  });
+});
+
+describe('assess: a timed-out job, from its liveness (issue #630)', () => {
+  const MIN = 60_000;
+  const timedOut = (over: Partial<AssessInput> = {}, settings: Partial<FailureSettings> = {}) => assess(input('timed out', over, settings));
+
+  it('the timeout is a known cause', () => {
+    expect(timedOut().reasons[0]).toBe('known cause: Timed out');
+  });
+
+  it('active by its pane output alone: output changed within the window — Continue', () => {
+    const a = timedOut({ liveness: { outputAgoMs: 9 * MIN, pushed: false, pullRequest: false } });
+    expect(a).toMatchObject({ cls: 'transient', decision: 'continue', auto: true });
+    expect(a.reasons.join(' ')).toMatch(/pane output changed 9 min before the timeout/);
+    expect(a.summary).toMatch(/^Continues: it was at work\./);
+  });
+
+  it('active by pushed commits alone — Continue', () => {
+    const a = timedOut({ liveness: { pushed: true } });
+    expect(a.decision).toBe('continue');
+    expect(a.reasons.join(' ')).toMatch(/commits pushed/);
+  });
+
+  it('active by an open pull request alone — Continue', () => {
+    const a = timedOut({ liveness: { outputAgoMs: 60 * MIN, pullRequest: true } });
+    expect(a.decision).toBe('continue');
+    expect(a.reasons.join(' ')).toMatch(/a pull request of its own is open/);
+  });
+
+  it('the window is the setting: output older than it is silent', () => {
+    expect(timedOut({ liveness: { outputAgoMs: 9 * MIN } }, { activeWindowMin: 5 }).decision).toBe('retry');
+    expect(timedOut({ liveness: { outputAgoMs: 11 * MIN } }).decision).toBe('retry');
+  });
+
+  it('silent — no recent output, no commits, no pull request: Retry once', () => {
+    const a = timedOut({ liveness: { outputAgoMs: 30 * MIN, pushed: false, pullRequest: false } });
+    expect(a).toMatchObject({ cls: 'transient', decision: 'retry', auto: true });
+    expect(a.retryInMs).toBeGreaterThan(0);
+    expect(a.reasons.join(' ')).toMatch(/silent: no pane output for 30 min, no commits pushed, no pull request/);
+  });
+
+  it('no liveness facts at all is silent', () => {
+    expect(timedOut().decision).toBe('retry');
+  });
+
+  it('a pull request it could not look up is not known: the other facts decide', () => {
+    expect(timedOut({ liveness: { outputAgoMs: 30 * MIN, pushed: false } }).reasons.join(' ')).toMatch(/pull request not known/);
+  });
+
+  it('a second silent timeout after that retry goes to a person', () => {
+    const a = timedOut({ liveness: { outputAgoMs: 30 * MIN }, earlierTimeouts: ['silent'] });
+    expect(a).toMatchObject({ decision: 'person' });
+    expect(a.reasons.join(' ')).toMatch(/silent again after its retry/);
+  });
+
+  it('silent after active runs is retried once', () => {
+    expect(timedOut({ earlierTimeouts: ['active', 'active'] }).decision).toBe('retry');
+  });
+
+  it('active after a silent retry is continued', () => {
+    expect(timedOut({ liveness: { pushed: true }, earlierTimeouts: ['silent'] }).decision).toBe('continue');
+  });
+
+  it('the cap: the third active timeout in a row goes to a person', () => {
+    expect(timedOut({ liveness: { pushed: true }, earlierTimeouts: ['active'] }).decision).toBe('continue');
+    const a = timedOut({ liveness: { pushed: true }, earlierTimeouts: ['active', 'active'] });
+    expect(a.decision).toBe('person');
+    expect(a.reasons.join(' ')).toMatch(/3 timeouts in a row while at work/);
+  });
+
+  it('only consecutive active timeouts count toward the cap', () => {
+    expect(timedOut({ liveness: { pushed: true }, earlierTimeouts: ['active', 'silent', 'active'] }).decision).toBe('continue');
+  });
+
+  it('a timeout never forms a Recurring problem, nor joins one', () => {
+    const recent = [{ jobId: 'a', executor: 'herdr-claude' }, { jobId: 'b', executor: 'herdr-claude' }];
+    const a = timedOut({ recent, open: { id: 'p1', title: 'Recurring: timed out', decision: 'hold' }, liveness: { pushed: true } });
+    expect(a.decision).toBe('continue');
+    expect(a.problem).toBeUndefined();
+  });
+
+  it('automatic continue off: it waits for a person', () => {
+    const a = timedOut({ liveness: { pushed: true } }, { auto: { ...DEFAULT_FAILURE_SETTINGS.auto, continue: false } });
+    expect(a).toMatchObject({ decision: 'continue', auto: false });
+    expect(a.summary).toMatch(/^Continue recommended\./);
   });
 });

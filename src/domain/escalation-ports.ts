@@ -1,7 +1,7 @@
 // The escalation levels' seams, apart from ports.ts for its size and re-exported there: what a level is given to
 // answer a question, and to review a review item — a proposal or a research report (issues #537, #543, design.md
 // "Sections"); the document an executor reports; the review.
-import type { RunLogins } from './ports.ts';
+import type { RunLogins } from './logins.ts';
 import type { Confidence, Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
 
 /** Everything an escalation level is given. */

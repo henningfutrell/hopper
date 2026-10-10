@@ -14,6 +14,7 @@ import type { FailureDecision, FailuresView } from '@/model/wire';
 import { failureAct } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
+// A person names a cause with any decision but Continue: that is the timed-out cause's alone (issue #630).
 const DECISIONS: FailureDecision[] = ['retry', 'hold', 'redirect', 'person'];
 
 function Breakdown({ title, rows }: { title: string; rows: { key: string; count: number }[] }) {

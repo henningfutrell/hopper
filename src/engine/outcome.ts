@@ -4,7 +4,7 @@
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import { suggestionIn } from '../domain/phase.ts';
-import type { Job, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
+import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
@@ -16,10 +16,11 @@ const TERMINAL: Recorded = { kind: 'terminal' };
 
 const TAIL_CHARS = 2000;
 
-function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string): Recorded {
+/** `liveness`: a timeout's (issue #630), kept on the job for the assessor. */
+function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string, liveness?: JobLiveness): Recorded {
   const maskedError = maskGitHubTokens(error);
   const maskedTail = tail ? maskGitHubTokens(tail.slice(-TAIL_CHARS)) : undefined;
-  c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, ...(maskedTail ? { errorTail: maskedTail } : {}) });
+  c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, liveness, ...(maskedTail ? { errorTail: maskedTail } : {}) });
   c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error: maskedError, ...priorityTagOf(c, job.id) } });
   return TERMINAL;
 }
@@ -77,7 +78,7 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.jobs.update(job.id, { status: 'finished', result: maskedResult, finishedAt: at, pendingAnswer: undefined, ...part });
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { ...(maskedResult !== undefined && maskedResult !== null ? { result: maskedResult } : {}), ...part } });
     } else if (outcome.kind === 'failed') {
-      fail(c, job, laneId, outcome.error, at, outcome.tail);
+      fail(c, job, laneId, outcome.error, at, outcome.tail, outcome.liveness);
     } else if (outcome.kind === 'report') {
       const r = recordReport(c, job, lane, laneId, machine, outcome.review, outcome.report, at);
       recorded = { kind: 'report', review: r.kind, itemId: r.itemId };

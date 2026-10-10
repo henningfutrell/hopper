@@ -15,6 +15,7 @@ import { recordOutcome } from './outcome.ts';
 import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
 import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
+import { nudgeCheck } from './nudge-check.ts';
 
 const PROGRESS_EVERY_MS = 500;
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
@@ -162,6 +163,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
       credentials: (scratch, make = false) => placeCredentials(c, started, m, executor?.machineShell?.(m), scratch, make, (line) => progress.report(0, line)),
       progress: (f, msg) => progress.report(f, msg),
+      // Before a nudge (issue #627): the job's source, then what it waits on a person for.
+      beforeNudge: () => nudgeCheck(c, j),
       saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
       workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
       agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },

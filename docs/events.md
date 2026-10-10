@@ -880,11 +880,12 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job
 
 ## `job.continued`
 
-Version 1 (`docs/schemas/job.continued.v1.json`). A person resolved a failed job's hand-off with Continue (issue #551) and its own agent session can resume: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`), told the failure and the person's note. `handoffId`: the hand-off it resolved.
+Version 1 (`docs/schemas/job.continued.v1.json`). A failed job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record.
 
 | field | type | required |
 |---|---|---|
-| `handoffId` | string | yes |
+| `handoffId` | string | no |
+| `recordId` | string | no |
 
 ```json
 {
@@ -1121,7 +1122,7 @@ Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a f
 | `recordId` | string | yes |
 | `signature` | string | yes |
 | `class` | `transient` \| `shared` \| `job` | yes |
-| `decision` | `retry` \| `hold` \| `redirect` \| `person` | yes |
+| `decision` | `retry` \| `hold` \| `redirect` \| `person` \| `continue` | yes |
 | `reasons` | string[] | yes |
 | `summary` | string | yes |
 | `attempt` | integer | yes |
@@ -1236,7 +1237,7 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 | `summary` | string | yes |
 | `notify` | boolean | yes |
 | `recordId` | string | no |
-| `decision` | `retry` \| `hold` \| `redirect` \| `person` | no |
+| `decision` | `retry` \| `hold` \| `redirect` \| `person` \| `continue` | no |
 | `class` | `transient` \| `shared` \| `job` | no |
 | `priority` | number | no |
 | `high` | boolean | no |
@@ -1272,6 +1273,26 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
   "end": "run_again",
   "nextJobId": "j2",
   "resolution": "fixed"
+}
+```
+
+## `handoff.checked`
+
+Version 1 (`docs/schemas/handoff.checked.v1.json`). What an open hand-off's work shows at its job's source changed (issue #621): the failure assessor asks the source, at once for a new hand-off and then every 10 minutes, for the job's item and the pull requests the job opened or pushed to, and keeps the answer on the hand-off for its card. `item`: `open`, `done` (closed as completed), `closed` (closed any other way) or `gone`. `pullRequests`: how many pull requests of the job's it found. `shipped`: a pull request of the job's merged, or its item closed as completed — then the hand-off closes (`handoff.closed`, `end: "finished"`) and the job ends finished (`job.finished`), its source told so in place of the failure. Only when the answer changed.
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `item` | `open` \| `done` \| `closed` \| `gone` | yes |
+| `pullRequests` | integer | yes |
+| `shipped` | boolean | yes |
+
+```json
+{
+  "handoffId": "h1",
+  "item": "open",
+  "pullRequests": 1,
+  "shipped": true
 }
 ```
 

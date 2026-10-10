@@ -1,9 +1,10 @@
 // Failure assessment (issue #509, design.md "Failure assessment"): the assessor's vocabulary. A failed job is
 // assessed — its error normalised to a signature, matched to a known cause, and decided: run again (transient),
-// grouped into a problem (a shared cause, held or redirected), or handed to a person (job-specific).
+// grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
+// job still at work (issue #630) — continued.
 
-/** What the assessor decides for a failed job. */
-export const FAILURE_DECISIONS = ['retry', 'hold', 'redirect', 'person'] as const;
+/** What the assessor decides for a failed job. `continue` (issue #630): a timed-out job still at work goes on. */
+export const FAILURE_DECISIONS = ['retry', 'hold', 'redirect', 'person', 'continue'] as const;
 export type FailureDecision = typeof FAILURE_DECISIONS[number];
 
 /** The kind of a failure's cause: a hiccup, a cause many jobs share, or one of this job's own. */
@@ -21,8 +22,22 @@ export type FailureClass = typeof FAILURE_CLASSES[number];
 export const FAILURE_OUTCOMES = ['retried', 'redirected', 'released', 'held', 'surfaced', 'not_retried', 'superseded', 'item_closed', 'resolved'] as const;
 export type FailureOutcome = typeof FAILURE_OUTCOMES[number];
 
-/** A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job. */
-export type PendingRun = 'retry' | 'redirect' | 'release';
+/**
+ * A run again the assessor will make when due: a retry after its backoff, a redirect now, a release of a held job, a
+ * continue now (issue #630) — its own agent session resumes, else its item runs again.
+ */
+export type PendingRun = 'retry' | 'redirect' | 'release' | 'continue';
+
+/**
+ * A timed-out job's liveness (issue #630): what it showed of its progress at its timeout. `outputAt`: when its pane
+ * output last changed (absent: not once in its turn). `pushed`: its scratch dir held a branch pushed beyond the default
+ * branch. `pullRequest`: a pull request of its own is open, by its source. Absent: not known — its executor or source
+ * cannot tell, or could not be asked.
+ */
+export interface JobLiveness { outputAt?: string; pushed?: boolean; pullRequest?: boolean }
+
+/** What continued a failed job: a person's Continue on its hand-off (issue #551), or the assessor's (issue #630) on its record. */
+export type ContinuedBy = { handoffId: string } | { recordId: string };
 
 /** Where a problem applies: a machine, an executor on it, or (neither) every machine. */
 export interface ProblemScope { machineId?: string; executor?: string }
@@ -45,6 +60,8 @@ export interface FailureEvidence {
   ranMs?: number;
   /** Other items failed with the same signature within the grouping window. */
   sameSignature: number;
+  /** A timed-out job's liveness (issue #630). */
+  liveness?: JobLiveness;
 }
 
 /** One classified failure record. */
@@ -132,7 +149,9 @@ export interface FailureSettings {
   groupThreshold: number;
   groupWindowMin: number;
   /** Whether each decision acts by itself; off, it waits for a person. */
-  auto: { retry: boolean; hold: boolean; redirect: boolean };
+  auto: { retry: boolean; hold: boolean; redirect: boolean; continue: boolean };
+  /** A timed-out job whose pane output changed within this many minutes before its timeout was at work (issue #630). */
+  activeWindowMin: number;
   /** Failure records and resolved problems older than this are deleted. */
   retentionDays: number;
   /** Closed hand-offs older than this are deleted; an open one never is. */
@@ -143,13 +162,18 @@ export interface FailureSettings {
 
 export const DEFAULT_FAILURE_SETTINGS: FailureSettings = {
   maxAttempts: 3, backoffSec: 60, backoffFactor: 2, backoffMaxSec: 1800, groupThreshold: 3, groupWindowMin: 60,
-  auto: { retry: true, hold: true, redirect: true }, retentionDays: 90,
+  auto: { retry: true, hold: true, redirect: true, continue: true }, activeWindowMin: 10, retentionDays: 90,
   handoffRetentionDays: 30, handoffNotify: true,
 };
 
+/** The settings as saved, a field saved before it existed taking its default; `auto` too, field by field (issue #630). */
+export function failureSettingsOf(saved: Partial<FailureSettings> | undefined): FailureSettings {
+  return { ...DEFAULT_FAILURE_SETTINGS, ...saved, auto: { ...DEFAULT_FAILURE_SETTINGS.auto, ...saved?.auto } };
+}
+
 export const FAILURE_SETTING_BOUNDS = {
   maxAttempts: { min: 0, max: 10 }, backoffSec: { min: 1, max: 3600 }, backoffFactor: { min: 1, max: 10 }, backoffMaxSec: { min: 1, max: 86400 },
-  groupThreshold: { min: 2, max: 50 }, groupWindowMin: { min: 1, max: 10080 }, retentionDays: { min: 1, max: 3650 },
+  groupThreshold: { min: 2, max: 50 }, groupWindowMin: { min: 1, max: 10080 }, activeWindowMin: { min: 1, max: 1440 }, retentionDays: { min: 1, max: 3650 },
   handoffRetentionDays: { min: 1, max: 3650 },
 } as const;
 
@@ -221,6 +245,37 @@ export interface HandoffResolution {
 }
 
 /**
+ * Where a job's item is at its source (issue #621): `open`; `done` — closed as completed, by any means; `closed` —
+ * closed any other way (not planned, a duplicate); `gone` — deleted, or no longer there.
+ */
+export const WORK_ITEM_STATES = ['open', 'done', 'closed', 'gone'] as const;
+export type WorkItemState = typeof WORK_ITEM_STATES[number];
+
+/** A pull request of a job's work (issue #621): one it opened, or one it pushed to (an updated pull request, issue #618). */
+export interface WorkPullRequest {
+  url: string;
+  number: number;
+  by: 'opened' | 'updated';
+  state: 'open' | 'merged' | 'closed';
+  draft: boolean;
+  conflicting: boolean;
+}
+
+/**
+ * What a failed job's work shows at its source (issue #621): its item and the pull requests it opened or pushed to. The
+ * source says it (`JobSource.workState`); the hand-off keeps the last answer with when it was asked (`checkedAt`).
+ */
+export interface WorkState {
+  item: WorkItemState;
+  pullRequests: WorkPullRequest[];
+  checkedAt: string;
+}
+
+/** The work shipped (issue #621): a pull request of the job's merged, or its item closed as completed. Nothing is left to do. */
+export const workShipped = (w: Pick<WorkState, 'item' | 'pullRequests'>): boolean =>
+  w.item === 'done' || w.pullRequests.some((pr) => pr.state === 'merged');
+
+/**
  * A hand-off (issue #516): a failed job automatic handling ended for, waiting on a person — Failures, Needs a person.
  * Open until a person resolves it (issue #551) or its item runs again; never dropped by age. It keeps what the assessment said, so it
  * outlives the failure record's retention.
@@ -245,6 +300,8 @@ export interface Handoff {
   nextJobId?: string;
   /** What a person did about it (issue #551); absent for one closed by anything else. */
   resolution?: HandoffResolution;
+  /** What its job's work showed at its source when last asked (issue #621); absent until asked, or when it cannot tell. */
+  work?: WorkState;
 }
 
 /** Whether the daemon takes an action now, and why not. */
@@ -262,8 +319,20 @@ export interface ProblemView extends Problem {
  * job's own agent session; false, it runs a new job. `signature`, `causeName`: its failure record's, while the
  * record is kept, so a person can name its cause from the card.
  */
+/**
+ * What a hand-off's card says first (issue #621): `whatHappened`, one plain sentence or a few, from its work state —
+ * never the raw error —; the resolution to take (`recommended`) and why, in a few words; for Done, the link to the work.
+ */
+export interface HandoffCard {
+  whatHappened: string;
+  recommended: HandoffResolutionAction;
+  why: string;
+  link?: string;
+}
+
 export interface HandoffView extends Handoff {
   actions: { continue: Allowed; fixed: Allowed; doneByHand: Allowed; wontDo: Allowed };
+  card: HandoffCard;
   continueResumes: boolean;
   signature?: string;
   causeName?: string;

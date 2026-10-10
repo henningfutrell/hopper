@@ -32,7 +32,8 @@ const record = (over: Record<string, unknown> = {}) => ({
 const handoff = (over: Record<string, unknown> = {}) => ({
   id: 'h1', jobId: 'j9', recordId: 'f2', status: 'open', reason: 'person', openedAt: at(-30), decision: 'person', class: 'job',
   summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', reasons: ['no known cause matches', 'not seen on other jobs: it needs a person'], error: 'HOPPER_FAILED tests fail',
-  actions: { continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } }, continueResumes: true, signature: 'bbbbbbbbbbbb', ...over,
+  actions: { continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } }, continueResumes: true, signature: 'bbbbbbbbbbbb',
+  card: { whatHappened: 'The job stopped before it opened or updated a PR.', recommended: 'continue', why: 'Its session can go on. Tell it what to do in a note.' }, ...over,
 });
 const view = (over: Record<string, unknown> = {}) => ({
   now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
@@ -200,37 +201,59 @@ describe('the Failures view', () => {
     expect(a?.textContent).toContain('Held: Disk full on desk');
   });
 
-  it('Needs a person: each open hand-off with its reason and summary, its own count; the nav badge counts it too', async () => {
+  it('Needs a person: each open hand-off with its reason and what happened, its own count; the nav badge counts it too', async () => {
     await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', jobId: 'j8', reason: 'retry_limit' })] }) });
     const section = document.querySelector('[data-section="needs-a-person"]')!;
     expect(section).not.toBeNull();
     expect(section.querySelector('[data-slot="handoff-count"]')?.textContent).toBe('2');
-    expect(handoffRow()!.textContent).toContain('Needs a person. Ran 1 time on desk. Failed: tests fail.');
+    expect(handoffRow()!.querySelector('[data-slot="what-happened"]')!.textContent).toBe('The job stopped before it opened or updated a PR.');
     expect(handoffRow('h2')!.textContent).toContain('retries used up');
     // One open problem and two open hand-offs.
     expect(navBadge()).toBe('3');
   });
 
-  it('says the next step for why it was handed off, and what each resolution leads to (issue #551)', async () => {
-    await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', reason: 'retry_limit', continueResumes: false })] }) });
-    const row = handoffRow()!;
-    expect(row.querySelector('[data-slot="next-step"]')!.textContent).toContain('Continue with a note');
-    expect(handoffRow('h2')!.querySelector('[data-slot="next-step"]')!.textContent).toContain('the cause is likely outside the job');
-    expect(row.querySelector('[data-resolution="continue"]')!.textContent).toContain('Its own session goes on in its work tree');
-    expect(handoffRow('h2')!.querySelector('[data-resolution="continue"]')!.textContent).toContain('a new job of its item runs');
-    expect(row.querySelector('[data-resolution="done_by_hand"]')!.textContent).toContain('the job ends finished');
+  it('starts with what happened, then the recommended resolution as the main button with why; the rest after it, each saying what it leads to (issues #551, #621)', async () => {
+    const card = { whatHappened: 'The job updated PR #616. #616 is merged. The issue is done.', recommended: 'done_by_hand', why: 'The work is done.', link: 'https://github.com/o/r/pull/616' };
+    const shipped = handoff({ id: 'h2', continueResumes: false, card });
+    await boot('#failures', { failures: view({ handoffs: [handoff(), shipped] }) });
+    const row = handoffRow('h2')!;
+    expect(row.querySelector('[data-slot="what-happened"]')!.textContent).toBe('The job updated PR #616. #616 is merged. The issue is done.');
+    const items = [...row.querySelectorAll('[data-resolution]')];
+    expect(items.map((li) => li.getAttribute('data-resolution'))).toEqual(['done_by_hand', 'continue', 'fixed', 'wont_do']);
+    expect(items[0]!.hasAttribute('data-recommended')).toBe(true);
+    expect(items[0]!.querySelector('button')!.textContent).toBe('Done');
+    expect(items[0]!.textContent).toContain('The work is done.');
+    expect(row.querySelector('[data-resolution="continue"] button')!.textContent).toBe('Continue');
+    expect(row.querySelector('[data-resolution="continue"]')!.textContent).toContain('a new job of its item runs');
+    expect(row.querySelector('[data-resolution="fixed"] button')!.textContent).toBe('Run again');
+    // Done carries the link to the work.
+    expect((row.querySelector('input[aria-label="Link"]') as HTMLInputElement).value).toBe('https://github.com/o/r/pull/616');
+    // The first card recommends Continue: its session goes on.
+    expect(handoffRow()!.querySelector('[data-recommended]')!.getAttribute('data-resolution')).toBe('continue');
+    expect(handoffRow()!.querySelector('[data-recommended]')!.textContent).toContain('Its session can go on.');
+  });
+
+  it('the summary, the cause, the assessment and the raw error are behind Details (issue #621)', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff({ causeName: 'Tests fail' })] }) });
+    const details = handoffRow()!.querySelector('details[data-slot="details"]')!;
+    expect(details.querySelector('summary')!.textContent).toBe('Details');
+    expect(details.textContent).toContain('Needs a person. Ran 1 time on desk. Failed: tests fail.');
+    expect(details.textContent).toMatch(/Known cause: Tests fail.*no known cause matches.*HOPPER_FAILED tests fail/s);
+    expect(handoffRow()!.querySelector('[data-slot="what-happened"]')!.textContent).not.toContain('HOPPER_FAILED');
   });
 
   it('a refused resolution says why instead of disappearing; a viewer is offered none', async () => {
     const refused = { ok: false, why: 'a newer job of its item exists' };
     await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', actions: { continue: refused, fixed: refused, doneByHand: { ok: true }, wontDo: { ok: true } } })] }) });
-    expect(buttonsIn(handoffRow())).toEqual(expect.arrayContaining(['Continue', 'I fixed it', 'Done by hand', "Won't do"]));
+    expect(buttonsIn(handoffRow())).toEqual(expect.arrayContaining(['Continue', 'Run again', 'Done', "Won't do"]));
     expect(buttonsIn(handoffRow('h2'))).not.toContain('Continue');
-    expect(buttonsIn(handoffRow('h2'))).toContain('Done by hand');
+    expect(buttonsIn(handoffRow('h2'))).toContain('Done');
     expect(handoffRow('h2')!.querySelector('[data-resolution="continue"]')!.textContent).toContain('not now — a newer job of its item exists');
     await act(async () => root?.unmount());
     await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'viewer' });
     expect(handoffRow()!.querySelector('[data-slot="resolve"]')).toBeNull();
+    // A viewer sees the recommendation without buttons (issue #621).
+    expect(handoffRow()!.querySelector('[data-slot="recommended"]')!.textContent).toBe('Continue: Its session can go on. Tell it what to do in a note.');
   });
 
   it('a resolution goes to the daemon with the note (Won\'t do only with one); once resolved, the card says what was done and links the next job', async () => {

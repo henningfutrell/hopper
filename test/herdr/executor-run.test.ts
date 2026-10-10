@@ -219,7 +219,7 @@ describe('herdr-claude executor: run', () => {
   it('times out per call: interrupts, exits Claude, closes the pane', async () => {
     const { herdr, clock, executor } = setup({ turns: [{ output: [], end: 'working' }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go', timeoutMs: 5000 })).ctx);
-    expect(out).toEqual({ kind: 'failed', error: 'timed out' });
+    expect(out).toEqual({ kind: 'failed', error: 'timed out', liveness: { pushed: false } });
     expect(clock.elapsed()).toBeLessThan(10000);
     expect(herdr.keys).toEqual([{ paneId: 'w1:p1', keys: ['esc'] }, { paneId: 'w1:p1', keys: ['ctrl+c', 'ctrl+c'] }]);
     expect(herdr.closed).toEqual(['w1:p1']);

@@ -5,8 +5,8 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -58,29 +58,19 @@ export interface ExecutionContext {
   jobRules?: string;
   /** The logins (issue #476): a login the job's work waits on goes here, never into a question. Absent → none taken. */
   logins?: RunLogins;
+  /**
+   * Asked before each nudge (issue #627): what the job's source and the hopper say of the job now. A throw: it could
+   * not tell. Absent → nudge.
+   */
+  beforeNudge?(): Promise<NudgeCheck>;
 }
 
 /**
- * Where a run reports a login it waits on (issue #476, design.md "Logins"), and reads what the user did with
- * it. The run waits as its tool does, and says when the tool went on, or when the run ended first.
+ * The check before a nudge (issue #627): nudge; or end the job done, with why — its pull request is ready for review,
+ * or its issue is closed; or no nudge while it waits on a person, with what it waits on.
  */
-export interface RunLogins {
-  /**
-   * The login's id; one open login per run and prompt — the same tool, code or URL (issue #567) —, so the same code
-   * reported again is the same login and a new code updates it. `renewable`: the run can ask its tool for a new
-   * code. `restore`: the same login read again after a restart: only its URL and code are taken back. Throws on a
-   * report its kind refuses.
-   */
-  report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
-  /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
-  check(id: string): LoginCheck;
-  /** The login went through: a login signal (a token obtained, the CLI logged in), or a print-mode run that succeeded. */
-  completed(id: string): void;
-  /** The run said its code expired before it was completed (issue #567): expired now, as at `expiresAt`. */
-  expired(id: string): void;
-  /** The run ended first, or could not take the login. */
-  failed(id: string, reason: string): void;
-}
+export type NudgeCheck = { nudge: true } | { done: string } | { waiting: string };
+
 
 /** What the executor needs answered before the job can continue. */
 export interface ExecutionQuestion {
@@ -96,8 +86,11 @@ export interface ExecutionQuestion {
 
 export type ExecutionOutcome =
   | { kind: 'finished'; result: unknown; partlyDone?: string }
-  /** `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. */
-  | { kind: 'failed'; error: string; tail?: string }
+  /**
+   * `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. `liveness`: a
+   * timeout's (issue #630), what the job showed of its progress then.
+   */
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
   /**
@@ -181,8 +174,11 @@ export interface Executor {
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
 }
 
-/** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
-export interface Reaped { kept: string[] }
+/**
+ * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
+ * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none.
+ */
+export interface Reaped { kept: string[]; pushed?: string[] }
 
 /** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
 export interface Survey {
@@ -200,8 +196,11 @@ export interface Survey {
  * rejects when the machine cannot be reached or the script did not finish.
  */
 export interface MachineShell {
-  /** Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not pushed. */
-  reap(jobId: string, scratch?: string): Promise<Reaped>;
+  /**
+   * Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not
+   * pushed, or `keep` (a timed-out job's, issue #630: it may go on there). Says what it kept and what was pushed.
+   */
+  reap(jobId: string, scratch?: string, keep?: boolean): Promise<Reaped>;
   /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
   survey(roots: string[]): Promise<Survey>;
   /**
@@ -537,11 +536,15 @@ export interface JobSource extends FollowsPullRequests {
    */
   closedAsComplete?(job: Job): Promise<boolean>;
   /**
-   * Whether the job's item is closed at the source, by any means, or gone (issue #529): asked for a failed job handed
-   * off to a person, whose hand-off then closes — nothing waits on it any more. Throws when it cannot tell now: asked
-   * again later. Absent: the source cannot tell, and a hand-off waits on a person.
+   * What a handed-off job's work shows at the source (issues #529, #621): its item, and the pull requests the job opened
+   * or pushed to. Undefined: it cannot tell. Throws: asked again later. Absent: a hand-off waits on a person.
    */
-  itemClosed?(job: Job): Promise<boolean>;
+  workState?(job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined>;
+  /**
+   * Whether a pull request of the job's own is open (issue #630): one it opened, or an older one it pushed to — a timed-out
+   * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
+   */
+  pullRequestOpen?(job: Job): Promise<boolean>;
   /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
   credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**
@@ -608,8 +611,12 @@ export interface SourceHost {
   refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
-  /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
-  finishClosedAsComplete(jobId: JobId): boolean;
+  /**
+   * A failed job whose work shipped (issue #350: its item closed as complete, found before its failure was reported;
+   * issue #621: a pull request of its merged, found by the failure assessor's work check): finished, with `result`
+   * (default: issue closed as complete), and its end to be reported to its source again. false: it is no longer failed.
+   */
+  finishShipped(jobId: JobId, result?: { summary: string; link?: string }): boolean;
   /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
   finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
@@ -624,12 +631,12 @@ export interface SourceHost {
    */
   rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
   /**
-   * Its source gave a failed job's item back for a person's Continue (issue #551): the same job is queued again, in
-   * one tx, pinned to the machine it ran on with `brief` pending (`continued`), its end to be reported to its source
-   * again, so its claim resumes its own agent session. job.continued. Refused (not_found, conflict) when it is gone,
-   * no longer failed, or a newer job of its item exists.
+   * Its source gave a failed job's item back for a Continue — a person's on its hand-off (issue #551), or the
+   * assessor's on its record (issue #630): the same job is queued again, in one tx, pinned to the machine it ran on
+   * with `brief` pending (`continued`), its end to be reported to its source again, so its claim resumes its own agent
+   * session. job.continued. Refused (not_found, conflict) when it is gone, no longer failed, or a newer job of its item exists.
    */
-  continueJob(jobId: JobId, brief: string, handoffId: string): RerunResult;
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
 }
 
 /**
@@ -650,7 +657,7 @@ export interface SourceRegistry {
    * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
    * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.
    */
-  continueJob(jobId: JobId, brief: string, handoffId: string): Promise<RerunResult>;
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.

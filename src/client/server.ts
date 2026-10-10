@@ -282,10 +282,11 @@ export const scopeUnitOf = (jobId: string): string => `hopper-job-${jobId}`;
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
-// $1 the job id, $2 its scratch dir or empty. Run with HOPPER_JOB_ID unset, so neither it nor what it
-// starts matches the processes it stops.
+// $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
+// job's, issue #630: it may go on there). Run with HOPPER_JOB_ID unset, so neither it nor what it starts matches the
+// processes it stops.
 const REAP_SCRIPT = [
-  'id=$1; s=$2;',
+  'id=$1; s=$2; k=$3;',
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id.
@@ -313,7 +314,13 @@ const REAP_SCRIPT = [
   '    printf "hopper-kept %s\\n" "$d";',
   '  fi;',
   'done);',
-  'if [ -n "$kept" ]; then printf "%s\\n" "$kept"; elif [ -d "$s" ]; then',
+  // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
+  'pushed=$(repos | while IFS= read -r g; do',
+  '  d=${g%/.git}; b=$(git -C "$d" rev-parse -q --verify refs/remotes/origin/HEAD 2>/dev/null) || continue;',
+  '  [ -n "$(git -C "$d" for-each-ref --count=1 --merged HEAD --no-merged "$b" refs/remotes 2>/dev/null)" ] && printf "hopper-pushed %s\\n" "$d";',
+  'done);',
+  '[ -n "$pushed" ] && printf "%s\\n" "$pushed";',
+  'if [ -n "$kept" ]; then printf "%s\\n" "$kept"; elif [ -d "$s" ] && [ "$k" != keep ]; then',
   '  repos | while IFS= read -r g; do',
   '    [ -f "$g" ] || continue; d=${g%/.git};',
   '    [ -L "$d/node_modules" ] && rm -f "$d/node_modules";',
@@ -343,17 +350,22 @@ const SURVEY_SCRIPT = [
   'printf "%s\\n" hopper-surveyed',
 ].map((l) => l.trim()).join(' ');
 
-/** The argv that reaps a job on the machine it runs on: its scope and processes stopped, its scratch dir (when given) removed unless it holds work. */
-export const reapArgv = (jobId: string, scratch = ''): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch];
+/**
+ * The argv that reaps a job on the machine it runs on: its scope and processes stopped, its scratch dir (when given)
+ * removed unless it holds work — or kept whatever it holds (`keep`, issue #630).
+ */
+export const reapArgv = (jobId: string, scratch = '', keep = false): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch, ...(keep ? ['keep'] : [])];
 
 /** The argv that lists what jobs left on the machine: scopes, processes, and the scratch dirs under `roots`. */
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
 
-/** What a finished reap said: the repositories it kept. Undefined when it did not finish. */
-export function readReap(stdout: string): { kept: string[] } | undefined {
+/** What a finished reap said: the repositories it kept, and those whose branch was pushed (issue #630). Undefined when it did not finish. */
+export function readReap(stdout: string): { kept: string[]; pushed?: string[] } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
-  return { kept: [...new Set(lines.filter((l) => l.startsWith('hopper-kept ')).map((l) => l.slice('hopper-kept '.length)))] };
+  const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
+  const pushed = named('hopper-pushed ');
+  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}) };
 }
 
 /** One scratch dir the survey found: its job, path and age. */
@@ -382,12 +394,13 @@ const isRoot = (path: unknown): path is string => typeof path === 'string' && pa
 
 /** The argv a `/reap` or `/survey` body asks for; else why it is refused. */
 export function scriptArgvOf(path: '/reap' | '/survey', body: unknown): string[] | string {
-  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown };
+  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown; keep?: unknown };
   if (path === '/survey') {
     if (!Array.isArray(b.roots) || b.roots.length > 256 || !b.roots.every(isRoot)) return 'roots must be at most 256 absolute paths';
     return surveyArgv(b.roots);
   }
   if (!isJobId(b.jobId)) return 'jobId must be a job id';
   if (b.scratch !== undefined && !isScratchOf(b.scratch, b.jobId)) return 'scratch must be the job\'s own scratch dir';
-  return reapArgv(b.jobId, b.scratch);
+  if (b.keep !== undefined && typeof b.keep !== 'boolean') return 'keep must be true or false';
+  return reapArgv(b.jobId, b.scratch, b.keep === true);
 }

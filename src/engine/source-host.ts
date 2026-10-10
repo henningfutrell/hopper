@@ -215,20 +215,23 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    finishClosedAsComplete(jobId) {
-      return store.tx(() => {
-        if (store.jobs.get(jobId)?.status !== 'failed') return false;
-        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c) });
-        store.events.append({ type: 'job.finished', jobId, data: { result: 'issue closed as complete' } });
-        return true;
-      });
-    },
-
     finishComplete(jobId, partlyDone) {
       return store.tx(() => {
         if (store.jobs.get(jobId)?.status !== 'failed') return false;
         store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c), ...(partlyDone ? { partlyDone } : {}) });
         store.events.append({ type: 'job.finished', jobId, data: { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) } });
+        return true;
+      });
+    },
+
+    finishShipped(jobId, result) {
+      return store.tx(() => {
+        const job = store.jobs.get(jobId);
+        if (job?.status !== 'failed') return false;
+        // Its end is told to its source again: finished, in place of a failure already reported.
+        const sync = { ...(job.sourceState?.sync ?? {}), finalReported: false };
+        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c), sourceState: { ...job.sourceState, sync }, ...(result ? { result } : {}) });
+        store.events.append({ type: 'job.finished', jobId, data: { result: result ?? 'issue closed as complete' } });
         return true;
       });
     },
@@ -249,7 +252,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    continueJob(jobId, brief, handoffId) {
+    continueJob(jobId, brief, by) {
       return store.tx((): RerunResult => {
         const job = store.jobs.get(jobId);
         if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
@@ -259,11 +262,11 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // Its end is told to its source again: the claim, then however this run ends.
         const sync = { ...(job.sourceState?.sync ?? {}), claimReported: false, finalReported: false };
         const next = store.jobs.update(jobId, {
-          status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), handoffId }, ...(machineId ? { resumeOn: machineId } : {}),
-          error: undefined, errorTail: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
+          status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), ...by }, ...(machineId ? { resumeOn: machineId } : {}),
+          error: undefined, errorTail: undefined, liveness: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
           holdReason: undefined, waitReason: undefined, laneId: undefined, sourceState: { ...job.sourceState, sync },
         });
-        store.events.append({ type: 'job.continued', jobId, data: { handoffId } });
+        store.events.append({ type: 'job.continued', jobId, data: { ...by } });
         return { ok: true, job: next };
       });
     },

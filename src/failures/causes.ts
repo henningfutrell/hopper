@@ -43,6 +43,11 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     pattern: /ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network (error|is unreachable)|temporar(il)?y (unavailable|failure)|overloaded|rate limit|\b50[234]\b/i,
   }),
   cause({
+    id: 'timed-out', name: 'Timed out', cls: 'transient', decision: 'continue', scope: 'machine',
+    description: 'The job ran out of its time. Its liveness decides (`timed-out.ts`): still at work — recent pane output, commits pushed, or a pull request of its own open — it goes on; silent, it runs again once, then goes to a person.',
+    pattern: /^timed out$/,
+  }),
+  cause({
     id: 'start-race', name: 'Start race', cls: 'transient', decision: 'retry', scope: 'machine',
     description: 'The agent did not start, or its pane went away, before the job was under way.',
     pattern: /did not start|failed to start|pane (was )?(lost|closed|not found|gone)|lost (the )?send/i,
@@ -64,7 +69,7 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
   }),
 ];
 
-const CLASS_OF: Record<FailureDecision, FailureClass> = { retry: 'transient', hold: 'shared', redirect: 'shared', person: 'job' };
+const CLASS_OF: Record<FailureDecision, FailureClass> = { retry: 'transient', hold: 'shared', redirect: 'shared', person: 'job', continue: 'transient' };
 
 /** A named cause as a known cause: its class follows its decision. */
 export function namedCause(n: NamedCause): KnownCause {

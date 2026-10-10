@@ -1,8 +1,10 @@
 // Failures (issue #509): what the failure assessor made of the failed jobs. What is left first (issue #517): how
 // many failed jobs are not assessed yet and how many need a person. Then Needs a person (issue #516) —
-// every failed job automatic handling ended for whose hand-off is open, with its own count; each card says the next step for why it was
-// handed off, and a person resolves it there with a note (issue #551): Continue, I fixed it, Done by hand, Won't do,
-// each saying what it leads to, or why not now. A resolved card says what was done, by whom, whether its issue was
+// every failed job automatic handling ended for whose hand-off is open, with its own count; each card first says what
+// happened in one plain sentence, from the real state of the job's pull requests and issue (issue #621), then the
+// recommended resolution as the main button with why, and a person resolves it there with a note (issue #551): Continue,
+// Run again, Done, Won't do, each saying what it leads to, or why not now; the summary, the cause, the assessment and
+// the raw error are behind Details. A resolved card says what was done, by whom, whether its issue was
 // told, and links the job that follows; an admin names its cause from it —; then open problems — one shared cause,
 // shown once with the jobs it hit and the ones held for it, with Resolve and Release held —; then the newest
 // assessed failures still open (issues #529, #618), each with its decision, its summary and Retry; then Ended — the
@@ -21,7 +23,7 @@ import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
 import {
-  DECISION_LABEL, DECISION_TONE, HANDOFF_NEXT_STEP, HANDOFF_REASON_LABEL, RESOLUTIONS, countsText, handoffEndText, offered, outcomeText, plural, resolutionLeadsTo, writeBackText,
+  DECISION_LABEL, DECISION_TONE, HANDOFF_REASON_LABEL, RESOLUTIONS, countsText, handoffEndText, offered, outcomeText, plural, resolutionLeadsTo, resolutionsFor, writeBackText,
 } from '@/model/failures';
 import type { FailureRecordView, HandoffResolutionAction, HandoffView, ProblemView } from '@/model/wire';
 import { failureAct, useHopper } from '@/store';
@@ -117,12 +119,13 @@ function Resolution({ h }: { h: HandoffView }) {
 }
 
 /**
- * Resolve an open hand-off (issue #551): a note, a link for Done by hand, and the four resolutions, each saying what
- * it leads to. One the daemon refuses now is said with its reason, never offered.
+ * Resolve an open hand-off (issue #551): a note, a link for Done, and the resolutions — the card's recommended one as
+ * the main button with why (issue #621), the others after it, each saying what it leads to. One the daemon refuses now
+ * is said with its reason, never offered.
  */
 function Resolve({ h }: { h: HandoffView }) {
   const [note, setNote] = useState('');
-  const [link, setLink] = useState('');
+  const [link, setLink] = useState(h.card.link ?? '');
   const [busy, setBusy] = useState(false);
   const run = async (action: HandoffResolutionAction, label: string) => {
     setBusy(true);
@@ -135,19 +138,22 @@ function Resolve({ h }: { h: HandoffView }) {
       <Textarea aria-label="Note" className="min-h-16 text-sm" placeholder="What did you do, or what should the job do next? Your note goes to the job and to its issue."
         value={note} onChange={(e) => setNote(e.target.value)} />
       {h.actions.doneByHand.ok && (
-        <Input aria-label="Link" className="h-8 text-sm" placeholder="Link to the work, for Done by hand (pull request or commit)" value={link} onChange={(e) => setLink(e.target.value)} />
+        <Input aria-label="Link" className="h-8 text-sm" placeholder="Link to the work, for Done (pull request or commit)" value={link} onChange={(e) => setLink(e.target.value)} />
       )}
       <ul className="space-y-1.5">
-        {RESOLUTIONS.map(({ action, key, label }) => {
+        {resolutionsFor(h).map(({ action, key, label }) => {
           const allowed = h.actions[key];
           const needsNote = action === 'wont_do' && note.trim() === '';
+          const main = action === h.card.recommended;
           return (
-            <li key={action} data-resolution={action} className="flex flex-wrap items-center gap-2 text-xs">
+            <li key={action} data-resolution={action} data-recommended={main ? '' : undefined} className={cn('flex flex-wrap items-center gap-2', main ? 'text-sm' : 'text-xs')}>
               {allowed.ok
-                ? <Button size="xs" variant={action === 'continue' ? 'default' : 'outline'} disabled={busy || needsNote} title={needsNote ? 'Say why in the note first' : undefined}
+                ? <Button size={main ? 'sm' : 'xs'} variant={main ? 'default' : 'outline'} disabled={busy || needsNote} title={needsNote ? 'Say why in the note first' : undefined}
                   onClick={() => void run(action, label)}>{label}</Button>
                 : <span className="font-medium text-muted-foreground">{label}:</span>}
-              <span className={allowed.ok ? 'text-muted-foreground' : 'text-muted-foreground/80'}>{allowed.ok ? resolutionLeadsTo(action, h) : `not now — ${allowed.why}`}</span>
+              <span className={main && allowed.ok ? 'text-foreground' : 'text-muted-foreground'}>
+                {allowed.ok ? (main ? h.card.why : resolutionLeadsTo(action, h)) : `not now — ${allowed.why}`}
+              </span>
             </li>
           );
         })}
@@ -161,6 +167,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
   const canAdmin = useCanAdmin();
   const now = useNow();
   const open = h.status === 'open';
+  const recommended = RESOLUTIONS.find((r) => r.action === h.card.recommended)!;
   return (
     <li data-handoff={h.id} className={cn('space-y-2 px-4 py-3', !open && 'opacity-80')}>
       <div className="flex items-start gap-2">
@@ -169,14 +176,20 @@ function HandoffRow({ h }: { h: HandoffView }) {
           <StatusBadge status={h.reason} tone={open ? 'question' : 'ok'} label={open ? HANDOFF_REASON_LABEL[h.reason] : handoffEndText(h)} />
         </span>
       </div>
-      <div className="text-sm">{h.summary}</div>
-      {open && <div data-slot="next-step" className="text-sm text-muted-foreground"><span className="font-medium text-foreground">Next step: </span>{HANDOFF_NEXT_STEP[h.reason]}</div>}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer select-none">Assessment</summary>
-        <ul className="mt-1 list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
+      <div data-slot="what-happened" className="text-sm font-medium">{h.card.whatHappened}</div>
+      {open && canAct && <Resolve key={h.card.link ?? ''} h={h} />}
+      {open && !canAct && (
+        <div data-slot="recommended" className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{recommended.label}: </span>{h.card.why}</div>
+      )}
+      <details data-slot="details" className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer select-none">Details</summary>
+        <div className="mt-1 space-y-1">
+          <div>{h.summary}</div>
+          {h.causeName && <div>Known cause: {h.causeName}</div>}
+          <ul className="list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
+        </div>
       </details>
-      {open && canAct && <Resolve h={h} />}
       <Resolution h={h} />
       <FollowedBy h={h} />
       {canAdmin && h.signature && !h.causeName && (
