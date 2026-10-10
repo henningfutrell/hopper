@@ -20,7 +20,7 @@ const question = (id: string, text: string, high: boolean) => ({
   createdAt: T, updatedAt: T, seenAt: T, priority: high ? 80 : 50, high,
 });
 
-function fakeDaemon(role: Role) {
+function fakeDaemon(role: Role, extra: { parked?: unknown[]; questions?: unknown[] } = {}) {
   const posts: { path: string; body: unknown }[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
@@ -32,6 +32,7 @@ function fakeDaemon(role: Role) {
       parked: [
         job('old', 2, 50, 'Tidy the docs', parked('2026-10-09T09:00:00.000Z')),
         job('later', 3, 80, 'Fix the outage', parked('2026-10-09T11:00:00.000Z', { agentSession: '11111111-1111-1111-1111-111111111111' })),
+        ...(extra.parked ?? []),
       ],
     },
     '/api/machines': { machines: [{ id: 'desk', label: 'desk', maxLanes: 2, online: true, executors: ['herdr-claude'], lanes: [], usage: [] }] },
@@ -41,6 +42,7 @@ function fakeDaemon(role: Role) {
       question('live', 'Which port?', false),
       question('old', 'Should the docs keep the old section?\nIt is linked from two places.', false),
       question('later', 'Roll back or patch forward?\nThe patch is ready but untested.', true),
+      ...(extra.questions ?? []),
     ] },
     '/api/accounts': { accounts: [] }, '/api/usage': { readings: [], sources: [], machines: [], limits: { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false } },
     '/api/logins': { now: T, settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
@@ -67,11 +69,11 @@ class FakeEventSource {
 let root: Root | undefined;
 let daemon: ReturnType<typeof fakeDaemon>;
 
-async function boot(role: Role, hash: string) {
+async function boot(role: Role, hash: string, extra: Parameters<typeof fakeDaemon>[1] = {}) {
   window.location.hash = hash;
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  daemon = fakeDaemon(role);
+  daemon = fakeDaemon(role, extra);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -152,6 +154,22 @@ describe('the Parked section', () => {
       { path: '/ui/api/questions/q-later/answer', body: { answer: 'Patch forward.' } },
       { path: '/ui/api/jobs/later/requeue', body: {} },
     ]);
+  });
+
+  it('an auto-parked job (issue #650) says why; its answer alone picks it up', async () => {
+    const why = 'Parked automatically: the question waited 30 min.';
+    await boot('admin', '#parked', {
+      parked: [job('night', 4, 50, 'Paint the shed', parked('2026-10-09T10:00:00.000Z', { agentSession: '22222222-2222-2222-2222-222222222222', parked: { at: '2026-10-09T10:00:00.000Z', from: 'waiting_answer', auto: true, why } }))],
+      questions: [question('night', 'Which colour?', false)],
+    });
+    expect(row('night').querySelector('[data-slot="parked-why"]')!.textContent).toBe(why);
+    expect(row('later').querySelector('[data-slot="parked-why"]')).toBeNull();
+    await act(async () => { (row('night').querySelector('[aria-label="Show the question"]') as HTMLButtonElement).click(); });
+    await act(async () => { type(row('night').querySelector('textarea')!, 'Blue.'); });
+    expect(buttonIn(row('night'), 'Answer and pick up')).toBeUndefined();
+    await act(async () => { buttonIn(row('night'), 'Answer')!.click(); });
+    await settle();
+    expect(daemon.posts).toEqual([{ path: '/ui/api/questions/q-night/answer', body: { answer: 'Blue.' } }]);
   });
 
   it('a viewer reads only', async () => {
