@@ -3,13 +3,15 @@
 //
 // Feature: the master key does not depend on a persistent volume
 //   Scenario: HOPPER_MASTER_KEY given: secrets seal and open, and a restart with the same key keeps them
-//   Scenario: a first start with no key makes one and shows it once; a second start without it is limited, and makes no new secret
+//   Scenario: a first start with no key makes one and shows it once in the UI, never in the log; a second start without it is limited, and makes no new secret
 //   Scenario: a wrong key stops the start, saying the key does not match; nothing in the database changes
 //   Scenario: the old token key is moved: every secret stays readable, and once HOPPER_MASTER_KEY is set the old key can go
+//   Scenario: `hopper master-key status` says the source, the fingerprint and whether a previous key is set, never a key (issue #685)
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { runCli } from '../../src/cli.ts';
 import { fingerprintOf } from '../../src/secrets/master-key.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { openDb } from '../../src/store/db.ts';
@@ -52,7 +54,7 @@ async function boot(dbPath: string, secrets: Record<string, string | undefined>)
 }
 
 type View = { secrets: Record<string, unknown>[]; problem?: string };
-type KeyView = { source: string; fingerprint?: string; saved: boolean; revealable: boolean; problem?: string; key?: string };
+type KeyView = { source: string; fingerprint?: string; previous: boolean; saved: boolean; revealable: boolean; problem?: string; key?: string };
 const vault = async (a: TestApp): Promise<View> => (await a.api('GET', '/api/vault')).body as View;
 const setSecret = (a: TestApp, session: string, value = VALUE) => a.ui<View & { error?: string }>('/ui/api/vault', { action: 'set', name: 'DEPLOY_KEY', value }, { token: session });
 const keyView = async (a: TestApp): Promise<KeyView> => (await a.api('GET', '/api/master-key')).body as KeyView;
@@ -80,7 +82,7 @@ describe('the master key (issue #659)', () => {
     const dbPath = freshDb();
     const { a, session } = await boot(dbPath, { HOPPER_MASTER_KEY: KEY });
     expect((await setSecret(a, session)).status).toBe(200);
-    expect(await keyView(a)).toEqual({ source: 'given', fingerprint: fingerprintOf(KEY).slice(0, 16), saved: true, revealable: false });
+    expect(await keyView(a)).toEqual({ source: 'given', fingerprint: fingerprintOf(KEY).slice(0, 16), previous: false, saved: true, revealable: false });
     expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(KEY));
     expect(logged.join('\n')).not.toContain(KEY);
 
@@ -89,20 +91,21 @@ describe('the master key (issue #659)', () => {
     expect(logged.join('\n')).not.toContain(KEY);
   });
 
-  it('a first start with no key makes one, shows it once in the log and once in the UI; a second start without it is limited', async () => {
+  it('a first start with no key makes one, shows it once in the UI and never in the log; a second start without it is limited', async () => {
     const dbPath = freshDb();
     const { a, session } = await boot(dbPath, {});
-    const shown = logged.filter((l) => l.includes('SAVE THIS NOW'));
-    expect(shown).toHaveLength(1);
-    const key = /: ([0-9a-f]{64})$/.exec(shown[0]!)![1]!;
-    expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(key));
+    const fingerprint = instanceSettings(dbPath).masterKeyFingerprint!;
+    expect(logged.filter((l) => l.includes(`master key: made for this new hopper (generated), fingerprint ${fingerprint.slice(0, 16)}`))).toHaveLength(1);
+    expect(logged.some((l) => l.includes('SAVE THIS NOW'))).toBe(false);
     expect(await keyView(a)).toMatchObject({ source: 'generated', saved: false, revealable: true });
-    expect(JSON.stringify(await keyView(a))).not.toContain(key);
 
     // Only the hopper's admin sees it, once; a viewer may not ask.
     const revealed = await keyAct(a, session, 'reveal');
     expect(revealed.status).toBe(200);
-    expect(revealed.body.key).toBe(key);
+    const key = revealed.body.key!;
+    expect(fingerprintOf(key)).toBe(fingerprint);
+    expect(logged.join('\n')).not.toContain(key);
+    expect(JSON.stringify(await keyView(a))).not.toContain(key);
     expect((await keyAct(a, session, 'reveal')).status).toBe(409);
     expect(await keyView(a)).toMatchObject({ source: 'generated', saved: false, revealable: false });
     expect((await keyAct(a, session, 'saved')).body).toMatchObject({ source: 'generated', saved: true, revealable: false });
@@ -165,7 +168,8 @@ describe('the master key (issue #659)', () => {
     const { a: moved } = await boot(dbPath, { HOPPER_TOKEN_KEY_FILE: file });
     expect(await opened(moved, KEY)).toBe(VALUE);
     expect(await keyView(moved)).toMatchObject({ source: 'old-token-key', saved: false, revealable: true });
-    expect(logged.filter((l) => l.includes('SAVE THIS NOW') && l.includes(KEY))).toHaveLength(1);
+    expect(logged.some((l) => l.includes(`master key: read from the old token key (old-token-key), fingerprint ${fingerprintOf(KEY).slice(0, 16)}`))).toBe(true);
+    expect(logged.join('\n')).not.toContain(KEY);
     expect(instanceSettings(dbPath).masterKeyFingerprint).toBe(fingerprintOf(KEY));
 
     logged = [];
@@ -174,5 +178,28 @@ describe('the master key (issue #659)', () => {
     expect(await keyView(set)).toMatchObject({ source: 'given', saved: true });
     expect(logged.some((l) => l.includes('can be removed'))).toBe(true);
     expect(logged.join('\n')).not.toContain(KEY);
+  });
+
+  it('hopper master-key status: the source, the fingerprint and whether a previous key is set, as JSON; never a key (issue #685)', async () => {
+    const dbPath = freshDb();
+    const status = async (a: TestApp) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await runCli(['master-key', 'status', '--url', a.url], { env: { HOPPER_DATABASE_URL: databaseUrlFor(dbPath) }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) });
+      return { code, out: out.join(''), err: err.join('') };
+    };
+    const { a } = await boot(dbPath, { HOPPER_MASTER_KEY: KEY });
+    const given = await status(a);
+    expect(given.code, given.err).toBe(0);
+    expect(JSON.parse(given.out)).toEqual({ source: 'given', fingerprint: fingerprintOf(KEY).slice(0, 16), previous: false });
+
+    const { a: rotated } = await boot(dbPath, { HOPPER_MASTER_KEY: NEW_KEY, HOPPER_MASTER_KEY_PREVIOUS: KEY });
+    const r = await status(rotated);
+    expect(r.code, r.err).toBe(0);
+    expect(JSON.parse(r.out)).toEqual({ source: 'given', fingerprint: fingerprintOf(NEW_KEY).slice(0, 16), previous: true });
+    for (const text of [given.out, given.err, r.out, r.err, logged.join('\n')]) {
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain(NEW_KEY);
+    }
   });
 });

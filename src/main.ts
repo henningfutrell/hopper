@@ -22,6 +22,7 @@ import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
 import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
+import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -348,6 +349,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
 }
 
 async function main(): Promise<void> {
+  for (const s of [process.stdout, process.stderr]) logMask.cover(s); // every log line through the secret mask (issue #685)
   // The first boot of a job-hopper install's self-update (issue #112): hand over to the hopper units, or
   // run the previous install until no job holds a pane in the old herdr session.
   const renamed = renameBoot({ env: process.env, appDir: APP_DIR, log: (l) => console.log(l) });

@@ -4,7 +4,7 @@
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
-// the artifacts (issue #673, cli-operator-artifact.ts).
+// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -18,8 +18,9 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
+import { MASTER_KEY_USAGE, masterKeyCall, typesafeKeyCall } from './cli-operator-keys.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -61,6 +62,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
+${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
@@ -250,21 +252,8 @@ function proposalCall(args: string[]): Call {
   throw usage(PROPOSAL_USAGE);
 }
 
-const TYPESAFE_KEY_SET = 'typesafe-key set (the key on stdin, never as an argument)';
-
-/** The key comes from stdin only: an argument would be in the shell's history and the process list. */
-function typesafeKeyCall(args: string[], stdin: () => string): Call {
-  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
-  const [verb, ...extra] = positionals;
-  if (verb === undefined) return { role: 'viewer', path: '/api/minor-decisions', pick: (v) => (v as { typesafeKey: unknown }).typesafeKey };
-  if (verb === 'remove' && extra.length === 0) return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'remove' }) };
-  if (verb !== 'set' || extra.length > 0) throw usage(verb === 'set' ? TYPESAFE_KEY_SET : `typesafe-key | hopper ${TYPESAFE_KEY_SET} | hopper typesafe-key remove`);
-  const value = stdin().trim();
-  if (!value) throw new OperatorRefusal('no key on stdin: pipe it in, e.g. hopper typesafe-key set < key-file');
-  return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
-}
-
 function callOf(command: string, args: string[], stdin: () => string): Call {
+  if (command === 'master-key') return masterKeyCall(args);
   if (command === 'artifact') return artifactCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
@@ -307,7 +296,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

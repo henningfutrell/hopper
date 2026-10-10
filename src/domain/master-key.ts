@@ -14,6 +14,8 @@ export interface MasterKeyView {
   source: MasterKeySource;
   /** The first 16 hex digits of the key's fingerprint (an HMAC of a fixed label, never the key), when one is known. */
   fingerprint?: string;
+  /** HOPPER_MASTER_KEY_PREVIOUS gives at least one previous key (issue #685): a rotation is under way. Never a key. */
+  previous: boolean;
   /** A person said they saved this key. */
   saved: boolean;
   /** `reveal` answers the key: this start made it or read it from the old token key, and no one has seen it in the UI yet. */
