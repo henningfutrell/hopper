@@ -79,10 +79,38 @@ describe('assess', () => {
     expect(assess(input('HOPPER_FAILED the build tool crashed', { recent }, { groupThreshold: 3 })).decision).toBe('person');
   });
 
-  it('recurrence across machines is scoped to every machine', () => {
-    const recent = [{ jobId: 'a', machineId: 'box', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'desk', executor: 'codex' }];
+  it('recurrence across machines on one executor is scoped to that executor', () => {
+    const recent = [{ jobId: 'a', machineId: 'box', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'laptop', executor: 'herdr-claude' }];
     const a = assess(input('HOPPER_FAILED the build tool crashed', { recent }, { groupThreshold: 3 }));
-    expect(a.problem).toMatchObject({ kind: 'open', scope: {} });
+    expect(a.problem).toMatchObject({ kind: 'open', general: true, scope: { executor: 'herdr-claude' } });
+  });
+
+  it('recurrence with no shared machine and no shared executor is not grouped (issue #625)', () => {
+    const recent = [{ jobId: 'a', machineId: 'box', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'laptop', executor: 'codex' }];
+    const a = assess(input('HOPPER_FAILED the build tool crashed', { recent }, { groupThreshold: 3 }));
+    expect(a).toMatchObject({ cls: 'job', decision: 'person' });
+    expect(a.problem).toBeUndefined();
+  });
+
+  it.each([
+    ['not-complete', 'not complete: no pull request of its own closes the issue'],
+    ['invalid-spec', 'invalid payload: repo must be a string'],
+    ['question-unanswered', 'question unanswered'],
+  ])('a job-specific cause (%s) on many jobs of one machine is never a general cause (issue #625)', (id, error) => {
+    const recent = [{ jobId: 'a', machineId: 'desk', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'desk', executor: 'herdr-claude' }];
+    const a = assess(input(error, { recent }, { groupThreshold: 3 }));
+    expect(a.reasons.join(' ')).toContain(`known cause: `);
+    expect(input(error).cause?.id).toBe(id);
+    expect(a).toMatchObject({ cls: 'job', decision: 'person' });
+    expect(a.problem).toBeUndefined();
+    expect(a.summary).not.toMatch(/Recurring/);
+  });
+
+  it('a transient cause on many jobs of one machine is grouped as a general cause', () => {
+    const recent = [{ jobId: 'a', machineId: 'desk', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'desk', executor: 'codex' }];
+    const a = assess(input('read ECONNRESET', { recent }, { groupThreshold: 3 }));
+    expect(a).toMatchObject({ cls: 'shared', decision: 'hold' });
+    expect(a.problem).toMatchObject({ kind: 'open', general: true, scope: { machineId: 'desk' }, causeId: 'network' });
   });
 
   it('job-specific: a person, with a summary of what was tried and what failed', () => {
