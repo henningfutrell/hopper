@@ -16,6 +16,7 @@
 //   Scenario: at start, a box of its own with no record goes, unless a machine names it; another hopper's stays
 //   Scenario: a box it cannot remove is shown with the reason, until it goes
 //   Scenario: a box that does not start leaves nothing: no container, no volume, no record
+//   Scenario: a create that fails on a name taken meanwhile leaves that container alone
 //   Scenario: an image that runs as root does not start
 //   Scenario: the line Add machine shows carries the same sandbox flags
 //   Scenario: without a runtime, or with a rootful one, Add machine says why and starts nothing
@@ -299,6 +300,20 @@ describe('sandbox boxes the hopper starts', () => {
     expect(r.body.error).toContain('no such host');
     expect(runtime.boxes.size).toBe(0);
     expect(runtime.volumes.size).toBe(0);
+    expect((await view(a, session)).boxes).toEqual([]);
+  });
+
+  it('a create that fails on a name taken meanwhile leaves that container alone', async () => {
+    const runtime = createFakeContainerRuntime();
+    const { a, session } = await boot(runtime);
+    // Another container takes the name between the hopper's look and its create.
+    const create = runtime.create;
+    runtime.create = async (spec) => {
+      runtime.put({ ...spec, labels: {}, image: 'someone/else:1' });
+      return create(spec);
+    };
+    expect((await launch(a, session, {})).status).toBe(502);
+    expect(runtime.boxes.get('hopper-sandbox-claude')?.spec.image).toBe('someone/else:1');
     expect((await view(a, session)).boxes).toEqual([]);
   });
 
