@@ -1,5 +1,5 @@
 // The dynamic vault (issue #583, design.md "The dynamic vault"): a job on a box loads a skill that needs a credential
-// (`sh "$HOPPER_SKILL" render`) and its template gives none; the hopper asks a person for one — a credential request —
+// (`sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>"`) and its template gives none; the hopper asks a person for one — a credential request —
 // and the job waits. A person gives one (any kind: the hopper suggests, never insists) or declines. The credential
 // becomes a vault secret, write-only as any other, added to the template's scope; the job then gets it just in time
 // through the vault's helper. Requests are kept in memory: a job that still waits asks again, and that opens its
@@ -86,7 +86,7 @@ export function createCredentialRequests(o: {
       const said = declined.get(job.id)?.get(key);
       if (said !== undefined) {
         declined.get(job.id)!.delete(key);
-        return { declined: `the user declined to give a ${ask.title} credential: ${said}. Go on without it, or fail the job with that reason.` };
+        return { declined: `the user declined to give a credential for ${ask.title}: ${said}. Go on without it, or fail the job with that reason.` };
       }
       const t = vault.template(template);
       const pending = t ? t.secrets.filter((n) => !givesOf(t).includes(n)).map((n) => vault.get(n)).find((s) => s?.skill === ask.skill) : undefined;

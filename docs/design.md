@@ -9630,7 +9630,8 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 
 1. the token: its user, its link key, its job, at work — else **401**, logged only;
 2. no `name`: the catalog — **200**, `skill.listed`;
-3. a skill the hopper has, or a `credential` the job names for one it has not (issue #583) — else **404** `no: the
+3. a skill the hopper has, or a `credential` the job names for one it has not, or a vault secret a person gave for
+   that name to the box's template (issue #583) — else **404** `no: the
    hopper has no skill NAME. It has: … For another service, say what credential it takes: … Else find another way.`;
 4. a skill with no link: its text — **200**, `skill.loaded`; one that needs a credential (issue #583): with the vault
    secret given for it ("The dynamic vault"), else the credential request's **202**;
@@ -9648,8 +9649,9 @@ JSON. The broker (`src/skills/broker.ts`), in order:
    the vault gives it just in time, with its own checks, when the tool runs.
 
 **The skills** (`src/skills/catalog.ts`, baked in): `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
-on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role) and `render` (issue #583). The catalog
-stays under 800 characters.
+on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role). No skill is special to one outside service: a credential for any
+other service is asked in the job's own words (issue #583, "The dynamic vault"), and the catalog's last line says how.
+The catalog stays under 800 characters.
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
@@ -9744,8 +9746,9 @@ built-in plugin: HashiCorp Vault against a real server; 1Password and Bitwarden 
 Owner direction (#559, "a dynamic vault that grows as it's needed"): the vault keeps no fixed list of keys. It grows from
 what work asks for. A job that needs a credential the hopper does not have makes the hopper find out what the work
 needs — which skill, which credential —, ask the user for it, take whatever kind the user gives, and hand it to the job
-just in time. A user who has no tool set up yet (no kubeconfig) is told how to set it up. Render is a skill, next to
-the Kubernetes and AWS ones. It uses the skill system of issue #582: no second way in.
+just in time. A user who has no tool set up yet (no kubeconfig) is told how to set it up. The vault is generic: the
+hopper has no code, skill or text special to one outside service. A token for some outside service, a kubeconfig or a
+cloud API key are only examples of what a person can give. It uses the skill system of issue #582: no second way in.
 
 **A skill's credential** (`SkillCredential`, `src/skills/catalog.ts`). A skill that needs one says the kinds it takes —
 the first is the one the hopper suggests — and how a person gets one or sets the tool up (`setup`). Each kind may say
@@ -9753,13 +9756,16 @@ how a job uses it (`use`, `NAME` for the vault secret's name); a link skill's li
 
 | skill | suggested, then other kinds | setup says |
 |---|---|---|
-| `render` (no link, no Access check: Access has no asset kind for Render yet) | a Render API key; a deploy hook URL of one service | Account Settings → API Keys; or a service's deploy hook, which only starts a deploy |
 | `kube-diagnostics` | a read-only bearer token (a service account's) | with no kubeconfig: a service account with the view role and `kubectl create token` |
 | `aws-diagnostics` | an access key pair, read-only, as JSON | an IAM user with ReadOnlyAccess and an access key |
 
-A person may always give **something else**, in their own words (`other`, a line the job reads; never the value). A
-service the hopper has no skill for is asked in the job's own words: `sh "$HOPPER_SKILL" NAME --credential "<what it
-takes>"` (`askedSkill`), and that is the suggested kind.
+A person may always give **something else**, in their own words (`other`, a line the job reads; never the value).
+
+**Any other service.** A service the hopper has no skill for is asked in the job's own words: `sh "$HOPPER_SKILL"
+SERVICE --credential "<what it takes>" [--why "<what for>"]` (`askedSkill`). The job's words are the suggested kind
+(`asked`); the setup line says the hopper has no steps of its own. This is the path for every outside service: an API
+token, a config file, a deploy URL, or anything else a person can give. Once a person gave one, the template's boxes load
+`SERVICE` with or without `--credential`, and a later job that needs the same access gets it with no new request.
 
 **Asking.** The broker ("Skills", step 4 or 8) finds no vault secret given for the skill among what the box's template
 gives. On a machine of no template it says no: the vault gives credentials only to boxes of a template. Else it asks the
@@ -9799,9 +9805,9 @@ link, `Vault secret: NAME — <kind> (the user says: …)` and how to use it; fo
 for that skill. **Delivery** is the vault's, unchanged ("Delivery to the box"): `$HOPPER_SECRET get|kube|git|aws NAME`,
 only in the template's approved scope, to a job at work on the box, sealed to the request.
 
-**Access.** A link skill's credential is asked for only after Access allows the link. Render has no asset kind in the
-access model, so it is loaded as `github` is, with no Access check; the vault's template gate decides who gets the
-credential. Minting through `decideMint` is #580's; an asset kind for Render would come with it or with #581.
+**Access.** A link skill's credential is asked for only after Access allows the link. A service asked in the job's own
+words has no asset kind in the access model, so it is loaded as `github` is, with no Access check; the vault's template
+gate decides who gets the credential. Minting through `decideMint` is #580's.
 
 Taken conservatively, each one place to change: requests in memory (a table if they must outlive a restart); the
 request on Settings → Vault and a toast (no section badge); the giving approves only an approved template's widening by
@@ -9809,8 +9815,9 @@ the one secret; five seconds between asks; Helm, GitOps and Argo CD skills not b
 words until they are).
 
 Tests: `test/integration/vault-requests.test.ts` (the real daemon, a joined box, the real `hopper-skill` and
-`hopper-secret`: a Render load opens a request, given as an API key the `--wait` ends with how to use it and `get`
-delivers it, the value in no answer, event, log or file; another kind in the user's words; declined; a service with no
-skill; a template never approved; a machine of no template; a Kubernetes link Access allows, with no token: asked, with
+`hopper-secret`: a job asks for a token for an outside service in its own words, which opens a request; given, the
+`--wait` ends with how to use it and `get` delivers it, the value in no answer, event, log or file; a second job on
+another box of the template gets it with no new request; another kind in the user's words; declined; no words and
+nothing given; a template never approved; a machine of no template; a Kubernetes link Access allows, with no token: asked, with
 how to make one), `test/skills/credentials.test.ts`, `test/ui/vault.test.ts` (the request card's model),
 `test/integration/skills.test.ts`, `test/herdr/screen.test.ts` (the protocol line).

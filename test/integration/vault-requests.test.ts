@@ -1,21 +1,22 @@
 // Issue #583, through the real composition root, the real HTTP server and a real joined client: the dynamic vault. A
-// job on a box loads a skill (Render) whose credential its template does not give; the hopper asks a person; the person
-// gives one, of the kind the hopper suggested or another, or declines; the job then gets it just in time through the
+// job on a box needs a credential for a service its template does not give (any service: the job says what it takes);
+// the hopper asks a person; the person gives one, in the form the job asked for or another, or declines; the job then gets it just in time through the
 // vault's helper, and the value never shows again (design.md "The dynamic vault"). The job runs the real `hopper-skill`
 // (issue #582) and the real `hopper-secret` (issue #558). OpenFGA is a double at the AuthorizationServer seam.
 //
 // Feature: the vault asks for the credentials new work needs
-//   Scenario: a job that needs Render, with no Render credential in the vault, makes the hopper ask the user for one
+//   Scenario: a job that needs a token for an outside service, with none in the vault, makes the hopper ask the user
 //     Given the template web, approved, with nothing in its scope, a box joined as web, and a job running on it
-//     When the job runs `sh "$HOPPER_SKILL" render --why "deploy the web service"`
-//     Then it is told the user is asked (202), and the vault shows a credential request: render, for web, the job and
-//       why, a Render API key suggested, how to get one
-//     When the job waits (`--wait`) and an admin gives a Render API key for the request
-//     Then the wait ends with the skill and how to use the vault secret render, never its value
-//     And the job gets the value just in time with `$HOPPER_SECRET get render`; no answer, event, log or file holds it
-//   Scenario: the user gives another kind of credential than the one suggested; the job is told what it is
+//     When the job runs `sh "$HOPPER_SKILL" example-api --credential "an API token" --why "deploy the web service"`
+//     Then it is told the user is asked (202), and the vault shows a credential request: example-api, for web, the job
+//       and why, the form the job asked for suggested
+//     When the job waits (`--wait`) and an admin gives the token for the request
+//     Then the wait ends with how to use the vault secret example-api, never its value
+//     And the job gets the value just in time with `$HOPPER_SECRET get example-api`; no answer, event, log or file holds it
+//     And a second job on another box of web that needs the same access gets it with no new request
+//   Scenario: the user gives another kind of credential than the one asked for; the job is told what it is
 //   Scenario: the user declines: the job is told why
-//   Scenario: a service the hopper has no skill for is asked in the job's own words; without them, a no with the skills
+//   Scenario: without the job's words for what it takes, a no that says how to ask
 //   Scenario: a template never approved still waits for a person after the credential is given
 //   Scenario: a machine of no template: the hopper asks nobody
 //   Scenario: a Kubernetes link Access allows, with no token in the template: the user is asked, with how to make one
@@ -40,7 +41,9 @@ import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
-const VALUE = 'rnd_render-api-key-0123456789-never-shown';
+const VALUE = 'example-api-token-0123456789-never-shown';
+const SERVICE = 'example-api';
+const ASK = ['--credential', 'an API token'];
 
 let t: TestApp | undefined;
 const clients: Client[] = [];
@@ -72,7 +75,7 @@ const temp = (prefix: string): string => {
 
 type Edit = (body: Record<string, unknown>) => Promise<{ status: number; body: VaultView }>;
 
-/** A hopper with the template web — approved unless said — whose scope is empty: no Render credential anywhere. */
+/** A hopper with the template web — approved unless said — whose scope is empty: no credential anywhere. */
 async function boot(approved = true): Promise<{ a: TestApp; session: string; edit: Edit }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
@@ -89,7 +92,7 @@ async function boot(approved = true): Promise<{ a: TestApp; session: string; edi
     const r = await a.ui<VaultView>('/ui/api/vault', body, { token: session });
     return { status: r.status, body: r.body };
   };
-  await edit({ action: 'save-template', name: 'web', image: 'localhost/box-render:1', secrets: [] });
+  await edit({ action: 'save-template', name: 'web', image: 'localhost/box-web:1', secrets: [] });
   if (approved) await edit({ action: 'approve-template', name: 'web' });
   return { a, session, edit };
 }
@@ -154,65 +157,76 @@ function nowhere(a: TestApp, box: string, value: string): void {
 }
 
 describe('the vault asks for the credentials new work needs (issue #583)', () => {
-  it('a job that needs Render, with no Render credential, makes the hopper ask the user; once given, the job gets it just in time, the value never shown', async () => {
+  it('a job that needs a token for an outside service makes the hopper ask the user; once given, the job gets it just in time, the value never shown; a second job gets it with no new request', async () => {
     const { a, session, edit } = await boot();
     const box = await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
     const creds = credentialsOf(a, job);
 
-    expect((await skill(a, creds, [])).stdout).toMatch(/^render: deploy and look at services on Render/m);
-    const asked = await skill(a, creds, ['render', '--why', 'deploy the web service']);
+    expect((await skill(a, creds, [])).stdout).toContain('A credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>"');
+    const asked = await skill(a, creds, [SERVICE, ...ASK, '--why', 'deploy the web service']);
     expect(asked.code).toBe(3);
-    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for A Render API key for render \(they may give another kind\)\. Run the same command again/);
-    const r = await requestFor(a, 'render');
-    expect(r).toMatchObject({ known: true, template: 'web', secret: 'render', asked: [{ job, machine: 'hopper-sandbox-web', why: 'deploy the web service' }] });
-    expect(r.kinds.map((k) => k.id)).toEqual(['api-key', 'deploy-hook']);
-    expect(r.setup).toMatch(/Account Settings → API Keys/);
+    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for an API token for example-api \(they may give another kind\)\. Run the same command again/);
+    const r = await requestFor(a, SERVICE);
+    expect(r).toMatchObject({ known: false, template: 'web', secret: SERVICE, kinds: [{ id: 'asked', title: 'an API token' }], asked: [{ job, machine: 'hopper-sandbox-web', why: 'deploy the web service' }] });
     expect((await a.events()).filter((e) => e.type === 'vault.credential_asked')).toEqual([
-      expect.objectContaining({ jobId: job, data: { request: r.id, skill: 'render', template: 'web', machine: 'hopper-sandbox-web', job, why: 'deploy the web service' } }),
+      expect.objectContaining({ jobId: job, data: { request: r.id, skill: SERVICE, template: 'web', machine: 'hopper-sandbox-web', job, why: 'deploy the web service' } }),
     ]);
 
-    const wait = waiting(a, creds, ['render']);
+    const wait = waiting(a, creds, [SERVICE, ...ASK]);
     await new Promise((done) => setTimeout(done, 300));
-    const given = await edit({ action: 'give-credential', request: r.id, name: 'render', kind: 'api-key', value: VALUE });
+    const given = await edit({ action: 'give-credential', request: r.id, name: SERVICE, kind: 'asked', value: VALUE });
     expect(given.status).toBe(200);
     expect(JSON.stringify(given.body)).not.toContain(VALUE);
     expect(given.body.requests).toEqual([]);
-    expect(given.body.templates.find((x) => x.name === 'web')).toMatchObject({ secrets: ['render'], gives: ['render'] });
-    expect(given.body.secrets.find((s) => s.name === 'render')).toMatchObject({ skill: 'render', kind: 'api-key' });
+    expect(given.body.templates.find((x) => x.name === 'web')).toMatchObject({ secrets: [SERVICE], gives: [SERVICE] });
+    expect(given.body.secrets.find((s) => s.name === SERVICE)).toMatchObject({ skill: SERVICE, kind: 'asked' });
 
     const done = await wait;
     expect(done.code).toBe(0);
-    expect(done.stdout).toMatch(/^render: deploy and look at services on Render/);
-    expect(done.stdout).toContain('Vault secret: render — A Render API key.');
-    expect(done.stdout).toContain('RENDER_API_KEY="$("$HOPPER_SECRET" get render)"');
+    expect(done.stdout).toContain('Vault secret: example-api — an API token.');
+    expect(done.stdout).toContain('"$HOPPER_SECRET" get example-api');
     expect(done.stderr).toMatch(/^waiting: the hopper asked the user/);
     expect(done.stdout + done.stderr).not.toContain(VALUE);
 
-    expect(await secret(a, box, creds, ['get', 'render'])).toMatchObject({ code: 0, stdout: VALUE });
-    expect((await a.events()).find((e) => e.type === 'vault.credential_given')).toMatchObject({ data: { request: r.id, skill: 'render', name: 'render', kind: 'api-key', template: 'web', approved: true, jobs: [job] } });
-    expect((await a.events()).find((e) => e.type === 'skill.loaded')).toMatchObject({ jobId: job, data: { skill: 'render', template: 'web' } });
+    expect(await secret(a, box, creds, ['get', SERVICE])).toMatchObject({ code: 0, stdout: VALUE });
+    expect((await a.events()).find((e) => e.type === 'vault.credential_given')).toMatchObject({ data: { request: r.id, skill: SERVICE, name: SERVICE, kind: 'asked', template: 'web', approved: true, jobs: [job] } });
+    expect((await a.events()).find((e) => e.type === 'skill.loaded')).toMatchObject({ jobId: job, data: { skill: SERVICE, template: 'web' } });
+
+    // A later job that needs the same access, on another box of the template: no new request, no new question.
+    const box2 = await joinMachine(a, session, 'hopper-sandbox-web-2', 'web');
+    const job2 = await runningJob(a, 'hopper-sandbox-web-2');
+    const creds2 = credentialsOf(a, job2);
+    const again = await skill(a, creds2, [SERVICE, ...ASK]);
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain('Vault secret: example-api — an API token.');
+    expect((await skill(a, creds2, [SERVICE])).code).toBe(0);
+    expect(await secret(a, box2, creds2, ['get', SERVICE])).toMatchObject({ code: 0, stdout: VALUE });
+    expect((await a.events()).filter((e) => e.type === 'vault.credential_asked')).toHaveLength(1);
+    expect(((await a.api('GET', '/api/vault')).body as VaultView).requests).toEqual([]);
+
     expect(JSON.stringify((await a.api('GET', '/api/vault')).body)).not.toContain(VALUE);
     nowhere(a, box, VALUE);
+    nowhere(a, box2, VALUE);
   });
 
-  it('the user gives another kind than the one suggested; the job is told what it is, in the user\'s words', async () => {
+  it('the user gives another kind than the one asked for; the job is told what it is, in the user\'s words', async () => {
     const { a, session, edit } = await boot();
     const box = await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
     const creds = credentialsOf(a, job);
-    await skill(a, creds, ['render']);
-    const r = await requestFor(a, 'render');
+    await skill(a, creds, [SERVICE, ...ASK]);
+    const r = await requestFor(a, SERVICE);
 
-    expect((await edit({ action: 'give-credential', request: r.id, name: 'render-team', kind: 'other', value: VALUE })).status).toBe(400);
-    expect((await edit({ action: 'give-credential', request: r.id, name: 'render-team', kind: 'sso', value: VALUE })).status).toBe(400);
-    expect((await edit({ action: 'give-credential', request: r.id, name: 'render-team', kind: 'other', note: 'a team API key, read-only, for the staging team', value: VALUE })).status).toBe(200);
+    expect((await edit({ action: 'give-credential', request: r.id, name: 'example-team', kind: 'other', value: VALUE })).status).toBe(400);
+    expect((await edit({ action: 'give-credential', request: r.id, name: 'example-team', kind: 'sso', value: VALUE })).status).toBe(400);
+    expect((await edit({ action: 'give-credential', request: r.id, name: 'example-team', kind: 'other', note: 'a config file with a team key, read-only', value: VALUE })).status).toBe(200);
 
-    const ready = await skill(a, creds, ['render']);
+    const ready = await skill(a, creds, [SERVICE]);
     expect(ready.code).toBe(0);
-    expect(ready.stdout).toContain('Vault secret: render-team — something the user described (the user says: a team API key, read-only, for the staging team).');
-    expect(ready.stdout).toContain('"$HOPPER_SECRET" get render-team');
-    expect(await secret(a, box, creds, ['get', 'render-team'])).toMatchObject({ code: 0, stdout: VALUE });
+    expect(ready.stdout).toContain('Vault secret: example-team — something the user described (the user says: a config file with a team key, read-only).');
+    expect(ready.stdout).toContain('"$HOPPER_SECRET" get example-team');
+    expect(await secret(a, box, creds, ['get', 'example-team'])).toMatchObject({ code: 0, stdout: VALUE });
   });
 
   it('the user declines: the job that waits is told why, and gets nothing', async () => {
@@ -220,24 +234,23 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
     const creds = credentialsOf(a, job);
-    const wait = waiting(a, creds, ['render']);
-    const r = await requestFor(a, 'render');
+    const wait = waiting(a, creds, [SERVICE, ...ASK]);
+    const r = await requestFor(a, SERVICE);
     expect((await edit({ action: 'decline-credential', request: r.id, reason: 'deploy by hand this time' })).body.requests).toEqual([]);
     const done = await wait;
     expect(done.code).toBe(1);
-    expect(done.stdout).toMatch(/^no: the user declined to give a render credential: deploy by hand this time\./);
-    expect((await a.events()).find((e) => e.type === 'vault.credential_declined')).toMatchObject({ data: { skill: 'render', reason: 'deploy by hand this time', jobs: [job] } });
+    expect(done.stdout).toMatch(/^no: the user declined to give a credential for example-api: deploy by hand this time\./);
+    expect((await a.events()).find((e) => e.type === 'vault.credential_declined')).toMatchObject({ data: { skill: SERVICE, reason: 'deploy by hand this time', jobs: [job] } });
   });
 
-  it('a service the hopper has no skill for: asked in the job\'s own words it is a request too', async () => {
+  it('without the job\'s words for what it takes, and with nothing given, a no that says how to ask', async () => {
     const { a, session } = await boot();
     await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
-    const creds = credentialsOf(a, job);
-    const asked = await skill(a, creds, ['flyio', '--credential', 'a Fly.io deploy token', '--why', 'deploy the API']);
-    expect(asked.code).toBe(3);
-    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for a Fly\.io deploy token for flyio/);
-    expect(await requestFor(a, 'flyio')).toMatchObject({ known: false, kinds: [{ id: 'asked', title: 'a Fly.io deploy token' }], asked: [{ why: 'deploy the API' }] });
+    const r = await skill(a, credentialsOf(a, job), [SERVICE]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toMatch(/^no: the hopper has no skill example-api\. .* sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"/);
+    expect(((await a.api('GET', '/api/vault')).body as VaultView).requests).toEqual([]);
   });
 
   it('a template never approved: the credential given still waits for a person; approved, the job gets it', async () => {
@@ -245,15 +258,15 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
     const creds = credentialsOf(a, job);
-    expect((await skill(a, creds, ['render'])).code).toBe(3);
-    const r = await requestFor(a, 'render');
-    const given = await edit({ action: 'give-credential', request: r.id, name: 'render', kind: 'deploy-hook', value: 'https://api.render.com/deploy/srv-x?key=never-shown' });
-    expect(given.body.templates.find((x) => x.name === 'web')).toMatchObject({ secrets: ['render'], gives: [] });
-    expect(await skill(a, creds, ['render'])).toMatchObject({ code: 3, stdout: expect.stringMatching(/template web waits for a person's approval/) });
+    expect((await skill(a, creds, [SERVICE, ...ASK])).code).toBe(3);
+    const r = await requestFor(a, SERVICE);
+    const given = await edit({ action: 'give-credential', request: r.id, name: SERVICE, kind: 'asked', value: 'https://example.invalid/hook?key=never-shown' });
+    expect(given.body.templates.find((x) => x.name === 'web')).toMatchObject({ secrets: [SERVICE], gives: [] });
+    expect(await skill(a, creds, [SERVICE, ...ASK])).toMatchObject({ code: 3, stdout: expect.stringMatching(/template web waits for a person's approval/) });
     await edit({ action: 'approve-template', name: 'web' });
-    const ready = await skill(a, creds, ['render']);
+    const ready = await skill(a, creds, [SERVICE, ...ASK]);
     expect(ready.code).toBe(0);
-    expect(ready.stdout).toContain('A deploy hook URL of one service');
+    expect(ready.stdout).toContain('Vault secret: example-api — an API token.');
     expect(ready.stdout).not.toContain('never-shown');
   });
 
@@ -261,7 +274,7 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     const { a, session } = await boot();
     await joinMachine(a, session, 'laptop');
     const job = await runningJob(a, 'laptop');
-    const r = await skill(a, credentialsOf(a, job), ['render']);
+    const r = await skill(a, credentialsOf(a, job), [SERVICE, ...ASK]);
     expect(r.code).toBe(1);
     expect(r.stdout).toMatch(/^no: laptop is no box of a template/);
     expect(((await a.api('GET', '/api/vault')).body as VaultView).requests).toEqual([]);

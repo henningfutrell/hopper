@@ -169,7 +169,7 @@ export const CREDENTIAL_WHY_MAX = 300;
  */
 export interface CredentialRequest {
   id: string;
-  /** The skill (`render`), or the job's own name for a service the hopper has no skill for. */
+  /** The skill (`kube-diagnostics`), or the job's own name for a service the hopper has no skill for (`example-api`). */
   skill: string;
   title: string;
   /** Whether the hopper has a skill for it; false: the job said what it takes. */

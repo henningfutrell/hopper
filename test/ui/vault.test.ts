@@ -83,22 +83,22 @@ describe('a delivered secret on the page', () => {
 
 describe('a credential request on the page (issue #583)', () => {
   const request = {
-    id: 'r1', skill: 'render', title: 'Render', known: true, template: 'web', secret: 'render', setup: 'Account Settings → API Keys',
-    kinds: [{ id: 'api-key', title: 'A Render API key' }, { id: 'deploy-hook', title: 'A deploy hook URL of one service' }],
+    id: 'r1', skill: 'example-api', title: 'example-api', known: false, template: 'web', secret: 'example-api', setup: 'Ask whoever runs example-api for a token',
+    kinds: [{ id: 'asked', title: 'an API token' }, { id: 'config', title: 'a config file' }],
     asked: [{ job: 'f3b1c2d4-0000-4000-8000-000000000001', machine: 'hopper-sandbox-web', why: 'deploy the web service', at: '2026-10-09T10:00:00Z' }],
     existing: [], createdAt: '2026-10-09T10:00:00Z',
   };
 
   it('says who waits — the job, its box and why — and offers the suggested kinds first, then something else', () => {
     expect(requestWaiting(request)).toEqual(['job f3b1c2d4 on hopper-sandbox-web: deploy the web service']);
-    expect(kindChoices(request).map((k) => k.id)).toEqual(['api-key', 'deploy-hook', 'other']);
+    expect(kindChoices(request).map((k) => k.id)).toEqual(['asked', 'config', 'other']);
   });
 
   it('something else needs the user\'s words; a value is needed unless a secret the vault holds is given', () => {
-    expect(giveProblem({ name: 'render', kind: 'api-key', note: '', value: 'x' }, request)).toBeUndefined();
-    expect(giveProblem({ name: 'render', kind: 'other', note: '', value: 'x' }, request)).toMatch(/say what/);
-    expect(giveProblem({ name: 'render', kind: 'api-key', note: '', value: '' }, request)).toMatch(/value/);
-    expect(giveProblem({ name: 'render', kind: 'api-key', note: '', value: '' }, { ...request, existing: ['render'] })).toBeUndefined();
-    expect(giveProblem({ name: '1x', kind: 'api-key', note: '', value: 'x' }, request)).toMatch(/letter/);
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: 'x' }, request)).toBeUndefined();
+    expect(giveProblem({ name: 'example-api', kind: 'other', note: '', value: 'x' }, request)).toMatch(/say what/);
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, request)).toMatch(/value/);
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, { ...request, existing: ['example-api'] })).toBeUndefined();
+    expect(giveProblem({ name: '1x', kind: 'asked', note: '', value: 'x' }, request)).toMatch(/letter/);
   });
 });
