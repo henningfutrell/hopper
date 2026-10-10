@@ -9,18 +9,19 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { JobTitle } from '@/components/job';
+import { CardText, InlineMarkdown } from '@/components/markdown';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge, type Tone } from '@/components/status';
 import { post, SessionRejected } from '@/lib/api';
 import { autoAnswerOf } from '@/model/auto-answer';
 import { clock } from '@/model/format';
+import { firstLine } from '@/model/questions';
 import type { Question, QuestionStatus } from '@/model/wire';
 import { refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 
 const OUTCOME: Record<Exclude<QuestionStatus, 'open'>, Tone> = { answered: 'ok', closed: 'warn', dismissed: 'muted', expired: 'bad', lapsed: 'warn', cancelled: 'muted' };
-const firstLine = (s: string) => s.split('\n').find((l) => l.trim())?.trim() ?? '';
 
 /** Correct an auto-answer (issue #632): the person's answer replaces it, and the job gets it ahead of its next answer. */
 function CorrectForm({ q }: { q: Question }) {
@@ -67,15 +68,15 @@ function HandledRow({ q }: { q: Question }) {
         <StatusBadge status={status} tone={OUTCOME[status]} className="shrink-0" />
         {auto && <StatusBadge status={`auto · ${auto.level}`} tone="muted" className="shrink-0" />}
         {q.corrected && <StatusBadge status="corrected" tone="warn" className="shrink-0" />}
-        <span className="min-w-0 flex-1 truncate">{firstLine(q.text)}</span>
+        <InlineMarkdown text={firstLine(q.text)} className="min-w-0 flex-1 truncate" />
         <RaisedOn raisedBy={q.raisedBy} className="max-w-[40%] shrink-0 text-xs text-muted-foreground" />
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 px-4 pb-3 pl-9">
         {job && <JobTitle job={job} />}
-        <pre className="rounded-md border-l-2 border-question bg-question/5 p-2 font-mono text-xs whitespace-pre-wrap">{q.text}</pre>
+        <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-2 text-xs"><CardText text={q.text} /></div>
         {q.answer && <div className="space-y-1">
           <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'} · by {q.answeredBy ?? 'unknown'}</div>
-          <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{q.answer}</pre>
+          <div className="rounded-md bg-muted/50 p-2 text-xs"><CardText text={q.answer} /></div>
         </div>}
         {auto && <div className="space-y-2">
           <div className="text-xs text-muted-foreground">answered by {auto.level}{auto.confidence ? ` at ${auto.confidence} confidence` : ''}, with no person</div>

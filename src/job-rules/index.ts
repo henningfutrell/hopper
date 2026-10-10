@@ -1,8 +1,8 @@
 // The job rules (issue #172): what every job is told before its work tree and the protocol — the config
 // record `job-rules`, a text, edited from the UI (POST /ui/api/job-rules) or with `hopper config set`.
 // Read when each job starts, so an edit reaches the next job without a restart. While none is saved, a
-// job gets the default: the publishing rule, the parallel-work rule and the writing style. The work tree line and the
-// protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
+// job gets the default: the publishing rule, the parallel-work rule, the writing style and the formatting. The work
+// tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
 import { asksOfSpec, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
@@ -20,8 +20,11 @@ const PARALLEL_WORK = [
 /** The writing style (issue #571): every text a job writes for people is in Simplified Technical English. */
 export const STE_RULE = '[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.';
 
+/** The formatting (issue #569): the UI renders what a job writes for a person as Markdown, so the job writes it so. */
+export const MARKDOWN_RULE = '[hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.';
+
 /** What a job is told while no job rules are saved. */
-export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE].join('\n');
+export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE, MARKDOWN_RULE].join('\n');
 
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
@@ -52,7 +55,7 @@ export const SKILL_LINE = 'When you need something set up from outside this mach
 
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
-  '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION',
+  '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION',
   // How to suggest research or a proposal first, on a question (issue #548).
   SUGGEST_PROTOCOL,
   // Each review section's (issues #537, #543): how to come back with a research report, a proposal.

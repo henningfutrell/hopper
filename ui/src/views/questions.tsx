@@ -12,6 +12,8 @@
 // made from a question show on its card, with their status and a link (issue #570).
 // A parked job's question is not here: it is in Parked, with its job, and comes back when the job is picked up with
 // it still open (issue #565).
+// The question, the levels' answers and reasons are rendered as Markdown, sanitized; a long question shows its summary
+// first, the rest behind Show all (issue #569).
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -21,6 +23,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
 import { Countdown, JobTitle } from '@/components/job';
+import { CardText, Markdown } from '@/components/markdown';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
@@ -52,8 +55,8 @@ function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: stri
         {(a.riskRules ?? []).map((r) => <StatusBadge key={r} status={r} tone="bad" />)}
         {a.finishedAt && <span className="num text-muted-foreground">{between(a.startedAt, a.finishedAt)}</span>}
       </div>
-      {a.answer && <pre className="rounded-md bg-muted/50 p-2 font-mono text-xs whitespace-pre-wrap">{a.answer}</pre>}
-      {a.reason && <div className="text-muted-foreground">{a.reason}</div>}
+      {a.answer && <div className="rounded-md bg-muted/50 p-2"><CardText text={a.answer} /></div>}
+      {a.reason && <Markdown text={a.reason} className="text-muted-foreground" />}
       {a.error && <div className="text-bad">{a.error}</div>}
       {onUse && a.answer && <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(a.answer!)} title="Send this answer to the job now">Use answer</Button>}
     </div>
@@ -104,7 +107,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
         {!movedOn && <ParkButton job={job} />}</div>}
-      <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
+      <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} /></div>
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>

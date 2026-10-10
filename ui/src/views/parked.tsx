@@ -16,6 +16,7 @@ import { machineName, parkedOrder, startsFresh } from '@/model/board';
 import { answerPicksUp } from '@/model/auto-park';
 import { goalOf } from '@/model/job';
 import { firstLine } from '@/model/questions';
+import { CardText, InlineMarkdown } from '@/components/markdown';
 import type { Job, QuestionView } from '@/model/wire';
 import { act, actFor, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
@@ -82,10 +83,10 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
         {answered && <StatusBadge status="answered" tone="ok" title="Answered: picked up, it resumes with the answer." />}
       </div>
       {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}
-      {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}>{firstLine(q.text)}</div>}
+      {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}><InlineMarkdown text={firstLine(q.text)} /></div>}
       {q && open && (
         <div className="space-y-2 pt-1 pl-8">
-          <pre className="rounded-md border-l-2 border-question bg-question/5 p-3 font-mono text-sm whitespace-pre-wrap">{q.text}</pre>
+          <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} /></div>
           {canOperate && !answered && <AnswerAndPickUp job={job} q={q} />}
         </div>
       )}

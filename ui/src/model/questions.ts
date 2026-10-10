@@ -1,6 +1,7 @@
 // Which open questions wait on the owner: the nav badge counts them, seen or not (issue #499); the Questions view
 // marks the unseen ones seen. A parked job's question is not among them: it is in Parked, with its job (issue #565).
 // And how the raising machine is named (issue #485).
+import { summaryOf } from './card-text.ts';
 import type { DomainEvent, Job, Question, RaisedBy } from './wire.ts';
 
 /** Its job is parked on it (issue #501): it waits in Parked with the job, out of Questions, until the job is picked up. */
@@ -12,8 +13,11 @@ export const parkedOn = (q: Pick<Question, 'id' | 'jobId'>, jobs: ReadonlyMap<st
 /** The questions Questions shows, counts and the Attention panel lists: every one but a parked job's (issue #565). */
 export const notParked = <T extends Pick<Question, 'id' | 'jobId'>>(qs: readonly T[], jobs: ReadonlyMap<string, Job>): T[] => qs.filter((q) => !parkedOn(q, jobs));
 
-/** A question's first line, for a compact row: the full text is one click away. */
-export const firstLine = (text: string): string => text.trim().split('\n')[0]!.trim();
+/**
+ * A question's first line, for a compact row: the first line of its summary, so a Markdown heading is skipped (issue
+ * #569), else of the text. The full text is one click away.
+ */
+export const firstLine = (text: string): string => (summaryOf(text) || text).trim().split('\n').find((l) => l.trim())?.trim() ?? '';
 
 /** Open and at the human stage: it waits on the owner until it is answered, closed, dismissed or expired. */
 export const awaitsOwner = (q: Question): boolean => q.status === 'open' && q.tier === 'human';

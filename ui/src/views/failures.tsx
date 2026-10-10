@@ -10,13 +10,15 @@
 // assessed failures still open (issues #529, #618), each with its decision, its summary and Retry; then Ended — the
 // hand-offs closed and the failures that ended in the last day, history that waits on nobody (issue #618) —; then the
 // profile and, for an admin, the settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
-// updates live, read again on each assessor event.
+// updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
+// sanitized (issue #569); the raw error stays as it was written.
 import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { JobTitle } from '@/components/job';
+import { Markdown } from '@/components/markdown';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -112,7 +114,7 @@ function Resolution({ h }: { h: HandoffView }) {
         <span className="num" title={r.at}>{ago(r.at, now)}</span>
         {told && <span className={r.writeBack === 'written' ? '' : 'text-warn'}>{told}</span>}
       </div>
-      {r.note && <div className="whitespace-pre-wrap break-words">{r.note}</div>}
+      {r.note && <Markdown text={r.note} />}
       {r.link && <a href={r.link} target="_blank" rel="noopener noreferrer" className="break-all underline underline-offset-4">{r.link}</a>}
     </div>
   );
@@ -184,7 +186,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
       <details data-slot="details" className="text-xs text-muted-foreground">
         <summary className="cursor-pointer select-none">Details</summary>
         <div className="mt-1 space-y-1">
-          <div>{h.summary}</div>
+          <Markdown text={h.summary} />
           {h.causeName && <div>Known cause: {h.causeName}</div>}
           <ul className="list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
           <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
@@ -254,7 +256,7 @@ function FailureRow({ r }: { r: FailureRecordView }) {
           {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void retry()}><RotateCcw />Retry</Button>}
         </span>
       </div>
-      <div className="text-sm">{r.summary}</div>
+      <Markdown text={r.summary} className="text-sm" />
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
         {r.causeName && <span>{r.causeName}</span>}
         <span>{outcomeText(r)}</span>

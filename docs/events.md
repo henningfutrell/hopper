@@ -363,7 +363,7 @@ Version 3 (`docs/schemas/decision.made.v3.json`). The engine recorded a Decision
 
 ## `question.asked`
 
-Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a question. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a question. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `text`: the question as the agent wrote it, Markdown source (issue #569).
 
 | field | type | required |
 |---|---|---|
@@ -1422,7 +1422,7 @@ Version 1 (`docs/schemas/proposal.asked.v1.json`). A person asked a job that has
 
 ## `proposal.submitted`
 
-Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. `goal`: its Goal part; `missing`: the parts it left out.
+Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. `goal`: its Goal part, Markdown source (issue #569); `missing`: the parts it left out.
 
 | field | type | required |
 |---|---|---|
@@ -1640,7 +1640,7 @@ Version 1 (`docs/schemas/research.asked.v1.json`). A person asked a job that has
 
 ## `research.submitted`
 
-Version 1 (`docs/schemas/research.submitted.v1.json`). A job came back with a research report (issue #543): its agent ended with HOPPER_RESEARCH_REPORT instead of doing the work. Round 1 (`version`), or the next round after a dig deeper or a steer. The job waits on it, keeping its session. `question`: its Question part; `missing`: the parts it left out.
+Version 1 (`docs/schemas/research.submitted.v1.json`). A job came back with a research report (issue #543): its agent ended with HOPPER_RESEARCH_REPORT instead of doing the work. Round 1 (`version`), or the next round after a dig deeper or a steer. The job waits on it, keeping its session. `question`: its Question part, Markdown source (issue #569); `missing`: the parts it left out.
 
 | field | type | required |
 |---|---|---|

@@ -4,10 +4,12 @@
 // for an admin: the phase-shift settings — the default mode, what a parent does while its fork runs, and the
 // escalation levels that may shift a job themselves.
 // A fork shows on its question (issue #570): what it was asked for, its status and a link to its review or its job;
-// while one runs, a second fork of its kind is not offered. A fork made from the card says so in its toast.
+// while one runs, a second fork of its kind is not offered. A fork made from the card says so in its toast. A note is
+// one line of inline Markdown, sanitized (issue #569).
 import { FileCheck, GitFork, Lightbulb, Settings2, Telescope } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { InlineMarkdown } from '@/components/markdown';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -63,7 +65,7 @@ function ForkLine({ f, q }: { f: QuestionFork; q: QuestionView }) {
   return (
     <div data-slot="fork" data-fork={f.jobId} className="flex flex-wrap items-center gap-2 rounded-md border border-question/40 bg-question/5 p-2 text-sm">
       <GitFork className="size-4 text-question" />
-      <span className="min-w-0 flex-1">{head}{f.note ? `: ${f.note}` : ''}{f.running && <span className="text-muted-foreground"> — {status}</span>}
+      <span className="min-w-0 flex-1">{head}{f.note && <>: <InlineMarkdown text={f.note} /></>}{f.running && <span className="text-muted-foreground"> — {status}</span>}
         {answeredWithout && <span className="block text-xs text-muted-foreground">The question was answered while it ran; the fork was given the answer, and its result no longer goes to the job.</span>}
       </span>
       <a href={forkLink(f.kind, f.itemId)} className="text-xs underline">{f.itemId ? `Open the ${REVIEW_UI[f.kind].noun}` : `Open its job (${f.jobId.slice(0, 8)})`}</a>
@@ -136,7 +138,7 @@ export function ShiftActions({ q, busy }: { q: QuestionView; busy: boolean }) {
       {s && !(offered.defaultMode === 'fork' && forkRunning(q, s.to)) && (
         <div data-slot="suggestion" className="flex flex-wrap items-center gap-2 rounded-md border border-question/40 bg-question/5 p-2 text-sm">
           <Lightbulb className="size-4 text-question" />
-          <span className="min-w-0 flex-1">{s.by === 'job' ? 'the job suggests' : `${s.by} suggests`} {SHIFT[s.to].noun} first{s.note ? `: ${s.note}` : ''}</span>
+          <span className="min-w-0 flex-1">{s.by === 'job' ? 'the job suggests' : `${s.by} suggests`} {SHIFT[s.to].noun} first{s.note && <>: <InlineMarkdown text={s.note} /></>}</span>
           <Button size="sm" variant="outline" disabled={busy || sending} onClick={() => void take()} title={`${MODE[offered.defaultMode].label}: ${MODE[offered.defaultMode].help(SHIFT[s.to].noun)}`}>
             {SHIFT[s.to].verb} ({MODE[offered.defaultMode].label.toLowerCase()})
           </Button>

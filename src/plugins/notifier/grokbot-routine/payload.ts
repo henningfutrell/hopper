@@ -2,7 +2,7 @@
 // what the job already knows (issue #378), so the receiver can route and rank it without calling back
 // into the hopper: the machine (its id and name) and lane that raised it (issue #485: the question's own
 // snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
-// detected the question, and how long it has been open.
+// detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569).
 import type { DomainEvent, Job, Question } from '../../sdk.ts';
 
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
@@ -27,7 +27,8 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
   const raised = q.raisedBy;
   return {
     ...base('question.escalated_to_human', b.at, job, q.jobId),
-    question: q.text, questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
+    // The agent's text as written, Markdown (issue #569): the receiver renders it as the UI does.
+    question: q.text, questionFormat: 'markdown', questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
     machineId: raised?.machineId ?? null, machineName: raised?.name ?? null, laneId: raised?.laneId ?? null, priority: job?.priority ?? null,
     high: job && b.highPriority !== undefined ? job.priority >= b.highPriority : null,
     labels: job?.source?.labels ?? null, repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null,
