@@ -42,6 +42,28 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   outcome: 'accepted' | 'escalated';
 }
 
+/** Why a question came to a person (issue #679). */
+export const ESCALATION_REASONS = ['guard', 'low_confidence', 'no_answer', 'frontier_escalated', 'high_priority', 'auto_answer_off', 'fork'] as const;
+/**
+ * `guard`: a risk rule or the consequential guard held an answer back on purpose; `low_confidence`: the top level was not
+ * sure enough; `no_answer`: no level gave an answer (it failed, gave none, or there are no levels); `frontier_escalated`:
+ * the top level sent it up; `high_priority`: its job is high priority; `auto_answer_off`: auto-answer is off; `fork`: it
+ * waits for a fork's result.
+ */
+export type EscalationReason = (typeof ESCALATION_REASONS)[number];
+
+/** A guard that held the answer back: a risk rule's or the consequential guard's name, and what it catches. */
+export interface GuardHit { name: string; describe: string }
+
+/** Why a question reached the human stage and what the levels recommended (issue #679); set when it gets there. */
+export interface Escalation {
+  reason: EscalationReason;
+  /** `guard` only: the guards that matched. */
+  guards?: GuardHit[];
+  /** The last answer a level, Jev or the fixed answers gave on the trail: who, what, and how sure. */
+  recommendation?: { by: string; answer: string; confidence?: Confidence };
+}
+
 /**
  * The raising machine (issue #485): the machine a question was asked on, its name (label) then, and the
  * lane — a snapshot taken when it is asked, kept as it was after the job moves or the machine is renamed
@@ -76,6 +98,8 @@ export interface Question extends QuestionPhaseFields {
   corrected?: QuestionCorrection;
   /** A risk rule or the consequential guard sent it to a person (issue #650): its job never parks by itself. */
   keptBy?: 'risk' | 'guard';
+  /** Why it came to a person (issue #679). Absent: not at the human stage yet, or sent there before this was recorded. */
+  escalation?: Escalation;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string; lastNotifiedAt?: string;
   notifyCount: number;

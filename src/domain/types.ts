@@ -441,6 +441,7 @@ export interface WebhookDelivery {
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
 export type * from './questions.ts';
+export { ESCALATION_REASONS } from './questions.ts';
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 

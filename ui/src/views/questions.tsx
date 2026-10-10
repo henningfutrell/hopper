@@ -14,6 +14,8 @@
 // it still open (issue #565).
 // The question, the levels' answers and reasons are rendered as Markdown, sanitized; a long question shows its summary
 // first, the rest behind Show all (issue #569).
+// Why it came to a person (issue #679): one sentence at the top of the card, with what the level recommends, and the
+// list filters by that reason, each with its count. Use answer names whose answer it uses.
 // The view keeps the reading position: an arrival, a question leaving, a card growing never moves the
 // card in view or the answer being typed; an arrival below the screen shows as "N new below".
 import { Archive, ArrowDown, Check, ChevronRight, Lock, MessageCircleQuestion, RotateCw, Send, X } from 'lucide-react';
@@ -28,8 +30,9 @@ import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
-import type { QuestionAttempt, QuestionView } from '@/model/wire';
+import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
 import { unseenByOwner } from '@/model/questions';
+import { REASON_LABELS, reasonCounts, reasonSentence, recommendationLine, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
@@ -56,9 +59,21 @@ function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: stri
         {a.finishedAt && <span className="num text-muted-foreground">{between(a.startedAt, a.finishedAt)}</span>}
       </div>
       {a.answer && <div className="rounded-md bg-muted/50 p-2"><CardText text={a.answer} /></div>}
-      {a.reason && <Markdown text={a.reason} className="text-muted-foreground" />}
+      {a.reason && <Markdown text={trailReason(a.reason)} className="text-muted-foreground" />}
       {a.error && <div className="text-bad">{a.error}</div>}
-      {onUse && a.answer && <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(a.answer!)} title="Send this answer to the job now">Use answer</Button>}
+      {onUse && a.answer && <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(a.answer!)} title="Send this answer to the job now">Use {stageName(a.tier)}'s answer</Button>}
+    </div>
+  );
+}
+
+/** Why the question came to a person and what the level recommends: the top of its card, nothing to expand (issue #679). */
+function ReasonBanner({ q }: { q: QuestionView }) {
+  const said = recommendationLine(q.escalation);
+  const guard = q.escalation?.reason === 'guard';
+  return (
+    <div data-slot="escalation-reason" className={`space-y-0.5 rounded-md border p-2.5 text-sm ${guard ? 'border-bad/40 bg-bad/5' : 'border-question/30 bg-question/5'}`}>
+      <div className="font-medium">{reasonSentence(q.escalation)}</div>
+      {said && <div className="text-muted-foreground">{said}</div>}
     </div>
   );
 }
@@ -107,6 +122,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
         {!movedOn && <ParkButton job={job} />}</div>}
+      {q.tier === 'human' && <ReasonBanner q={q} />}
       <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
@@ -151,9 +167,31 @@ function QuestionCard({ q }: { q: QuestionView }) {
   );
 }
 
+/** The reasons to filter by, each with its count; shown when any question came to a person with a reason. */
+function ReasonFilter({ counts, total, value, onChange }: {
+  counts: { reason: EscalationReason; count: number }[]; total: number; value: EscalationReason | undefined; onChange(v: EscalationReason | undefined): void;
+}) {
+  if (counts.length === 0) return null;
+  const chip = (key: string, label: string, count: number, v: EscalationReason | undefined) => (
+    <Button key={key} size="sm" variant={value === v ? 'default' : 'outline'} aria-pressed={value === v} onClick={() => onChange(v)}>
+      {label}<span className="num ml-1 opacity-70">{count}</span>
+    </Button>
+  );
+  return (
+    <div data-slot="reason-filter" className="flex flex-wrap items-center gap-1.5" aria-label="Filter by why a question came to you">
+      {chip('all', 'All', total, undefined)}
+      {counts.map((c) => chip(c.reason, REASON_LABELS[c.reason], c.count, c.reason))}
+    </div>
+  );
+}
+
 export function Questions() {
   const questions = useQuestions();
-  const ordered = useMemo(() => questionOrder(questions), [questions]);
+  const [reason, setReason] = useState<EscalationReason | undefined>(undefined);
+  const counts = useMemo(() => reasonCounts(questions), [questions]);
+  // A filter whose last question left shows all again.
+  const active = reason && counts.some((c) => c.reason === reason) ? reason : undefined;
+  const ordered = useMemo(() => questionOrder(active ? questions.filter((q) => q.escalation?.reason === active) : questions), [questions, active]);
   const list = useRef<HTMLDivElement>(null);
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.
@@ -163,6 +201,7 @@ export function Questions() {
   useEffect(() => { if (canAnswer && unseen) void markSeen(unseen.split(',')); }, [canAnswer, unseen]);
   return (
     <div ref={list} className="space-y-3 [overflow-anchor:none]">
+      <ReasonFilter counts={counts} total={questions.length} value={active} onChange={setReason} />
       {ordered.length
         ? ordered.map((q) => <div key={q.id} data-question={q.id}><QuestionCard q={q} /></div>)
         : <Panel title="Questions" icon={MessageCircleQuestion}><Empty>no open questions</Empty></Panel>}

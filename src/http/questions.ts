@@ -2,13 +2,14 @@
 // human answer is a UI session mutation (src/http/ui/). The open questions list oldest first, the
 // longest waiting on top; every other listing is a history, newest first (issue #450). Each question carries its
 // job's live priority and whether it is high priority; the open ones list high-priority ones first (issue #535). Each
-// carries the forks made from it, with their review items (issue #570).
+// carries the forks made from it, with their review items (issue #570). `reason` keeps only the questions sent to a
+// person for that reason (issue #679).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import { highFirst, jobPriorityTag, REVIEW_SECTIONS, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
+import { ESCALATION_REASONS, highFirst, jobPriorityTag, REVIEW_SECTIONS, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
 import { forksOf, running } from '../questions/stale.ts';
 import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -19,6 +20,7 @@ const STATUSES = ['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed'
 export const questionsQuery = z.object({
   status: z.enum([...STATUSES, 'all']).default('open'),
   limit: z.coerce.number().int().min(1).max(1000).default(100),
+  reason: z.enum(ESCALATION_REASONS).optional(),
 });
 const idParams = z.object({ id: z.string() });
 
@@ -51,8 +53,9 @@ export function questionRoutes(app: FastifyInstance, o: { tenant: (req: FastifyR
   app.get('/api/questions', async (req) => {
     const q = parseWith(questionsQuery, req.query);
     const t = o.tenant(req);
-    const questions = t.store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), limit: q.limit, order: q.status === 'open' ? 'oldest-first' : 'newest-first' })
-      .map((x) => questionView(t, x));
+    // With a reason, the limit counts the questions that have it.
+    const listed = t.store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), ...(q.reason ? {} : { limit: q.limit }), order: q.status === 'open' ? 'oldest-first' : 'newest-first' });
+    const questions = (q.reason ? listed.filter((x) => x.escalation?.reason === q.reason).slice(0, q.limit) : listed).map((x) => questionView(t, x));
     return { questions: q.status === 'open' ? highFirst(questions, (x) => x.high) : questions };
   });
 

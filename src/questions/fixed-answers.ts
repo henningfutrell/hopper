@@ -6,6 +6,7 @@
 import { posix } from 'node:path';
 import type { UserStore } from '../domain/ports.ts';
 import type { Job, Question, QuestionAttempt } from '../domain/types.ts';
+import type { ToHuman } from './escalation.ts';
 import { riskRules } from './risk.ts';
 
 /** The fixed answers' name on a question's trail and as `answeredBy`. */
@@ -101,8 +102,8 @@ export interface FixedAnswerDeps {
   iso(): string;
   /** The human stage's name: only its answers are reused. */
   human: string;
-  /** Inside the tx: send the question to the human, with the reason; `kept` (issue #650): a risk rule sent it. */
-  toHuman(q: Question, reason: string, kept?: 'risk'): void;
+  /** Inside the tx: send the question to the human, with the reason and why for the person (issue #679); a risk rule keeps it (issue #650). */
+  toHuman(q: Question, reason: string, to: ToHuman): void;
   /** Inside the tx that answered it: announce the answer and resume the job. */
   answered(q: Question): void;
 }
@@ -120,7 +121,7 @@ export function answerFixed(d: FixedAnswerDeps, id: string): boolean {
     const attempt: QuestionAttempt = { tier: FIXED, role: 'fixed', startedAt: at, finishedAt: at, answer: fixed.answer, reason: fixed.reason, riskRules: hits, outcome: 'escalated' };
     if (hits.length > 0) {
       store.questions.addAttempt(id, attempt);
-      d.toHuman(q, `risk rules: ${hits.join(', ')}`, 'risk');
+      d.toHuman(q, `risk rules: ${hits.join(', ')}`, { reason: 'guard', guards: hits, kept: 'risk' });
       return true;
     }
     store.questions.addAttempt(id, { ...attempt, outcome: 'accepted' });
