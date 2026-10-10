@@ -322,33 +322,11 @@ line carries a one-time join code: it works once, for 10 minutes.
   The hopper keeps the client current by itself. Should Machines say a computer's client cannot be
   updated, it shows the line to run there: the same install with no join code, which reinstalls the
   client and keeps the machine.
-- **A Windows computer**, outside WSL: the hopper types POSIX shell commands into each job's pane,
-  and herdr opens panes in PowerShell there, so a job fails at once with `… is PowerShell, and the
-  hopper needs a POSIX shell …`. Give the client's herdr session Git Bash as its shell: start that
-  session with `HERDR_CONFIG_PATH` naming a herdr config of its own, and with `CHERE_INVOKING=1` so
-  bash stays in the pane's directory. The config:
-
-  ```toml
-  [terminal]
-  default_shell = 'C:/Program Files/Git/usr/bin/bash.exe'
-  shell_mode = 'login'
-  ```
-
-  Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
-  bash, and herdr then sees the pane as busy.
-
-  With no systemd there, start that herdr session (`herdr --session hopper-client server`) and the
-  client yourself, from your home directory, never from the client's own directory: Windows cannot
-  replace a directory a process is in, and that breaks a release load. Start the client again when it
-  exits 75, as it does after each new client release:
-
-  ```powershell
-  Set-Location $HOME
-  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
-  ```
-
-  For the machine's Claude usage, `claude` must be on the client's PATH as `claude.exe` (the native
-  installer's): the client runs it with no shell.
+- **A Windows computer**: not supported natively. Run the machine inside WSL, with systemd on and
+  `podman.socket` started (`systemctl --user enable --now podman.socket`), and run the line in the WSL
+  distro, not in PowerShell. A client on Windows itself (Node.js for Windows, Git Bash) is refused at
+  the join: `Windows isn't supported natively. Run the client inside WSL.` The steps:
+  https://henningfutrell.github.io/hopper/install.html#windows-machine
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
   container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
