@@ -192,3 +192,108 @@ describe('a running job keeps GitHub access across a renewal (#441)', () => {
     expect(JSON.stringify(await jobs(app))).not.toMatch(/gh[or]_/); // never on the job
   });
 });
+
+// Issue #647: a new grant reaches running jobs at once; each renewal is recorded with no token; a job whose credential
+// files cannot be rewritten says so.
+describe('the connection\'s new grants and renewals reach running jobs, and are recorded (#647)', () => {
+  /** A job that runs until it is stopped, on this machine, through a shell that fails its writes while `broken`. */
+  function holder(work: string) {
+    const state: { env?: Record<string, string>; broken: boolean } = { broken: false };
+    const executor: Executor = {
+      name: 'holder', idempotent: false, validate: () => null,
+      machineShell: () => {
+        const shell = localShell();
+        return { ...shell, keepCredential: (...a) => (state.broken ? Promise.reject(new Error('the machine refused the write')) : shell.keepCredential(...a)) };
+      },
+      async run(ctx) {
+        state.env = { ...(await ctx.credentials!(join(work, '.hopper-scratch', ctx.job.id))) };
+        await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve, { once: true }));
+        return { kind: 'failed', error: 'stopped' };
+      },
+    };
+    return { executor, state };
+  }
+
+  async function running(github: FakeForge) {
+    const work = mkdtempSync(join(tmpdir(), 'jh-647-'));
+    cleanups.push(() => rmSync(work, { recursive: true, force: true }));
+    const h = holder(work);
+    const app = await start(github, database(), { executor: 'holder', executors: [h.executor] });
+    const token = await app.login();
+    await connect(app, github, token);
+    await waitFor(async () => h.state.env !== undefined, { what: 'the job to start', timeoutMs: 15_000 });
+    const job = (await jobs(app))[0]!;
+    const hosts = () => readFileSync(join(work, '.hopper-scratch', job.id, 'credentials', 'gh', 'hosts.yml'), 'utf8');
+    return { app, token, job, hosts, state: h.state };
+  }
+
+  it('connecting again while a job runs: the job\'s hosts.yml holds the new token within 10 s', async () => {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const { app, token, hosts } = await running(github);
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+
+    expect((await app.ui('/ui/api/connected-accounts', { action: 'connect', provider: 'github' }, { token })).status).toBe(200);
+    github.approve('octo-user');
+    await waitFor(async () => !hosts().includes(started), { what: 'the new token on the job\'s machine', timeoutMs: 10_000 });
+    const now = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+    expect(github.tokens.has(now)).toBe(true);
+  });
+
+  it('a sign-in while the connection is healthy is held; confirmed, the job\'s hosts.yml holds it within 10 s', async () => {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const { app, token, hosts } = await running(github);
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+
+    const signIn = github.mint('octo-user', true);
+    await app.user().connectedAccounts.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
+    expect(await account(app)).toMatchObject({ state: 'connected', held: { account: 'octo-user' } });
+    expect(hosts()).toContain(started);
+
+    const answer = await app.ui('/ui/api/connected-accounts', { action: 'take-held', provider: 'github' }, { token });
+    expect(answer.status).toBe(200);
+    await waitFor(async () => hosts().includes(signIn.accessToken), { what: 'the sign-in\'s token on the job\'s machine', timeoutMs: 10_000 });
+  });
+
+  it('records one connected_account.renewed event per renewal, with no token', async () => {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const { app, hosts } = await running(github);
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+
+    await app.user().connectedAccounts.renew('github', started);
+    const renewed = (await events(app)).filter((e) => e.type === 'connected_account.renewed');
+    expect(renewed).toHaveLength(1);
+    expect(renewed[0]!.data).toMatchObject({ provider: 'github', account: 'octo-user', expiresAt: expect.any(String) });
+    expect(JSON.stringify(renewed)).not.toMatch(/gh[or]_/);
+  });
+
+  it('records a failed renewal with its error code', async () => {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const { app, hosts } = await running(github);
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+
+    github.refreshTokens.clear();
+    await app.user().connectedAccounts.renew('github', started).catch(() => undefined);
+    const failed = (await events(app)).filter((e) => e.type === 'connected_account.renewal_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.data).toEqual({ provider: 'github', account: 'octo-user', code: 'bad_refresh_token' });
+  });
+
+  it('a job whose credential files cannot be rewritten gets a progress line and a warning', async () => {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const { app, token, job, hosts, state } = await running(github);
+    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
+
+    state.broken = true;
+    await app.user().connectedAccounts.renew('github', started);
+    await waitFor(async () => (await jobs(app)).find((j) => j.id === job.id)?.credentialsWarning !== undefined, { what: 'the warning on the job' });
+    expect((await jobs(app)).find((j) => j.id === job.id)!.credentialsWarning).toMatch(/the machine refused the write/);
+    const lines = (await events(app)).filter((e) => e.type === 'job.progressed' && e.jobId === job.id).map((e) => String((e.data as { message?: unknown }).message));
+    expect(lines.some((l) => /could not be rewritten/.test(l))).toBe(true);
+
+    // Rewritten at the next new token (connected again): the warning goes.
+    state.broken = false;
+    expect((await app.ui('/ui/api/connected-accounts', { action: 'connect', provider: 'github' }, { token })).status).toBe(200);
+    github.approve('octo-user');
+    await waitFor(async () => (await jobs(app)).find((j) => j.id === job.id)?.credentialsWarning === undefined, { what: 'the warning to go' });
+  });
+});

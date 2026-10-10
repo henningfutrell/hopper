@@ -35,6 +35,8 @@ let start: number;
 
 /** The users whose GitHub connection ended (issue #513). */
 let connectionEnded: Set<string>;
+/** Why a request's session token named no live session (issue #647). */
+let unknown: string[];
 
 function setUp(o: { idleHours?: number; maxHours?: number; issuer?: string } = {}) {
   const config = loadSignInConfig({
@@ -44,6 +46,7 @@ function setUp(o: { idleHours?: number; maxHours?: number; issuer?: string } = {
   signIn = createSignIn({ config, clock, origin: () => 'http://localhost:1' });
   sessions = createUiSessions({
     repo: instance.uiSessions, clock, signIn, ended: (s) => ended.push(s), connectionEnded: (userId) => connectionEnded.has(userId),
+    unknown: (why) => unknown.push(why),
   });
 }
 
@@ -53,6 +56,7 @@ beforeEach(async () => {
   instance = openInstanceStore({ url: t.url(), clock });
   ended = [];
   connectionEnded = new Set();
+  unknown = [];
   idp = await startOidcIdp();
 });
 afterEach(async () => {
@@ -248,5 +252,29 @@ describe('a session signed in with GitHub, when the GitHub connection ends (issu
     expect(sessions.find(theirs.token)?.userId).toBe('u2');
     expect(sessions.find(mine.token)).toBeUndefined();
     expect(ended.map((e) => e.userId)).toEqual(['u1']);
+  });
+});
+
+describe('a request whose session is unknown says why (#647)', () => {
+  it('not found: no stored session ever had the token', async () => {
+    setUp();
+    await sessions.renew('not-a-session', {});
+    expect(unknown).toEqual(['not found: it ended before this hopper started, the database was reset, or it is another hopper\'s']);
+  });
+
+  it('ended: the session ended earlier, with its reason', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    sessions.drop(s.token, 'logout');
+    await sessions.renew(s.token, {});
+    expect(unknown).toEqual(['ended: logout']);
+  });
+
+  it('expired: the request found it past its idle timeout', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    at(7 * DAY);
+    await sessions.renew(s.token, {});
+    expect(unknown).toEqual(['expired: expired-idle']);
   });
 });
