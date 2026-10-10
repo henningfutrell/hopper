@@ -1821,6 +1821,12 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
    merged, at any time, or open with no merge conflicts. The job need not have pushed: one already current has nothing to push.
+4. The issue's **deliverable is an artifact** (issue #673: `isArtifactDeliverable`, a line of its body that says
+   `Deliverable: artifact`, any case): the job made at least one artifact linked to the issue (its `issue` is the job's
+   issue URL; `JobSourceContext.jobArtifacts`), and a comment on the issue names one — its link or its id. `share ID
+   --owner` posts that comment ("Artifacts": share with the owner). A pull request still counts too. The job's `done` line
+   says so (`artifactDoneLine`). The line sits in the issue's text, which anyone who may edit the issue can change: the
+   most it can do is end a job done with an artifact and no pull request, the same reach as asking for no code change.
 
 **A merge is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). A miss names
 what was looked at (issue #637): `not complete: the issue <url> is open, and no pull request in <repo> that closes or
@@ -10667,7 +10673,7 @@ byte by byte (`od`); the file is the body, `application/octet-stream`, read whol
 | `put FILE [--title] [--type]` | `POST /job/artifacts` | 201 `put: <id> <title> <type> <n> bytes` and `url: <stable URL>` |
 | `list [--all] [--markdown]` | `GET /job/artifacts` | the job's (all: the user's); markdown links only through the public URL |
 | `get ID [--out FILE]` | `GET /job/artifacts/:id[?content=1]` | its details and shares, or its content |
-| `share ID --user NAME \| --public [--hours N] \| --revoke SHARE` | `POST /job/artifacts/:id/share` | the share; a public link said once |
+| `share ID --owner \| --user NAME \| --public [--hours N] \| --revoke SHARE` | `POST /job/artifacts/:id/share` | the share; a public link said once; with the owner, the comment posted (issue #673) |
 | `rm ID` | `POST /job/artifacts/:id/rm` | removed, with its shares |
 
 Agent-native: `--json` sends `Accept: application/json` and every answer is one JSON line with `ok`; exit 0 done, 1 a
@@ -10727,6 +10733,17 @@ in the sandbox (no `allow-popups-to-escape-sandbox`). The `artifacts` skill tell
 names and any reverse proxy must all serve, and the sandbox's opaque origin already keeps the page from the hopper's
 storage and session; it is the step to take if a browser's sandbox is ever found to leak.
 
+**Share with the owner** (issue #673). The owner is the user whose job made the artifact, and sees it already: a share
+with them — `share ID --owner`, or `--user` with their name, or the UI's share with their name — makes nothing and
+succeeds (`ShareMade` `{ owner: true }`; it was refused before, "the artifact is yours already"). What a job means by it is
+"show this to the person", so the job's route shows it: it posts the artifact's link on the job's issue as the job's own
+comment, through the GitHub proxy (`GitHubProxy.handle` with the job's own token: the proxy's policy, limits and
+`github_proxy.*` events apply; the job's request, as when it runs `hopper-gh`), and appends `artifact.posted` (the
+comment's URL, or why it was not posted) on the job's timeline and stream, which the job card's event list shows. The
+comment (`shownComment`) follows the publishing rule: a link only through the public URL, else the artifact's id and
+"Open it in the hopper's Artifacts view" — never a LAN or loopback address, which a link base may be. A comment that
+cannot be posted is a no (exit 1) with why; a job with no issue is told so.
+
 **Sharing and Access.** By default only the owner sees an artifact. A **share** is with another user of the hopper (by
 name) or a **public link** (`/artifact-link/<owner>.<random>`, 32 random bytes; only its SHA-256 is kept, and the link is
 answered once). A share is live until revoked, a link until it expires: the user's default hours, at most their most
@@ -10740,7 +10757,7 @@ links on: off in Settings → Artifacts, every one stops at once. Revoking a sha
 the next load.
 
 **Events.** `artifact.created` (on the job's timeline), `artifact.shared`, `artifact.share_revoked`, `artifact.removed`
-(`removed` by a person or a job, or `retention`), `artifact.settings_changed`. The first four also go on the job's
+(`removed` by a person or a job, or `retention`), `artifact.posted` (issue #673), `artifact.settings_changed`. All but the last also go on the job's
 **job stream** (issue #613) while the job is at work, phase `progress` (`src/artifacts/stream.ts`, registered as
 `artifact` in `src/users/job-stream.ts`), so a waiting agent hears at once; the UI hears the domain events on its SSE.
 
