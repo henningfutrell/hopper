@@ -82,15 +82,15 @@ describe('content URLs survive a restart (issue #673)', () => {
   it('with no token key the key lives only in the process: the log says so, and a restart ends the URLs', async () => {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
-    let { a, session } = await start(db.dbPath, {});
-    put(a);
-    const url = (await read(a, session)).artifacts[0]!.contentUrl;
-    await read(a, session);
-    expect(vaultRows(a)).toEqual([]);
+    const first = await start(db.dbPath, {});
+    put(first.a);
+    const url = (await read(first.a, first.session)).artifacts[0]!.contentUrl;
+    await read(first.a, first.session);
+    expect(vaultRows(first.a)).toEqual([]);
     expect(logged.filter((l) => l.includes('content URLs end at a restart'))).toHaveLength(1);
-    await a.stop();
+    await first.a.stop();
     t = undefined;
-    ({ a, session } = await start(db.dbPath, {}));
+    const { a } = await start(db.dbPath, {});
     expect((await fetch(a.url + url)).status).toBe(404);
   });
 });

@@ -10,11 +10,13 @@
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';
-import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type UiRole, type User } from './domain/types.ts';
+import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
+import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
+import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact'] as const;
 
@@ -57,16 +59,10 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
-  hopper artifact list                               the user's artifacts, newest first, each with its shares and link
-  hopper artifact get <id>                           one artifact: its details, shares and link
-  hopper artifact share <id> --with <name> | --public [--hours <n>]
-                                                     share it with another user, or make a public link (said once)
-  hopper artifact revoke <id> <share>                end a share: the user no longer sees it, or the link stops at once
-  hopper artifact rm <id>                            remove it and every share of it
+${ARTIFACT_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
-/** A refusal: the message, exit 2. */
-export class OperatorRefusal extends Error {}
+export { OperatorRefusal };
 
 export interface OperatorIo {
   env: Record<string, string | undefined>;
@@ -75,16 +71,12 @@ export interface OperatorIo {
   out(text: string): void;
 }
 
-/** A POST of `body`, or, without one, a GET whose answer `pick` narrows. */
-interface Call { role: UiRole; path: string; body?: (get: Getter) => Promise<unknown>; pick?: (answer: unknown) => unknown }
-type Getter = (path: string) => Promise<unknown>;
 
 /** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
 const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
 const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operator CLI', groups: [] };
 
-const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usage: hopper ${line}`);
 
 function jobCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
@@ -282,31 +274,6 @@ function typesafeKeyCall(args: string[], stdin: () => string): Call {
   const value = stdin().trim();
   if (!value) throw new OperatorRefusal('no key on stdin: pipe it in, e.g. hopper typesafe-key set < key-file');
   return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
-}
-
-const ARTIFACT_SHARE = 'artifact share <id> --with <name> | --public [--hours <n>]';
-
-function artifactCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { with: { type: 'string' }, public: { type: 'boolean' }, hours: { type: 'string' } } });
-  const [verb, id, ...rest] = positionals;
-  const flags = values.with !== undefined || values.public !== undefined || values.hours !== undefined;
-  if (verb === 'list' && !id && !flags) return { role: 'viewer', path: '/api/artifacts', pick: (v) => ({ artifacts: (v as { artifacts: unknown[] }).artifacts }) };
-  if (!id) throw usage('artifact list | get <id> | share <id> … | revoke <id> <share> | rm <id>');
-  const at = `/ui/api/artifacts/${encodeURIComponent(id)}`;
-  if (verb === 'get' && rest.length === 0 && !flags) return { role: 'viewer', path: `/api/artifacts/${encodeURIComponent(id)}` };
-  if (verb === 'rm' && rest.length === 0 && !flags) return { role: 'operator', path: `${at}/remove`, body: async () => ({}) };
-  if (verb === 'revoke' && rest.length === 1 && !flags) return { role: 'operator', path: `${at}/shares/${encodeURIComponent(rest[0]!)}/revoke`, body: async () => ({}) };
-  if (verb === 'share' && rest.length === 0) {
-    // `--with`, not `--user`: `--user` names the user the CLI acts as.
-    if (values.with !== undefined && !values.public && values.hours === undefined) return { role: 'operator', path: `${at}/share`, body: async () => ({ user: values.with }) };
-    if (values.public && values.with === undefined) {
-      const hours = values.hours === undefined ? undefined : Number(values.hours);
-      if (hours !== undefined && (!Number.isInteger(hours) || hours < 1)) throw new OperatorRefusal(`--hours must be a whole number of at least 1, not ${values.hours}`);
-      return { role: 'operator', path: `${at}/share`, body: async () => ({ link: true, ...(hours === undefined ? {} : { hours }) }) };
-    }
-    throw usage(ARTIFACT_SHARE);
-  }
-  throw usage('artifact list | get <id> | share <id> … | revoke <id> <share> | rm <id>');
 }
 
 function callOf(command: string, args: string[], stdin: () => string): Call {
