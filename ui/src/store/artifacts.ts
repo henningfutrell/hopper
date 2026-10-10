@@ -3,7 +3,7 @@
 import { toast } from 'sonner';
 import { create } from 'zustand';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import type { ArtifactSettings, ArtifactShare, ArtifactsView, ArtifactView } from '@/model/wire';
+import type { ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactsView, ArtifactView } from '@/model/wire';
 import { useHopper } from './index';
 
 export const useArtifacts = create<{ view: ArtifactsView | null; error: string | null }>(() => ({ view: null, error: null }));
@@ -45,6 +45,19 @@ export const shareWithUser = (id: string, user: string) =>
 export const shareLink = (id: string, hours?: number) =>
   act<{ artifact: ArtifactView; share: ArtifactShare; link: string }>(`/ui/api/artifacts/${id}/share`, { link: true, ...(hours ? { hours } : {}) }, 'Public link made');
 export const revokeShare = (id: string, share: string) => act(`/ui/api/artifacts/${id}/shares/${share}/revoke`, {}, 'Share revoked');
+/** An artifact's revisions, newest first (issue #675); null: they could not be read. */
+export async function readRevisions(id: string): Promise<ArtifactRevisionView[] | null> {
+  try {
+    return (await get<{ revisions: ArtifactRevisionView[] }>(`/api/artifacts/${id}/revisions`)).revisions;
+  } catch {
+    return null;
+  }
+}
+/** Revision `n` becomes the latest, as a new revision: nothing is overwritten. */
+export const restoreRevision = (id: string, n: number) =>
+  act<{ artifact: ArtifactView }>(`/ui/api/artifacts/${id}/restore`, { revision: n }, `Revision ${n} restored as the latest`);
+export const pinRevision = (id: string, n: number, pinned: boolean) =>
+  act<{ revision: ArtifactRevisionView }>(`/ui/api/artifacts/${id}/revisions/${n}/pin`, { pinned }, pinned ? `Revision ${n} pinned: the retention keeps it` : `Revision ${n} unpinned`);
 export const removeArtifact = (id: string) => act(`/ui/api/artifacts/${id}/remove`, {}, 'Artifact removed');
 export const saveArtifactSettings = (patch: Partial<ArtifactSettings>) =>
   act<{ settings: ArtifactSettings }>('/ui/api/artifacts/settings', patch, 'Artifact settings saved');

@@ -1,9 +1,11 @@
-// Artifacts (issue #624): what the user's jobs made for a person to see, and what other users shared with them. The
-// list, newest first; the one the hash names (#artifacts/<id>, an artifact's stable URL) opens beside it with its
-// preview, its job and issue, and — for its owner — its shares: with another user of the hopper, or a public link that
-// expires. A public link is shown once, when it is made. HTML opens only in a sandbox.
+// Artifacts (issue #624): how the user's jobs present their work — live pages with flowcharts, charts and interactive
+// views (issue #675) —, and what other users shared with them. The list, newest first, each with its title and summary;
+// the one the hash names (#artifacts/<id>, an artifact's stable URL, which follows its latest revision; #artifacts/<id>/<n>
+// pins revision n) opens beside it with its preview, its job and issue, its revisions, and — for its owner — its shares:
+// with another user of the hopper, or a public link that expires. A public link is shown once, when it is made. HTML
+// opens only in a sandbox.
 import { Copy, Download, ExternalLink, FolderOpen, Link2, Trash2, UserPlus, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { useSection } from '@/app/nav';
 import { ArtifactPreview } from '@/components/artifacts';
@@ -12,10 +14,15 @@ import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useNow } from '@/hooks/use-now';
-import { bytesInWords, findArtifact, liveShare, shareInWords } from '@/model/artifacts';
+import { bytesInWords, findArtifact, liveShare, revisionHash, revisionOfHash, shareInWords } from '@/model/artifacts';
 import type { ArtifactView } from '@/model/wire';
 import { refreshArtifacts, removeArtifact, revokeShare, shareLink, shareWithUser, useArtifacts } from '@/store/artifacts';
 import { cn } from '@/lib/utils';
+import { Revisions, useRevisions } from './artifact-revisions';
+
+const onHash = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
+/** The revision the hash pins, or undefined: the latest. */
+const usePinnedRevision = (): number | undefined => useSyncExternalStore(onHash, () => revisionOfHash(window.location.hash));
 
 function Row({ a, open }: { a: ArtifactView; open: boolean }) {
   return (
@@ -23,11 +30,12 @@ function Row({ a, open }: { a: ArtifactView; open: boolean }) {
       className={cn('flex items-center gap-3 rounded-md border px-3 py-2 text-sm hover:bg-muted/60', open && 'border-foreground/20 bg-muted')}>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium">{a.title}</span>
+        {a.summary && <span className="block truncate text-xs text-muted-foreground">{a.summary}</span>}
         <span className="block truncate font-mono text-[11px] text-muted-foreground">
-          {a.name} · {a.kind} · {bytesInWords(a.size)}{a.owner ? ` · from ${a.owner}` : ''}{a.issue ? ` · ${a.issue.ref}` : ''}
+          {a.kind} · {bytesInWords(a.size)}{a.revision > 1 ? ` · revision ${a.revision}` : ''}{a.owner ? ` · from ${a.owner}` : ''}{a.issue ? ` · ${a.issue.ref}` : ''}
         </span>
       </span>
-      <Since iso={a.createdAt} className="shrink-0 text-xs text-muted-foreground" />
+      <Since iso={a.updatedAt} className="shrink-0 text-xs text-muted-foreground" />
     </a>
   );
 }
@@ -74,24 +82,42 @@ function Shares({ a }: { a: ArtifactView }) {
 }
 
 function Detail({ a }: { a: ArtifactView }) {
-  const remove = () => { if (window.confirm(`Remove ${a.title}? Its shares stop working.`)) void removeArtifact(a.id).then(() => { location.hash = '#artifacts'; }); };
+  const remove = () => { if (window.confirm(`Remove ${a.title}? Every revision goes, and its shares stop working.`)) void removeArtifact(a.id).then(() => { location.hash = '#artifacts'; }); };
+  const [revs, reload] = useRevisions(a);
+  const pinned = usePinnedRevision();
+  // A pinned revision that is not the latest: its own content, title and summary; the latest otherwise.
+  const old = pinned !== undefined && pinned !== a.revision ? revs?.find((r) => r.n === pinned) : undefined;
+  const shown = old ?? a;
+  const copy = (text: string) => { void navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => {}); };
   return (
-    <Panel title={a.title} action={<a href="#artifacts" aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></a>}>
+    <Panel title={shown.title} action={<a href="#artifacts" aria-label="Close" className="text-muted-foreground hover:text-foreground"><X className="size-4" /></a>}>
       <div className="space-y-3">
+        {shown.summary && <p data-slot="artifact-summary" className="text-sm">{shown.summary}</p>}
+        {old && (
+          <p data-slot="artifact-old-revision" className="rounded-md border bg-muted/40 px-2 py-1 text-xs">
+            Revision {old.n} of {a.revision}. <a className="underline" href={revisionHash(a.id)}>Open the latest</a>
+          </p>
+        )}
+        {pinned !== undefined && pinned !== a.revision && revs && !old && (
+          <p className="rounded-md border px-2 py-1 text-xs text-muted-foreground">No revision {pinned}: the retention removed it. This is the latest.</p>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          <span className="font-mono">{a.name}</span><span>{a.type}</span><span>{bytesInWords(a.size)}</span>
+          <span className="font-mono">{shown.name}</span><span>{shown.type}</span><span>{bytesInWords(shown.size)}</span>
+          <span>revision {old ? old.n : a.revision}</span>
           <span>job {a.jobId.slice(0, 8)}</span>
           {a.issue && <GhLink url={a.issue.url}>{a.issue.ref}<ExternalLink className="size-3" /></GhLink>}
           {a.owner && <span>shared by {a.owner}</span>}
-          <span className="font-mono" title="SHA-256">{a.sha256.slice(0, 12)}</span>
+          <span className="font-mono" title="SHA-256">{shown.sha256.slice(0, 12)}</span>
         </div>
-        <ArtifactPreview artifact={a} />
+        <ArtifactPreview key={shown.contentUrl} artifact={shown} height={520} />
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" asChild><a href={a.contentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink />Open</a></Button>
-          <Button size="sm" variant="outline" asChild><a href={`${a.contentUrl}&download=1`}><Download />Download</a></Button>
-          <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard?.writeText(a.url).then(() => toast.success('Copied'), () => {}); }}><Copy />Copy its URL</Button>
+          <Button size="sm" variant="outline" asChild><a href={shown.contentUrl} target="_blank" rel="noopener noreferrer"><ExternalLink />Open</a></Button>
+          <Button size="sm" variant="outline" asChild><a href={`${shown.contentUrl}&download=1`}><Download />Download</a></Button>
+          <Button size="sm" variant="outline" onClick={() => copy(a.url)}><Copy />Copy its URL</Button>
+          {old && <Button size="sm" variant="outline" onClick={() => copy(`${a.url}/${old.n}`)}><Copy />Copy a link to revision {old.n}</Button>}
           {!a.owner && <Button size="sm" variant="outline" onClick={remove}><Trash2 />Remove</Button>}
         </div>
+        <Revisions a={a} revs={revs} open={old ? old.n : a.revision} reload={reload} />
         {!a.owner && <Shares a={a} />}
       </div>
     </Panel>
@@ -110,7 +136,7 @@ export function Artifacts() {
       <div className="space-y-3">
         <Panel title="Artifacts" icon={FolderOpen} count={view.artifacts.length} list>
           {view.artifacts.length === 0
-            ? <Empty>No artifacts yet. A job puts one with hopper-artifact put FILE.</Empty>
+            ? <Empty>No artifacts yet. An artifact is how a job presents its work: a live page with flowcharts, charts or interactive views, which you open, use and share. A job puts one with hopper-artifact put FILE.</Empty>
             : <div className="grid gap-1.5">{view.artifacts.map((a) => <Row key={a.id} a={a} open={a.id === id} />)}</div>}
           <p className="mt-2 text-xs text-muted-foreground">{bytesInWords(view.usedBytes)} of {bytesInWords(view.settings.userBytes)} used.</p>
         </Panel>
