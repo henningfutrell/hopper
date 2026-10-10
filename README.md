@@ -79,6 +79,8 @@ mkdir hopper && cd hopper
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
+# save the master key it shows once (UI banner, or podman compose logs hopper) in your password manager, then:
+echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env && podman compose up -d --force-recreate --no-deps hopper
 podman compose exec hopper claude                                    # once: /login, then /exit
 # then Sources → GitHub account: choose the repositories jobs may come from
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
@@ -114,7 +116,8 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 ```
 
 `install.sh` writes the database URL to `~/.config/hopper/daemon.env` (mode 600); put secrets
-there too. Run it again to upgrade. Remove with `scripts/uninstall.sh`.
+there too. The first start makes the master key and shows it once (`journalctl --user -u hopper`, and the UI):
+save it in your password manager and add `HOPPER_MASTER_KEY=<it>` to `daemon.env` (`docs/deploy.md` "The master key"). Run it again to upgrade. Remove with `scripts/uninstall.sh`.
 
 ### From a checkout, in the foreground
 

@@ -285,7 +285,7 @@ export function Vault() {
   const secrets = view?.secrets ?? [];
   const templates = view?.templates ?? [];
   const backends = view?.backends ?? [];
-  // A value kept in the hopper needs its token key; a secret kept in a backend does not.
+  // A value kept in the hopper needs its master key; a secret kept in a backend does not.
   const local = view !== null && view.problem === undefined;
   const requests = view?.requests ?? [];
   return (

@@ -81,12 +81,19 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
-  it('gives the hopper a token key made on first start, kept with the database password (issue #441)', () => {
-    expect(hopper.environment?.HOPPER_TOKEN_KEY).toBeUndefined();
+  it('keeps no master key in a volume: the hopper reads HOPPER_MASTER_KEY from .env, and the old token_key only to move it (issue #659)', () => {
+    expect(hopper.environment?.HOPPER_MASTER_KEY).toBeUndefined();
+    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
+    const key = 'ab'.repeat(32);
+    expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
     expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBe('/run/hopper-secrets/token_key');
     const script = postgres.command!.join('\n');
-    expect(script).toMatch(/\[ -s \$\$?s\/token_key \] \|\| head -c 32 \/dev\/urandom/);
-    expect(script).toMatch(/chown 1000:1000 \$\$?s\/database_url \$\$?s\/token_key/);
+    expect(script).not.toMatch(/token_key/);
+  });
+
+  it('sets the database password again at each start: a lost secrets volume does not lock the hopper out of its database (issue #659)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/ALTER ROLE hopper PASSWORD/);
   });
 
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
@@ -272,7 +279,7 @@ describe('optional services (issue #586): each behind a compose profile, none re
     const vault = svc(on, 'hopper-vault');
     const hopper = svc(on, 'hopper');
     expect(vault.environment).toMatchObject({
-      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key',
+      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_MASTER_KEY: '', HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key',
       HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key', HOPPER_KMS_URL: 'http://kms:8080',
     });
     expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));

@@ -13,6 +13,7 @@
 // session of that user once the hopper has several (issue #221).
 // Every event the app emits is validated against its schema; stop() fails the test on any
 // nonconforming event (tracker + a scan of every user's whole event log).
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -102,6 +103,9 @@ export function writePlugins(dbPath: string, value: unknown): void {
   writeConfig(dbPath, 'plugins', value);
 }
 
+/** The master key a test app is given unless the test names its own (issue #659). */
+export const TEST_MASTER_KEY = randomBytes(32).toString('hex');
+
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
 
 export async function startTestApp(o: {
@@ -121,6 +125,8 @@ export async function startTestApp(o: {
   else if (o.plugins === undefined && !isNewHopper(o.dbPath) && readConfig(o.dbPath, 'plugins') === undefined) writePlugins(o.dbPath, TEST_PLUGINS);
   const secrets = o.secrets ?? {};
   if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
+  // A deploy gives the master key at launch (issue #659); a test that wants none names it, `HOPPER_MASTER_KEY: undefined`.
+  if (!('HOPPER_MASTER_KEY' in secrets) && !('HOPPER_TOKEN_KEY_FILE' in secrets) && !('HOPPER_TOKEN_KEY' in secrets)) secrets.HOPPER_MASTER_KEY = TEST_MASTER_KEY;
   const config = loadConfig({
     HOPPER_PORT: '0',
     HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),

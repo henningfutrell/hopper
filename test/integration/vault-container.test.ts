@@ -1,14 +1,16 @@
 // Issue #586, through the real composition root, the real HTTP server and the real vault server: the vault runs in a
 // container of its own. The hopper reaches it at HOPPER_VAULT_URL with the preshared key HOPPER_VAULT_KEY; the vault
-// keeps its key (here: the token key, which the hopper is not given at all), seals, and keeps its write-only rule. The
-// hopper keeps the event log. When the vault cannot be reached, the hopper still works and says why the vault does not.
+// keeps its key (here: the master key, the hopper's own, issue #659: one key per database, its fingerprint recorded), seals,
+// and keeps its write-only rule. The hopper keeps the event log. When the vault cannot be reached, the hopper still works
+// and says why the vault does not.
 //
 // Feature: the vault in a container of its own
-//   Scenario: a secret set in the UI is sealed by the vault container, under a key the hopper does not hold
-//     Given a vault container with the token key, and a hopper with none
+//   Scenario: a secret set in the UI is sealed by the vault container
+//     Given a vault container and a hopper with the same master key
 //     When the admin sets the vault secret DEPLOY_KEY
 //     Then the vault lists it, with no value, and the database holds it sealed under the vault's key
 //     And the hopper's event log records vault.secret_set, without the value
+//   Scenario: a vault container with another master key than the database was set up with seals nothing, and says so
 //   Scenario: a hopper with the wrong preshared key is refused by the vault, and says so
 //   Scenario: a vault that is not running: the hopper starts and works, and the vault says it is not reachable
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +19,7 @@ import { openDb } from '../../src/store/db.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { ownerSchemaUrlFor } from '../support/database.ts';
 import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
-import { KEY } from '../support/webhooks.ts';
+import { KEY, NEW_KEY } from '../support/webhooks.ts';
 
 const VALUE = 'vault-container-value-0123456789abcdef-never-read-back';
 
@@ -42,19 +44,20 @@ afterEach(async () => {
 
 type View = { secrets: Record<string, unknown>[]; templates: unknown[]; problem?: string };
 
-/** The vault container (unless `noVault`), then a hopper with no token key of its own, told the vault's URL. */
-async function boot(o: { hopperKey?: string; noVault?: boolean } = {}): Promise<{ a: TestApp; session: string }> {
+/** The vault container (unless `noVault`) with `vaultMasterKey` (default KEY), then a hopper with KEY, told the vault's URL. */
+async function boot(o: { hopperKey?: string; noVault?: boolean; vaultMasterKey?: string } = {}): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
   stops.push(db.cleanup);
   // The vault's port is known only once it listens; a hopper reads HOPPER_VAULT_URL at start. So: a vault on a port
   // first (over a database the hopper has not made yet, it only listens), then the hopper told its URL.
-  const vault = o.noVault ? undefined : await startVaultContainer(db.dbPath, { HOPPER_TOKEN_KEY: KEY });
+  const vault = o.noVault ? undefined : await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: o.vaultMasterKey ?? KEY });
   if (vault) stops.push(() => vault.stop());
   vaultUrl = vault?.url ?? '';
   t = await startTestApp({
     dbPath: db.dbPath,
     env: { HOPPER_VAULT_URL: vault?.url ?? 'http://127.0.0.1:9' },
-    secrets: { HOPPER_VAULT_KEY: o.hopperKey ?? VAULT_KEY },
+    // One master key for the hopper and its vault container (issue #659): the hopper records its fingerprint.
+    secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: o.hopperKey ?? VAULT_KEY },
   });
   return { a: t, session: await t.login() };
 }
@@ -68,7 +71,7 @@ function rows(a: TestApp): Record<string, unknown>[] {
 }
 
 describe('the vault in a container of its own (issue #586)', () => {
-  it('a secret set in the UI is sealed by the vault container, under a key the hopper does not hold', async () => {
+  it('a secret set in the UI is sealed by the vault container', async () => {
     const { a, session } = await boot();
     const r = await edit(a, session, { action: 'set', name: 'DEPLOY_KEY', scope: 'k3s lab', value: VALUE });
     expect(r.status).toBe(200);
@@ -93,6 +96,14 @@ describe('the vault in a container of its own (issue #586)', () => {
     expect(saved.status).toBe(200);
     expect((await edit(a, session, { action: 'approve-template', name: 'kube' })).body.templates).toMatchObject([{ name: 'kube', gives: ['DEPLOY_KEY'] }]);
     expect((await edit(a, session, { action: 'remove', name: 'NOPE' })).status).toBe(404);
+  });
+
+  it('a vault container with another master key than the database was set up with seals nothing, and says so (issue #659)', async () => {
+    const { a, session } = await boot({ vaultMasterKey: NEW_KEY });
+    const r = await edit(a, session, { action: 'set', name: 'DEPLOY_KEY', value: VALUE });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toContain('the master key does not match this database');
+    expect(rows(a)).toHaveLength(0);
   });
 
   it('a hopper with the wrong preshared key is refused by the vault, and says so', async () => {

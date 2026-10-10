@@ -63,7 +63,7 @@ async function boot(): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
-  t = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } } });
+  t = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } } });
   const session = await t.login();
   for (const name of ['KUBE_TOKEN', 'PROD_KEY']) await t.ui('/ui/api/vault', { action: 'set', name, value: `${name}-value-0123456789` }, { token: session });
   return { a: t, session };

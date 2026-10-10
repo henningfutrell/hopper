@@ -45,7 +45,7 @@ async function boot(first: boolean): Promise<void> {
       ...(FGA === 'real' ? { HOPPER_OPENFGA_URL: process.env.E2E_OPENFGA_URL ?? 'http://openfga:8080' } : {}),
       HOPPER_TICK_MS: '200',
     },
-    secrets: { HOPPER_TOKEN_KEY: TOKEN_KEY, ...(FGA === 'real' ? { HOPPER_OPENFGA_KEY: process.env.E2E_OPENFGA_KEY ?? '' } : {}) },
+    secrets: { HOPPER_MASTER_KEY: TOKEN_KEY, ...(FGA === 'real' ? { HOPPER_OPENFGA_KEY: process.env.E2E_OPENFGA_KEY ?? '' } : {}) },
     plugins: first ? { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } } : false,
     seams,
   });

@@ -1,5 +1,5 @@
 // A connected account's tokens are sealed at rest (issue #441): AES-256-GCM under the runtime's
-// HOPPER_TOKEN_KEY, so a dump or backup of the database holds no usable GitHub token.
+// HOPPER_MASTER_KEY, so a dump or backup of the database holds no usable GitHub token.
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createTokenBox, tokenKeyProblem } from '../../src/secrets/token-box.ts';
@@ -20,12 +20,12 @@ describe('the token box', () => {
     const bytes = randomBytes(32);
     expect(createTokenBox(bytes.toString('base64')).open(createTokenBox(bytes.toString('hex')).seal('t'))).toBe('t');
     expect(tokenKeyProblem('short')).toMatch(/32 bytes/);
-    expect(() => createTokenBox('short')).toThrow(/HOPPER_TOKEN_KEY must be 32 bytes/);
+    expect(() => createTokenBox('short')).toThrow(/HOPPER_MASTER_KEY must be 32 bytes/);
   });
 
   it('refuses a token sealed under another key, naming the variable', () => {
     const sealed = createTokenBox(hex).seal('t');
-    expect(() => createTokenBox(randomBytes(32).toString('hex')).open(sealed)).toThrow(/another HOPPER_TOKEN_KEY/);
+    expect(() => createTokenBox(randomBytes(32).toString('hex')).open(sealed)).toThrow(/another HOPPER_MASTER_KEY/);
   });
 
   it('knows a sealed value from a clear one', () => {
@@ -34,13 +34,13 @@ describe('the token box', () => {
     expect(box.isSealed('gho_clear')).toBe(false);
   });
 
-  it('opens with an older key given as HOPPER_TOKEN_KEY_PREVIOUS, and knows it was not sealed under the current one (#514)', () => {
+  it('opens with an older key given as HOPPER_MASTER_KEY_PREVIOUS, and knows it was not sealed under the current one (#514)', () => {
     const old = randomBytes(32).toString('hex');
     const sealed = createTokenBox(old).seal('ghr_secret');
     const box = createTokenBox(hex, [old]);
     expect(box.open(sealed)).toBe('ghr_secret');
     expect(box.current(sealed)).toBe(false);
     expect(box.current(box.seal('t'))).toBe(true);
-    expect(() => createTokenBox(hex, ['short'])).toThrow(/HOPPER_TOKEN_KEY_PREVIOUS must be 32 bytes/);
+    expect(() => createTokenBox(hex, ['short'])).toThrow(/HOPPER_MASTER_KEY_PREVIOUS must be 32 bytes/);
   });
 });

@@ -20,7 +20,7 @@ export const TWO: WebhookEntry[] = [
   { name: 'grok-bot', url: 'http://127.0.0.1:4795/hook', events: ['question.escalated', 'job.finished'], secretEnv: 'WEBHOOK_SECRET_GROK', active: true },
   { name: 'other', url: 'http://127.0.0.1:4796/other', events: ['*'], secretEnv: 'WEBHOOK_SECRET_OTHER' },
 ];
-export const RUNTIME = { HOPPER_TOKEN_KEY: KEY, WEBHOOK_SECRET_GROK: 's-grok', WEBHOOK_SECRET_OTHER: 's-other' };
+export const RUNTIME = { HOPPER_MASTER_KEY: KEY, WEBHOOK_SECRET_GROK: 's-grok', WEBHOOK_SECRET_OTHER: 's-other' };
 export const BEFORE = TWO.map(({ name, url, events, active }) => ({ name, url, events, active: active ?? true }));
 
 export const signatureOf = (secret: string, got: { headers: Record<string, unknown>; body: string }) =>
@@ -82,7 +82,7 @@ export function useWebhookApp() {
       return { a: t, token: await t.login() };
     },
     /** The same database, the daemon started again with `secrets`. */
-    async restart(a: TestApp, secrets: Record<string, string>): Promise<{ a: TestApp; token: string }> {
+    async restart(a: TestApp, secrets: Record<string, string | undefined>): Promise<{ a: TestApp; token: string }> {
       const dbPath = a.dbPath;
       await a.stop();
       t = await startTestApp({ dbPath, secrets });

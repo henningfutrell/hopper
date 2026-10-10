@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Your saved secrets no longer depend on a storage volume. The hopper now uses one master key, which you keep in a password manager and give it at each start. A new hopper makes the key and shows it to you once: save it then. If the key is missing, the hopper starts with secrets switched off and deletes nothing.
 - The top bar is easier to use on a phone. Your name and role, the theme, logging in another device and Sign out are now in one menu behind the button with your initials. Sign out is at the bottom of that menu and needs a second tap, so a stray tap does not sign you out.
 - You can now turn Jev on from its page: paste your TypeSafe API key in Settings → Decider. The hopper checks the key, keeps it encrypted, and shows only its last 4 characters. Replace or remove it at any time, with no restart. A key that was set in the hopper's environment is moved in once; then remove it from there.
 - Jobs no longer hold your GitHub token: their git fetch and push, and every GitHub step they take, go through the hopper, and a job pushes only to a new branch of its own repository. Your ssh agent no longer reaches jobs either.

@@ -1,5 +1,5 @@
 // The KMS (issue #586, design.md "The KMS: an optional key provider"): an outside key service the vault's data key is
-// made and wrapped by — envelope encryption. Optional, never required: unset, the vault seals under the token key. It
+// made and wrapped by — envelope encryption. Optional, never required: unset, the vault seals under the master key. It
 // speaks AWS KMS's API, through AWS's own client; the one built and documented is a local KMS (local-kms, the compose
 // file's `kms` service), which checks no credentials, so the client sends fixed placeholder ones.
 import { DEFAULT_KMS_KEY, KMS_KEY_VARIABLE, KMS_URL_VARIABLE } from './wire.ts';

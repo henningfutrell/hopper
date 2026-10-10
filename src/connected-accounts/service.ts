@@ -27,7 +27,7 @@
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import type { TokenBox } from '../secrets/token-box.ts';
-import { createAtRest, PROVIDER_NAME, recordOf } from './at-rest.ts';
+import { createAtRest, NO_KEY, PROVIDER_NAME, recordOf } from './at-rest.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
@@ -73,7 +73,7 @@ export interface ConnectedAccountsOptions {
   deleteToken?(provider: ConnectedAccountProvider, accessToken: string): Promise<void>;
   /** Whether the runtime gives a client secret (issue #597): `incorrect_client_credentials` without one ends the connection. */
   hasClientSecret?(): boolean;
-  /** Seals the tokens at rest (issue #441); absent: the runtime gives no HOPPER_TOKEN_KEY, and they are kept in clear. */
+  /** Seals the tokens at rest (issue #441); absent: the master key is missing (issue #659), and no new token is kept. */
   box?: TokenBox | undefined;
   /** How often the renewer looks; default RENEW_EVERY_MS. */
   renewEveryMs?: number;
@@ -270,6 +270,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
 
   async function begin(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus> {
     failed.delete(provider);
+    if (!atRest.keeps) { failed.set(provider, NO_KEY); return status(provider); }
     if (!o.apps[provider].clientId) {
       failed.set(provider, `this hopper has no app for ${PROVIDER_NAME[provider]} to connect through: set ${CLIENT_ID_VARIABLE[provider]}`);
       return status(provider);
@@ -308,6 +309,8 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         ...(c.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(c.refreshTokenExpiresAt) } : {}),
       };
       if (healthy(c.provider)) { await held.hold(c.provider, c, g); return; } // never quietly replaced (issue #647)
+      // Without the master key the sign-in goes on, but its grant is not kept: what is stored stays (issue #659).
+      if (!atRest.keeps) { o.logger.warn(`hopper: ${PROVIDER_NAME[c.provider]} sign-in of ${c.account}: its grant is not kept: ${NO_KEY}`); return; }
       await keep(c.provider, c, g, o.clock.now().toISOString(), 'sign-in');
       await held.release(c.provider, false);
       o.logger.info(`hopper: ${PROVIDER_NAME[c.provider]} connected as ${c.account} (signed in with it)`);

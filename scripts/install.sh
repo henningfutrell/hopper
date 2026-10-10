@@ -120,12 +120,11 @@ if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_
     exit 1
   fi
 fi
-# The key the GitHub connection's tokens are sealed under in the database (issue #441, docs/design.md
-# "Keeping the connection"): made once, kept in daemon.env; one given already (or its _FILE) is kept.
-if [ -z "$(env_line HOPPER_TOKEN_KEY)" ] && [ -z "$(env_line HOPPER_TOKEN_KEY_FILE)" ]; then
-  step "write a new HOPPER_TOKEN_KEY to $ENV_FILE (mode 600)"
-  (umask 077; printf 'HOPPER_TOKEN_KEY=%s\n' "$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')" >> "$ENV_FILE")
-fi
+# The master key (issue #659, docs/deploy.md "The master key") is not made here: the daemon makes one at its first
+# start and shows it once, in its log and in the UI, to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
+# A HOPPER_TOKEN_KEY line from before is read until then, and the daemon says to rename it.
+[ -n "$(env_line HOPPER_MASTER_KEY)" ] || [ -n "$(env_line HOPPER_TOKEN_KEY)" ] \
+  || echo "the master key: the first start makes one; save it from journalctl --user -u hopper, then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 # The operator CLI against the daemon's database, given the way daemon.env gives it.

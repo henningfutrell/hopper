@@ -1,8 +1,8 @@
 // Issue #451: the secrets the hopper owns are kept in the database sealed (design.md "Secrets"). The
-// runtime's master key (HOPPER_TOKEN_KEY) never reaches the database; each value is sealed under a key of
+// runtime's master key (HOPPER_MASTER_KEY) never reaches the database; each value is sealed under a key of
 // its own, derived from the master key and a random salt (HKDF-SHA256), with AES-256-GCM and a random
 // nonce, bound to the place it is kept (the context), padded so its length does not show, and marked with
-// the master key's id so the key can be rotated (HOPPER_TOKEN_KEY_PREVIOUS opens what an old key sealed).
+// the master key's id so the key can be rotated (HOPPER_MASTER_KEY_PREVIOUS opens what an old key sealed).
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -90,13 +90,13 @@ describe('the sealer (issue #451)', () => {
     expect(createSealer(bytes.toString('base64')).keyId).toBe(createSealer(KEY).keyId);
     expect(createSealer(bytes.toString('base64url')).keyId).toBe(createSealer(KEY).keyId);
     expect(() => createSealer('short')).toThrow(/32 bytes/);
-    expect(() => createSealer(KEY, ['short'])).toThrow(/HOPPER_TOKEN_KEY_PREVIOUS/);
+    expect(() => createSealer(KEY, ['short'])).toThrow(/HOPPER_MASTER_KEY_PREVIOUS/);
   });
 });
 
 describe('sealerOf: the sealer under the runtime\'s key', () => {
-  it('HOPPER_TOKEN_KEY, and each of HOPPER_TOKEN_KEY_PREVIOUS', () => {
-    const r = sealerOf((n) => ({ HOPPER_TOKEN_KEY: KEY, HOPPER_TOKEN_KEY_PREVIOUS: `${OTHER}\n` })[n]);
+  it('HOPPER_MASTER_KEY, and each of HOPPER_MASTER_KEY_PREVIOUS', () => {
+    const r = sealerOf((n) => ({ HOPPER_MASTER_KEY: KEY, HOPPER_MASTER_KEY_PREVIOUS: `${OTHER}\n` })[n]);
     expect(r.sealer?.keyId).toBe(createSealer(KEY).keyId);
     expect(r.sealer?.open(createSealer(OTHER).seal('v', CONTEXT), CONTEXT)).toBe('v');
   });
@@ -104,12 +104,12 @@ describe('sealerOf: the sealer under the runtime\'s key', () => {
   it('no key: no sealer, and a problem that says what to set and where it is documented', () => {
     const r = sealerOf(() => undefined);
     expect(r.sealer).toBeUndefined();
-    expect(r.problem).toMatch(/HOPPER_TOKEN_KEY is not set/);
+    expect(r.problem).toMatch(/the master key is missing.*HOPPER_MASTER_KEY/);
     const section = /docs\/deploy\.md "([^"]+)"/.exec(r.problem ?? '')?.[1];
     expect(readFileSync(fileURLToPath(new URL('../../docs/deploy.md', import.meta.url)), 'utf8')).toContain(`## ${section}\n`);
   });
 
   it('a key that is no key: throws, so the daemon does not start on it', () => {
-    expect(() => sealerOf((n) => (n === 'HOPPER_TOKEN_KEY' ? 'not a key' : undefined))).toThrow(/HOPPER_TOKEN_KEY/);
+    expect(() => sealerOf((n) => (n === 'HOPPER_MASTER_KEY' ? 'not a key' : undefined))).toThrow(/HOPPER_MASTER_KEY/);
   });
 });

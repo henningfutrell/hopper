@@ -61,7 +61,7 @@ async function boot(): Promise<{ a: TestApp; session: string; server: FakeAuthor
   process.env.FAKE_HERDR_RUNNING = '1';
   const server = createFakeAuthorizationServer();
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY },
+    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
     seams: { authorizationServer: server },
   });
