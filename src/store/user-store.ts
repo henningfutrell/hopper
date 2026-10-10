@@ -8,6 +8,7 @@ import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
 import { createEventLog } from './events.ts';
 import { createJobRepository } from './jobs.ts';
+import { createJobStreamRepository } from './job-stream.ts';
 import { createLaneRepository } from './lanes.ts';
 import { createFailureRepository, createProblemRepository } from './failures.ts';
 import { createHandoffRepository } from './handoffs.ts';
@@ -37,10 +38,15 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     db.close();
     throw e;
   }
-  // eslint-disable-next-line prefer-const -- events needs ctx, ctx's commit needs events
-  let events: ReturnType<typeof createEventLog>;
-  const ctx = createContext({ db, clock: o.clock, idGen: o.idGen, onCommit: () => events.flush(), onRollback: () => events.discard() });
+  // eslint-disable-next-line prefer-const -- events and the job stream need ctx, ctx's commit needs them
+  let events: ReturnType<typeof createEventLog>, jobStream: ReturnType<typeof createJobStreamRepository>;
+  const ctx = createContext({
+    db, clock: o.clock, idGen: o.idGen,
+    onCommit: () => { events.flush(); jobStream.flush(); },
+    onRollback: () => { events.discard(); jobStream.discard(); },
+  });
   events = createEventLog(ctx, ctx.inTx);
+  jobStream = createJobStreamRepository(ctx);
   return {
     jobs: createJobRepository(ctx),
     lanes: createLaneRepository(ctx),
@@ -48,6 +54,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     events,
     webhooks: createWebhookRepository(ctx),
     vault: createVaultRepository(ctx),
+    jobStream,
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),

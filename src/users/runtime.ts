@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
-  Clock, EscalationLevel, Executor, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
+  Clock, EscalationLevel, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
 import { highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
@@ -14,7 +14,6 @@ import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts';
-import { createExecutorRegistry } from '../executors/index.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
@@ -25,7 +24,6 @@ import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeC
 import type { ClientRelease } from '../client/release.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
-import { unavailableExecutors } from '../plugins/executor-slot.ts';
 import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
@@ -47,6 +45,9 @@ import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } fro
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
 import { clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
+import type { JobStream } from '../job-stream/index.ts';
+import { openJobStream } from './job-stream.ts';
+import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 
@@ -132,6 +133,8 @@ export interface UserRuntime {
   /** The user's machines dialling in (issue #308): the hopper's public half, a machine joining, a dial-in's token. */
   machineLink: UserMachineLink;
   vault: Vault; // issue #558: write-only secrets; issue #586: in the hopper or in a container of its own
+  /** The job stream (issue #613): what the user's running jobs subscribe to, and the sweep of its watches. */
+  jobStream: JobStream;
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
   /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
@@ -247,15 +250,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   pinned(host.targets());
   clientTargets = () => host.targets();
   // Executors follow the plugins config live (issue #142): every lookup reads the host's instances now.
-  const currentExecutors = (): ExecutorRegistry => {
-    const built = host.executors();
-    return createExecutorRegistry([...built.flatMap((b): Executor[] => (b.executor ? [b.executor] : [])), ...(seams.executors ?? [])], unavailableExecutors(built));
-  };
-  const executors: ExecutorRegistry = {
-    get: (name) => currentExecutors().get(name),
-    names: () => currentExecutors().names(),
-    unavailable: () => currentExecutors().unavailable(),
-  };
+  const executors = liveExecutors(host, seams.executors ?? []);
   executorNames = () => executors.names();
   const plugins: PluginsView = seams.router ? seamPlugins(seams.router, host) : host;
   const router = seams.router ?? host.router;
@@ -351,9 +346,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
+  const jobStream = openJobStream({ store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
+    jobStream,
     githubProxy: proxy.githubProxy,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
@@ -374,9 +371,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       minorDecisions.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
+      jobStream.start();
     },
     stop() {
       stopped ??= (async () => {
+        jobStream.stop();
         await failures.stop();
         minorDecisions.stop();
         await sync.stop();

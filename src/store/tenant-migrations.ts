@@ -21,6 +21,7 @@ import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
 import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
+import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -330,6 +331,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 31: Vault backends (issue #585): a vault secret kept in a backend has no sealed value, only its reference in its
   // body. The build before reads a missing value as one it cannot open, and refuses to deliver it.
   'ALTER TABLE vault_secrets ALTER COLUMN sealed DROP NOT NULL',
+  // 32: The job stream (issue #613): each job's stream events and the watches its requests are waited on by.
+  JOB_STREAM_TABLES,
 ];
 
 /** A user schema's version once migrated. */

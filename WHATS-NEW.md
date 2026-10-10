@@ -10,6 +10,7 @@ update notice would show it again as new.
 
 - A sandbox box can now get a short-lived AWS or Kubernetes credential made for it on the spot, only for what its template is approved to do. Revoking the approval stops the next one.
 - A template that still has boxes attached is no longer removed: the hopper tells you which boxes to remove first, so no box is left pointing at a template that is gone.
+- A job that waits for you to give it a credential now gets it the moment you give it, still gets it after the hopper restarts, and stops waiting after a set time instead of waiting forever.
 - A job in a sandbox box that needs a credential the hopper does not have, for example a token for an outside service, now asks you for it: Settings → Vault shows what the job needs, why, and how to get one. Give it in the form you have, or say no. The hopper keeps it in the Vault, the job gets it at the moment it needs it, and the value is never shown again. A later job that needs the same access gets it without a new question.
 - Settings has a permission matrix: see at a glance which templates, boxes, people and running jobs may do what on each cluster, account or app, click a cell to see why and who approved it, and revoke it there.
 - Settings → Access shows who may do what: every person, each running job and each box, with what each may do on each cluster or account, and why. A job gets access only through the box it runs on, and loses it when it ends.

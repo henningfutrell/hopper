@@ -10,6 +10,7 @@
 // GitHub account it is. A token given and refused is refused, on loopback too. A token reads only: every
 // mutation stays behind a UI session (src/http/ui/guard.ts).
 import type { Vault } from '../vault/service.ts';
+import type { JobStream } from '../job-stream/index.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
 import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
@@ -57,6 +58,8 @@ export interface TenantParts {
   machineLink: UserMachineLink;
   /** The vault (issue #558). */
   vault: Vault;
+  /** The job stream (issue #613): what the user's running jobs subscribe to. */
+  jobStream: JobStream;
   /** The usage history's recorder: new usage samples (SSE usage.recorded, issue #502). */
   usageHistory: Pick<UsageRecorder, 'onRecorded'>;
   /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */
