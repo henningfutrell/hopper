@@ -99,7 +99,10 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
         return { status: 200, text: catalogText() };
       }
       const known = skillOf(name);
-      const skill = known ?? (own && SKILL_NAME.test(name) ? askedSkill(name, own.slice(0, 200)) : undefined);
+      // A service the hopper has no skill for: asked in the job's words, or one a person already gave a credential for.
+      const givenFor = box.secrets.find((s) => s.skill === name);
+      const words = own ?? (givenFor ? givenFor.note ?? 'the credential a person gave' : undefined);
+      const skill = known ?? (words && SKILL_NAME.test(name) ? askedSkill(name, words.slice(0, 200)) : undefined);
       if (!skill) {
         return no(404, `the hopper has no skill ${name}. It has: ${SKILLS.map((s) => s.name).join(', ')}. For another service, say what credential it takes: sh "$HOPPER_SKILL" ${SKILL_NAME.test(name) ? name : 'NAME'} --credential "<what it takes>". Else find another way.`);
       }

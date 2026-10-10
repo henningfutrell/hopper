@@ -46,14 +46,6 @@ The hopper gives the token just in time, through the vault's helper ($HOPPER_SEC
 3. Read only: get, describe, logs, events, top. Do not change anything on the cluster.
 If kubectl refuses, the token or its role is wrong. Say so; do not look for another credential.`;
 
-const RENDER_TEXT = `render: deploy and look at services on Render (https://render.com).
-
-The hopper gives the credential just in time, through the vault's helper ($HOPPER_SECRET). It is never on this box.
-- The API is https://api.render.com/v1; the render CLI reads the key from RENDER_API_KEY. Set it for one command only.
-- A deploy hook URL only starts a deploy of its one service.
-- After a deploy, read its status (GET /v1/services/<id>/deploys) before you say it is done.
-If Render refuses, the key or its access is wrong. Say so; do not look for another credential.`;
-
 const AWS_TEXT = `aws-diagnostics: read-only AWS access to an account or a role.
 
 The hopper gives the key pair just in time, through the vault's helper ($HOPPER_SECRET). The keys are never on this box.
@@ -88,18 +80,6 @@ export const SKILLS: readonly Skill[] = [
       setup: 'In the AWS console: IAM → Users → a user for the hopper with only the ReadOnlyAccess policy → Security credentials → Create access key. Give the pair as JSON.',
     },
   },
-  {
-    name: 'render',
-    line: 'deploy and look at services on Render; the hopper asks you for a Render credential when it has none',
-    text: RENDER_TEXT,
-    credential: {
-      kinds: [
-        { id: 'api-key', title: 'A Render API key', use: 'RENDER_API_KEY="$("$HOPPER_SECRET" get NAME)" render …, the key set for that one command; for the API, send the header "Authorization: Bearer <key>" to curl on stdin (-H @-).' },
-        { id: 'deploy-hook', title: 'A deploy hook URL of one service', use: 'curl -fsS -X POST "$("$HOPPER_SECRET" get NAME)": it starts a deploy of that one service, nothing else.' },
-      ],
-      setup: 'In the Render dashboard: Account Settings → API Keys → Create API Key. To give less: a service\'s Settings → Deploy Hook, which can only start a deploy of that service.',
-    },
-  },
 ];
 
 export const skillOf = (name: string): Skill | undefined => SKILLS.find((s) => s.name === name);
@@ -122,7 +102,7 @@ export function credentialText(c: SkillCredential, s: { name: string; kind?: str
 
 /** The catalog: one line per skill, then how to load one. Few tokens: the full text waits for a load. */
 export function catalogText(): string {
-  return `${SKILLS.map((s) => `${s.name}: ${s.line}`).join('\n')}\nLoad one: sh "$HOPPER_SKILL" NAME [ASSET]\n`;
+  return `${SKILLS.map((s) => `${s.name}: ${s.line}`).join('\n')}\nLoad one: sh "$HOPPER_SKILL" NAME [ASSET]\nA credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>" [--why "<what for>"]\n`;
 }
 
 /** "a cluster or namespace": the asset kinds a link takes, in words. */

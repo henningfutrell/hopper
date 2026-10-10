@@ -2370,7 +2370,7 @@ Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded
 ```json
 {
   "request": "c9d0e1f2-0000-4000-8000-000000000583",
-  "skill": "render",
+  "skill": "example-api",
   "template": "web",
   "machine": "hopper-sandbox-web",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
@@ -2396,9 +2396,9 @@ Version 1 (`docs/schemas/vault.credential_given.v1.json`). A person gave a crede
 ```json
 {
   "request": "c9d0e1f2-0000-4000-8000-000000000583",
-  "skill": "render",
-  "name": "render",
-  "kind": "api-key",
+  "skill": "example-api",
+  "name": "example-api",
+  "kind": "asked",
   "template": "web",
   "by": "github:octocat",
   "approved": true,
@@ -2424,7 +2424,7 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 ```json
 {
   "request": "c9d0e1f2-0000-4000-8000-000000000583",
-  "skill": "render",
+  "skill": "example-api",
   "template": "web",
   "reason": "deploy by hand this time",
   "by": "github:octocat",
@@ -2553,7 +2553,7 @@ Version 1 (`docs/schemas/skill.refused.v1.json`). A running job asked for a skil
 {
   "requestId": "r6",
   "machine": "desk",
-  "skill": "render",
-  "reason": "the hopper has no skill render. It has: github, kube-diagnostics, aws-diagnostics. Find another way."
+  "skill": "example-api",
+  "reason": "the hopper has no skill example-api. It has: github, kube-diagnostics, aws-diagnostics. For another service, say what credential it takes: sh \"$HOPPER_SKILL\" example-api --credential \"<what it takes>\". Else find another way."
 }
 ```

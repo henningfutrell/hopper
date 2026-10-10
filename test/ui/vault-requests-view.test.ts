@@ -8,9 +8,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const REQUEST = {
-  id: 'r1', skill: 'render', title: 'render', known: true, template: 'web', secret: 'render',
-  kinds: [{ id: 'api-key', title: 'A Render API key' }, { id: 'deploy-hook', title: 'A deploy hook URL of one service' }],
-  setup: 'In the Render dashboard: Account Settings → API Keys → Create API Key.',
+  id: 'r1', skill: 'example-api', title: 'example-api', known: false, template: 'web', secret: 'example-api',
+  kinds: [{ id: 'asked', title: 'an API token' }, { id: 'config', title: 'a config file' }],
+  setup: 'Ask whoever runs example-api for a token, read-only.',
   asked: [{ job: 'f3b1c2d4-0000-4000-8000-000000000001', machine: 'hopper-sandbox-web', why: 'deploy the web service', at: '2026-10-09T12:00:00.000Z' }],
   existing: [], createdAt: '2026-10-09T12:00:00.000Z',
 };
@@ -87,27 +87,27 @@ describe('Settings → Vault: a credential a job asked for (issue #583)', () => 
   it('shows who waits and why, how to get one, and the kinds, the suggested first; Give posts the kind, name and value', async () => {
     const daemon = await boot();
     const c = card()!;
-    expect(c.textContent).toContain('render');
+    expect(c.textContent).toContain('example-api');
     expect(c.textContent).toContain('for boxes of web');
     expect(c.textContent).toContain('Waits: job f3b1c2d4 on hopper-sandbox-web: deploy the web service');
-    expect(c.textContent).toContain('How to get one: In the Render dashboard: Account Settings → API Keys');
+    expect(c.textContent).toContain('How to get one: Ask whoever runs example-api for a token');
     const kinds = [...c.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
-    expect(kinds.map((k) => k.parentElement!.textContent)).toEqual(['A Render API key', 'A deploy hook URL of one service', 'Something else — say what it is']);
+    expect(kinds.map((k) => k.parentElement!.textContent)).toEqual(['an API token', 'a config file', 'Something else — say what it is']);
     expect(kinds[0]!.checked).toBe(true);
     const value = c.querySelector<HTMLInputElement>('input[type="password"]')!;
     expect(value.autocomplete).toBe('new-password');
     expect(button('Give').disabled).toBe(true);
 
-    await type(value, 'rnd_key');
+    await type(value, 'example-key');
     await act(async () => { button('Give').click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/vault')).toBeDefined());
-    expect(daemon.calls.find((x) => x.path === '/ui/api/vault')!.body).toEqual({ action: 'give-credential', request: 'r1', name: 'render', kind: 'api-key', value: 'rnd_key' });
+    expect(daemon.calls.find((x) => x.path === '/ui/api/vault')!.body).toEqual({ action: 'give-credential', request: 'r1', name: 'example-api', kind: 'asked', value: 'example-key' });
   });
 
   it('something else needs the person\'s words before Give; Decline posts the reason', async () => {
     const daemon = await boot();
     await act(async () => { card()!.querySelectorAll<HTMLInputElement>('input[type="radio"]')[2]!.click(); });
-    await type(card()!.querySelector<HTMLInputElement>('input[type="password"]')!, 'rnd_key');
+    await type(card()!.querySelector<HTMLInputElement>('input[type="password"]')!, 'example-key');
     expect(button('Give').disabled).toBe(true);
     await type(card()!.querySelector<HTMLInputElement>('input[placeholder="a team key, read-only"]')!, 'a team key');
     expect(button('Give').disabled).toBe(false);
