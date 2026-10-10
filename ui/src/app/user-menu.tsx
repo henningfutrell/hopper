@@ -2,14 +2,15 @@
 // with who you are (issue #167: the user the session acts for, with its role), the theme, the device link for
 // another browser (an admin's, on a local sign-in), and last, set apart, Sign out. Sign out needs a second tap,
 // so a stray tap on a phone signs nobody out; the menu closes on an outside tap or Escape, and asks again when
-// it opens again. Every target is at least 44 px.
-import { LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
+// it opens again. Every target is at least 44 px. Report a bug (issue #694) opens the report form.
+import { Bug, LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/status';
 import { setTheme, useTheme } from '@/hooks/use-theme';
 import { logout, useHopper } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdmin, useCanOperate } from '@/store/selectors';
+import { useBugReport } from './bug-report';
 import { useDeviceLink } from './device-link';
 
 /** Up to two letters: the first of the first and last words of the name. */
@@ -26,8 +27,10 @@ export function UserMenu() {
   const user = useHopper((s) => s.user);
   const local = useHopper((s) => s.signIn?.local ?? false);
   const canAdmin = useCanAdmin();
+  const canOperate = useCanOperate();
   const theme = useTheme();
   const device = useDeviceLink();
+  const report = useBugReport();
   const [armed, setArmed] = useState(false);
   if (!user) return null;
   const next = theme === 'dark' ? 'light' : 'dark';
@@ -50,6 +53,7 @@ export function UserMenu() {
           {canAdmin && local && (
             <DropdownMenuItem className={ITEM} onSelect={device.open}><MonitorSmartphone />Log in another device</DropdownMenuItem>
           )}
+          {canOperate && <DropdownMenuItem className={ITEM} onSelect={() => report.open()}><Bug />Report a bug</DropdownMenuItem>}
           <DropdownMenuSeparator />
           <DropdownMenuItem className={ITEM} variant="destructive"
             onSelect={(e) => { if (armed) { void logout(); return; } e.preventDefault(); setArmed(true); }}>
@@ -58,6 +62,7 @@ export function UserMenu() {
         </DropdownMenuContent>
       </DropdownMenu>
       {device.dialog}
+      {report.dialog}
     </>
   );
 }

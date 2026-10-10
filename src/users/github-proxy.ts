@@ -4,6 +4,7 @@
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
 import type { ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import type { Job, MachineSnapshot, User } from '../domain/types.ts';
+import { createReportGitHub, type ReportGitHub } from '../bug-reports/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -17,6 +18,8 @@ export interface UserGitHubProxy {
   user: ProxyUser;
   connection: ProxyConnection;
   git: GitUser;
+  /** Report a bug (issue #694): this user's own GitHub connection, so a report is filed as this user; or why there is none. */
+  reports(): ReportGitHub | { problem: string };
 }
 
 export interface UserGitHubProxyOptions {
@@ -67,6 +70,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         jobRepositories: () => o.accounts.jobRepositories('github'),
         api: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notConnected } : api()),
       },
+      reports: () => (!o.accounts.account('github')
+        ? { problem: o.accounts.ended('github') ?? 'your GitHub is not connected: connect it in Sources → Connect GitHub' }
+        : createReportGitHub({ apiUrl: o.accounts.endpoints('github').apiUrl, token: () => o.accounts.token('github'), renew: (refused) => o.accounts.renew('github', refused) })),
       // A job's git acts with its own user's connection (issue #652), not the hopper's oldest user's.
       git: {
         user,

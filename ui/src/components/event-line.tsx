@@ -23,6 +23,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn',
+  'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 

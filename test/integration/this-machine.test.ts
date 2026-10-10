@@ -145,7 +145,8 @@ describe('POST /ui/api/machines — an ssh target that is this machine', () => {
     const r = await a.ui<Reply>('/ui/api/machines', { name: 'workstation', ssh: 'self', lanes: 2, executors: ['herdr-claude'], version: (await config(a)).version }, { token });
     expect(r.status).toBe(200);
     expect(resolved).toEqual([]);
-    expect(sessions).toEqual(['hopper']);
+    // The POST starts the session, and the config's reload may ensure it again before this line: count each session once.
+    expect([...new Set(sessions)]).toEqual(['hopper']);
     expect(read(a).machines).toEqual([DESK, { name: 'workstation', plugin: 'local', options: { lanes: 2, executors: ['herdr-claude'], session: 'hopper' } }]);
   });
 
