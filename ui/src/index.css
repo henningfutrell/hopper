@@ -163,6 +163,26 @@
     font-variant-numeric: tabular-nums;
     }
 }
+/* Agent text rendered as Markdown on a card (issue #569, components/markdown.tsx): compact — the card's own text size,
+   small headings, tight lists —, so a rendered question reads as the card around it. */
+@layer components {
+  .md { @apply space-y-2 break-words; }
+  .md :where(h1, h2, h3, h4, h5, h6) { @apply mt-3 font-semibold first:mt-0; }
+  .md :where(h1, h2) { @apply text-[1.05em]; }
+  .md :where(h3, h4, h5, h6) { @apply text-[1em]; }
+  .md :where(ul) { @apply list-disc space-y-0.5 pl-5; }
+  .md :where(ol) { @apply list-decimal space-y-0.5 pl-5; }
+  .md :where(li > ul, li > ol) { @apply mt-0.5; }
+  .md :where(a), .md-inline :where(a) { @apply text-primary underline underline-offset-2 hover:opacity-80; }
+  .md :where(code), .md-inline :where(code) { @apply rounded bg-muted px-1 py-px font-mono text-[0.9em]; }
+  .md :where(pre) { @apply max-h-96 overflow-auto rounded-md bg-muted/60 p-2 text-[0.85em] leading-relaxed; }
+  .md :where(pre code) { @apply bg-transparent p-0; }
+  .md :where(blockquote) { @apply border-l-2 pl-3 text-muted-foreground; }
+  .md :where(hr) { @apply my-3; }
+  .md :where(table) { @apply block max-w-full overflow-x-auto text-[0.95em]; }
+  .md :where(th, td) { @apply border px-2 py-1 text-left align-top; }
+  .md :where(th) { @apply bg-muted/60 font-medium; }
+}
 /* The signed-out page's backdrop (issues #258, #266): a night sky in the logo's teal — slow aurora
    light, a dot grid that fades out toward the edges, lanes with jobs going along them (the queue's
    lanes), fine grain and a vignette. Pure CSS, nothing fetched; still for people who ask for less motion. */

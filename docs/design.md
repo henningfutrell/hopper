@@ -857,18 +857,19 @@ Running or installing what a job built, and reading files elsewhere, stays allow
 about where the work is done, not what is touched.
 
 **Prompt, once.** `agent prompt <agent> <prompt + protocol footer>` (no `--wait`). Footer, with the
-default job rules (the first four lines; "Job rules", issue #172):
+default job rules (the first five lines; "Job rules", issue #172):
 
 ```
 [hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.
 [hopper parallel work] Other jobs run at the same time as this one, possibly in the same repos. Nothing orders or holds jobs for each other: no job waits for another.
 If your work overlaps another job's, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).
 [hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.
+[hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.
 [hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
-[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), and end your message with a line containing only: HOPPER_QUESTION
+[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
-When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
+When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
@@ -2439,8 +2440,9 @@ question reaches the owner (questions never go onto the issue), and when intake 
   The UI's **Send open questions** sends every open one again, on each press.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
   issueUrl }` (title/url from the job's source ref, else null); a question's `kind` is
-  `question.escalated_to_human` (issue #481; `question.escalated` before) and it adds `question, questionId,
-  answerUrl?` and what the job already knows, so a receiver can route and rank it without calling back
+  `question.escalated_to_human` (issue #481; `question.escalated` before) and it adds `question` (the agent's Markdown
+  source, as written, and `questionFormat: 'markdown'`, issue #569), `questionId, answerUrl?` and what the job already
+  knows, so a receiver can route and rank it without calling back
   (issue #378): `machineId`, `machineName`, `laneId` (the question's raising machine, issue #485; null when it has
   none), `priority`, `labels` (the item's labels at intake; null for jobs
   taken before), `repo`, `issueNumber`, `detectedBy`, `askedAt`, `escalatedAt`, `openSeconds`,
@@ -7662,7 +7664,7 @@ tree, parallel work, the protocol.
 
 - **The record.** A user's config record `job-rules` (`src/job-rules/`), a text of at most 16 KiB. It
   leads every job's footer. While none is saved, a job gets the **default job rules** — the publishing
-  rule and the parallel-work rule, the text the footer had (and, since issue #571, the writing style). A saved empty text gives none. No migration:
+  rule and the parallel-work rule, the text the footer had (and, since issue #571, the writing style; since issue #569, the formatting). A saved empty text gives none. No migration:
   a missing record is the default.
 - **What stays fixed.** The work tree line (the executor sets up that tree and its scratch dir) and the
   protocol lines (the markers `screen.ts` reads, the last line the turn anchor) follow the job rules
@@ -10556,3 +10558,60 @@ connected-account-renewal.test.ts` (connecting again and a held sign-in taken re
 whose files cannot be rewritten gets a progress line and a warning, cleared by the next rewrite),
 `test/http/ui-sessions.test.ts` (why a session is unknown), `test/ui/sources-view.test.ts`,
 `test/ui/credentials-warning.test.ts`.
+
+## Agent text as Markdown (issue #569, 2026-10-10)
+
+Owner requirement: questions, proposals, research reports and the like are long, and hard to read as plain text. The
+UI renders them as Markdown, and the agents are told to write Markdown. Part 1 of the issue; the model-written summary
+(below, "Not built") is carried.
+
+**Where.** Every place the UI shows **agent text**: the question card (the question, each level's answer and reason),
+the question history (the question and its answer), a parked job's question (Parked, issue #565), a proposal's or a
+research report's parts and the review trail's notes, earlier versions too, Needs a person's assessment summary and a
+resolution's note (issue #551), a recent failure's summary, and a phase shift's note — a fork's and a suggestion's
+(issue #548). A line that is cut short (the question line of a parked row, a history row, an earlier review item's
+headline, a note) renders its inline Markdown only. The raw error and the recent output stay as written: they are a
+program's output, not agent text.
+
+**Safe, two layers, each enough alone** (`ui/src/lib/markdown.ts`). The text comes from agents and, through issues, from
+people the hopper does not know. The renderer (marked, already the artifacts' Markdown preview) makes only safe HTML: raw
+HTML in the text is escaped and shows as text, block or inline; an image is never loaded — it is a link to its URL, named
+by its alt text; a link goes only to `http:`, `https:`, `mailto:` or `#` (a view of the UI), with `target="_blank"` and
+`rel="noopener noreferrer"`, and any other link is its text alone; a task list's box is a character, no form input.
+DOMPurify then keeps only the tags a card needs (paragraphs, breaks, emphasis, code, blocks, lists, headings, rules,
+links, tables) and the attributes `href`, `title`, `start`, `align`, `target`, `rel`, with the same link rule, and
+sets the new-tab attributes on every link it keeps. The renderer is tested on its own: DOMPurify needs a browser's DOM,
+and in happy-dom (the UI tests' DOM) it lets HTML through unchecked; the live check runs it in Chromium. `.md` in
+`ui/src/index.css` keeps rendered text compact: the card's text size, small headings, tight lists, scrolled code
+blocks and tables.
+
+**Compact cards** (`ui/src/model/card-text.ts`, `CardText`). A text of at most 600 characters and 8 lines shows whole.
+A longer one shows its **summary** — its first paragraph that is not a heading, a leading code block skipped, cut at
+400 characters — and **Show all** opens the whole text (**Show less** folds it again). A review item's newest version
+shows its first part (a proposal's Goal, a report's Question: the summary the pre-check asks for, issue #631), at its
+summary, and Show all opens every part; an earlier version, already behind its own fold, shows whole. A question's
+compact line (`firstLine`) is the first line of its summary, so a heading never stands in for the question.
+
+**Agents write Markdown.** The default job rules carry one more line, `MARKDOWN_RULE` (`src/job-rules/`): "[hopper
+formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note)
+in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use
+raw HTML or images." Saved job rules are the owner's: they carry it only if the owner adds it. The fixed protocol lines
+say it whatever the saved rules say: the question line asks for one short sentence that says what is needed first, then
+the context, with the options as a numbered list (the list Jev's `question-answer` point reads, issue #550); the
+research and proposal lines ask for each part in Markdown, with a short summary first. A part's label may be a
+Markdown heading or bold: `reviewSections` reads it either way (issue #537).
+
+**Notifications and webhooks** carry the Markdown source as written, so a receiver can render it as the UI does: the
+Grok Bot routine's question body has `question` (the text) and `questionFormat: 'markdown'`; the events keep `text`
+(`question.asked`), `goal` (`proposal.submitted`) and `question` (`research.submitted`) as the agent wrote them.
+
+**Not built here, carried (issue #569, the next part):** the TL;DR — one or two plain sentences a cheap model (Claude
+Haiku, or Jev first, issue #550) writes once per card, stored with it and written again when its text changes, shown at
+the top of the card, the agent's own summary as the fallback; notifications and webhooks leading with it; a live
+setting to turn it off.
+
+Tests: `test/ui/markdown.test.ts` (the renderer: every element kind, line breaks, raw HTML and script escaped, no image,
+new-tab links, refused link schemes, inline lines; the summary and the long-text rule), `test/ui/markdown-cards.test.ts`
+(a long question folded and opened, its HTML and script shown as text; a short one whole; a long proposal's Goal first
+and the rest behind Show all; reviewer notes), `test/job-rules/markdown-format.test.ts`, `test/herdr/screen.test.ts` (the
+footer verbatim), `test/plugins/grokbot-payload.test.ts`.

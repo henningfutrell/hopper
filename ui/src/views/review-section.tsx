@@ -9,7 +9,9 @@
 // or not. Below: the earlier ones, and for an admin the section's settings. Phase shifts (issue #548): an item says
 // where it came from — a fork of another job's question, or a phase its job's question switched it to —, and Accept
 // on one of a switched phase asks what the job does next, exactly the choices the server takes (`then`). An artifact the
-// text links to by its URL is embedded below it (issue #624).
+// text links to by its URL is embedded below it (issue #624). Every part and every note is rendered as Markdown,
+// sanitized; a long item shows its summary — its first part: a proposal's Goal, a report's Question — and the rest
+// behind Show all (issue #569).
 import { ArtifactEmbeds } from '@/components/artifacts';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -17,11 +19,13 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
+import { CardText, FoldToggle, InlineMarkdown, Markdown } from '@/components/markdown';
 import { JobTitle } from '@/components/job';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
 import { StatusBadge } from '@/components/status';
+import { isLong, summaryOf } from '@/model/card-text';
 import { between, clock } from '@/model/format';
 import { awaitsDecision, digDeeperNotes, openThreadsOf, partLabel, REVIEW_UI, reviewOrder } from '@/model/reviews';
 import type { ReviewDecision, ReviewEntry, ReviewItemView, ReviewKind, ReviewSectionView, ReviewVersion, ShiftThen } from '@/model/wire';
@@ -64,20 +68,29 @@ function Origin({ p }: { p: ReviewItemView }) {
   return null;
 }
 
-function Version({ v, type }: { v: ReviewVersion; type: ReviewSectionView }) {
+/**
+ * One version: its parts, or its text when none was read from it. `fold`: a long one shows its summary — the first part
+ * it has, its first paragraph — and the rest behind Show all; an earlier version, already behind a fold, shows whole.
+ */
+function Version({ v, type, fold = false }: { v: ReviewVersion; type: ReviewSectionView; fold?: boolean }) {
+  const [open, setOpen] = useState(false);
   const shown = type.parts.filter(([k]) => v.sections[k] !== undefined);
+  const folds = fold && shown.length > 1 && isLong(v.text);
+  const folded = folds && !open;
+  const parts = folded ? shown.slice(0, 1) : shown;
   return (
     <div className="space-y-2">
       {shown.length > 0 ? (
         <dl className="grid gap-2 text-sm">
-          {shown.map(([k, label]) => (
+          {parts.map(([k, label]) => (
             <div key={k} data-section={k} className="grid gap-0.5">
               <dt className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</dt>
-              <dd className="whitespace-pre-wrap">{v.sections[k]}</dd>
+              <dd><Markdown text={folded ? summaryOf(v.sections[k]!) || v.sections[k]! : v.sections[k]!} /></dd>
             </div>
           ))}
         </dl>
-      ) : <pre className="rounded-md bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap">{v.text}</pre>}
+      ) : <div className="rounded-md bg-muted/40 p-3 text-sm">{fold ? <CardText text={v.text} /> : <Markdown text={v.text} />}</div>}
+      {folds && <FoldToggle open={open} onToggle={() => setOpen((o) => !o)} lines={v.text.trim().split('\n').length} />}
       {v.missing.length > 0 && (
         <div data-slot="missing" className="text-xs text-warn">Left out: {v.missing.map((m) => partLabel(type, m)).join(', ')}</div>
       )}
@@ -98,7 +111,7 @@ function Review({ r }: { r: ReviewEntry }) {
         <span className="text-muted-foreground">version {r.version}</span>
         <span className="num text-muted-foreground">{between(r.startedAt, r.finishedAt)}</span>
       </div>
-      {r.notes && <div className="whitespace-pre-wrap">{r.notes}</div>}
+      {r.notes && <CardText text={r.notes} />}
       {r.error && <div className="text-bad">{r.error}</div>}
     </div>
   );
@@ -147,7 +160,7 @@ function Decide({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type: 
           {open.map((t) => (
             <label key={t} className="flex items-center gap-2">
               <input type="checkbox" name={t} checked={threads.includes(t)} disabled={busy} onChange={() => setThreads((x) => (x.includes(t) ? x.filter((y) => y !== t) : [...x, t]))} />
-              <span>{t}</span>
+              <InlineMarkdown text={t} />
             </label>
           ))}
         </fieldset>
@@ -186,7 +199,7 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
       {!job && p.high && <HighTag priority={p.priority} className="self-start" />}
       {job ? <JobTitle job={job} /> : p.source?.title && <div className="text-sm font-medium">{p.source.title}</div>}
       <Origin p={p} />
-      <Version v={latest} type={type} />
+      <Version v={latest} type={type} fold />
       {earlier.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">

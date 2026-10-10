@@ -210,6 +210,8 @@ const RESEARCH_PARTS: readonly ReviewPart[] = [
   { id: 'question', label: 'Question' }, { id: 'findings', label: 'Findings' }, { id: 'sources', label: 'Sources and evidence', aliases: ['Sources', 'Evidence'] },
   { id: 'confidence', label: 'Confidence' }, { id: 'openThreads', label: 'Open threads' }, { id: 'nextStep', label: 'Next step', aliases: ['Suggested next step'] },
 ];
+/** How a review section's parts are written (issue #569): the UI renders each one as Markdown, its summary first. */
+const MARKDOWN_PARTS = 'Write each part in Markdown, with a short summary first, then lists, code spans and links where they help.';
 const labelled = (parts: readonly ReviewPart[]): string => parts.map((p) => `${p.label}:`).join(', ');
 const whoOf = (from: string): string => (from === 'human' ? 'a person' : from === PRE_CHECK ? 'the structural pre-check' : `the reviewer level ${from}`);
 
@@ -223,7 +225,7 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       { id: 'dig_deeper', route: 'dig-deeper', label: 'Dig deeper', effect: 'send_back', notes: 'optional' },
       { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
     ],
-    protocol: `When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — ${labelled(RESEARCH_PARTS)} — and end your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.`,
+    protocol: `When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — ${labelled(RESEARCH_PARTS)} —. ${MARKDOWN_PARTS} End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.`,
     ask: '[hopper research] This job asks you to research, not to do the work: answer the research questions it names (the items under its Research heading, if it has one), then write the research report as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_RESEARCH_REPORT. Change nothing, and open no pull request.',
     brief: (item, from, decision, notes) => [
       `[hopper research] Your research report (round ${item.versions.length}) was reviewed by ${whoOf(from)}.`,
@@ -242,7 +244,7 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
       { id: 'request_changes', route: 'request-changes', label: 'Request changes', effect: 'send_back', notes: 'required' },
       { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'required' },
     ],
-    protocol: 'When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) — and end your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.',
+    protocol: `When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) —. ${MARKDOWN_PARTS} End your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.`,
     ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_PROPOSAL. Change nothing, and open no pull request.',
     brief: (item, from, _decision, notes) => [
       `[hopper proposal] Your proposal (version ${item.versions.length}) was sent back by ${whoOf(from)}. What to change:`,
