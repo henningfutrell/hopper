@@ -1,11 +1,11 @@
-// The daemon keeps GitHub's grants tidy (issue #514): Stop working through GitHub revokes the connection's
-// grant at GitHub before it forgets it, so the abandoned grant stops counting toward GitHub's ten per user
-// and app. A connection the runtime cannot open (another HOPPER_TOKEN_KEY) is no ended connection: its
+// The daemon keeps GitHub's grants tidy (issue #514) without GitHub's credential revocation API, a leak
+// report that emails the owner and killed a fresh grant (issue #597): Stop working through GitHub forgets
+// the grant, and only deletes it at GitHub when the runtime gives the app's client secret. A connection the runtime cannot open (another HOPPER_TOKEN_KEY) is no ended connection: its
 // source says to give the key back, and nothing marks it expired, so no screen asks to connect again.
 // The daemon, store and HTTP edge are real; GitHub is a fake on loopback (test/support/fake-forges.ts).
 //
 // Feature: grant hygiene in the running hopper
-//   Scenario: Stop working through GitHub revokes the grant, then forgets it
+//   Scenario: Stop working through GitHub forgets the grant, never reporting it as leaked
 //   Scenario: a connection sealed under another key pauses its source with what to do, and is not expired
 import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,7 +46,7 @@ const account = async (app: TestApp) =>
 const sourceOf = async (app: TestApp) => (await app.api<{ sources: SourceStatus[] }>('GET', '/api/sources')).body.sources.find((s) => s.name === 'github-account');
 
 describe('grant hygiene in the running hopper (#514)', () => {
-  it('Stop working through GitHub revokes the grant at GitHub, then forgets it', async () => {
+  it('Stop working through GitHub forgets the grant and never reports it through credential revocation (#597)', async () => {
     const github = await forge();
     const app = await start(github);
     const token = await app.login();
@@ -59,11 +59,12 @@ describe('grant hygiene in the running hopper (#514)', () => {
     const r = await app.ui('/ui/api/connected-accounts', { action: 'disconnect', provider: 'github' }, { token });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ state: 'not-connected' });
-    expect(github.revoked).toEqual([[access, refresh]]);
-    expect(github.tokens.size).toBe(0);
-    expect(github.refreshTokens.size).toBe(0);
-    const revoke = github.requests.find((q) => q.path === '/api/v3/credentials/revoke')!;
-    expect(revoke.auth).toBe(''); // GitHub takes it unauthenticated
+    expect(github.revoked).toEqual([]);
+    expect(github.requests.some((q) => q.path === '/api/v3/credentials/revoke')).toBe(false);
+    // No client secret: nothing can delete the old grant, so it is left to expire at GitHub.
+    expect(github.tokens.has(access!)).toBe(true);
+    expect(github.refreshTokens.has(refresh!)).toBe(true);
+    expect(await account(app)).toMatchObject({ state: 'not-connected' });
   });
 
   it('a connection sealed under another key pauses its source with what to do, and is not expired', async () => {

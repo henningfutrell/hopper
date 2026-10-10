@@ -27,8 +27,8 @@ const LOCK_POLL_MS = 200;
 
 /** GitHub refusing the refresh token itself: it was used, revoked, or expired, or the app's authorization was removed. */
 const REFUSED_REFRESH = 'bad_refresh_token';
-/** GitHub refusing the app's own credentials: how this hopper is set up, never the user's sign-in. */
-const APP_REFUSED = new Set(['incorrect_client_credentials', 'invalid_client', 'unauthorized_client']);
+/** GitHub refusing the app's own credentials: how this hopper is set up, never the user's sign-in (except `incorrect_client_credentials` without a client secret, issue #597). */
+const APP_REFUSED = new Set(['invalid_client', 'unauthorized_client']);
 
 /** Why the last renewal failed and when the renewer tries again. */
 interface Trouble { why: string; tries: number; retryAt: number }
@@ -48,6 +48,8 @@ export interface RenewerOptions {
   lookable(provider: ConnectedAccountProvider): Live | undefined;
   /** Records that the sign-in ended and tells the owner, once; the error the caller throws. */
   end(stored: ConnectedAccount, reason: string): Error;
+  /** Whether the runtime gives a client secret (issue #597): `incorrect_client_credentials` without one ends the connection. */
+  hasClientSecret?(): boolean;
   onRenewed?(provider: ConnectedAccountProvider): void;
   renewEveryMs?: number;
 }
@@ -151,6 +153,12 @@ export function createRenewer(o: RenewerOptions): Renewer {
         const after = o.live(provider);
         if (after.stored.refreshToken !== used) return again ? held(provider, undefined, false) : after.account.accessToken;
         throw o.end(after.stored, `${PROVIDER_NAME[provider]} refused the refresh token (${code})`);
+      }
+      // `incorrect_client_credentials` sent without a client secret (device-flow refresh) means the refresh token is dead (issue #597).
+      if (code === 'incorrect_client_credentials' && !o.hasClientSecret?.()) {
+        const after = o.live(provider);
+        if (after.stored.refreshToken !== used) return again ? held(provider, undefined, false) : after.account.accessToken;
+        throw o.end(after.stored, `${PROVIDER_NAME[provider]} refused the refresh token (${code}: GitHub ended the authorization)`);
       }
       const why = err instanceof RenewalBlocked ? err.message
         : code && APP_REFUSED.has(code) ? `${PROVIDER_NAME[provider]} refused this hopper's app while renewing the token (${code}): check ${CLIENT_ID_VARIABLE[provider]} and the client secret`
