@@ -3,7 +3,7 @@ import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from '
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
-import { CredentialsFlag, JobTitle, Since, UnassignedFlag } from '@/components/job';
+import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { canPickUp, laneRows, machineName, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
@@ -143,7 +143,6 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
           )}
           {job.progressMessage && <div className="truncate text-xs text-muted-foreground" title={job.progressMessage}>{job.progressMessage}</div>}
           <UnassignedFlag job={job} />
-          <CredentialsFlag job={job} />
         </div>
       ) : (
         <div data-lane-idle className="text-xs text-muted-foreground/70" title={idle}>

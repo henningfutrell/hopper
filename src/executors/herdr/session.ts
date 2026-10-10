@@ -64,13 +64,17 @@ export async function ensureHerdrSession(o: EnsureSessionOptions): Promise<'runn
   throw new Error(`herdr session ${o.session} did not start within ${Math.round(wait / 1000)} s (${bin} --session ${o.session} server)`);
 }
 
-/** The server as a transient user unit, `hopper-herdr-<session>`; false when systemd-run could not start it. */
+/**
+ * The server as a transient user unit, `hopper-herdr-<session>`; false when systemd-run could not start it. The unit gets
+ * the user manager's environment too, so its command takes the ssh agent out (issue #652): its jobs never reach it.
+ */
 function startUnit(systemdRun: string, bin: string, session: string, env: NodeJS.ProcessEnv, userEnv: Readonly<Record<string, string>>): Promise<boolean> {
   const setenv = Object.entries({ ...(env.PATH ? { PATH: env.PATH } : {}), ...userEnv }).map(([k, v]) => `--setenv=${k}=${v}`);
   return new Promise((resolve) => {
     execFile(systemdRun, [
       '--user', '--collect', '--quiet', `--unit=hopper-herdr-${session}`,
-      `--description=hopper's herdr session ${session} (jobs on this machine)`, ...setenv, '--', bin, '--session', session, 'server',
+      `--description=hopper's herdr session ${session} (jobs on this machine)`, ...setenv, '--',
+      'env', '-u', 'SSH_AUTH_SOCK', '-u', 'SSH_AGENT_PID', bin, '--session', session, 'server',
     ], { env, timeout: 10000, killSignal: 'SIGKILL' }, (err) => resolve(!err));
   });
 }

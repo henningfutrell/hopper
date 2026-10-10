@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs no longer hold your GitHub token: their git fetch and push, and every GitHub step they take, go through the hopper, and a job pushes only to a new branch of its own repository. Your ssh agent no longer reaches jobs either.
+- With merging on, the hopper now merges a pull request only after a check passed on it: a pull request with no checks waits, and the Pull requests view says so.
 - The Settings section for the calls Jev makes first is now called Decider. Old links to it still open it.
 - A proposal now gives you a set of choices. Each choice shows its short summary, its costs and risks, and whether the agent recommends it. Tick one or more, add a note to each, and continue: each choice you pick becomes its own job, and the proposal shows how each one is going. You can also ask for more choices or steer the agent.
 - A job that is blocked on something only a person can do, such as access to a repository, can now say what it waits for. It then waits quietly under "On its own wait" with what it waits for. It is no longer prompted again and again, and it no longer opens a question just to wait. It goes on by itself when its own check sees the thing happen, or when you press End the wait.

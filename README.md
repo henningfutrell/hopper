@@ -181,8 +181,9 @@ the panel offers **Sign out**, not a disconnect; to stop taking jobs from GitHub
 switch off the `github-account` source in **Plugins**. Revoke the app for good at
 https://github.com/settings/applications.
 
-A job that needs GitHub for its own git or `gh` gets your token from this same connection (`GH_TOKEN`).
-The token renews itself before it expires. Nothing falls back to another credential: while GitHub is
+A job never gets your token. Its git fetch and push, and the GitHub steps it takes (file an issue, open
+a pull request), go through the hopper, which acts with this same connection; a job pushes only to a new
+branch of its own repository. The token renews itself before it expires. Nothing falls back to another credential: while GitHub is
 not connected, or its sign-in ended, the source is paused, says why, and takes nothing. An ended sign-in
 shows **sign-in expired** in **Sources → GitHub account**; press **Connect GitHub again** (or sign in
 with GitHub again).

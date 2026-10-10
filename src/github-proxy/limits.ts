@@ -11,7 +11,9 @@ export const PROXY_LIMITS: Readonly<Record<ProxyOp, { job: number; machine: numb
   'issue.comment': { job: 20, machine: 100 },
   'pr.create': { job: 3, machine: 20 },
   'issue.view': { job: 120, machine: 600 },
+  'issue.close': { job: 3, machine: 20 },
   'pr.view': { job: 120, machine: 600 },
+  'pr.ready': { job: 5, machine: 20 },
 };
 
 export interface ProxyLimiter {

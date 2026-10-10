@@ -1,6 +1,7 @@
 // The built-in test executor driven by a sourced job's prompt. A source builds payload
-// { prompt, cwd, env, model? }, so the test-executor op travels as JSON on the prompt's FIRST line
-// (an issue body like `{"op":"ask","message":"Is this risky?"}`; the issue context follows).
+// { prompt, cwd, env, model? }, so the test-executor op travels as JSON on the first line of the issue body
+// (an issue body like `{"op":"ask","message":"Is this risky?"}`): the prompt's first line, or the body's first line
+// inside the untrusted block of a GitHub issue's prompt (issue #652).
 // Registered through AppSeams.executors as "scripted"; it records every payload it ran. An op may
 // carry `progress: number[]`: each fraction is reported (job.progressed) before the op runs.
 // `ships(fn)` plays a job that ships its work (issue #171): fn runs (a test merges the job's pull
@@ -9,6 +10,7 @@
 import type { ExecutionContext, ExecutionOutcome, Executor, NudgeCheck } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
+import { UNTRUSTED_LINE } from '../../src/sources/github/context.ts';
 import type { FakeGitHub } from '../../src/sources/index.ts';
 
 export interface ScriptedExecutor extends Executor {
@@ -22,7 +24,9 @@ export interface ScriptedExecutor extends Executor {
 
 function script(payload: Record<string, unknown>): Record<string, unknown> | string {
   if (typeof payload.prompt !== 'string') return 'prompt must be a string';
-  const first = payload.prompt.split('\n', 1)[0]!.trim();
+  const lines = payload.prompt.split('\n');
+  const at = lines[0] === UNTRUSTED_LINE ? lines.indexOf('') + 1 : 0; // after the block's marker and the title line
+  const first = (lines[at] ?? '').trim();
   try {
     const parsed: unknown = JSON.parse(first);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return 'the first prompt line must be a JSON object';

@@ -18,7 +18,7 @@ echo "$*" >> "${dir}/calls"
 s="$2"; shift 2
 case "$*" in
   "status server") if [ -e "${dir}/run-$s" ]; then echo "status: running"; else echo "status: not running"; fi ;;
-  server) [ "$s" = broken ] || touch "${dir}/run-$s" ;;
+  server) env | grep '^SSH_A' > "${dir}/server-env-$s"; [ "$s" = broken ] || touch "${dir}/run-$s" ;;
 esac
 `);
   chmodSync(herdr, 0o755);
@@ -51,5 +51,25 @@ describe('ensureHerdrSession', () => {
   it('never the default session', async () => {
     await expect(ensureHerdrSession({ bin: herdr, session: 'default', systemdRun: null })).rejects.toThrow(/default/);
     expect(calls()).toEqual([]);
+  });
+
+  it('starts the server without the ssh agent, as a unit or a process (issue #652): no job reaches the host\'s keys through it', async () => {
+    const before = process.env.SSH_AUTH_SOCK;
+    process.env.SSH_AUTH_SOCK = '/run/user/agent.sock';
+    try {
+      expect(await ensureHerdrSession({ bin: herdr, session: 'plain', systemdRun: null, pollMs: 10 })).toBe('started');
+      expect(readFileSync(join(dir, 'server-env-plain'), 'utf8')).toBe('');
+      // The user manager's environment carries the agent: the unit's command takes it out.
+      const run = join(dir, 'systemd-run');
+      writeFileSync(run, `#!/bin/sh
+while [ "$1" != -- ]; do shift; done; shift
+SSH_AUTH_SOCK=/run/user/agent.sock "$@" &
+`);
+      chmodSync(run, 0o755);
+      expect(await ensureHerdrSession({ bin: herdr, session: 'unit', systemdRun: run, pollMs: 10 })).toBe('started');
+      expect(readFileSync(join(dir, 'server-env-unit'), 'utf8')).toBe('');
+    } finally {
+      if (before === undefined) delete process.env.SSH_AUTH_SOCK; else process.env.SSH_AUTH_SOCK = before;
+    }
   });
 });

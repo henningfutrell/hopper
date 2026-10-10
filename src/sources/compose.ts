@@ -5,7 +5,7 @@
 // an account's while it is not connected or its sign-in expired (issue #358) — then it asks for a
 // sign-in again; nothing falls back to another credential. Both take the issues assigned to the user's
 // connected GitHub account (issue #387), so the app's pauses too while none is connected.
-import { SourceError, type Clock, type ConnectedAccountTokens, type JobCredentials, type JobSource } from '../domain/ports.ts';
+import { SourceError, type Clock, type ConnectedAccountTokens, type JobSource } from '../domain/ports.ts';
 import { CONNECTED_VIA, type ConnectedAccountProvider } from '../domain/types.ts';
 import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
@@ -161,32 +161,5 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.intakeAction ? s.intakeAction(action) : Promise.reject(new SourceError(why(), false));
     },
-    // The job acts as the account's user, with the hopper's app marked on what it does. gh reads the token
-    // from its config dir, which the hopper keeps current on the job's machine (issue #441); GH_TOKEN, fixed
-    // at the job's start, only where that dir cannot be kept. A job of an account no longer connected runs with none.
-    async credentials(): Promise<JobCredentials | undefined> {
-      const account = accounts.account(provider);
-      if (!account) return undefined;
-      const token = await accounts.token(provider);
-      return { files: { 'gh/hosts.yml': ghHosts(new URL(accounts.endpoints(provider).url).host, account, token) }, paths: { GH_CONFIG_DIR: 'gh' }, env: { GH_TOKEN: token } };
-    },
   };
-}
-
-/**
- * gh's hosts file for one account (issue #441): the token under the host, as gh keeps it where no keyring
- * stores it — both the single-account form and the per-user form gh 2.40 and later read.
- */
-export function ghHosts(host: string, account: string, token: string): string {
-  const q = (s: string) => JSON.stringify(s);
-  return [
-    `${q(host)}:`,
-    '    users:',
-    `        ${q(account)}:`,
-    `            oauth_token: ${q(token)}`,
-    `    oauth_token: ${q(token)}`,
-    `    user: ${q(account)}`,
-    '    git_protocol: https',
-    '',
-  ].join('\n');
 }

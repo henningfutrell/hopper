@@ -14,10 +14,10 @@
 // grant. With `tokenLimit`, GitHub keeps at most that many per user (ten, issue #514): one more revokes the
 // one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
 // GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
-import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { serveGit } from './fake-git.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -94,42 +94,6 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-const GIT_PATH = /^\/([^/]+\/[^/]+?)(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
-
-/** One git request answered by `git-http-backend` (CGI) over the bare repositories under `root`. */
-function gitBackend(root: string, req: IncomingMessage, res: ServerResponse, u: URL, repo: string, rest: string, user: string | undefined): void {
-  const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH, GIT_PROJECT_ROOT: root, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: `/${repo}.git/${rest}`,
-    QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method ?? 'GET', CONTENT_TYPE: req.headers['content-type'] ?? '',
-    ...(req.headers['content-encoding'] ? { HTTP_CONTENT_ENCODING: req.headers['content-encoding'] } : {}),
-    ...(req.headers['git-protocol'] ? { GIT_PROTOCOL: String(req.headers['git-protocol']) } : {}),
-    ...(user ? { REMOTE_USER: user } : {}),
-  };
-  const cgi = spawn('/usr/lib/git-core/git-http-backend', [], { env });
-  req.pipe(cgi.stdin);
-  let head = Buffer.alloc(0);
-  let started = false;
-  cgi.stdout.on('data', (chunk: Buffer) => {
-    if (started) { res.write(chunk); return; }
-    head = Buffer.concat([head, chunk]);
-    const end = head.indexOf('\r\n\r\n');
-    if (end < 0) return;
-    started = true;
-    const headers: Record<string, string> = {};
-    let status = 200;
-    for (const line of head.subarray(0, end).toString('latin1').split('\r\n')) {
-      const i = line.indexOf(':');
-      const name = line.slice(0, i).trim().toLowerCase();
-      const value = line.slice(i + 1).trim();
-      if (name === 'status') status = Number(value.split(' ')[0]);
-      else headers[name] = value;
-    }
-    res.writeHead(status, headers);
-    res.write(head.subarray(end + 4));
-  });
-  cgi.on('close', () => { if (!started) res.writeHead(500); res.end(); });
-}
-
 async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
   const gitRequests: ForgeRequest[] = [];
@@ -139,21 +103,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
     void (async () => {
       const u = new URL(req.url ?? '/', base);
       const auth = req.headers.authorization ?? '';
-      const git = extra.gitRoot ? GIT_PATH.exec(u.pathname) : null;
-      if (git && extra.gitRoot) {
-        gitRequests.push({ method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: {}, auth });
-        const basic = /^basic\s+(\S+)$/i.exec(auth)?.[1];
-        const password = basic ? Buffer.from(basic, 'base64').toString('utf8').split(':').slice(1).join(':') : undefined;
-        const user = password !== undefined ? extra.tokens.get(password) : undefined;
-        const pushing = u.pathname.endsWith('/git-receive-pack') || u.searchParams.get('service') === 'git-receive-pack';
-        if ((password !== undefined && !user) || (pushing && !user)) {
-          res.writeHead(401, { 'www-authenticate': 'Basic realm="GitHub"', 'content-type': 'text/plain' });
-          res.end('Invalid username or token.');
-          return;
-        }
-        gitBackend(extra.gitRoot, req, res, u, git[1]!, git[2]!, user);
-        return;
-      }
+      if (extra.gitRoot && serveGit(extra.gitRoot, extra.tokens, req, res, u, (r) => gitRequests.push(r))) return;
       const r: ForgeRequest = { method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: await readBody(req), auth };
       requests.push(r);
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];

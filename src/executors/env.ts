@@ -6,9 +6,15 @@
  */
 const CLAUDE_CREDENTIAL = 'CLAUDE_CODE_OAUTH_TOKEN';
 
-/** process.env without CLAUDECODE and CLAUDE_CODE_* but the claude CLI's credential: a child-session marker must not leak into panes. */
+/** The ssh agent's variables (issue #652): a job never reaches the host's keys through its agent. */
+const SSH_AGENT = new Set(['SSH_AUTH_SOCK', 'SSH_AGENT_PID']);
+
+/**
+ * process.env without CLAUDECODE and CLAUDE_CODE_* but the claude CLI's credential: a child-session marker must not leak
+ * into panes; and without the ssh agent (issue #652).
+ */
 export function scrubbedEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([k]) => k === CLAUDE_CREDENTIAL || (k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_'))));
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !SSH_AGENT.has(k) && (k === CLAUDE_CREDENTIAL || (k !== 'CLAUDECODE' && !k.startsWith('CLAUDE_CODE_')))));
 }
 
 /** What a user added later keeps of the daemon's environment: the machine's variables, never a secret the runtime gives admin. */

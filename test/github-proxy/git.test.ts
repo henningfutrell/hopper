@@ -4,6 +4,7 @@
 // real git and a real git server, is test/integration/git-proxy.test.ts.
 import { describe, expect, it } from 'vitest';
 import { checkPush, gitPath, jobGitConfig, receivePackCommands } from '../../src/github-proxy/index.ts';
+import { GITHUB_PROXY_LINE } from '../../src/job-rules/index.ts';
 
 const ZERO = '0'.repeat(40);
 const A = 'a'.repeat(40);
@@ -68,5 +69,11 @@ describe('the git config a job runs with', () => {
       GIT_CONFIG_KEY_4: 'credential.http://hopper:4790/job/git/.helper',
       GIT_CONFIG_VALUE_4: '!f() { test "$1" = get || exit 0; echo username=hopper-job; printf \'password=%s\\n\' "$(cat "$HOPPER_TOKEN_FILE")"; }; f',
     });
+  });
+});
+
+describe('what a job is told', () => {
+  it('that its machine holds no GitHub token, and its git goes through the hopper by itself', () => {
+    expect(GITHUB_PROXY_LINE).toContain('This machine holds no GitHub token: git fetch and git push to GitHub go through the hopper by themselves');
   });
 });

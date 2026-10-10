@@ -67,14 +67,17 @@ export interface UnfinishedPullRequest { pullRequest: string; step: FinishStep }
 /** The most finish briefs one run of a job gets (issue #626): rebase, then mark ready. Then it fails, as before. */
 export const MAX_FINISH_BRIEFS = 2;
 
-/** What the job is told to finish its pull request (issue #626): fixed text, no model call. */
+const numberOf = (url: string): string => /\/pull\/(\d+)/.exec(url)?.[1] ?? '';
+const repoOf = (url: string): string => /\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1] ?? '';
+
+/** What the job is told to finish its pull request (issue #626): fixed text, no model call. Through the hopper (issue #652). */
 export function finishBrief(f: UnfinishedPullRequest): string {
   const lines = f.step === 'rebase'
     ? [`Your pull request ${f.pullRequest} has merge conflicts with its base branch. The job is not done yet.`,
       'Fetch the base branch.', 'Rebase your branch onto it.', 'Resolve every conflict and keep the intent of both sides.',
       'Run the repo\'s checks.', 'Push the branch with --force-with-lease.']
     : [`Your pull request ${f.pullRequest} is a draft. A draft is not done.`,
-      'Make sure the repo\'s checks pass.', 'Mark the pull request ready for review (gh pr ready).'];
+      'Make sure the repo\'s checks pass.', `Mark the pull request ready for review: sh "$HOPPER_GH" pr ready ${numberOf(f.pullRequest)} --repo ${repoOf(f.pullRequest)}.`];
   return [...lines, 'Do not open a new pull request.', 'Then end the job as done.'].join('\n');
 }
 

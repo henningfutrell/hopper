@@ -2,7 +2,7 @@
 // (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its artifacts
 // (issue #624), ticking times, and the flags a running job carries: unassigned (issue #387), its credential files not
 // rewritten with its connection's new token (issue #647).
-import { ExternalLink, KeyRound, UserX } from 'lucide-react';
+import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
 import { afterDone, goalOf, issueRef } from '@/model/job';
@@ -81,16 +81,3 @@ export function UnassignedFlag({ job }: { job: Job }) {
   );
 }
 
-/**
- * A job whose credential files on its machine could not be rewritten with its connection's new token (issue #647): it
- * may work with a token GitHub no longer takes. Goes once a later rewrite succeeds.
- */
-export function CredentialsFlag({ job }: { job: Job }) {
-  if (!job.credentialsWarning) return null;
-  return (
-    <div data-credentials-warning className="flex items-center gap-1.5 text-xs text-warn" title={job.credentialsWarning}>
-      <KeyRound className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate">Its GitHub token could not be renewed on its machine: {job.credentialsWarning}</span>
-    </div>
-  );
-}

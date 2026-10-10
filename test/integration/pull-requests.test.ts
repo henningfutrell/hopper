@@ -136,8 +136,8 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     const token = await app.login();
     await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true, [THIRD]: true } }, { token });
     const pending = await waiting(gh, app, REPO, { checks: 'pending' });
-    const off1 = await waiting(gh, app, OTHER);
-    const off2 = await waiting(gh, app, OTHER);
+    const off1 = await waiting(gh, app, OTHER, { checks: 'passing' });
+    const off2 = await waiting(gh, app, OTHER, { checks: 'passing' });
     const shut = await waiting(gh, app, THIRD, { checks: 'pending' });
     gh.closePullRequest(shut.url);
     await app.sync();

@@ -109,12 +109,12 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const scratch = jobScratchOf(cwd, ctx.job.id);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
-    // The job's credentials (issue #214, kept current on its machine for the turn: #441), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
+    // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
     const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
-    // with the job's credentials; what it says goes to stderr, never into the agent's answer.
+    // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
     const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;

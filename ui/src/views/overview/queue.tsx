@@ -6,7 +6,7 @@ import { Confirm } from '@/components/confirm';
 import { heldAtGate } from '@/model/blast-radius';
 import { goalOf } from '@/model/job';
 import { Button } from '@/components/ui/button';
-import { CredentialsFlag, JobTitle, Since, UnassignedFlag } from '@/components/job';
+import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -169,7 +169,6 @@ export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
         {job.wait && <div className="text-xs">waits for <span data-slot="waits-for" className="font-medium text-foreground/90">{job.wait.for}</span></div>}
         {job.wait?.until && <div className="text-xs text-muted-foreground">knows by <span data-slot="wait-until">{job.wait.until}</span></div>}
         <UnassignedFlag job={job} />
-        <CredentialsFlag job={job} />
       </div>
     ))}
   </>;
@@ -223,8 +222,7 @@ export function WaitingPanel() {
               <span className="ml-auto">for <Since iso={job.updatedAt} /></span>
             </div>
             <UnassignedFlag job={job} />
-            <CredentialsFlag job={job} />
-          </div>
+            </div>
         ))}
       </>}
       {board.operatorLed.length > 0 && <>
@@ -240,8 +238,7 @@ export function WaitingPanel() {
               <span className="ml-auto">for <Since iso={job.startedAt ?? job.updatedAt} /></span>
             </div>
             <UnassignedFlag job={job} />
-            <CredentialsFlag job={job} />
-          </div>
+            </div>
         ))}
       </>}
       <ParkedRows />

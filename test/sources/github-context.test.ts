@@ -119,7 +119,7 @@ describe('GitHub source: full issue context and job environment', () => {
     gh.createIssue({ repo: REPO, body: 'b'.repeat(70000), labels: ['hopper'] });
     for (let i = 0; i < 40; i++) gh.addComment(REPO, 1, 'owner', `c${i} ${'y'.repeat(900)}`);
     const { prompt } = await discoverOne(source);
-    const body = prompt.slice(prompt.indexOf('b'), prompt.lastIndexOf('b') + 1);
+    const body = /b{1000,}/.exec(prompt)![0];
     expect(body.length).toBeLessThanOrEqual(64000);
     const comments = prompt.slice(prompt.indexOf('recent comments'), prompt.indexOf(UNTRUSTED_END));
     expect(comments.length).toBeLessThanOrEqual(16000);

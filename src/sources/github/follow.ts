@@ -4,7 +4,8 @@
 // `hopper:partly-done` only comes off, so the issue is offered again and its next part runs. Closed without a merge:
 // flagged, → `hopper:pr-closed`, which keeps the issue out until a person removes it. Still open (PR waiting, issue #637):
 // what is seen of it — a draft, merge conflicts, its checks — is kept for the Pull requests list; and with yolo mode on for
-// its repository, the hopper merges it once it is ready: not a draft, no merge conflicts, its checks passed or none. A
+// its repository, the hopper merges it once it is ready: not a draft, no merge conflicts, and a check passed on it — no
+// checks is not passing (issue #652: on a repository with no required checks nothing else would stop the merge). A
 // refused merge is kept on it (`mergeError`) and asked again next sync: it never fails the job. A pull request the
 // report could not name is followed only to its merge. A throw is asked again on a later sync.
 
@@ -37,8 +38,8 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
   return { state: (await api.pullRequest(repo, numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
 }
 
-/** Ready for the hopper's merge: not a draft, no merge conflicts, its checks passed or it has none. */
-const mergeable = (seen: PullRequestSeen): boolean => !seen.draft && !seen.conflicting && (seen.checks === 'passing' || seen.checks === 'none');
+/** Ready for the hopper's merge: not a draft, no merge conflicts, its checks ran and passed (issue #652: none is not enough). */
+const mergeable = (seen: PullRequestSeen): boolean => !seen.draft && !seen.conflicting && seen.checks === 'passing';
 
 /** An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge. True: merged. */
 async function waiting(ctx: FollowContext, repo: string, url: string, before: PullRequestSeen | undefined): Promise<{ merged: true } | { seen: PullRequestSeen }> {

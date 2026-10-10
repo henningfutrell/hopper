@@ -1848,14 +1848,14 @@ reviewing it is a merge nothing else stops where a repository has no branch prot
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
-not a draft, no merge conflicts, its checks passed or it has none — with a merge commit (`GitHubApi.merge`, `PUT
+not a draft, no merge conflicts, a check passed on it (issue #652: one with no checks waits, `no checks`) — with a merge commit (`GitHubApi.merge`, `PUT
 /pulls/{n}/merge`, through the job's source's own connection). One definition of done; the merge is an extra step after
 it.
 
 | yolo mode | the job's prompt says |
 |-----------|-----------------------|
 | off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
-| on for the repo | the same, then: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done. The same for an existing pull request the job updated: once it is merged, close the issue as completed |
+| on for the repo | the same, then: the hopper merges the pull request once a required check passed on it. Do not merge it yourself (issue #652: the job holds no token to merge with; before it, the job merged) |
 
 Both say, before the yolo part: an issue that asks to update an existing pull request is done by pushing to its branch,
 no new pull request, once it has no merge conflicts with its base (issue #618).
@@ -9780,6 +9780,99 @@ request and its GitHub failure; a pull request on another repository refused; an
 nothing else, both in the hopper's own user's log; a bad token and an ended job refused; the help and no GitHub token on
 the machine), `test/github-proxy/proxy.test.ts` (token, request, policy, limits, the broker's 400, 429, 503),
 `test/herdr/executor-login.test.ts` (a GitHub login steered, then taken when reported again).
+
+## Git through the hopper: a job holds no owner credentials (issue #652, 2026-10-10)
+
+Owner requirement (the 2026-10-10 intake security review, paths A + C + F; this part builds F and the prompt and merge
+rules): one bad issue, or one injected agent, must not be able to change `dev`, the published image or the hosts. Until
+now each job of a connected account got that account's token (`gh/hosts.yml`, `GH_CONFIG_DIR`, `GH_TOKEN` where no files
+are kept — issues #214, #441, #647), the host's ssh agent, and whatever git credentials its machine had, so the GitHub
+proxy (#563) restricted nothing. **A job now holds no GitHub token.** Removed with no shim: `JobSource.credentials`,
+`JobCredentials`, `engine.renewCredentials`, the connected account service's `onToken`, `Job.credentialsDir` and
+`Job.credentialsWarning` (and its card line), and the job worktree script's `GH_TOKEN` / `gh auth git-credential` helper.
+The connection's token is read by the hopper at each call it makes, so a renewal reaches nothing on a machine.
+
+**The way in.** Beside the proxy's three variables (above), `placeCredentials` gives every job whose machine keeps files
+git's own configuration from the environment (`jobGitConfig`, `src/github-proxy/git.ts`; `GIT_CONFIG_COUNT`,
+`GIT_CONFIG_KEY_n`, `GIT_CONFIG_VALUE_n`):
+
+| key | value |
+|-----|-------|
+| `url.<HOPPER_URL>/job/git/.insteadOf` | `https://github.com/`, `git@github.com:`, `ssh://git@github.com/` (the connection's web origin and host) |
+| `credential.<HOPPER_URL>/job/git/.helper` | empty (clears every helper before it for that URL), then a shell function that answers `get` with `username=hopper-job` and the content of `$HOPPER_TOKEN_FILE` as the password |
+
+So `git clone https://github.com/o/r`, `git fetch` and `git push` in any checkout — the job worktree's, a person's
+checkout the job works in — go to the hopper, and the proxy token is read from its file when git asks, never put in a
+variable or on a command line. A machine that reaches no hopper URL, or whose connection keeps no files, gets no proxy:
+its git uses what that machine has, said in the job's progress (as before).
+
+**The route** (`src/http/job-git.ts`): `GET /job/git/<owner>/<name>.git/info/refs?service=git-upload-pack|git-receive-pack`
+and `POST /job/git/<owner>/<name>.git/git-upload-pack|git-receive-pack`, git's smart HTTP, behind the Host guard,
+outside the UI session, like `/job/github`. Bodies are read whole (up to 512 MB) under their own content-type parsers.
+The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
+
+1. the token: the Basic auth password is a proxy token of a user whose job it names, at work — else **401** (git then
+   asks its helper once more and stops);
+2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
+3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
+   when that is one of its user's **job repositories** — else **403** with the reason, which git shows as `remote: …`;
+4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
+5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
+   a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
+   (read from GitHub) or a **release branch** (`main`, `master`, `dev`, `beta`, `stable`), never a delete. A forced update
+   of a branch of the job's own work is allowed: a rebase pushes with `--force-with-lease`. A refusal is answered as
+   git's own report (`ng <ref> <reason>`, in side band 1 when asked for), so git shows `! [remote rejected] … (<reason>)`;
+6. GitHub: the request as git sent it, to `<web origin>/<owner>/<name>.git/…`, with Basic `x-access-token:<token>` of the
+   job's **own user's** connection (not the hopper's oldest user's: a push is the job's user's act), the response streamed
+   back. A 401 renews the token once. A fetch of a repository the user's jobs do not use goes **without credentials**,
+   as anyone's would: a public repository clones, a private one does not.
+
+**Audit.** A push is an event on the job's timeline: `github_proxy.done` (op `git.push`, `repo`, `refs`),
+`github_proxy.refused` (`reason`, `refs` once read) or `github_proxy.failed`. A fetch is not recorded.
+
+**`hopper-gh` additions** (the job has no `gh` login to do them with): `issue close N` — the job's **own issue** only, as
+completed (`PATCH … state_reason: completed`); `pr ready N` — on its own repository, through GitHub's GraphQL
+`markPullRequestReadyForReview`. Both refused to another user's job. The finish brief of a draft (issue #626) now says
+`sh "$HOPPER_GH" pr ready <n> --repo <owner/name>`.
+
+**The ssh agent.** `scrubbedEnv` drops `SSH_AUTH_SOCK` and `SSH_AGENT_PID`, so the herdr server the hopper starts, its
+panes and the command and print-mode executors never see the host's agent; a herdr server started as a systemd unit
+(which inherits the user manager's environment) runs under `env -u SSH_AUTH_SOCK -u SSH_AGENT_PID`. The hopper's own ssh
+to targets already used `IdentityAgent=none`.
+
+**The prompt** (`src/sources/github/context.ts`): the issue's title, body and the assignee's recent comments go inside
+the **untrusted issue text** block — `UNTRUSTED_LINE`, then `<<<hopper-untrusted-issue-text`, the text, and
+`hopper-untrusted-issue-text>>>` — with the markers removed from the text, so it cannot close the block early. The
+hopper's `[hopper issue context]` follows: repo, labels and author, priority, the `done:` line. Caps as before: the body
+64 000 characters, the comments 16 000, the oldest dropped first.
+
+**Yolo mode's merge** needs a check that passed: `checks` `passing`. A pull request with none waits (`no checks` in the
+Pull requests list, after `checks pending`); the repository's required checks are GitHub's to enforce. The job is told
+the hopper merges it and not to merge it itself.
+
+**Residual risk, said plainly.** On a machine where a job runs as a person's own account (this machine, an ssh target),
+the files in that account's home — `~/.ssh` keys, a gh login, git credentials — are readable by the job: only a sandbox
+box (#603) keeps them out. The git rewrite routes GitHub through the hopper, but an agent that reads a key file directly
+is not stopped by it. A push may overwrite any other branch of the job's own repository that is not the default or a
+release branch: branch protection on GitHub (the next part of this issue) is what keeps the rest.
+
+**Not built in this part** (carried in issue #652): trusted actors and request cards (A, C), re-reading an edited issue,
+the backfill; the vault helper given only on a per-job grant; yolo merging only jobs of a trusted origin; the repository
+setup check and pull-request checks workflow; deploying only a merged and checked commit.
+
+Tests: `test/integration/git-proxy.test.ts` (the real daemon, a fake GitHub serving git with `git-http-backend`, the real
+git with the job's variables: clone and push a branch with the user's token, a forced update; `dev` and `stable` refused
+and a delete refused, nothing changed on GitHub; another repository refused; a repository outside the job repositories
+read without credentials; a bad token and an ended job refused; no `GH_TOKEN`, `GH_CONFIG_DIR` or `SSH_AUTH_SOCK`),
+`test/github-proxy/git.test.ts` (the pkt-lines, the push check, the path, the git config),
+`test/integration/github-proxy.test.ts` (close the job's own issue, mark ready, another issue refused),
+`test/integration/connected-account-renewal.test.ts` (a source job's variables and files hold no token),
+`test/sources/github-context.test.ts` (the untrusted block, its markers removed), `test/integration/pull-requests.test.ts`
+(no checks: not merged until a check passed), `test/herdr/session.test.ts` (the server starts without the ssh agent).
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/github-proxy/` | also git through the hopper: the path, the push check, the job's git config, the git broker | engine, http, store, plugins, decider |
 
 ## Writing style: Simplified Technical English (issue #571, 2026-10-09)
 

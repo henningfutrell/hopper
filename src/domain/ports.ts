@@ -42,12 +42,10 @@ export interface ExecutionContext {
   /** Report the agent session the job's agent runs in, once its agent is up (`job.agentSession`, issue #501): a parked job resumes it. */
   agentSession?(id: string): void;
   /**
-   * The variables the job's own processes run with, from its source's connection (issue #214): the GitHub
-   * account the job came from, so what the job does on GitHub acts as that user with the hopper's app marked
-   * on it. Its credential files are first kept under `<scratch>/credentials` on the job's machine, where every
-   * renewal rewrites them, so a running job keeps working across one (issue #441); the variables point
-   * there. Asked when the job starts, resumes, or takes a turn, with the job's own scratch dir, and whether
-   * its work tree may be made (the jobs dir); no token is stored on the job.
+   * The variables the job's own processes run with: its way to the hopper (issues #563, #652) — the hopper's URL, the
+   * files `hopper-gh` and its proxy token kept under `<scratch>/credentials` on the job's machine, and git's way to GitHub
+   * through the hopper. Never a GitHub token: the hopper acts on GitHub for the job. Asked when the job starts, resumes,
+   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir).
    */
   credentials?: (scratch: string, makeWorkTree?: boolean) => Promise<Readonly<Record<string, string>>>;
   /**
@@ -551,8 +549,6 @@ export interface JobSource extends FollowsPullRequests {
    * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
    */
   pullRequestOpen?(job: Job): Promise<boolean>;
-  /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
-  credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**
    * What became of every open item the last discover listed (issue #440): taken, or the one reason it was not.
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
@@ -563,23 +559,10 @@ export interface JobSource extends FollowsPullRequests {
 }
 
 /**
- * What a job acts with through its source's connection (issues #214, #441). `files` are kept in the job's
- * credentials dir on its machine (by path under it) and rewritten at each renewal, so a running job reads
- * the token as it is now; `paths` are the variables pointing into that dir (variable → path under it).
- * Where the files cannot be kept — the machine's connection takes none — the job runs with `env`: the
- * token as it is at the job's start.
- */
-export interface JobCredentials {
-  files: Record<string, string>;
-  paths: Record<string, string>;
-  env: Record<string, string>;
-}
-
-/**
  * What a job asks the hopper's GitHub proxy with (issue #563): its proxy token and the `hopper-gh` script,
  * kept as files in its credentials dir (by path under it, `paths` the variables pointing there), and `vars`
- * — the hopper's URL as the job's machine reaches it. Only where its machine keeps files: never in an
- * environment variable.
+ * — the hopper's URL as the job's machine reaches it, and git's way to GitHub through it (issue #652). Only
+ * where its machine keeps files: the token is never in an environment variable.
  */
 export interface JobProxyCredentials {
   files: Record<string, string>;

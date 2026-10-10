@@ -22,7 +22,6 @@ import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
-import { renewCredentials } from './credentials.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -79,8 +78,6 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   stop(): Promise<void>;
   /** Ask for a Decision: something it reads changed outside the engine (the failure settings, issue #509). Coalesces. */
   trigger(reason: string): void;
-  /** The connection renewed its token (issue #441): every job in flight has its credential files rewritten on its machine. */
-  renewCredentials(): Promise<void>;
 }
 
 export function createEngine(o: EngineOptions): Engine {
@@ -100,7 +97,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), credentials: o.credentials, jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -173,7 +170,6 @@ export function createEngine(o: EngineOptions): Engine {
       c.trigger('startup');
     },
     trigger: (reason) => { if (!stopping) c.trigger(reason); },
-    renewCredentials: () => (stopping ? Promise.resolve() : renewCredentials(c, (line) => console.warn(line))),
     async stop() {
       stopping = true;
       serial.close();

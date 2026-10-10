@@ -8,7 +8,7 @@ import type { PullRequestSeen } from './pull-requests.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
 /** Why a waiting pull request is not merged yet: the first that holds, in this order. */
-export const MERGE_WAITS = ['not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'merge refused'] as const;
+export const MERGE_WAITS = ['not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'no checks', 'merge refused'] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
 export interface PullRequestCard {
@@ -65,6 +65,8 @@ function waitOf(seen: PullRequestSeen | undefined, yolo: boolean): MergeWait {
   if (seen.checks === 'failing') return 'checks failing';
   if (!yolo) return 'yolo off';
   if (seen.checks === 'pending') return 'checks pending';
+  // Issue #652: the hopper merges only once a check passed; a pull request with none waits for one.
+  if (seen.checks === 'none') return 'no checks';
   return 'merge refused';
 }
 

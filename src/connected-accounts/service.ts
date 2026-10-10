@@ -21,9 +21,9 @@
 // connection the runtime cannot open reads `unreadable`: give the key back, never a new grant; the start check says
 // which key is missing (issue #647).
 //
-// A connection's health (issue #647): every new token — a renewal, a connect, a sign-in — is handed to running jobs
-// at once (`onToken`). A GitHub sign-in made while the connection is healthy never replaces it quietly: its grant is
-// held (a **held grant**, held.ts) until the person takes it or drops it.
+// A connection's health (issue #647): a GitHub sign-in made while the connection is healthy never replaces it quietly:
+// its grant is held (a **held grant**, held.ts) until the person takes it or drops it. No job holds a token of it (issue
+// #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import type { TokenBox } from '../secrets/token-box.ts';
@@ -65,8 +65,6 @@ export interface ConnectedAccountsOptions {
   refresh(provider: ConnectedAccountProvider, refreshToken: string, grantedBy: Grant['grantedBy']): Promise<Grant>;
   /** Called once when an account's sign-in ends (issue #358): the owner is told. */
   onExpired?(provider: ConnectedAccountProvider, account: string, reason: string): void;
-  /** Called once a new token is kept — a renewal, a connect, a sign-in (issues #441, #647): running jobs are handed it. */
-  onToken?(provider: ConnectedAccountProvider): void;
   /** Called after this process renewed an account's token (issue #647): recorded, never with a token. */
   onRenewed?(provider: ConnectedAccountProvider, renewed: { account: string; expiresAt?: string }): void;
   /** Called after a renewal failed (issue #647): its error code, never a token. */
@@ -144,7 +142,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     store: o.store, atRest, clock: o.clock, logger: o.logger, refresh: o.refresh, live, end,
     lookable: (p) => { const c = current(p); return !c || 'unreadable' in c || c.ended || waiting.has(p) ? undefined : c; },
     ...(o.hasClientSecret ? { hasClientSecret: o.hasClientSecret } : {}),
-    onRenewed: (p, r) => { o.onRenewed?.(p, r); o.onToken?.(p); },
+    ...(o.onRenewed ? { onRenewed: o.onRenewed } : {}),
     ...(o.onRenewalFailed ? { onRenewalFailed: o.onRenewalFailed } : {}),
     ...(o.renewEveryMs ? { renewEveryMs: o.renewEveryMs } : {}),
   });
@@ -230,7 +228,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     if (refused) {
       o.logger.warn(`hopper: ${refused}`);
       o.onExpired?.(provider, who.account, refused);
-    } else o.onToken?.(provider);
+    }
   };
 
   /** A connection that works: connected, its tokens readable, not ended, no failed renewal waiting for its retry. */

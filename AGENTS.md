@@ -38,7 +38,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
   `docs/design.md` "GitHub through the hopper"): `POST /job/github`, with the job's proxy token — derived, never stored,
   honoured only while the job is at work — asks the hopper to act on GitHub with its own connection; it changes no job,
-  question, webhook or setting, only records what it did. A box's vault ask (issue #558, `docs/design.md` "The vault"):
+  question, webhook or setting, only records what it did. A running job's git (issue #652, `docs/design.md` "Git through the
+  hopper"): `GET`/`POST /job/git/<owner>/<name>.git/…`, git's smart HTTP with the job's proxy token as its password, fetches
+  and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository, never its
+  default or a release branch —; it changes no job, question, webhook or setting, only records a push. **A job holds no
+  GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
@@ -64,7 +68,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
   one (the merge of a job's pull request does), and posts no comments. Four exceptions, each the user's own act or setting: with
   yolo mode on for a repository (issue #637), the hopper merges a done job's ready pull request that it follows — not a draft, no
-  merge conflicts, its checks passed or none —, a merge commit, and that merge closes the issue as a person's would; Run again
+  merge conflicts, a check passed on it (issue #652: no checks is not passing) —, a merge commit, and that merge closes the issue as a person's would; Run again
   (issue #354) reopens the job's closed issue, so the new job can finish against it; Assign to me in Sources (issue #440)
   assigns a labelled issue to the user's connected account; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
