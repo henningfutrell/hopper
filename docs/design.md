@@ -9958,10 +9958,28 @@ like the connected account's (issue #441), and sets three variables:
 |----------|-------|
 | `HOPPER_TOKEN_FILE` | `<credentials dir>/hopper/token`: the **proxy token** |
 | `HOPPER_GH` | `<credentials dir>/hopper/gh`: **hopper-gh**, run as `sh "$HOPPER_GH" …` |
-| `HOPPER_URL` | the hopper as the machine reaches it: a client target, the URL it dialled in at (the Host of its `GET /client/connect`, or the public URL behind it; `MachineLinks.urlOf`); this machine, `http://127.0.0.1:<port>`; an ssh or container target, `HOPPER_PUBLIC_URL`, else `http://<first LAN name>:<port>` |
+| `HOPPER_URL` | the **hopper address** (`jobHopperUrl`, `src/machines/hopper-address.ts`): a client target, the URL it dialled in at (the Host of its `GET /client/connect`, or the public URL behind it; `MachineLinks.urlOf`); this machine, `http://127.0.0.1:<port>`; an ssh target, the address its probe found it reaches (issue #698, below); a container target, `HOPPER_PUBLIC_URL`, else `http://<first LAN name>:<port>` |
 
 A machine that reaches the hopper at none of these, or whose connection keeps no files, gives its jobs no proxy (said in
-the job's progress when files could not be kept). The token is never in an environment variable, a command line or the
+the job's progress when files could not be kept).
+
+**An ssh target's address** (issue #698). An ssh target was once given the first LAN name: in the compose install that was
+the service name, which only the compose network resolves. The job could not reach the hopper, so it had no proxy and no
+git; it fell back to a GitHub device sign-in, and a question about the hopper's address climbed to the owner. Now the
+machine itself is asked. Each probe of an ssh target (every 30 s, in the same ssh call as its home and work tree,
+`probeSsh`) runs `curl` there against `GET /job/address` at each of the hopper's addresses in order — the public URL, then
+each LAN name with the port —, at most 3 s each, until one answers 204 (`src/http/job-address.ts`: no token, behind the
+Host guard, changes and records nothing). The first that does is the machine's `hopperUrl`, its jobs' `HOPPER_URL`. None
+does — no connection, the Host guard refusing it (403: the machine's address is not in `HOPPER_LAN_PEERS`; 421), another
+server, no address at all, or no curl there — and the machine has an **address problem**: it takes no new job, as with a
+work tree problem (`addressHolds`, `src/decider/assign.ts`), the Machines view and the log say why and what to set, and a
+job there is never given an address it was not seen to reach. Taken conservatively: the hopper's addresses are asked, not
+tunnelled. A reverse forward over the ssh connection (`ssh -R`) would need no reachable address, but the hopper's ssh
+connections forward nothing (`HARDENED_SSH_OPTIONS`); opening one is a security change of its own. A container target
+still gets the public URL, else the first LAN name.
+
+**When the hopper cannot be reached anyway** (issue #698): the job rules' GitHub line (`GITHUB_PROXY_LINE`) tells the job
+to end with `HOPPER_FAILED`, saying the machine cannot reach the hopper, and never to sign in to GitHub another way. The token is never in an environment variable, a command line or the
 database: `hopper-gh` sends it to curl on stdin (`-H @-`).
 
 **The proxy token** (`src/github-proxy/token.ts`): `<user id, base64url>.<job id>.<mac>`, the mac an HMAC-SHA256 of the

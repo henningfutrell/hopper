@@ -20,6 +20,7 @@ import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
+import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
 import { jobStreamRoutes } from './job-stream.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
@@ -140,6 +141,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   jobGitRoutes(app, { tenants: o.tenants });
+  // A machine's probe asks where it reaches the hopper (issue #698).
+  jobAddressRoutes(app);
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
   // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
