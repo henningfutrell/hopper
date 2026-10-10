@@ -30,10 +30,11 @@ const after = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i +
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
 
 // `leave`, `escape`: what a careless turn leaves (issue #410): a temp file, and a process that left its session,
-// named $FAKE_AGENT_LEFTOVER — with `escape`, one that cleared its environment too.
+// named $FAKE_AGENT_LEFTOVER — with `escape`, one that cleared its environment too. bash, for `exec -a`: dash, a
+// distribution's sh, has none (issue #672).
 if (mode === 'leave' || mode === 'escape') {
   writeFileSync(join(process.env.TMPDIR, 'left.txt'), 'x');
-  spawn('setsid', ['sh', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
+  spawn('setsid', ['bash', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
 }
 // `device-code`, `device-code-fails` (issue #476): a tool of the agent's waits on a login and prints codex's device
 // code, as `codex login --device-auth` does; the turn then answers as usual, or its CLI fails.

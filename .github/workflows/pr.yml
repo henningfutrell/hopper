@@ -23,8 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -34,6 +34,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:ui
-      - run: npm test
+      # Most tests wait on Postgres or a child process, not the CPU: more workers than the runner's cores.
+      - run: npm test -- --maxWorkers=8
         env:
           HOPPER_TEST_HOST_SERVICES: '0'

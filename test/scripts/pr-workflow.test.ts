@@ -41,8 +41,9 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     const node = steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
     expect(node?.with).toMatchObject({ 'node-version': 24, cache: 'npm' });
     const runs = steps.map((s) => s.run).filter(Boolean);
-    for (const gate of ['npm ci', 'npm run typecheck', 'npm run lint', 'npm run build:ui', 'npm test']) expect(runs).toContain(gate);
-    expect(steps.find((s) => s.run === 'npm test')?.env).toMatchObject({ HOPPER_TEST_HOST_SERVICES: '0' });
+    for (const gate of ['npm ci', 'npm run typecheck', 'npm run lint', 'npm run build:ui']) expect(runs).toContain(gate);
+    const test = steps.find((s) => s.run?.startsWith('npm test'));
+    expect(test?.env).toMatchObject({ HOPPER_TEST_HOST_SERVICES: '0' });
   });
 });
 
