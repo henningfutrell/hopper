@@ -2903,7 +2903,7 @@ Version 1 (`docs/schemas/skill.refused.v1.json`). A running job asked for a skil
 
 ## `artifact.created`
 
-Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). Also on the job's stream.
+Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). `warning`: it was kept, but it is not a visual — an HTML page with no `<svg>`, `<canvas>` or `<img>` (issue #675). Also on the job's stream.
 
 | field | type | required |
 |---|---|---|
@@ -2915,6 +2915,7 @@ Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on
 | `sha256` | string | yes |
 | `issue` | string | no |
 | `masked` | integer | no |
+| `warning` | string | no |
 
 ```json
 {

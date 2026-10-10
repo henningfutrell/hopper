@@ -2,7 +2,8 @@
 // the hopper's own URL and behind the Host guard, like the skill broker (job-skill.ts). `Authorization: Bearer <the job's
 // proxy token>`, honoured only while its job is at work. Every value but the file is in the query string.
 //
-//   POST /job/artifacts?name=&title=&type=   the file as the body (application/octet-stream): kept, 201
+//   POST /job/artifacts?name=&title=&type=   the file as the body (application/octet-stream): kept, 201, with a
+//                                            warning when HTML has no drawing (issue #675)
 //   GET  /job/artifacts[?all=1][&markdown=1] the job's artifacts (all: every job's of the user)
 //   GET  /job/artifacts/:id[?content=1]      one, or its content
 //   POST /job/artifacts/:id/share?user=NAME | ?public=1[&hours=N] | ?revoke=SHARE
@@ -68,8 +69,10 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       const type = q(req, 'type');
       const r = who.t.artifacts.put(who.job, { name, content: req.body, ...(title ? { title } : {}), ...(type ? { type } : {}) });
       if (isRefusal(r)) return no(req, reply, r);
-      const url = o.edge.url(r.id);
-      return answer(req, reply, 201, { artifact: brief(r) }, `put: ${r.id}  ${r.title}  ${r.type}  ${r.size} bytes\nurl: ${url}\n`);
+      const { warning, ...kept } = r;
+      const url = o.edge.url(kept.id);
+      return answer(req, reply, 201, { artifact: brief(kept), ...(warning ? { warning } : {}) },
+        `put: ${kept.id}  ${kept.title}  ${kept.type}  ${kept.size} bytes\nurl: ${url}\n${warning ? `warning: ${warning}\n` : ''}`);
     });
 
     scope.get(ARTIFACT_PATH, async (req, reply) => {

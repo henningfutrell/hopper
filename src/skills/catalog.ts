@@ -84,7 +84,7 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
     name: 'artifacts',
-    line: 'put a file (a chart, an HTML page, a report, an image, a CSV) on the hopper for a person to see, and share it',
+    line: 'put a visual (a diagram, a chart, a graph, drawn in SVG) on the hopper for a person to see, and share it',
     text: ARTIFACT_HELP,
   },
 ];
