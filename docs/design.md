@@ -10924,5 +10924,6 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   A history of every snapshot (the events keep each hash). A snapshot for a source with no `withText` (the GitHub sources
   are the only ones with item text).
 - **Persisted state.** A table only (`item_snapshots`); `textChange` and `originalKept` live in the job's JSON. A build
-  before this one runs on the migrated store, ignores both fields, and would run a held job.
+  before this one runs on the migrated store and ignores both fields: it would start a held job, with the snapshot's
+  text, the approved one, never the edited text.
 
