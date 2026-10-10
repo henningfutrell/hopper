@@ -117,7 +117,29 @@ describe('a closed item resolves its failure', () => {
     expect(view.counts.needsPerson).toBe(0);
     expect(view.recent.some((r) => r.jobId === job.id)).toBe(false);
     expect(second.user().store.failures.forJob(job.id)).toMatchObject({ outcome: 'item_closed' });
+    expect(view.ended.find((r) => r.jobId === job.id)).toMatchObject({ outcome: 'item_closed' });
     expect(view.profile.signatures.reduce((n, s) => n + s.count, 0)).toBe(1);
+  });
+});
+
+describe('a failure whose job ends finished leaves the open failures (issue #618)', () => {
+  it('its job found done later: the hand-off closes (finished), its failure moves from Recent failures to Ended, the badge drops it', async () => {
+    const { dbPath, source } = fresh();
+    const a = await boot(dbPath, source);
+    const job = await a.pull(FAIL);
+    const h = await openHandoff(a, job.id);
+    // Its work landed after all (its issue closed as complete): the job ends finished.
+    const { store } = a.user();
+    store.jobs.update(job.id, { status: 'finished', error: undefined, result: 'done', finishedAt: new Date().toISOString() });
+    store.events.append({ type: 'job.finished', jobId: job.id, data: { result: 'done' } });
+    const view = await waitFor(async () => {
+      const v = await failuresOf(a);
+      return v.handoffs.find((x) => x.id === h.id)?.status === 'closed' ? v : undefined;
+    }, { what: 'the hand-off closed by its finished job' });
+    expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ end: 'finished' });
+    expect(view.counts.needsPerson).toBe(0);
+    expect(view.recent.some((r) => r.jobId === job.id)).toBe(false);
+    expect(view.ended.find((r) => r.jobId === job.id)).toMatchObject({ outcome: 'surfaced' });
   });
 });
 
@@ -137,5 +159,6 @@ describe('a failure nothing superseded stays', () => {
     expect(view.handoffs.find((x) => x.id === h.id)).toMatchObject({ status: 'open', actions: { continue: { ok: true }, fixed: { ok: true }, doneByHand: { ok: true }, wontDo: { ok: true } } });
     expect(view.counts.needsPerson).toBe(1);
     expect(view.recent.find((r) => r.jobId === job.id)).toMatchObject({ outcome: 'surfaced' });
+    expect(view.ended.some((r) => r.jobId === job.id)).toBe(false);
   });
 });

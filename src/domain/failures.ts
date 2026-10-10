@@ -309,11 +309,19 @@ export interface FailuresView {
   counts: FailureCounts;
   settings: FailureSettings;
   causes: KnownCause[];
-  /** Needs a person (issue #516): every open hand-off, oldest first, then those closed in the last day. */
+  /**
+   * Every open hand-off (issue #516), oldest first, then those closed in the last day. Needs a person shows the open
+   * ones; Ended the closed ones (issue #618).
+   */
   handoffs: HandoffView[];
   /** Open problems, then those resolved in the last day. */
   problems: ProblemView[];
-  /** The newest assessed failures. */
+  /** The newest assessed failures still open: none that ended (issue #618). */
   recent: FailureRecordView[];
+  /**
+   * The failures that ended in the last day (issue #618): run again, settled, their hand-off closed or their job
+   * finished. History: out of the open failures and the counts.
+   */
+  ended: FailureRecordView[];
   profile: FailureProfile;
 }

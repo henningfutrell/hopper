@@ -1,16 +1,19 @@
 // What the Failures view reads (issue #509): how many failed jobs are left (issue #517), the hand-offs waiting on a
 // person and those closed in the last day (issue #516), the open problems and those resolved in the last day, the
-// newest assessed failures nothing settled (issue #529), the profile — and, on each problem, failure and hand-off (issue #551), whether the daemon takes each action now
-// and why not. The routes refuse with the same reasons, so the view offers only what is taken.
+// newest assessed failures still open (issues #529, #618) and those that ended in the last day, the profile — and, on
+// each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
+// refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
 import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { knownCauses } from './causes.ts';
-import { SETTLED } from './handoff.ts';
+import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
 
 const DAY_MS = 86_400_000;
 const PROFILE_DAYS = 14;
 const RECENT = 50;
+/** How many of the newest records are read for the open failures and those that ended. */
+const SCAN = 500;
 const OK: Allowed = { ok: true };
 const no = (why: string): Allowed => ({ ok: false, why });
 
@@ -48,6 +51,20 @@ export function newestOfItem(store: Pick<UserStore, 'jobs'>, jobId: string): All
 /** The records of a problem whose jobs wait on its release, and can run again. */
 export function releasable(store: Reads, problemId: string): FailureRecord[] {
   return store.failures.list({ problemId }).filter((r) => r.outcome === 'held' && r.pending === undefined && newestOfItem(store, r.jobId).ok);
+}
+
+/**
+ * When a failure ended (issue #618), or undefined while it is open: its job ran again or something settled it (its
+ * outcome), its hand-off closed, or its job ended finished. Nothing waits on an ended one.
+ */
+export function endedAt(store: Pick<UserStore, 'jobs' | 'handoffs'>, r: FailureRecord): string | undefined {
+  if (r.pending) return undefined;
+  if (r.outcome && (RAN_AGAIN.includes(r.outcome) || SETTLED.includes(r.outcome))) return r.outcomeAt ?? r.at;
+  const h = r.handoffId ? store.handoffs.get(r.handoffId) : undefined;
+  if (h?.status === 'closed') return h.closedAt ?? r.at;
+  const job = store.jobs.get(r.jobId);
+  if (job?.status === 'finished') return job.finishedAt ?? r.at;
+  return undefined;
 }
 
 /** Whether a person may run a failure's job again now. */
@@ -100,6 +117,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
   // Each with its job's live priority (issue #535); the open hand-offs of high-priority jobs first.
   const saved = store.settings.getPriorityLanes();
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
+  const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r) } });
   return {
     now: now.toISOString(),
     counts: countsOf(store),
@@ -107,8 +125,9 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
     handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, h, resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
-    // Nothing waits on a settled one (issue #529): out of the list, still in the profile.
-    recent: store.failures.list({ limit: RECENT, notOutcome: [...SETTLED] }).map((r) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r) } })),
+    // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
+    recent: store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView),
+    ended: store.failures.list({ limit: SCAN }).filter((r) => (endedAt(store, r) ?? '') >= dayAgo).slice(0, RECENT).map(recordView),
     profile: profileOf(store.failures.list({ since, limit: 5000 }), now.toISOString(), { days: PROFILE_DAYS, generalThreshold: settings.groupThreshold }),
   };
 }
