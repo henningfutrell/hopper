@@ -170,6 +170,8 @@
         "item.new_text_accepted",
         "lanes.recommended",
         "lanes.tuning_changed",
+        "bug_report.filed",
+        "bug_report.failed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

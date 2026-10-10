@@ -17,6 +17,20 @@ export const workTreeOption = (z: typeof Z) => z.string().min(1)
   .optional().meta({ commandBearing: true, description: 'where its jobs run, made by the hopper, each job\'s repository fetched or cloned in it; ~ is this machine\'s home. Absent: ~/hopper-jobs' });
 
 /**
+ * A work tree per repository (issue #691): a job from a repository named here works in its tree, made there and
+ * the repository cloned in it when missing; a job from any other, in the machine's own work tree. Keys are
+ * `owner/name`, matched in any case. Command-bearing, as the work tree is.
+ */
+export const workTreesOption = (z: typeof Z) => z.record(
+  z.string(),
+  z.string().min(1).refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'a workTrees path must be an absolute path or start with ~'),
+).superRefine((trees, ctx) => {
+  for (const key of Object.keys(trees)) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(key)) ctx.addIssue({ code: 'custom', message: `a workTrees key must be a repository, owner/name: ${key} is not` });
+  }
+}).optional().meta({ commandBearing: true, description: 'a work tree per repository, as {"owner/name": "~/path"}: a job from that repository works there, made and cloned by the hopper; a job from any other works in workTree' });
+
+/**
  * Lanes kept for jobs pinned to the machine (issue #372): jobs with no machine pin use at most its lane
  * cap less these. At or above its lanes, only jobs pinned to it run there.
  */
@@ -72,7 +86,7 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; executors: string[]; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -82,7 +96,7 @@ export const attachedBase = (name: string, o: AttachedOptions) => {
   const sweep = sweepOf(o);
   return {
     name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), executors: [...o.executors],
-    ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
+    ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };
 

@@ -24,6 +24,8 @@ export function createLocalMachineSource(o: {
   session?: string;
   /** Its jobs' work tree (issues #324, #361); absent: the jobs directory. Made and checked in the background, at most once per 30 s. */
   workTree?: string;
+  /** A work tree per repository (issue #691): a job from one of them works there instead. */
+  workTrees?: Record<string, string>;
   /** Starts that session when it is not running. Called in the background, at most once per 30 s; list() never waits for it. */
   ensureSession?: () => Promise<unknown>;
   logger?: { info(line: string): void; warn(line: string): void };
@@ -88,6 +90,7 @@ export function createLocalMachineSource(o: {
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),
           ...(o.workTree !== undefined ? { workTree: o.workTree } : {}),
+          ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}),
           ...(d ? { disk: d } : {}),
           ...(res ? { resources: res } : {}),
           ...(sweep ? { sweep } : {}),

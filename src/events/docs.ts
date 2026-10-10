@@ -155,6 +155,8 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'item.new_text_accepted': 'The owner accepted an item\'s new text (issue #662), allowed by Access: the job runs it, and it is the item\'s new snapshot. The hashes before and after, and who edited it.',
   'lanes.recommended': 'A machine\'s lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane\'s cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. `mode` `shadow`: recorded, not applied. Recorded when the recommended or the configured lanes change.',
   'lanes.tuning_changed': 'An admin changed a machine\'s lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`.',
+  'bug_report.filed': 'A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper\'s own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. Never its text.',
+  'bug_report.failed': 'A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId` and `by` as in `bug_report.filed`.',
 };
 
 type Prop = Record<string, unknown>;

@@ -60,6 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -11412,3 +11413,89 @@ no history), `test/integration/lane-tuning.test.ts` (the real daemon: the plan f
 settings and refusals, the shadow record once per change after a resource record, `hopper lanes plan` and `tune`),
 `test/ui/lane-tuning.test.ts` (the model), `test/ui/lane-tuning-view.test.ts` (the panel: the line, Save sends what
 changed, crossing bounds refused, a viewer reads only).
+
+## Report a bug (issue #694, 2026-10-10)
+
+Owner request: people who use any hopper need a way to report a hopper bug. Every hopper is connected to GitHub, so it
+files the issue itself, with that connection. A job on a beta install that wanted to file a hopper issue had no way to,
+and tried a `gh` device sign-in instead.
+
+**Where a report goes.** Every **bug report** goes to the hopper's own repository, `henningfutrell/hopper`
+(`REPORT_REPO`), filed through the person's **own** GitHub connected account (`UserGitHubProxy.reports`,
+`src/users/github-proxy.ts`), so GitHub shows it as filed by that person — not the hopper's oldest user's connection, as
+the GitHub proxy's is. It gets the label `user-report` (`REPORT_LABEL`), no `hopper` label and no assignee: intake takes
+only `hopper`-labelled issues assigned to the connected account (issue #387), so a report never starts a job, and a
+person who wants one labels it after triage, through the intake gate (issue #655). GitHub keeps a label only from a
+person who may triage the repository: a report by anyone else arrives with no label, which changes nothing above.
+Filing needs the hopper's app installed on the repository with issues write (the app reaches only the repositories it is
+installed on); without that, GitHub refuses it, and the person reads why.
+
+**The report context** (`reportContext`, `src/bug-reports/context.ts`, pure). What the form fills in: the version and
+revision from install.json (`Updater.status().installed`: the branch and the first 12 digits of the commit, else
+"version not known"), the install type (`image`: container, else host), the system (platform, release, architecture,
+Node), and for a report on a job: its id, its state in plain words, its failure record's id, the first line of its
+error, and the last 20 lines of its error tail. Never the job's item — its repository, title or text may be private, so
+only the person adds them. Masked before the person sees it (`maskReportText`): the host name by value, GitHub tokens,
+keys (as the log mask, issue #685), and `maskAddresses` (`src/secrets/mask.ts`): IPv4, IPv6 (full or with `::`, so a
+time is none), host names under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, `.ts.net`) and the
+user name in a home directory. The person reads and edits it; what they leave in is sent.
+
+**Filing** (`createBugReports`, `src/bug-reports/service.ts`). `POST /ui/api/bug-reports { title, happened, expected?,
+context?, jobId?, commentOn?, force? }`, operator. First the **duplicate search**: the title's words (three letters or
+more, common words out, at most six, `searchTerms`) against the open `user-report` issues' titles (`GET /search/issues`,
+`in:title`, the words joined by OR); a title with half of them or more is similar (`similarityOf`), at most five, best
+first. When there are some, nothing is filed and they are answered (`kind: similar`); the person adds the report to one
+(`commentOn`: a comment with the title in bold and the same sections, `kind: commented`) or files a new one anyway
+(`force`). A failed search files as if there were none. The body is the person's sections with text — What happened,
+What I expected, Context — and the note "Filed with Report a bug in a hopper."; GitHub tokens and keys are always
+masked in the title and body. Each outcome is one event on the person's log, never with the text:
+`bug_report.filed { repo, kind: issue | comment, number, url, jobId?, by }`, or `bug_report.failed { repo, error, jobId?,
+by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context { jobId? }` answers
+`{ context, repo }` and changes nothing (404 for a job that is not the person's).
+
+**UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): a form
+with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
+to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
+*Add to #N* each and *File a new report*; after filing, the line names the issue and links it.
+
+**Not built yet** (left for the next parts of issue #694):
+- *Report a bug* on every failure, hand-off and question card, with that job's context (the route takes `jobId` now).
+- **Jobs report too**: `hopper-report bug --title … --body …` in the job skill, through the same code path, proxied by the
+  hopper as `hopper-gh` is (issue #563), marked as the job's (`reportBody`'s `fromJob`), rate-limited per job and per day.
+- **Your reports** in Settings: each report with its state (open or closed), refreshed from GitHub.
+- **Fallback**: with the GitHub connection down or no access to the repository, the report kept and sent later, and the
+  form says so.
+- `hopper report bug` in the CLI, JSON out, the same code path (issue #623).
+- The duplicate search by an error signature, beside the title.
+
+Tests: `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
+`test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
+with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
+`test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).
+
+## Work trees per repository (issue #691, 2026-10-10)
+
+Owner request: a machine had one work tree, so a job for one repository ran inside another repository's
+work tree. The rule: a job works in its own repository's tree, never another's; a repository with no tree
+of its own keeps the machine's work tree; a mapped tree that is missing is made (or fails clearly), never
+replaced by the machine's.
+
+**As built:**
+- **A machine option, `workTrees`** (`local`, `ssh`, `client`; `workTreesOption`,
+  `src/plugins/machine-source/attached.ts`): `{"owner/name": "<path>"}`, each path absolute or under `~`,
+  each key a repository (`owner/name`), else the instance is refused. Command-bearing, as `workTree` is.
+  Carried to `MachineSnapshot.workTrees`. Edited in Settings → Plugins (a JSON field); the Machines Edit
+  forms keep it; the machine panel shows it (`work trees per repository`).
+- **Resolved per job** (`resolvePayload`, `src/executors/herdr/payload.ts`, herdr-claude and the print agents):
+  the job's own `cwd` on the machine it is pinned to (a routing rule's) first; then the tree the machine maps the
+  job's GitHub repository to, matched in any case (`mappedWorkTree`); then the machine's `workTree`; then the
+  jobs directory. A fork uses its parent's repository.
+- **Made and cloned when missing**, as the machine's own work tree is: the pane's shell runs `mkdir -p`, then the
+  job worktree command fetches or clones the repository in it (issue #361). It is not probed ahead: a mapped tree
+  that cannot be used (the home or above it, not writable) fails that job with what the shell said, and the
+  machine still takes jobs of other repositories. The issue's other way — a routing rule that sets `workTree`
+  without a machine — is not built: a path is one machine's (issue #361), and the map is per machine already.
+
+Tests: `test/herdr/machine-work-tree.test.ts` (mapped, any case, made when missing, other repository, pinned path wins,
+the home refused), `test/plugins/machine-targets.test.ts` (the option, its refusals, command-bearing),
+`test/ui/machine-work-tree.test.ts` (the panel line).
