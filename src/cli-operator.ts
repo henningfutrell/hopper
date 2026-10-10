@@ -4,7 +4,8 @@
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
-// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key.
+// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
+// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -20,8 +21,9 @@ import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
 import { MASTER_KEY_USAGE, masterKeyCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -66,6 +68,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
 ${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
 ${LANES_USAGE}
+${VAULT_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 
@@ -257,6 +260,9 @@ function proposalCall(args: string[]): Call {
 function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
+  if (command === 'vault') return vaultCall(args, stdin);
+  if (command === 'template') return templateCall(args);
+  if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
@@ -299,7 +305,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(
