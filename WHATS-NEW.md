@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that only has to bring an existing pull request up to date, for example rebase it or fix its conflicts, now ends done when it has pushed to that pull request and it has no conflicts. It no longer has to open a new pull request, and it no longer goes to Needs a person.
+- Failures now shows only what still waits on you. A hand-off that was continued, run again or resolved, or whose issue closed or whose job finished, and a failure that ran again or ended, move to Ended in the last day. They no longer show in Needs a person or Recent failures.
 - Given your Podman, the hopper starts a sandbox box itself when you add one, and stops and removes it when you remove the machine. A box it cannot remove shows on Machines with the reason.
 - A template that still has boxes attached is no longer removed: the hopper tells you which boxes to remove first, so no box is left pointing at a template that is gone.
 - A job that waits for you to give it a credential now gets it the moment you give it, still gets it after the hopper restarts, and stops waiting after a set time instead of waiting forever.

@@ -3,15 +3,21 @@
 // organization projects are readable; a user-owned project is FORBIDDEN ("Resource not
 // accessible by integration"); a login of the other kind is NOT_FOUND. Also
 // `repository(owner, name).issue(number)`: the pull request whose merge closed the issue, and the
-// open ones whose merge will close it.
+// open ones whose merge will close it. And `repository(owner, name).issueOrPullRequest(number)` (issue #618): a pull
+// request any issue of the repo knows, by its number; an issue; or NOT_FOUND.
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
+import type { FakePullRequest } from './fake-state.ts';
 
 interface GqlBody {
   query?: string;
   variables?: { login?: string; owner?: string; name?: string; number?: number; first?: number; after?: string | null };
 }
+
+/** GraphQL's head commit of a pull request: when it was made. */
+const withHead = <P extends FakePullRequest>({ headCommittedAt, ...p }: P) =>
+  ({ ...p, commits: { nodes: headCommittedAt ? [{ commit: { committedDate: headCommittedAt } }] : [] } });
 
 /** `repository(owner, name).issue(number)` last ClosedEvent: its closer, a pull request or none. */
 function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
@@ -19,14 +25,26 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   if (!repo || !tokenReaches(req.token!, repo)) {
     return { status: 200, body: { data: { repository: null }, errors: [{ type: 'NOT_FOUND', path: ['repository'], message: 'Could not resolve to a Repository.' }] } };
   }
+  if (/issueOrPullRequest/.test(b.query ?? '')) {
+    const n = Number(b.variables?.number);
+    const url = `https://github.com/${repo.owner}/${repo.name}/pull/${n}`;
+    const all = [...repo.issues.values()].flatMap((i) => [...i.openPullRequests.map((p) => ({ ...p, state: 'OPEN' })), ...i.mentionedBy]);
+    const pr = all.find((p) => p.url === url);
+    if (pr) {
+      const { body: _b, repo: _r, ...rest } = pr as typeof pr & { body?: string; repo?: string };
+      return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', ...withHead(rest) } } } } };
+    }
+    if (repo.issues.has(n)) return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'Issue' } } } } };
+    return { status: 200, body: { data: { repository: { issueOrPullRequest: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issueOrPullRequest'], message: `Could not resolve to an issue or pull request with the number of ${n}.` }] } };
+  }
   const issue = repo.issues.get(Number(b.variables?.number));
   if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
   if (/CROSS_REFERENCED_EVENT/.test(b.query ?? '')) {
-    const nodes = issue.mentionedBy.map(({ repo: nameWithOwner, ...m }) => ({ source: { __typename: 'PullRequest', ...m, repository: { nameWithOwner } } }));
+    const nodes = issue.mentionedBy.map(({ repo: nameWithOwner, ...m }) => ({ source: { __typename: 'PullRequest', ...withHead(m), repository: { nameWithOwner } } }));
     return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };
   }
   if (/closedByPullRequestsReferences/.test(b.query ?? '')) {
-    const open = issue.openPullRequests.map((p) => ({ ...p, state: 'OPEN' }));
+    const open = issue.openPullRequests.map((p) => ({ ...withHead(p), state: 'OPEN' }));
     return { status: 200, body: { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: open } } } } } };
   }
   const pr = issue.closedByPullRequest;

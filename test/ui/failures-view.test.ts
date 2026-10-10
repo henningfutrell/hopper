@@ -36,7 +36,7 @@ const handoff = (over: Record<string, unknown> = {}) => ({
 });
 const view = (over: Record<string, unknown> = {}) => ({
   now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
-  problems: [problem()], recent: [record(), record({ id: 'f2', jobId: 'j9', cls: 'job', decision: 'person', outcome: 'surfaced', problemId: undefined, summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', actions: { retry: { ok: true } } })],
+  problems: [problem()], ended: [] as ReturnType<typeof record>[], recent: [record(), record({ id: 'f2', jobId: 'j9', cls: 'job', decision: 'person', outcome: 'surfaced', problemId: undefined, summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', actions: { retry: { ok: true } } })],
   profile: {
     days: [{ day: '2026-10-07', count: 1 }, { day: '2026-10-08', count: 3 }],
     signatures: [{ signature: 'aaa', name: 'Disk full', cls: 'shared', count: 3, jobs: 3, machines: 1, lastAt: at(-59), general: false, trend: [0, 3] }],
@@ -264,6 +264,29 @@ describe('the Failures view', () => {
     expect(resolved).toContain('told its issue');
     expect(handoffRow()!.querySelector('[data-slot="next-job"]')!.textContent).toContain('Goes on as');
     expect(handoffRow()!.querySelector('[data-slot="resolve"]')).toBeNull();
+    // Resolved, it left Needs a person for Ended (issue #618).
+    expect(handoffRow()!.closest('[data-section]')!.getAttribute('data-section')).toBe('ended');
+    expect(document.querySelector('[data-section="needs-a-person"]')!.textContent).toContain('no job waits on a person');
+  });
+
+  it('a closed hand-off and an ended failure are out of Needs a person and the open failures, in Ended (issue #618)', async () => {
+    const closed = handoff({ id: 'h3', jobId: 'j7', status: 'closed', end: 'item_closed', closedAt: at(-5) });
+    const ended = record({ id: 'f4', jobId: 'j7', outcome: 'item_closed', outcomeAt: at(-5), problemId: undefined, actions: { retry: { ok: false, why: 'its item is closed' } } });
+    await boot('#failures', { failures: view({ problems: [], handoffs: [handoff(), closed], ended: [ended] }) });
+    const needs = document.querySelector('[data-section="needs-a-person"]')!;
+    expect(needs.querySelector('[data-handoff="h1"]')).not.toBeNull();
+    expect(needs.querySelector('[data-handoff="h3"]')).toBeNull();
+    expect(needs.querySelector('[data-slot="handoff-count"]')?.textContent).toBe('1');
+    const history = document.querySelector('[data-section="ended"]')!;
+    expect(history.querySelector('[data-handoff="h3"]')!.textContent).toContain('its item is closed');
+    expect(history.querySelector('[data-failure="f4"]')!.textContent).toContain('its item is closed');
+    expect(document.querySelector('[data-section="open-failures"] [data-failure="f4"]')).toBeNull();
+    expect(navBadge()).toBe('1');
+  });
+
+  it('nothing ended: no Ended section', async () => {
+    await boot('#failures', { failures: view() });
+    expect(document.querySelector('[data-section="ended"]')).toBeNull();
   });
 
   it('an admin can name the cause from the card, with what to do next time', async () => {

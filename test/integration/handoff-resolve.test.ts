@@ -112,9 +112,10 @@ describe('I fixed it', () => {
     expect(r.status).toBe(200);
     expect(String(r.body.job!.spec.payload.prompt)).toContain('Added the registry token to the machine.');
     expect(r.body.handoff).toMatchObject({ end: 'run_again', nextJobId: r.body.job!.id, resolution: { action: 'fixed' } });
-    // Its failure record says a person ran it again: not left waiting.
-    const record = (await failuresOf(a)).recent.find((x) => x.jobId === job.id);
-    expect(record?.outcome ?? 'gone').not.toBe('surfaced');
+    // Its failure record says a person ran it again: it ended (issue #618), out of the open failures, in Ended.
+    const view = await failuresOf(a);
+    expect(view.recent.find((x) => x.jobId === job.id)).toBeUndefined();
+    expect(view.ended.find((x) => x.jobId === job.id)).toMatchObject({ outcome: 'retried' });
   });
 });
 
@@ -140,6 +141,10 @@ describe('Done by hand and Won\'t do', () => {
     const shown = await viewOf(a, h.id);
     expect(shown.actions.continue).toEqual({ ok: false, why: 'already resolved: done by hand' });
     expect((await resolve(a, token, h, { action: 'wont_do', note: 'x' })).status).toBe(409);
+    // Ended (issue #618): its failure is out of the open failures, and in Ended.
+    const view = await failuresOf(a);
+    expect(view.recent.find((x) => x.jobId === job.id)).toBeUndefined();
+    expect(view.ended.find((x) => x.jobId === job.id)).toMatchObject({ outcome: 'resolved' });
   });
 
   it('Won\'t do needs the reason; the job leaves the queue and its source is told', async () => {

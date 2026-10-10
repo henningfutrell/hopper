@@ -1782,6 +1782,18 @@ source's `completion` option (default `merge`) and the labels `hopper:complete-a
 `hopper:complete-at-pr` held a job to the merge, and a job whose pull request was open and waiting for review ended
 failed; tenant migration 30 removes the option from the stored config, and the labels mean nothing now.
 
+**A job that updates an existing pull request** (issue #618) — rebase it, bring it up to date with its base, fix its
+conflicts — opens no pull request of its own, so the rule above alone would fail it. It is complete too when a pull
+request it **updated** — its head commit made at or after the job's `createdAt` (a rebase or an update makes a new
+head commit; GraphQL `commits(last: 1)` `committedDate`, `headCommittedAt` on the port) — is open and has no merge
+conflicts, or was merged at or after the job's `createdAt` (yolo mode). Which pull requests count: one the issue's
+title or body names in its own repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an
+issue or names nothing counts for nothing), and an older one that closes the issue, open and not a draft — the one a
+run again goes on with (the job rules' "existing pull request" rule). A pull request the issue names keeps its draft
+state: the job updates it, it does not take it over. The report follows an older closing one the job updated as its
+own; one the issue names is not followed, since its merge closes another issue. The job closes its issue as completed
+once the updated pull request is merged.
+
 **Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
 repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
 settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
@@ -1795,7 +1807,10 @@ Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permi
 | yolo mode | the job's prompt says |
 |-----------|-----------------------|
 | off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
-| on for the repo | the same, then: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done |
+| on for the repo | the same, then: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done. The same for an existing pull request the job updated: once it is merged, close the issue as completed |
+
+Both say, before the yolo part: an issue that asks to update an existing pull request is done by pushing to its branch,
+no new pull request, once it has no merge conflicts with its base (issue #618).
 
 The prompt's `done:` line carries the parts the hopper cannot see — the repo's own checks, verifying where the
 product runs — so a job is told everything done means, and the gate holds it to the part GitHub can show. Anything
@@ -8432,7 +8447,14 @@ never deleted, with why (`handoffs.ts` `settle`, `itemClosed`):
   and at start; its record turns `item_closed`. A source that cannot tell leaves it open.
 
 A record nothing waits on (`superseded`, `item_closed`: `SETTLED`, `handoff.ts`) leaves Recent failures; the profile
-and the history still count it. The badge and `counts` follow the open hand-offs. The same rule clears questions and
+and the history still count it. The badge and `counts` follow the open hand-offs.
+
+**Open and ended (issue #618, 2026-10-09).** Failures shows only what is still open: Needs a person lists the open
+hand-offs, and Recent failures the records that have not **ended**. A record ends (`endedAt`, `view.ts`) when its job
+ran again or something settled it (an outcome in `RAN_AGAIN` or `SETTLED`), when its hand-off closed — continued, run
+again, resolved, superseded, its item closed, its job finished — or when its job ended finished. The hand-offs closed
+in the last day and the records that ended in the last day are history: Failures shows them under **Ended in the last
+day** (`handoffs` with `status: closed`, `ended` in `GET /api/failures`), out of the counts and the badge. The same rule clears questions and
 logins: an open question whose job ended or is gone is cancelled at `recover` and on each tick (`QuestionService.sweep`),
 and a login, below in "Logins".
 
