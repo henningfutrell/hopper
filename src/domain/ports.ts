@@ -10,6 +10,9 @@ import type {
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
+import type { ItemEdit, ItemText } from './item-snapshots.ts';
+import type { SourceItem, SourceRef } from './source-item.ts';
+export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 import type { FollowsPullRequests } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
@@ -429,43 +432,6 @@ export interface QuestionService {
 
 // ---- Job sources (the hopper pulls; nothing pushes) -----------------------------------
 
-/** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
-export interface SourceItem {
-  key: string;
-  url: string;
-  title: string;
-  /** The raw item text (issue body). */
-  body: string;
-  /**
-   * The full prompt sent to the job: `body` followed by the item context (repo, number, URL,
-   * title, labels, author, priority and where it came from, project item, recent comments)
-   * and instructions for commenting back. Built by the source.
-   */
-  prompt: string;
-  /** Environment for the job's process, e.g. HOPPER_ISSUE_URL, HOPPER_REPO, HOPPER_ISSUE_NUMBER. */
-  env: Record<string, string>;
-  author: string;
-  /** The login the item was taken for (issue #387: an issue assigned to the user's connected account). */
-  assignee?: string;
-  priority: number;
-  /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
-  priorityReason: string;
-  labels: string[];
-  /** Its GitHub repository (`owner/name`) when it has one: a job's is fetched or cloned in its work tree (issue #361). */
-  repo?: string;
-  number?: number;
-  /** Executor for the job (from source config), and an optional model. */
-  executor: string;
-  model?: string;
-  /**
-   * Set when the item cannot become a runnable job (e.g. "empty issue body"). `ingest` then
-   * creates the job and fails it in one tx (job.queued + job.failed), so it is claimed and
-   * reported failed once — never retried every poll. An executor rejecting the payload is
-   * treated the same way.
-   */
-  invalid?: string;
-}
-
 /**
  * What a source observed about a job it owns. Questions are answered in the UI, never through a source.
  * `unassigned` (issue #387): a started job's item is no longer assigned to the account it was taken for —
@@ -518,6 +484,13 @@ export interface JobSource extends FollowsPullRequests {
    * job. Throws SourceError. Absent: the source cannot run an item again on request.
    */
   rerun?(job: Job): Promise<SourceItem>;
+  /**
+   * The item as it would be with `text` (issue #662): its title, body, prompt and environment rendered from that text, the
+   * rest as read. A source that sets `SourceItem.text` has it: a later job of the item runs its snapshot's text this way.
+   */
+  withText?(item: SourceItem, text: ItemText): SourceItem;
+  /** Who edited the item's title or body since `since` (ISO), from its timeline (issue #662). Absent: the source cannot say. */
+  editsSince?(item: SourceItem, since: string): Promise<ItemEdit[]>;
   /**
    * Tell the item what a person did about the job's hand-off (issue #551): on GitHub one short comment — what was
    * done, the note and the link, naming no person — and the end label (done by hand `hopper:done`, won't do
@@ -588,7 +561,12 @@ export class SourceError extends Error {
 export interface SourceHost {
   store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
-  ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
+  ingest(item: SourceItem, source: SourceRef): Job | null;
+  /**
+   * When the item's text changed since its snapshot and nothing deals with it yet — no change held on `jobId`'s job for
+   * that text, no original kept —, the snapshot's time (issue #662): the sync loop asks the source who edited it since.
+   */
+  changedSince(item: SourceItem, jobId?: JobId): string | undefined;
   cancel(jobId: JobId, reason: string): void;
   /**
    * The item offered again for a job not ended (issue #375): its priority, from the item or a routing rule, as
@@ -597,7 +575,7 @@ export interface SourceHost {
    * work tree, default work tree and machine pin as its source and routing rules give them now, a part
    * changed on the job by hand kept (job.respecified). True when anything changed.
    */
-  refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
+  refresh(jobId: JobId, item: SourceItem, source: SourceRef): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
   /**
@@ -618,7 +596,7 @@ export interface SourceHost {
    * `brief` (issue #551): what the new job is told after its item's prompt — a person's note and the failure before it.
    * `acting` (issue #623): the person who asked from Failures, and the way, kept in job.rerun.
    */
-  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
+  rerun(jobId: JobId, item: SourceItem, source: SourceRef, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
   /**
    * Its source gave a failed job's item back for a Continue — a person's on its hand-off (issue #551), or the
    * assessor's on its record (issue #630): the same job is queued again, in one tx, pinned to the machine it ran on

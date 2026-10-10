@@ -19,7 +19,9 @@ export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handof
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
-  hopper job rerun <id>                              run a failed, finished or rejected job again
+  hopper job rerun <id>                              run a failed, finished or rejected job again; it runs its item's approved text
+  hopper job keep-original <id>                      a job held because its item changed: it runs the original text
+  hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
   hopper question answer <id> <text>                 answer an open question; the job waiting on it resumes
@@ -80,11 +82,12 @@ const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usage: hop
 function jobCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun <id>');
+  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
-  if (verb === 'rerun') return { role: 'operator', path: `${at}/rerun`, body: async () => ({}) };
+  // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
+  if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
     // As the Queue view's Accept: the accepted waiting jobs in queue order, then this one.
     return { role: 'operator', path: '/ui/api/queue/order', body: async (get) => {
@@ -92,7 +95,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun <id>');
+  throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
 }
 
 function perHour(raw: string): number | null {

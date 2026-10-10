@@ -3,7 +3,7 @@
 // them, gives none. Only a table is added: the build before still runs on the store.
 import { describe, expect, it } from 'vitest';
 import { textHash, type ItemSnapshot } from '../../src/domain/item-snapshots.ts';
-import { contextBlock, issuePrompt } from '../../src/sources/github/context.ts';
+import { contextBlock, issuePrompt, untrustedBlock } from '../../src/sources/github/context.ts';
 import { commentsInPrompt } from '../../src/store/migration-item-snapshots.ts';
 import { migrateTenant } from '../../src/store/tenant-migrations.ts';
 import { useTempStore } from './helpers.ts';
@@ -16,7 +16,7 @@ const comments = [
   { id: 1, author: 'owner', body: 'First note.', createdAt: '2026-10-01T10:00:00Z', url: '' },
   { id: 2, author: 'owner', body: 'Second note,\nover two lines.', createdAt: '2026-10-01T11:00:00Z', url: '' },
 ];
-const prompt = issuePrompt(issue, contextBlock(issue, { priority: 50, reason: 'default', projectItem: 'none' }, false, comments, 10));
+const prompt = issuePrompt(untrustedBlock(issue, comments, 10), contextBlock(issue, { priority: 50, reason: 'default', projectItem: 'none' }, false));
 
 function job(id: string, o: { key?: string; goal?: string; body?: string; prompt?: string; createdAt?: string }) {
   return JSON.stringify({
@@ -37,7 +37,9 @@ describe('tenant migration 35: item snapshots', () => {
       { author: 'owner', at: '2026-10-01T10:00:00Z', body: 'First note.' },
       { author: 'owner', at: '2026-10-01T11:00:00Z', body: 'Second note,\nover two lines.' },
     ]);
-    expect(commentsInPrompt('a body\n\n[hopper issue context]\nrecent comments: none')).toEqual([]);
+    expect(commentsInPrompt(issuePrompt(untrustedBlock(issue, [], 10), 'context'))).toEqual([]);
+    // A prompt from before the untrusted block (issue #652) carried them at the end of its context block.
+    expect(commentsInPrompt('a body\n\n[hopper issue context]\nrecent comments (oldest first, up to 10; only the assignee\'s, no hopper-marked comments):\n- owner at 2026-10-01T10:00:00Z: Old.')).toEqual([{ author: 'owner', at: '2026-10-01T10:00:00Z', body: 'Old.' }]);
   });
 
   it('backfills each item\'s snapshot from its first job; a job of no item or without its text gives none', () => {

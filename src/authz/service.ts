@@ -8,14 +8,15 @@ import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
 import type { JobStatus, LiveRequesters } from '../domain/types.ts';
 import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
+import type { Access, LiveShare } from './access-port.ts';
 import {
   DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
-  type RadiusRules, type TemplateApprovals, type TemplateRadius,
-  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
-  type OperationProfile, type RevokedApproval, type Asset, type SystemSecretAsk,
+  type RadiusRules, type TemplateRadius,
+  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest,
+  type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, systemSecretGaps, type ModelJson } from './model.ts';
-import { approvalTuples, artifactObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, systemSecretCheck, userObject } from './objects.ts';
+import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, systemSecretGaps, type ModelJson } from './model.ts';
+import { approvalTuples, artifactObject, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, systemSecretCheck, userObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -38,31 +39,7 @@ export class AccessEditError extends Error {
   }
 }
 
-/** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
-export type ArtifactViewer = { kind: 'user'; userId: string } | { kind: 'link'; userId: string; shareId: string };
-/** A live share of an artifact, as Access writes it: the owner, the artifact, the share, and the user it is with (none: a link). */
-export interface LiveShare { ownerId: string; artifactId: string; shareId: string; userId?: string }
-
-export interface Access extends TemplateApprovals {
-  /** Whether `viewer` may see the artifact (issue #624): OpenFGA's `can_view`, once the live shares are pushed. Not recorded: it is asked at each view. */
-  decideView(viewer: ArtifactViewer, artifact: { userId: string; id: string }): Promise<{ allowed: boolean; reason: string }>;
-  /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
-  decideMint(request: MintRequest): Promise<MintDecision>;
-  /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */
-  decideSystemSecret(ask: SystemSecretAsk): Promise<{ allowed: boolean; reason: string }>;
-  /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
-  tryCheck(request: Omit<MintRequest, 'requester'> & { template: string }, by: string): Promise<AccessDecisionRecord>;
-  /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */
-  approve(template: string, profile: OperationProfile, by: string): Promise<void>;
-  revoke(approval: number, by: string): Promise<void>;
-  /** A new model, against the version read; OpenFGA must take it when it can be asked. */
-  setModel(dsl: string, version: number, by: string): Promise<void>;
-  /** Push the model and every approval to OpenFGA, putting back what differs; resolves when done or failed (the status says which). */
-  sync(): Promise<void>;
-  view(): AccessView;
-  start(): void;
-  stop(): void;
-}
+export type { Access, ArtifactViewer, LiveShare } from './access-port.ts';
 
 export interface AccessOptions {
   repo: AccessRepository;
@@ -108,13 +85,14 @@ export function createAccess(o: AccessOptions): Access {
   let watch: NodeJS.Timeout | undefined;
   // Who is live, as last pushed: a check asks OpenFGA only once it holds who is live now.
   let pushedRequesters: string | undefined;
-  // What the model lacks for artifacts, and for system secrets (issue #657), by its text: asked every 2 s, compiled once per model.
+  // What the model lacks for artifacts, for system secrets (issue #657) and for items (issue #662), by its text: asked every 2 s, compiled once per model.
   const gapsMemo = (gapsIn: (m: ModelJson) => string[]): ((dsl: string) => string[]) => {
     let memo: { dsl: string; gaps: string[] } | undefined;
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
   const artifactGapsOf = gapsMemo(artifactGaps);
   const systemGapsOf = gapsMemo(systemSecretGaps);
+  const itemGapsOf = gapsMemo(itemGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -123,7 +101,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -262,6 +240,11 @@ export function createAccess(o: AccessOptions): Access {
     decideSystemSecret(ask) {
       const { tuple, contextual } = systemSecretCheck(ask);
       return checkOnce('system secrets', systemGapsOf(model().dsl), tuple, contextual, (allowed) => `${tuple.subject} may${allowed ? '' : ' not'} ${ask.action} ${tuple.object}`);
+    },
+    decideTextAcceptance(userId, item) {
+      const object = itemObject(item);
+      return checkOnce('accepting new text', itemGapsOf(model().dsl), { subject: userObject(userId), relation: 'can_accept_text', object },
+        [{ subject: userObject(item.ownerId), relation: 'owner', object }], (allowed) => (allowed ? 'they own the item' : 'only the item\'s owner may accept its new text'));
     },
     approvedProfiles: (template) => approvals().filter((a) => a.template === template).map((a) => a.profile),
     async revokeProfile(template, profile, by) {

@@ -152,6 +152,15 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));
     },
+    withText(item, text) {
+      const s = current();
+      if (!s?.withText) throw new SourceError(why(), false);
+      return s.withText(item, text);
+    },
+    editsSince(item, since) {
+      const s = current();
+      return s?.editsSince ? s.editsSince(item, since) : Promise.resolve([]);
+    },
     resolved(job, resolution) {
       const s = current();
       return s?.resolved ? s.resolved(job, resolution) : Promise.reject(new SourceError(why(), false));

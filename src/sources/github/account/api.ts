@@ -5,7 +5,7 @@
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
-import { closingPullRequest, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
+import { closingPullRequest, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { makeRequest } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -44,6 +44,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     listOpenIssues: (repo, label) => call(`list issues ${repo}`, (t) => rest.listOpenIssues(req, t, repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, (t) => rest.getIssue(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),
+    issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(req, t, repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(req, t, owner, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, (t) => rest.ensureLabel(req, t, repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, (t) => rest.addLabels(req, t, repo, number, labels)),
