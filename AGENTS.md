@@ -44,7 +44,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
-  request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. Every other mutation is the UI's
+  request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A running job's
+  stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
+  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and

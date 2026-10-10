@@ -38,8 +38,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
-| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563) | http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers (`job-stream.ts`, issue #613), a user's executors as the plugins config has them now (`executors.ts`) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
@@ -59,7 +59,8 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -342,7 +343,7 @@ Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. New usa
 issue #502) and new machine samples (`machine.recorded`, issue #560), `data: { added }`, no `id`. Delivery updates
 (not domain events, never persisted or webhooked, so a delivery cannot trigger a delivery):
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat
-`: ping` every 15 s.
+`: ping` every 15 s. A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
 
 ## Webhooks
 
@@ -9637,7 +9638,7 @@ no with a reason when the hopper cannot or may not — never a silent failure, n
 | `sh "$HOPPER_SKILL"` | the **skill catalog**: `name: one line` per skill, then `Load one: sh "$HOPPER_SKILL" NAME [ASSET]` |
 | `sh "$HOPPER_SKILL" NAME` | the skill's full text, when it needs no asset |
 | `sh "$HOPPER_SKILL" NAME ASSET` | the skill's text and its **link** for this box, when Access allows it |
-| a skill whose credential the box's template does not give (issue #583) | `waiting: …` (202), exit 3: the vault asks a person ("The dynamic vault"); `--wait` asks again every 5 s (`HOPPER_SKILL_POLL`) until ready or declined; `--why TEXT` says what for, `--credential TEXT` names what a service the hopper has no skill for takes |
+| a skill whose credential the box's template does not give (issue #583) | `waiting: …` (202), exit 3: the vault asks a person ("The dynamic vault"); `--wait` opens a **watch** and waits on the **job stream** for the answer, pushed when it is ready (issue #613, "The job stream"), until its deadline (`--timeout SECONDS`, an hour unless said): exit 4; `--why TEXT` says what for, `--credential TEXT` names what a service the hopper has no skill for takes |
 | any no | `no: <reason>`, exit 1 |
 
 **`POST /job/skill`** (`src/http/job-skill.ts`): outside the UI session, behind the Host guard, like `POST /job/github`
@@ -9792,14 +9793,15 @@ themselves `src/vault/requests.ts`):
 - **declined**: a person declined the request this job waited on — **403** `no: the user declined …: <reason>`, told
   once to each job that waited;
 - **waiting**: the template's scope holds a secret given for the skill that waits for approval; or no such secret, and
-  a **credential request** is opened (or joined) — **202** `waiting: …`. `hopper-skill` exits 3, or with `--wait` asks
-  again every 5 s, saying it once on stderr, until the answer is 200 or a no. A wait is no `skill.*` event.
+  a **credential request** is opened (or joined) — **202** `waiting: …`. `hopper-skill` exits 3, or with `--wait`
+  opens a watch and waits on the job stream, saying it once on stderr, until the answer is 200, a no, or the
+  deadline (issue #613, "The job stream"). A wait is no `skill.*` domain event.
 
 **Credential requests** (`CredentialRequest`, `src/domain/vault.ts`): one open per template and skill; a second job
 asking joins it (`asked`: each job, its box, its `why`). `vault.credential_asked` once per job and request, on the job's
-timeline. Kept in the hopper's memory only: a request no job at work waits on is dropped, and a restart drops them all —
-a job that still waits asks again within seconds, and that opens it again. No table and no migration: the build before
-runs on this store unchanged.
+timeline. Kept in the hopper's memory only: a request no job at work waits on is dropped, and a restart drops them all.
+What survives a restart is the job's **watch** (issue #613), in the database: when the job subscribes again, the hopper
+asks the request again, and that opens it again. No table for the requests themselves.
 
 **The person's answer** (Settings → Vault, panel **Asked for**, while any request is open; a toast says when a job asks;
 `POST /ui/api/vault` `give-credential` / `decline-credential`, admin). The card shows who waits and why, and how to get
@@ -9816,7 +9818,7 @@ form reads it. `vault.credential_given`
 names the secret, the kind, the template, whether it approved, and the jobs; never the value. **Decline**, with a
 reason: `vault.credential_declined`.
 
-**Ready.** The job loads the skill again (or its `--wait` does): **200** with the skill's text and, for a skill with no
+**Ready.** The job loads the skill again (or, for its `--wait`, the hopper does, and pushes the answer on the job stream): **200** with the skill's text and, for a skill with no
 link, `Vault secret: NAME — <kind> (the user says: …)` and how to use it; for a link, the link names the secrets given
 for that skill. **Delivery** is the vault's, unchanged ("Delivery to the box"): `$HOPPER_SECRET get|kube|git|aws NAME`,
 only in the template's approved scope, to a job at work on the box, sealed to the request.
@@ -9827,7 +9829,7 @@ gate decides who gets the credential. Minting through `decideMint` is #580's.
 
 Taken conservatively, each one place to change: requests in memory (a table if they must outlive a restart); the
 request on Settings → Vault and a toast (no section badge); the giving approves only an approved template's widening by
-the one secret; five seconds between asks; Helm, GitOps and Argo CD skills not built (a job asks for them in its own
+the one secret; Helm, GitOps and Argo CD skills not built (a job asks for them in its own
 words until they are).
 
 Tests: `test/integration/vault-requests.test.ts` (the real daemon, a joined box, the real `hopper-skill` and
@@ -9837,3 +9839,82 @@ another box of the template gets it with no new request; another kind in the use
 nothing given; a template never approved; a machine of no template; a Kubernetes link Access allows, with no token: asked, with
 how to make one), `test/skills/credentials.test.ts`, `test/ui/vault.test.ts` (the request card's model),
 `test/integration/skills.test.ts`, `test/herdr/screen.test.ts` (the protocol line).
+
+## The job stream (issue #613, 2026-10-09)
+
+Owner requirement: replace the agent's polling with events the hopper pushes. Before it, `hopper-skill --wait` asked
+`POST /job/skill` again every 5 s, forever: no deadline, the waiting request only in memory, and nothing the hopper
+could push. Now a running job subscribes to its **job stream** and the hopper tells it.
+
+**The way in.** `GET /job/stream` (`src/http/job-stream.ts`), outside the UI session, behind the Host guard, like
+`POST /job/skill` (`AGENTS.md`). `Authorization: Bearer <the job's proxy token>`: the token of issue #563, an HMAC
+under a key derived from the user's link key. It is checked when the job subscribes and again at each 15 s ping: the
+stream ends once the job is no longer at work. 401 when the token is no job's or its job ended; 404 for a `request`
+that is not a watch of this job; 503 with `Retry-After: 1` while the job is not at work but has not ended (queued again
+after a restart): the job subscribes again. A job gets its own events only.
+
+| part | form |
+|------|------|
+| frame | `id: <seq>` · `event: <type>` · `data: <the wire form, JSON>`; `retry: 1000` first; `: ping` every 15 s |
+| replay | the job's events after `Last-Event-ID`, else `?after=`, then live (subscribed first, deduplicated by seq) |
+| `?request=ID` | that request's events only; the stream ends after its event of an ending phase |
+| wire form | `{ seq, type, request?, phase, at, payload }`, the payload last; over 4096 bytes (`INLINE_MAX`) a **result pointer**: the same fields with `ref: { url, bytes }` in place of `payload` |
+| `GET /job/stream/results/:seq` | the event whole, as JSON, the same bytes the pointer counts (`resultOf`); with `Accept: text/plain`, the payload alone when it is a string. Same token, same checks |
+
+**One builder.** `wireEvent` (`src/job-stream/wire.ts`) alone decides whole or pointer, from the size of `resultOf` the
+same event; the result route answers `resultOf`. So the event and the result fetched are one object and cannot drift.
+
+**A generic envelope.** A stream event is a `type` and a `payload`, the `request` it is of, and a **phase**: `started`,
+`progress`, `waiting` (a person is asked), `done`, `failed`, `expired`. Each part that emits registers its types with
+their phases, under its own name (`createStreamTypes`, `src/job-stream/types.ts`): `register('skill', …)` may register
+only `skill.*`, each once. The hopper reads the phase and never the payload; emitting an unregistered type throws. The
+user's registry is made in `src/users/job-stream.ts`.
+
+| type | phase | owner | payload |
+|------|-------|-------|---------|
+| `skill.waiting` | waiting | the skill broker | the `waiting:` text |
+| `skill.loaded` | done | the skill broker | the skill's text |
+| `skill.refused` | failed | the skill broker | the `no:` text |
+| `hopper.expired` | expired | the hopper | `expired: …` text |
+| `hopper.ended` | failed | the hopper | `no: job … is <status>` text |
+
+**Watches.** A request a job waits on (`Watch`, `src/domain/job-stream.ts`): its id (the skill request's id), the job,
+a deadline, and the fields to ask it again with (the opener's; the stream never reads them). `POST /job/skill` with
+`wait` (what `--wait` sends) and an answer of 202 opens one (`src/skills/waits.ts`) — deadline `timeout` seconds from
+now, an hour unless said, at most a day —, emits `skill.waiting`, and adds a line to the answer: `wait: <id> until
+<deadline> (<seconds> s): …`. It ends with an event of an ending phase: `done` or `failed` from its owner, `expired`
+at its deadline, `failed` when its job ends — the sweep (`JobStream.sweep`, every second) gives the last two.
+
+**Pushed, not polled.** The broker answers a watch's request again (`SkillBroker.again`, under the request's own id, so
+its `skill.loaded` or `skill.refused` domain event names it) when what it waits on may have changed: a vault event of
+the user's (`vault.credential_given`, `vault.credential_declined`, `vault.approved`, `vault.secret_set`,
+`vault.secret_removed`), and when the job subscribes. A 200 ends the watch with `skill.loaded`, a no with
+`skill.refused`; a 202 leaves it open. One at a time per watch; a change heard meanwhile asks it once more.
+
+**A restart.** The events and the watches are in the user's schema (tenant migration 32: `job_stream`, `watches`;
+tables only, the build before runs on them). The credential request is in memory and is lost, but its watch is not:
+when the job subscribes again with `Last-Event-ID`, the hopper asks the request again, which opens the credential
+request again, and the person's answer reaches the job.
+
+**`hopper-skill --wait`** (`src/skills/script.ts`): POSIX sh, curl and awk. One `POST /job/skill`; on 202, the
+`wait:` line names the request and its seconds. Then `GET /job/stream?request=ID` into a file, until the hopper ends
+it; awk (`STREAM_AWK`) reads the last id and the ending event, and decodes a JSON string payload. A pointer is
+fetched with `Accept: text/plain`. A stream that drops (a restart) is opened again after 1 s with `Last-Event-ID`; a
+503 likewise. Exit 0 done, 1 failed or a refused token, 4 expired — the hopper's `hopper.expired`, or its own
+deadline 5 s after the hopper's when no answer came.
+
+Taken conservatively, each one place to change: stream events and watches are never pruned (a job's are few; a
+retention policy is #613's to follow if they grow); only the skill broker emits — `started` and `progress` are phases
+any part may register, none does yet; `hopper-gh` and `hopper-secret` answer at once and wait on nothing, so they do
+not use the stream; the token is the job's proxy token, not the machine's client token: the stream is the job's, and
+only the proxy token names a job.
+
+| dir | owns | must not import |
+|-----|------|-----------------|
+| `src/job-stream/` | the stream types, the wire form and its one builder, one user's stream and its sweep | engine, http, store, plugins, executors, decider, skills |
+
+Tests: `test/integration/job-stream.test.ts` (the real daemon, a joined box, the real `hopper-skill` behind a proxy
+that counts its calls: the answer pushed with one ask; a restart in the middle of a wait, the job reconnecting with
+`Last-Event-ID`; a large answer as a pointer whose fetch is the object the event describes; a wait past its deadline
+ends as expired; a job sees only its own requests, a bad token nothing), `test/job-stream/wire.test.ts` (whole or
+pointer, the frame, the registry's refusals), `test/integration/vault-requests.test.ts`.
