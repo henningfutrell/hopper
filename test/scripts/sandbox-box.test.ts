@@ -1,6 +1,7 @@
 // Issue #308, opt-in (HOPPER_TEST_SANDBOX_BOX=1: it builds scripts/box/Dockerfile, which installs the agent
 // CLI and herdr from the network, then runs a real container): the sandbox box Add machine's line starts
-// joins a real daemon and is online, locked down as the line says. The line is the UI's own (joinLine), with
+// joins a real daemon and is online, locked down as the line says; after the join nothing in it holds the join
+// code, and a restart dials in without it (issue #606). The line is the UI's own (joinLine), with
 // the host network a hopper installed on the host gives; the daemon is a test daemon on loopback.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -44,5 +45,17 @@ describe.runIf(ON)('a sandbox box from the Add machine line', () => {
     expect(inspect.HostConfig.SecurityOpt.join(' ')).toMatch(/no-new-privileges/);
     // Its home volume, and nothing of the computer.
     expect(inspect.Mounts.map((x) => x.Type).filter((x) => x !== 'volume' && x !== 'tmpfs')).toEqual([]);
+    // Issue #606: after the join no process in the box holds the code — the entrypoint, herdr (whose panes
+    // run the jobs), the client — and the file it came through is gone. The check itself runs without
+    // HOPPER_JOIN: an exec into a container gets the environment the container was created with.
+    const holders = (): string => docker(['exec', BOX, 'env', '-u', 'HOPPER_JOIN', 'sh', '-c', `grep -l -a -e HOPPER_JOIN= -e '${code}' /proc/[0-9]*/environ 2>/dev/null || true`]);
+    expect(holders()).toBe('');
+    expect(docker(['exec', BOX, 'sh', '-c', 'ls /tmp/hopper-join 2>/dev/null || true'])).toBe('');
+    // A restart dials in with the box's link: the spent code is not needed.
+    docker(['restart', BOX]);
+    await waitFor(async () => (docker(['exec', BOX, 'sh', '-c', 'pgrep -f hopper-client/main.ts || true']) ? true : undefined), { timeoutMs: 60000, what: 'the box\'s client again' });
+    await waitFor(async () => ((await t!.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((x) => x.id === BOX && x.online), { timeoutMs: 60000, what: 'the box online after a restart' });
+    expect(docker(['inspect', '-f', '{{.State.Running}}', BOX])).toBe('true');
+    expect(holders()).toBe('');
   }, 1000000);
 });

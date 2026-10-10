@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* global process, setTimeout */
 // A stand-in `herdr` binary for the CLI adapter tests. Appends {argv, env} to calls.jsonl next to
-// itself and answers from a canned table. Never talks to a real herdr.
+// itself and answers from a canned table. Never talks to a real herdr. `hopperJoin` is there only when
+// HOPPER_JOIN or HOPPER_JOIN_FILE reached it (issue #606: a client's children never get the join code).
 import { appendFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const argv = process.argv.slice(2);
 const here = dirname(fileURLToPath(import.meta.url));
 const claudeEnv = Object.keys(process.env).filter((k) => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_'));
-appendFileSync(join(process.env.FAKE_HERDR_DIR ?? here, 'calls.jsonl'), JSON.stringify({ argv, claudeEnv }) + '\n');
+appendFileSync(join(process.env.FAKE_HERDR_DIR ?? here, 'calls.jsonl'), JSON.stringify({ argv, claudeEnv, ...(process.env.HOPPER_JOIN === undefined && process.env.HOPPER_JOIN_FILE === undefined ? {} : { hopperJoin: true }) }) + '\n');
 
 const out = (o) => process.stdout.write(JSON.stringify(o));
 const fail = (code, message) => {
