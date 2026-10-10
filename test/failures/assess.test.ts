@@ -106,6 +106,14 @@ describe('assess', () => {
     expect(a.summary).not.toMatch(/Recurring/);
   });
 
+  it('a done-check miss never joins an open problem of its signature (issue #637): it is its own job\'s', () => {
+    const error = 'not complete: the issue is open, and no pull request closes or references it';
+    const a = assess(input(error, { open: { id: 'p1', title: 'Recurring: not complete', decision: 'hold' } }));
+    expect(input(error).cause?.id).toBe('not-complete');
+    expect(a).toMatchObject({ cls: 'job', decision: 'person' });
+    expect(a.problem).toBeUndefined();
+  });
+
   it('a transient cause on many jobs of one machine is grouped as a general cause', () => {
     const recent = [{ jobId: 'a', machineId: 'desk', executor: 'herdr-claude' }, { jobId: 'b', machineId: 'desk', executor: 'codex' }];
     const a = assess(input('read ECONNRESET', { recent }, { groupThreshold: 3 }));

@@ -26,6 +26,8 @@ export interface FakeGitHub extends GitHubApi {
   openPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
   /** A pull request (opened at createdAt) that ships part of the issue: its body says "Part of #N"; the issue stays open. */
   openPartPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
+  /** A pull request (opened at createdAt) that only mentions the issue (issue #637): its body says "Refs #N", no closing keyword. */
+  openReferencingPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */
@@ -70,13 +72,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const closers = new Map<string, ClosingPullRequest>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
   const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string })[] = [];
-  const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean): OpenPullRequest => {
+  const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean, says = closes ? 'Closes' : 'Part of'): OpenPullRequest => {
     find(repo, n);
     const pr = {
       url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false,
       headCommittedAt: o.headCommittedAt ?? o.createdAt,
     };
-    pulls.push({ ...pr, state: 'open', body: `${closes ? 'Closes' : 'Part of'} #${n}`, repo, issue: key(repo, n), closes });
+    pulls.push({ ...pr, state: 'open', body: `${says} #${n}`, repo, issue: key(repo, n), closes });
     return { ...pr };
   };
   const pull = (url: string) => {
@@ -180,7 +182,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     async referencingPullRequests(repo, n) {
       enter('referencingPullRequests', [repo, n]);
       find(repo, n);
-      return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, mergedAt: _m, ...p }) => ({ ...p }));
+      return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, ...p }) => ({ ...p }));
     },
     async pullRequest(repo, n) {
       enter('pullRequest', [repo, n]);
@@ -233,6 +235,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     openPullRequest: (repo, n, o) => openPull(repo, n, o, true),
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
+    openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
     mergePullRequest(url, at) {
       const p = pull(url);
       const mergedAt = at ?? new Date().toISOString();

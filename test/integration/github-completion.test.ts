@@ -3,7 +3,7 @@
 // GitHub at the GitHubApi seam; issues carry a scripted-executor op as their first body line.
 // A job whose issue closed as complete is finished, not failed (issue #350).
 import { afterEach, describe, expect, it } from 'vitest';
-import { finishBrief, MAX_FINISH_BRIEFS, type Job } from '../../src/domain/types.ts';
+import { finishBrief, MAX_FINISH_BRIEFS, type FailuresView, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { opensPullRequest } from '../support/scripted-executor.ts';
@@ -19,13 +19,13 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function boot(gh: FakeGitHub) {
+async function boot(gh: FakeGitHub, env: Record<string, string> = {}) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
     enabled: true, pollSeconds: 3600, executor: 'scripted',
   } }] };
-  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
+  const a = await startTestApp({ dbPath: db.dbPath, env, seams: { github: gh }, plugins });
   apps.push(a);
   connectGitHub(a, [REPO]);
   return a;
@@ -52,6 +52,19 @@ describe('GitHub done-check: a pull request ready for review', () => {
     expect(await a.events('types=job.queued')).toHaveLength(1);
   });
 
+  it('GitHub lag (issue #637): the first check sees no pull request, the re-check a moment later sees it — finished, no failure record', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh, { HOPPER_DONE_RECHECK_MS: '1500' });
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    a.scripted.ships((j) => { setTimeout(() => gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString() }), 300); });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'finished');
+    expect((await a.events('types=job.failed')).filter((e) => e.jobId === job.id)).toEqual([]);
+    const f = (await a.api<{ recent: unknown[]; handoffs: unknown[] }>('GET', '/api/failures')).body;
+    expect([f.recent, f.handoffs]).toEqual([[], []]);
+  });
+
   it('a draft pull request is not done: briefed to mark it ready and still a draft, the job ends failed, saying why (issues #579, #626)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
@@ -60,7 +73,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`);
+    expect(failed.error).toMatch(new RegExp(`^not complete: the issue ${issue.url} is open, and no pull request in ${REPO} that closes or references it is ready for review or merged since the job began: #\\d+ \\(open, draft\\)(, #\\d+ \\(open, draft\\))*$`));
     expect((await a.events('types=job.finish_briefed')).filter((e) => e.jobId === job.id)).toHaveLength(MAX_FINISH_BRIEFS);
   });
 
@@ -109,7 +122,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toMatch(/^not complete: no pull request opened by this job/);
+    expect(failed.error).toMatch(/^not complete: the issue .* is open, .*the pull requests it asks to update are not each merged or free of merge conflicts: #\d+ \(open, merge conflicts\)$/);
   });
 
   it('a job that closes its issue as completed with a commit, no pull request, is finished (issue #350)', async () => {
@@ -153,5 +166,49 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.waitForStatus(job.id, 'failed');
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect((await a.job(job.id)).status).toBe('failed');
+  });
+});
+
+describe('resolve and release do not run finished work again (issue #637)', () => {
+  it('test 8 — a held job whose pull request merged meanwhile: resolving its problem finishes it, no run again, its issue stays closed', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', ms: 300, message: 'claude: Not logged in · Please run /login' }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'failed');
+    const problem = await waitFor(async () => (await a.api<FailuresView>('GET', '/api/failures')).body.problems.find((p) => p.jobIds.includes(job.id)), { what: 'the problem' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    const now = new Date().toISOString();
+    gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
+    expect((await a.ui(`/ui/api/failures/problems/${problem.id}/resolve`, {}, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.issue(REPO, issue.number).state).toBe('closed');
+    expect(gh.calls.filter((c) => c.method === 'reopenIssue')).toEqual([]);
+    expect((await a.events('types=job.rerun')).filter((e) => e.jobId === job.id)).toEqual([]);
+    const record = (await a.api<FailuresView>('GET', '/api/failures')).body.ended.find((r) => r.jobId === job.id);
+    expect(record).toMatchObject({ outcome: 'resolved' });
+    expect(record?.note).toMatch(/done at its source/);
+  });
+
+  it('a person\'s Retry of a failure whose work is done meanwhile finishes the job and is refused, saying why', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'failed');
+    const record = await waitFor(async () => (await a.api<FailuresView>('GET', '/api/failures')).body.recent.find((r) => r.jobId === job.id), { what: 'the failure' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
+    const r = await a.ui<{ error: string }>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toMatch(/needs no run again: its job is done at its source/);
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+    expect((await a.events('types=job.rerun')).filter((e) => e.jobId === job.id)).toEqual([]);
   });
 });

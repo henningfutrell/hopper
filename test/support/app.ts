@@ -130,6 +130,7 @@ export async function startTestApp(o: {
     HOPPER_LANE_IDLE_GRACE_MS: '200',
     HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
     HOPPER_UPDATE_CHECK_MS: '0',
+    HOPPER_DONE_RECHECK_MS: '0',
     ...o.env,
   });
   const source = o.source ?? createManualSource();

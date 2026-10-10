@@ -106,23 +106,23 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`);
+    expect(failed.error).toBe(`not complete: the issue ${issue.url} is open, and no pull request in ${REPO} closes or references it`);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
     expect(gh.issue(REPO, issue.number).state).toBe('open');
     expect(await a.events('types=job.finished')).toEqual([]);
   });
 
-  it('a pull request merged before the job began is not the job shipping: it ends failed (issue #171)', async () => {
+  it('an issue closed as completed by an older pull request is done: what GitHub shows decides (issue #637)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     a.scripted.ships((j) => gh.closeByPullRequest(REPO, j.source!.number!, { createdAt: '2020-01-01T00:00:00.000Z', mergedAt: '2020-01-02T00:00:00.000Z' }));
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
-    await a.waitForStatus(job.id, 'failed');
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
-    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
   });
 
   it('when GitHub cannot say whether the work is complete, the job is not recorded done (issue #171)', async () => {
