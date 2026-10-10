@@ -1,4 +1,5 @@
 // The question's types (design.md "Question pipeline"), apart from types.ts for its size; re-exported there.
+import type { Confidence, QuestionCorrection } from './auto-answer.ts';
 import type { AttemptPhaseFields, QuestionPhaseFields } from './phase.ts';
 import type { JobId, LaneId, MachineId } from './types.ts';
 
@@ -30,6 +31,8 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   risky?: boolean;
   /** The level's reply, when it returned a schema-valid one: true sent the question up. */
   escalate?: boolean;
+  /** How sure the level said it is of its answer (issue #632); absent: it did not say, which meets no threshold. */
+  confidence?: Confidence;
   /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
   riskRules?: string[];
   reason?: string;
@@ -68,6 +71,8 @@ export interface Question extends QuestionPhaseFields {
   answer?: string;
   /** Whose answer was typed: the level instance that answered, or `human` (also for a closed question). */
   answeredBy?: string;
+  /** A person corrected a level's auto-answer (issue #632): `answer` is the correction now, and this keeps what it replaced. */
+  corrected?: QuestionCorrection;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string; lastNotifiedAt?: string;
   notifyCount: number;

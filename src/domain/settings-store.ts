@@ -3,7 +3,7 @@
 
 import type { IntakeMigration } from './intake.ts';
 import type {
-  BlastRadiusSettings, ConnectedAccountProvider, LaneId, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
 } from './types.ts';
 
@@ -59,6 +59,9 @@ export interface UserSettingsRepository {
   /** The phase-shift settings (issue #548); absent: never set. */
   getPhaseShifts(): PhaseShiftSettings | undefined;
   setPhaseShifts(settings: PhaseShiftSettings): void;
+  /** Auto-answer (issue #632): whether a level's answer goes into the job with no person, and at what confidence; absent: never set. */
+  getAutoAnswer(): AutoAnswerSettings | undefined;
+  setAutoAnswer(settings: AutoAnswerSettings): void;
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
