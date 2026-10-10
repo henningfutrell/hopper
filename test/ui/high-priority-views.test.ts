@@ -46,6 +46,8 @@ function fakeDaemon(role: Role) {
     '/api/priority-lanes': priorityLanes,
     // The resource graphs (issue #560): no machine samples.
     '/api/machines/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T00:00:00.000Z', to: '2026-10-09T00:00:00.000Z', stepMs: 900000, retentionDays: 90, series: [] },
+    // The sandbox boxes the hopper starts (issue #603): none it could not remove.
+    '/api/sandboxes': { launch: { available: true }, problems: [] },
     '/api/machines/config': {
       version: 'v1', executors: ['test'], defaults: { lanes: 2, executors: ['test'] }, ssh: { targets: [], notes: [], here: [] },
       machines: [{ name: 'desk', plugin: 'local', options: { lanes: 2 } }],
