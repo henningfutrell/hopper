@@ -1276,6 +1276,26 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
 }
 ```
 
+## `handoff.checked`
+
+Version 1 (`docs/schemas/handoff.checked.v1.json`). What an open hand-off's work shows at its job's source changed (issue #621): the failure assessor asks the source, at once for a new hand-off and then every 10 minutes, for the job's item and the pull requests the job opened or pushed to, and keeps the answer on the hand-off for its card. `item`: `open`, `done` (closed as completed), `closed` (closed any other way) or `gone`. `pullRequests`: how many pull requests of the job's it found. `shipped`: a pull request of the job's merged, or its item closed as completed — then the hand-off closes (`handoff.closed`, `end: "finished"`) and the job ends finished (`job.finished`), its source told so in place of the failure. Only when the answer changed.
+
+| field | type | required |
+|---|---|---|
+| `handoffId` | string | yes |
+| `item` | `open` \| `done` \| `closed` \| `gone` | yes |
+| `pullRequests` | integer | yes |
+| `shipped` | boolean | yes |
+
+```json
+{
+  "handoffId": "h1",
+  "item": "open",
+  "pullRequests": 1,
+  "shipped": true
+}
+```
+
 ## `usage.limits_changed`
 
 Version 1 (`docs/schemas/usage.limits_changed.v1.json`). The usage limits were set in the UI (issue #522): `from` the soft and hard limits the decider used, `to` the ones it uses from now on. Each is a fraction of a usage budget, from 0 to 1.

@@ -64,3 +64,57 @@ describe('herdr-claude executor: nudges', () => {
     expect(s.herdr.prompts.slice(6).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE]);
   });
 });
+
+// Issue #627: before a nudge the executor asks what the job's source and the hopper say now. A job whose work is
+// done at the source ends done; a job that waits on a person is not nudged.
+describe('herdr-claude executor: the check before a nudge', () => {
+  it('a job whose pull request is ready for review ends done at the status note: no nudge', async () => {
+    const { herdr, executor } = setup({ turns: [NOTE] }, { idleNudgeMs: 20000 });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', timeoutMs: HOUR }));
+    const asked: number[] = [];
+    ctx.beforeNudge = async () => { asked.push(1); return { done: 'its pull request is ready for review' }; };
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished', result: { summary: 'Still waiting for write access.', endedBy: 'its pull request is ready for review' } });
+    expect(asked).toHaveLength(1);
+    expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('go')]);
+    expect(progress.map((p) => p.message)).toContain('ended done, not nudged: its pull request is ready for review');
+  });
+
+  it('a job whose issue is closed ends done at the status note: no nudge', async () => {
+    const { herdr, executor } = setup({ turns: [NOTE] }, { idleNudgeMs: 20000 });
+    const { ctx } = contextFor(jobWith({ prompt: 'go', timeoutMs: HOUR }));
+    ctx.beforeNudge = async () => ({ done: 'its issue is closed' });
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished', result: { endedBy: 'its issue is closed' } });
+    expect(herdr.prompts).toHaveLength(1);
+  });
+
+  it('a job that waits on a person is not nudged; it goes on when claude works again by itself', async () => {
+    const s = setup({ turns: [NOTE, DONE] }, { idleNudgeMs: 20000 });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', timeoutMs: 4 * HOUR }));
+    ctx.beforeNudge = async () => ({ waiting: 'a credential request for example-api' });
+    const run = s.executor.run(ctx);
+    await until(() => progress.some((p) => p.message === 'waiting on a person (a credential request for example-api): no nudge'), 100000);
+    const waited = s.clock.elapsed();
+    await until(() => s.clock.elapsed() > waited + HOUR, 100000);
+    expect(s.herdr.prompts).toHaveLength(1);
+    s.herdr.wake(s.herdr.agentStarts[0]!.name);
+    expect(await run).toMatchObject({ kind: 'finished', result: { summary: 'Wrote hello.txt.' } });
+    expect(s.herdr.prompts).toHaveLength(1);
+  });
+
+  it('a job still active is nudged as before', async () => {
+    const { herdr, executor } = setup({ turns: [NOTE, DONE] }, { idleNudgeMs: 20000 });
+    const { ctx } = contextFor(jobWith({ prompt: 'go', timeoutMs: HOUR }));
+    ctx.beforeNudge = async () => ({ nudge: true });
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.prompts.slice(1).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE]);
+  });
+
+  it('a check that cannot tell is said, and the job is nudged as before', async () => {
+    const { herdr, executor } = setup({ turns: [NOTE, DONE] }, { idleNudgeMs: 20000 });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', timeoutMs: HOUR }));
+    ctx.beforeNudge = async () => { throw new Error('GitHub answered 502'); };
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(herdr.prompts.slice(1).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE]);
+    expect(progress.map((p) => p.message)).toContain('could not read the source state before the nudge: GitHub answered 502');
+  });
+});

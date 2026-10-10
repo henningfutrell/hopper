@@ -218,8 +218,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       return watch(ctx, s, p, next, again);
     }
     if (!('statusNote' in result)) return result;
-    const next = afterStatusNote(notes);
-    if ('spent' in next) { ctx.progress(0, next.spent); return watch(ctx, s, p, turn, { count: notes.count, startedAt: notes.startedAt, quiet: true }); }
+    // The source state first (issue #627): a job whose work is over there ends done; one that waits on a person is not nudged.
+    const next = await afterStatusNote(notes, ctx, { ...result, paneId: s.paneId });
+    if (!('nudges' in next)) return 'ended' in next ? next.ended : watch(ctx, s, p, turn, { count: notes.count, startedAt: notes.startedAt, quiet: true });
     return send(ctx, s, p, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, { count: next.nudges, startedAt: notes.startedAt });
   }
 

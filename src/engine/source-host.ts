@@ -215,20 +215,23 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    finishClosedAsComplete(jobId) {
-      return store.tx(() => {
-        if (store.jobs.get(jobId)?.status !== 'failed') return false;
-        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c) });
-        store.events.append({ type: 'job.finished', jobId, data: { result: 'issue closed as complete' } });
-        return true;
-      });
-    },
-
     finishComplete(jobId, partlyDone) {
       return store.tx(() => {
         if (store.jobs.get(jobId)?.status !== 'failed') return false;
         store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c), ...(partlyDone ? { partlyDone } : {}) });
         store.events.append({ type: 'job.finished', jobId, data: { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) } });
+        return true;
+      });
+    },
+
+    finishShipped(jobId, result) {
+      return store.tx(() => {
+        const job = store.jobs.get(jobId);
+        if (job?.status !== 'failed') return false;
+        // Its end is told to its source again: finished, in place of a failure already reported.
+        const sync = { ...(job.sourceState?.sync ?? {}), finalReported: false };
+        store.jobs.update(jobId, { status: 'finished', error: undefined, finishedAt: nowIso(c), sourceState: { ...job.sourceState, sync }, ...(result ? { result } : {}) });
+        store.events.append({ type: 'job.finished', jobId, data: { result: result ?? 'issue closed as complete' } });
         return true;
       });
     },

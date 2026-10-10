@@ -98,16 +98,16 @@ export function createWorld(): World {
       emit('job.finished', id, { result: 'operator-led work complete' });
       return true;
     },
-    finishClosedAsComplete(id) {
-      if (jobs.get(id)?.status !== 'failed') return false;
-      patchJob(id, { status: 'finished', error: undefined });
-      emit('job.finished', id, { result: 'issue closed as complete' });
-      return true;
-    },
     finishComplete(id, partlyDone) {
       if (jobs.get(id)?.status !== 'failed') return false;
       patchJob(id, { status: 'finished', error: undefined, ...(partlyDone ? { partlyDone } : {}) });
       emit('job.finished', id, { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) });
+      return true;
+    },
+    finishShipped(id, result) {
+      if (jobs.get(id)?.status !== 'failed') return false;
+      patchJob(id, { status: 'finished', error: undefined, ...(result ? { result } : {}) });
+      emit('job.finished', id, { result: result ?? 'issue closed as complete' });
       return true;
     },
     setSourceState(id, state) {

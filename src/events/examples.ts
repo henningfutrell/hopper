@@ -77,6 +77,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     recordId: 'f1', decision: 'person', class: 'transient',
   },
   'handoff.closed': { handoffId: 'h1', end: 'run_again', nextJobId: 'j2', resolution: 'fixed' },
+  'handoff.checked': { handoffId: 'h1', item: 'open', pullRequests: 1, shipped: true },
   'proposal.asked': { by: 'user' },
   'proposal.submitted': { proposalId: 'p1', version: 1, goal: 'Cache the board renders', missing: ['effort'], raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' }, priority: 50, high: false },
   'proposal.escalated': { proposalId: 'p1', version: 1, target: 'opus', reason: 'submitted', goal: 'Cache the board renders' },

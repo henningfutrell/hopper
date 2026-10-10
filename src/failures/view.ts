@@ -5,6 +5,7 @@
 // refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
 import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { handoffCard } from './card.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
@@ -85,20 +86,21 @@ export const RESOLUTION_TEXT: Record<HandoffResolutionAction, string> = {
  * Whether a person may resolve a hand-off each way now, and why not (issue #551): one that runs its item again
  * (Continue, I fixed it) only while it is the newest job of its item and nothing runs it again already; Done by hand
  * and Won't do while it is open. `resumable`: whether its job's own agent session can resume — then Continue resumes
- * it, else it runs a new job.
+ * it, else it runs a new job. Its card (issue #621) says what happened and the resolution to take.
  */
 export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff, resumable: (job: Job) => boolean): HandoffView {
   const record = h.recordId ? store.failures.get(h.recordId) : undefined;
   const job = store.jobs.get(h.jobId);
   const learn = record ? { signature: record.signature, ...(record.causeName ? { causeName: record.causeName } : {}) } : {};
   const continueResumes = job !== undefined && resumable(job);
+  const card = handoffCard(h, continueResumes);
   if (h.status === 'closed') {
     const closed = no(h.resolution ? `already resolved: ${RESOLUTION_TEXT[h.resolution.action]}` : 'already closed');
-    return { ...h, ...learn, continueResumes, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
+    return { ...h, ...learn, continueResumes, card, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
   }
   const pending = record?.pending;
   const runs = pending ? no(pending === 'retry' ? 'it runs again by itself' : 'it is being run again') : newestOfItem(store, h.jobId);
-  return { ...h, ...learn, continueResumes, actions: { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK } };
+  return { ...h, ...learn, continueResumes, card, actions: { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK } };
 }
 
 function problemView(store: Reads, p: Problem): ProblemView {

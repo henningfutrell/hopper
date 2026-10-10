@@ -8,7 +8,7 @@
 // handling ended for is handed off to a person (issue #516, `handoffs.ts`) in the same transaction as the record that
 // ended it. Stale data clears itself (issue #529): the sweep, and the start, close the hand-offs nothing waits on any
 // more — a newer job of its item, its job finished or gone — and ask each open hand-off's source whether its item is
-// closed (`item-check.ts`). A failure no known cause explains, which the rules hand to a person, is a minor decision
+// closed and what its job's work shows (`work-check.ts`, issue #621). A failure no known cause explains, which the rules hand to a person, is a minor decision
 // (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
 // is active and it is sure. A timed-out job (issue #630) is assessed from its liveness: its source is asked first whether
 // a pull request of its own is open — at most `PR_LOOKUP_MS`, never holding the assessment —, and Continue, when due,
@@ -16,7 +16,7 @@
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
-  type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
+  type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock, type WorkState,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
@@ -26,18 +26,18 @@ import { attemptOf, timeoutInputOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts';
 import { rerunRecordOf } from './rerun.ts';
 import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
-import { createItemCheck } from './item-check.ts';
+import { createWorkCheck } from './work-check.ts';
 import { signatureOf } from './signature.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
-/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `resumable`, `dismiss`: as the hand-offs take them. */
-export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'resumable' | 'dismiss'> {
+/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `dismiss`: as the hand-offs take them. */
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'dismiss'> {
   store: UserStore;
   clock: Clock;
   /** The machines now: a problem's check reads them. */
   machines(): Promise<MachineSnapshot[]>;
-  /** Whether the job's item is closed at its source (issue #529); undefined: its source cannot tell. Throws: asked again later. */
-  itemClosed(job: Job): Promise<boolean | undefined>;
+  /** What the job's work shows at its source (issues #529, #621); undefined: its source cannot tell. Throws: asked again later. */
+  workState(job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined>;
   /** Ask for a Decision: a problem opened or resolved changes what may start. */
   trigger(reason: string): void;
   logger: { warn(line: string): void };
@@ -93,9 +93,9 @@ export function createFailures(o: FailuresOptions): Failures {
   const now = () => clock.now();
   // Settings saved before a field existed take its default; `auto` too, field by field (issue #630: `auto.continue`).
   const settings = (): FailureSettings => failureSettingsOf(store.settings.getFailureSettings());
-  const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, continueJob: o.continueJob, resumable: o.resumable, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
+  const handoffs = createHandoffs({ ...o, settings, live: () => !stopped });
   const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
-  const checkItems = createItemCheck({ store, clock, itemClosed: o.itemClosed, closed: (id) => handoffs.itemClosed(id), logger: o.logger, live: () => !stopped });
+  const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
   const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); };
@@ -260,7 +260,7 @@ export function createFailures(o: FailuresOptions): Failures {
           if (stopped) return;
           await runPending(r);
         }
-        if (!stopped) await checkItems();
+        if (!stopped) await checkWork();
         if (!stopped) await runChecks();
         if (!stopped) prune();
       } catch (e) {

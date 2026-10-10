@@ -4,8 +4,9 @@
 // Registered through AppSeams.executors as "scripted"; it records every payload it ran. An op may
 // carry `progress: number[]`: each fraction is reported (job.progressed) before the op runs.
 // `ships(fn)` plays a job that ships its work (issue #171): fn runs (a test merges the job's pull
-// request in the fake GitHub) before each finished outcome is returned.
-import type { ExecutionContext, ExecutionOutcome, Executor } from '../../src/domain/ports.ts';
+// request in the fake GitHub) before each finished outcome is returned. The op `before-nudge` (issue #627) ships, then
+// asks the engine's check before a nudge, keeps its answer in `checks`, and finishes.
+import type { ExecutionContext, ExecutionOutcome, Executor, NudgeCheck } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
 import type { FakeGitHub } from '../../src/sources/index.ts';
@@ -15,6 +16,8 @@ export interface ScriptedExecutor extends Executor {
   readonly payloads: Record<string, unknown>[];
   /** From now on, every job that finishes ships first: `fn(job)` runs before the outcome returns. */
   ships(fn: (job: Job) => void): void;
+  /** What each `before-nudge` op was answered, in order. */
+  readonly checks: NudgeCheck[];
 }
 
 function script(payload: Record<string, unknown>): Record<string, unknown> | string {
@@ -32,6 +35,7 @@ function script(payload: Record<string, unknown>): Record<string, unknown> | str
 export function createScriptedExecutor(): ScriptedExecutor {
   const inner = createTestExecutor();
   const payloads: Record<string, unknown>[] = [];
+  const checks: NudgeCheck[] = [];
   let ship: ((job: Job) => void) | undefined;
   const shipped = async (ctx: ExecutionContext, outcome: Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
     const o = await outcome;
@@ -48,13 +52,20 @@ export function createScriptedExecutor(): ScriptedExecutor {
     idempotent: true,
     reviews: true,
     payloads,
+    checks,
     ships(fn) { ship = fn; },
     validate(payload) {
       const s = script(payload);
-      return typeof s === 'string' ? s : inner.validate(s);
+      if (typeof s === 'string') return s;
+      return s.op === 'before-nudge' ? null : inner.validate(s);
     },
-    run: (ctx) => {
+    run: async (ctx) => {
       const op = scripted(ctx);
+      if (op.job.spec.payload.op === 'before-nudge') {
+        ship?.(ctx.job);
+        checks.push(await ctx.beforeNudge!());
+        return { kind: 'finished', result: {} };
+      }
       const steps = op.job.spec.payload.progress;
       if (Array.isArray(steps)) for (const f of steps) ctx.progress(Number(f), `step ${String(f)}`);
       return shipped(ctx, inner.run(op));

@@ -6,7 +6,8 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson } from './types.ts';
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins,
+} from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
@@ -57,29 +58,19 @@ export interface ExecutionContext {
   jobRules?: string;
   /** The logins (issue #476): a login the job's work waits on goes here, never into a question. Absent → none taken. */
   logins?: RunLogins;
+  /**
+   * Asked before each nudge (issue #627): what the job's source and the hopper say of the job now. A throw: it could
+   * not tell. Absent → nudge.
+   */
+  beforeNudge?(): Promise<NudgeCheck>;
 }
 
 /**
- * Where a run reports a login it waits on (issue #476, design.md "Logins"), and reads what the user did with
- * it. The run waits as its tool does, and says when the tool went on, or when the run ended first.
+ * The check before a nudge (issue #627): nudge; or end the job done, with why — its pull request is ready for review,
+ * or its issue is closed; or no nudge while it waits on a person, with what it waits on.
  */
-export interface RunLogins {
-  /**
-   * The login's id; one open login per run and prompt — the same tool, code or URL (issue #567) —, so the same code
-   * reported again is the same login and a new code updates it. `renewable`: the run can ask its tool for a new
-   * code. `restore`: the same login read again after a restart: only its URL and code are taken back. Throws on a
-   * report its kind refuses.
-   */
-  report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
-  /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
-  check(id: string): LoginCheck;
-  /** The login went through: a login signal (a token obtained, the CLI logged in), or a print-mode run that succeeded. */
-  completed(id: string): void;
-  /** The run said its code expired before it was completed (issue #567): expired now, as at `expiresAt`. */
-  expired(id: string): void;
-  /** The run ended first, or could not take the login. */
-  failed(id: string, reason: string): void;
-}
+export type NudgeCheck = { nudge: true } | { done: string } | { waiting: string };
+
 
 /** What the executor needs answered before the job can continue. */
 export interface ExecutionQuestion {
@@ -545,11 +536,10 @@ export interface JobSource extends FollowsPullRequests {
    */
   closedAsComplete?(job: Job): Promise<boolean>;
   /**
-   * Whether the job's item is closed at the source, by any means, or gone (issue #529): asked for a failed job handed
-   * off to a person, whose hand-off then closes — nothing waits on it any more. Throws when it cannot tell now: asked
-   * again later. Absent: the source cannot tell, and a hand-off waits on a person.
+   * What a handed-off job's work shows at the source (issues #529, #621): its item, and the pull requests the job opened
+   * or pushed to. Undefined: it cannot tell. Throws: asked again later. Absent: a hand-off waits on a person.
    */
-  itemClosed?(job: Job): Promise<boolean>;
+  workState?(job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined>;
   /**
    * Whether a pull request of the job's own is open (issue #630): one it opened, or an older one it pushed to — a timed-out
    * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
@@ -621,8 +611,12 @@ export interface SourceHost {
   refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
-  /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
-  finishClosedAsComplete(jobId: JobId): boolean;
+  /**
+   * A failed job whose work shipped (issue #350: its item closed as complete, found before its failure was reported;
+   * issue #621: a pull request of its merged, found by the failure assessor's work check): finished, with `result`
+   * (default: issue closed as complete), and its end to be reported to its source again. false: it is no longer failed.
+   */
+  finishShipped(jobId: JobId, result?: { summary: string; link?: string }): boolean;
   /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
   finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */

@@ -76,5 +76,19 @@ export async function judge(source: Judged | undefined, job: Job): Promise<Verdi
   return finish === undefined ? { done: false, why } : { done: false, why, finish };
 }
 
+/**
+ * Why the job's work is over at its source while the job still runs (issue #627), or undefined: its own pull request is
+ * ready for review — the whole issue, or a part — or its issue is closed as complete; or its issue is closed by any
+ * other means, or gone (`workState`, issue #621). A source that judges nothing tells nothing. A throw: the source could not tell.
+ */
+export async function overAtSource(source: { notComplete?: NotComplete; partlyDone?: FollowsPullRequests['partlyDone']; workState?(job: Job): Promise<{ item: string } | undefined> } | undefined, job: Job): Promise<string | undefined> {
+  if (!source?.notComplete) return undefined;
+  const v = await judge(source, job);
+  if (v.done) return 'its pull request is ready for review, or its issue is closed as complete';
+  if ('partlyDone' in v) return `its pull request ${v.partlyDone} is ready for review and ships part of its issue`;
+  const item = (await source.workState?.(job))?.item;
+  return item === undefined || item === 'open' ? undefined : `its issue is ${item === 'gone' ? 'gone' : 'closed'}`;
+}
+
 /** A source state that names an ended job's pull request still to follow (issue #579). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
