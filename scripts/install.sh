@@ -59,7 +59,8 @@ trap 'rm -rf "$BUILD"' EXIT
 step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json, the bundle check and the artifact library copy; git init; npm ci with dev dependencies; npm run build:ui, which checks it)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
 mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
-mkdir -p "$BUILD/scripts" && cp "$APP_DIR/scripts/check-ui-bundle.ts" "$APP_DIR/scripts/copy-artifact-libs.ts" "$BUILD/scripts/"
+mkdir -p "$BUILD/scripts" && cp "$APP_DIR/scripts/check-ui-bundle.ts" "$BUILD/scripts/"
+cp "$APP_DIR/scripts/copy-artifact-libs.ts" "$BUILD/scripts/"
 git init -q "$BUILD"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 npm ci --prefix "$BUILD" --no-audit --no-fund
