@@ -2,12 +2,14 @@
 // then as a user project. Installation tokens can read organization projects
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
-// request that closed an issue, the open ones whose merge will close it, and a pull request by its number (closer.ts).
+// request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
+// pull requests of a repository (closer.ts).
 
-import type { ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
+import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
 import {
-  CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom, referencingPullRequestsFrom,
+  CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
+  referencingPullRequestsFrom, repoPullRequestsFrom,
 } from '../closer.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
@@ -117,4 +119,12 @@ export async function pullRequest(req: Request, token: string, repo: string, num
     query: PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
   });
   return pullRequestFrom(r.data, `pull request ${repo}#${number}`);
+}
+
+export async function openPullRequests(req: Request, token: string, repo: string): Promise<BranchPullRequest[]> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', {
+    query: OPEN_REPO_PULL_REQUESTS_QUERY, variables: { owner, name }, headers: { authorization: `token ${token}` },
+  });
+  return repoPullRequestsFrom(r.data, `open pull requests of ${repo}`);
 }

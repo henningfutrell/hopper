@@ -28,9 +28,9 @@ export function yoloRows(v: YoloModeView): YoloRow[] {
 
 export function yoloSummary(v: YoloModeView): string {
   const merging = yoloRows(v).filter((r) => r.merges).length;
-  if (v.on && yoloRows(v).every((r) => r.setting !== 'off')) return 'On: jobs merge their own pull requests once the checks pass, in every job repository.';
+  if (v.on && yoloRows(v).every((r) => r.setting !== 'off')) return 'On: jobs and the hopper merge ready pull requests once the checks pass, in every job repository.';
   if (merging === 0) return 'Off: no job merges its own pull request.';
-  return `On in ${merging} ${merging === 1 ? 'repository' : 'repositories'}: jobs there merge their own pull requests once the checks pass.`;
+  return `On in ${merging} ${merging === 1 ? 'repository' : 'repositories'}: jobs and the hopper merge ready pull requests there once the checks pass.`;
 }
 
 /** The change a save sends: only what differs from `v`; undefined when nothing does. */

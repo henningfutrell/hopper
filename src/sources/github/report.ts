@@ -22,6 +22,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
+import { isPartOf, namesIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
 
 export interface ReportContext {
@@ -72,11 +73,20 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
     await settle(ctx, repo, number, [LABEL_DONE], also);
     return state;
   }
-  // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with.
-  const own = (await ctx.api.openClosingPullRequests(repo, number)).filter((pr) => !pr.isDraft && !pr.conflicting)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
+  // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
+  const own = await readyPullRequest(ctx.api, repo, number);
   await settle(ctx, repo, number, [LABEL_PR_READY], also);
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
+}
+
+/** The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it. */
+async function readyPullRequest(api: GitHubApi, repo: string, number: number): Promise<{ url: string } | undefined> {
+  const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined =>
+    prs.filter((pr) => !pr.isDraft && !pr.conflicting).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return ready(await api.openClosingPullRequests(repo, number))
+    ?? ready((await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !isPartOf(pr, repo, number)))
+    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
 }
 
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {

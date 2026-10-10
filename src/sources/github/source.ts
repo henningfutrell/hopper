@@ -304,7 +304,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow(job) {
-      return followPullRequest({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job);
+      return followPullRequest({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job);
     },
     closedAsComplete(job) {
       return closedAsComplete(api, job);

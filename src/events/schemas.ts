@@ -288,7 +288,8 @@ export const EVENT_SCHEMAS = {
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
-  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean() }),
+  // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository.
+  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional() }),
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),

@@ -1,6 +1,7 @@
 // After done (issue #579), the sync loop's half, at each sync of a source, on each job's report chain. A finished job
 // whose pull request its report kept to follow is asked of its source (`JobSource.follow`): merged or closed without a
-// merge is recorded (`job.pull_request_merged`, `job.pull_request_closed`) with the source state it leaves. And a job
+// merge is recorded (`job.pull_request_merged`, `job.pull_request_closed`) with the source state it leaves; still open,
+// what was seen of it is kept, with no event (issue #637). And a job
 // that failed only for want of a merged pull request — `not complete:`, from before a pull request was done — and still
 // waits on a person is judged again: done or partly done now, it is finished (its hand-off closes on `job.finished`) and
 // its end reported again, so its issue loses `hopper:failed`. A throw is kept as a retry and asked again next sync.
@@ -33,7 +34,11 @@ export function createAfterDone(c: AfterDoneContext) {
     const r = await source.follow!(job);
     if (!r) return;
     c.setSource(jobId, r.state);
-    store.events.append({ type: r.outcome === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId, data: { pullRequest: r.pullRequest, part: r.part } });
+    if (r.outcome === 'open') return;
+    store.events.append({
+      type: r.outcome === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId,
+      data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}) },
+    });
   }
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {

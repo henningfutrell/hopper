@@ -85,7 +85,8 @@ describe('the done-check backfill (issue #637)', () => {
     expect((await app.job(jc!.id)).status).toBe('failed');
     const f = await failuresOf(app);
     expect(f.handoffs.filter((h) => h.status === 'open').map((h) => h.jobId)).toEqual([jc!.id]);
-    expect(f.recent.filter((r) => r.jobId === ja!.id || r.jobId === jb!.id).map((r) => r.outcome)).toEqual(['resolved', 'resolved']);
+    expect(f.recent.filter((r) => r.jobId === ja!.id || r.jobId === jb!.id)).toEqual([]);
+    expect([ja!, jb!].map((j) => app.user().store.failures.forJob(j.id)?.outcome)).toEqual(['resolved', 'resolved']);
     const since = (await app.events()).slice(before);
     expect(backfilled(since).map((e) => e.jobId).sort()).toEqual([ja!.id, jb!.id].sort());
     expect(since.filter((e) => e.jobId === ja!.id || e.jobId === jb!.id || e.jobId === jc!.id)).toHaveLength(2);

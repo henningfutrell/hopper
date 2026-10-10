@@ -8,7 +8,7 @@ import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
-import { closingPullRequest, openClosingPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
+import { closingPullRequest, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
 import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -139,6 +139,8 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       referencingPullRequests(req, await tokenFor(l, repo), repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, async (l) =>
       pullRequest(req, await tokenFor(l, repo), repo, number)),
+    openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
+    merge: (repo, number) => call(`merge ${repo}#${number}`, async (l) => rest.mergePullRequest(req, await tokenFor(l, repo), repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, async (l) => {
       if (!l.accounts) await listInstallations(l);
       const id = l.accounts!.get(owner) ?? l.accounts!.values().next().value;

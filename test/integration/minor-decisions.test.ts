@@ -187,7 +187,6 @@ describe('a failed job no rule explains', () => {
     const a = await start({ jev });
     await setPoint(a, await a.login(), 'failure-assessment', { mode: 'active' });
     const job = await a.pull(fail('not complete: the issue https://github.com/o/r/issues/1 is open, and no pull request in o/r closes or references it'));
-    await a.waitForStatus(job.id, 'failed');
     const rerun = await waitFor(async () => (await ofType(a, 'job.rerun', job.id))[0], { what: 'run again by Jev' });
     expect(rerun.data).toMatchObject({ by: 'assessor' });
     expect(jev.asks[0]!.options.map((o) => o.id)).toEqual(['retry', 'person']);

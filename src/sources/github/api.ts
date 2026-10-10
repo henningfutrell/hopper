@@ -3,6 +3,8 @@
 // fake (fake.ts, either identity). Errors are GitHubApiError, classified
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
+import type { ChecksState } from '../../domain/pull-requests.ts';
+
 export interface GitHubIssue {
   /** owner/repo */
   repo: string;
@@ -42,6 +44,8 @@ export interface OpenPullRequest {
    * that updated it pushed at or after it began. Absent: GitHub did not say.
    */
   headCommittedAt?: string;
+  /** Its head commit's checks (issue #637, GitHub's status check rollup); absent: it has none. */
+  checks?: ChecksState;
 }
 
 /** A pull request by its number (issue #618): one an issue names to update, in any state. */
@@ -49,6 +53,12 @@ export interface NumberedPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
   /** When it was merged; absent unless merged. */
   mergedAt?: string;
+}
+
+/** An open pull request of a repository, with its branch (issue #637). */
+export interface BranchPullRequest extends OpenPullRequest {
+  /** Its head branch's name. */
+  headRef: string;
 }
 
 /** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */
@@ -105,6 +115,13 @@ export interface GitHubApi {
   referencingPullRequests(repo: string, number: number): Promise<ReferencingPullRequest[]>;
   /** Pull request `number` of `repo` (issue #618); undefined when the number is an issue or names nothing. */
   pullRequest(repo: string, number: number): Promise<NumberedPullRequest | undefined>;
+  /** The open pull requests of `repo`, newest 100, each with its branch (issue #637: one named for an issue); none is []. */
+  openPullRequests(repo: string): Promise<BranchPullRequest[]>;
+  /**
+   * Merge pull request `number` of `repo` with a merge commit (issue #637: yolo mode, the hopper's own merge of a ready
+   * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.
+   */
+  merge(repo: string, number: number): Promise<void>;
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one

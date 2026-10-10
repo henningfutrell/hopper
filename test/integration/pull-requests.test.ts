@@ -7,7 +7,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { FailuresView, Job, PullRequestsView } from '../../src/domain/types.ts';
-import { createFakeGitHub, GitHubApiError, type FakeGitHub } from '../../src/sources/index.ts';
+import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';

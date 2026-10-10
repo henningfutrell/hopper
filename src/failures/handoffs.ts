@@ -39,7 +39,7 @@ export interface HandoffsOptions {
   /** Whether the job's own agent session can resume: its executor parks, and it recorded one. */
   resumable(job: Job): boolean;
   /** Finish a failed job whose work shipped (issue #621), its end told to its source again. false: it is no longer failed. */
-  finishShipped(jobId: string, result: { summary: string; link?: string }): boolean;
+  finishShipped(jobId: string, result: { summary: string; link?: string; backfill?: string }): boolean;
   /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too. Throws when it is not one. */
   dismiss(jobId: string): void;
   logger: { warn(line: string): void };

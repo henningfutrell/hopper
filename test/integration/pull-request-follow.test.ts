@@ -121,9 +121,12 @@ describe('the pull request after done', () => {
     await app.sync();
     const [job] = await jobsFor(app, issue.url);
     await app.waitForStatus(job!.id, 'finished');
+    const [assessed] = (await app.events('types=job.assessed')).filter((e) => e.jobId === job!.id);
+    expect(assessed!.data).toMatchObject({ causeId: 'not-complete', decision: 'person' });
+    expect(app.user().store.failures.forJob(job!.id)).toMatchObject({ outcome: 'resolved', note: expect.stringMatching(/^done at its source/) });
+    expect((await app.events('types=handoff.opened')).filter((e) => e.jobId === job!.id)).toEqual([]);
     const failures = (await app.api<FailuresView>('GET', '/api/failures')).body;
-    expect(failures.recent.filter((r) => r.jobId === job!.id).map((r) => [r.outcome, r.decision])).toEqual([['resolved', 'person']]);
-    expect(failures.handoffs.filter((h) => h.jobId === job!.id)).toEqual([]);
+    expect([...failures.recent, ...failures.handoffs].filter((r) => r.jobId === job!.id)).toEqual([]);
     await labelled(gh, issue.number, 'hopper:pr-ready');
   });
 });

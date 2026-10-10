@@ -57,6 +57,11 @@ function actingIn(req: FastifyRequest) {
 }
 
 export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
+  // The done-check backfill (issue #637): each done-check failure waiting on a person judged again; what it changed.
+  app.post('/ui/api/backfill/done-check', o.operator, async (req) => {
+    actingIn(req);
+    return o.tenant(req).failures.backfill.run();
+  });
   // Who acted, and the way — the UI or the operator CLI —, is kept in the events (issue #623).
   app.post('/ui/api/failures/problems/:id/resolve', o.operator, async (req) => {
     const { note } = parseWith(problemResolveBody, req.body ?? {});

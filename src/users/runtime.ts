@@ -374,9 +374,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       if (started) return;
       started = true;
       await engine.start();
+      await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
-      history.start();
-      minorDecisions.start();
+      history.start(); minorDecisions.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
       jobStream.start();

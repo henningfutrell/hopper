@@ -40,7 +40,8 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'removeLabels', 'addLabels']);
+    // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'addLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual({ ...claimed, follow: 'open' });
   });
