@@ -4,7 +4,8 @@
 // made by the hopper; kept encrypted and write-only. The card says only that one is set and when it
 // changed, and offers Replace (type a new one) and Rotate (the hopper makes one). A secret the hopper made
 // is shown once, here, to copy to the receiver; it is never put in the app's store. Send test event
-// (issue #378) posts one signed `webhook.test` and shows the receiver's answer.
+// (issue #378) posts one signed test event, typed as the first event the subscription names (issue #481),
+// and shows the receiver's answer.
 import { Copy, KeyRound, Pencil, Plus, RefreshCw, Send, Trash2, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';

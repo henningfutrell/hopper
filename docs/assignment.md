@@ -373,8 +373,8 @@ Recommend (b)'s floor only, if the hopper will host users other than the owner (
 - **Events.** New: `job.drifted { reason }` and `job.cancelled` reasons `unassigned`, `issue
   transferred`; `job.rejected` gains `unassigned: boolean`; `job.dismissed` gains `by: "source"`.
 - **Grok Bot notifier and webhooks (#357, #378).** Today the notifier sends `source.stalled`,
-  `connected_account.expired` and human-stage `question.escalated`
-  (`src/plugins/notifier/grokbot-routine/notifier.ts:21-22`). It should also send the two things that
+  `connected_account.expired` and `question.escalated_to_human` (issue #481;
+  `src/plugins/notifier/grokbot-routine/notifier.ts` `wanted`). It should also send the two things that
   wait on a person: an untrusted job awaiting review, and a drifted running job. As #357 did for
   questions, one distinct event — `job.needs_decision { reason }` — lets a subscriber take only those.
   Rejections and cancels are the user's own acts: not notified.
