@@ -10695,7 +10695,7 @@ The token rides in the query because Fastify caps a path parameter at 100 charac
 
 | kind | served as | policy (`Content-Security-Policy`) |
 |------|-----------|------------------------------------|
-| html | `text/html` | `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts inline or from `https:`; `frame-ancestors 'self'` |
+| html | `text/html` | `sandbox allow-scripts allow-popups allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts only `'unsafe-inline' data: blob:` (issue #673); `frame-ancestors 'self'` |
 | svg, image | its type | `sandbox; default-src 'none'` (no script, nothing fetched) |
 | csv, markdown, json, text | `text/plain` | the same; the UI renders the preview |
 | pdf | `application/pdf` | `frame-ancestors 'self'` (a sandbox stops the browser's PDF viewer) |
@@ -10707,6 +10707,15 @@ for a while), `Cache-Control: private, no-store`, `Cross-Origin-Resource-Policy:
 (kept in `localStorage`), and a request it could make to the API carries neither the session header nor an allowed
 Origin. The UI frames it with the same sandbox attribute too. SVG is made safe by the policy, not by rewriting it: a
 browser runs no script of an SVG served under `sandbox; default-src 'none'`, and none of one shown as an `<img>`.
+
+**It loads nothing from outside** (issue #673). The first real artifact showed the gap: with `https:` in its script,
+style, image and font sources a page could load from any address, and send out what it read through the URL of an
+image request — its own signed content URL included, a credential for an hour. So each of those four is
+`'unsafe-inline' data: blob:` only, and no `'unsafe-eval'`: a page carries everything it needs. A popup it opens stays
+in the sandbox (no `allow-popups-to-escape-sandbox`). The `artifacts` skill tells a job so. A separate origin for
+`/artifact-content/` was looked at and not built: it needs a second host name or port that the Host guard, the LAN
+names and any reverse proxy must all serve, and the sandbox's opaque origin already keeps the page from the hopper's
+storage and session; it is the step to take if a browser's sandbox is ever found to leak.
 
 **Sharing and Access.** By default only the owner sees an artifact. A **share** is with another user of the hopper (by
 name) or a **public link** (`/artifact-link/<owner>.<random>`, 32 random bytes; only its SHA-256 is kept, and the link is

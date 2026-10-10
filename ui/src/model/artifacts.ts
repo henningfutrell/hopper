@@ -6,8 +6,8 @@ import type { ArtifactKind, ArtifactShare, ArtifactsView, ArtifactView } from '.
 /** An artifact's stable URL ends `#artifacts/<id>`: a text that names one links to it. */
 const LINKED = /#artifacts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
 
-/** What a sandboxed frame lets an HTML artifact do: run its scripts and open links, never take the hopper's origin. */
-export const FRAME_SANDBOX = 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads';
+/** What a sandboxed frame lets an HTML artifact do: run its scripts and open links, never take the hopper's origin; a popup stays in the sandbox (issue #673). */
+export const FRAME_SANDBOX = 'allow-scripts allow-popups allow-downloads';
 
 export function artifactsOfJob(view: ArtifactsView | null, jobId: string): ArtifactView[] {
   if (!view) return [];

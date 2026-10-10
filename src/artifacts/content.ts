@@ -5,7 +5,7 @@
 //
 // HTML runs only in a sandbox: CSP `sandbox` without `allow-same-origin` gives the page an opaque origin, so it reads
 // none of the hopper's storage, cookies or session, and `connect-src 'none'` keeps it from calling any URL; its scripts
-// run inside it. SVG and the text kinds get a sandbox with no script at all. Pure but for the key.
+// run inside it, and it loads only what it carries (issue #673). SVG and the text kinds get a sandbox with no script at all. Pure but for the key.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { ArtifactKind } from '../domain/artifacts.ts';
 
@@ -15,14 +15,20 @@ export const CONTENT_URL_SECONDS = 3600;
 export const CONTENT_PATH = '/artifact-content';
 export const LINK_PATH = '/artifact-link';
 
-/** An HTML artifact's policy: its scripts run, in a sandbox of its own origin, and it reaches nothing. */
+/** What an HTML artifact may load, each kind: only what it carries itself (issue #673). */
+const OWN_ONLY = "'unsafe-inline' data: blob:";
+/**
+ * An HTML artifact's policy: its scripts run, in a sandbox of its own origin, and it reaches nothing. It loads nothing
+ * from outside either (issue #673): an `<img>` or `<script>` from any https address is a request out, and its URL can
+ * carry what the page read — its own signed content URL included. A popup it opens stays in the sandbox.
+ */
 export const HTML_POLICY = [
-  'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads',
+  'sandbox allow-scripts allow-popups allow-downloads',
   "default-src 'none'",
-  "script-src 'unsafe-inline' 'unsafe-eval' https: data: blob:",
-  "style-src 'unsafe-inline' https: data:",
-  'img-src https: data: blob:',
-  'font-src https: data:',
+  `script-src ${OWN_ONLY}`,
+  `style-src ${OWN_ONLY}`,
+  `img-src ${OWN_ONLY}`,
+  `font-src ${OWN_ONLY}`,
   'media-src data: blob:',
   "connect-src 'none'",
   "form-action 'none'",

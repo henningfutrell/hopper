@@ -19,8 +19,9 @@ export const ARTIFACT_EXIT = { done: 0, no: 1, badCall: 2, unreachable: 3 } as c
 export const ARTIFACT_HELP = `artifacts: put a file on the hopper for a person to see — a chart, an HTML page, a report, an image, a CSV.
 
 The hopper keeps it with this job and its issue, and gives a URL. A person sees it on the job's card and in Artifacts.
-HTML opens in a sandbox: its scripts run, but it can reach nothing (no fetch, no hopper session). Make it self-contained;
-scripts and styles from an https: CDN load.
+HTML opens in a sandbox: its scripts run, but it can reach nothing (no fetch, no hopper session) and load nothing from
+outside. Make it self-contained: put scripts, styles, images and fonts inline or as data: URLs. A script, style, image
+or font from a CDN or any other address does not load. No eval or new Function either.
 
   sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE]   keep FILE; prints its id and URL
         TYPE: html, svg, png, jpeg, gif, webp, pdf, csv, markdown, json, text or file (default: from FILE's name)
