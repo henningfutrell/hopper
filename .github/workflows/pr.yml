@@ -1,9 +1,10 @@
 # The check on every pull request (issue #672): `pr / test`. Yolo mode merges a pull request only once a check
 # passed on it (issue #652: no checks is not passing), and this is the check. Every gate of AGENTS.md: typecheck,
-# lint, the UI build and the tests. The tests that need a host service a clean runner does not give (containers
-# they start themselves, a real sshd, LDAP, a vault) are left out (test/support/host-services.ts); the suite's own
-# Postgres still starts through testcontainers. Read-only and with no secrets, so a fork's pull request is safe:
-# `pull_request`, never `pull_request_target`.
+# lint, the UI build (`gates`) and the tests, in three shards to stay well under 10 minutes (`shard`); `test`
+# passes only when all of them passed, so it is the one check to require. The tests that need a host service a
+# clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
+# (test/support/host-services.ts); the suite's own Postgres still starts through testcontainers. Read-only and
+# with no secrets, so a fork's pull request is safe: `pull_request`, never `pull_request_target`.
 name: pr
 
 on:
@@ -19,9 +20,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build:ui
+
+  shard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -31,10 +50,19 @@ jobs:
       # The ssh stand-ins (test/herdr/fake-ssh-bin.mjs) run under PATH=/usr/bin:/bin, as on a host with node there.
       - run: sudo ln -sf "$(command -v node)" /usr/bin/node
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run build:ui
-      # Most tests wait on Postgres or a child process, not the CPU: more workers than the runner's cores.
-      - run: npm test -- --maxWorkers=8
+      - run: npm test -- --shard=${{ matrix.shard }}/3
         env:
           HOPPER_TEST_HOST_SERVICES: '0'
+
+  # The check to require. It runs even when a job it needs failed or was cancelled, and passes only when every one
+  # passed: a skipped check would count as passing.
+  test:
+    needs: [gates, shard]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: test "$GATES" = success && test "$SHARDS" = success
+        env:
+          GATES: ${{ needs.gates.result }}
+          SHARDS: ${{ needs.shard.result }}

@@ -677,8 +677,10 @@ needs docker), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres:/
 existing database instead.
 
 **The PR check** (issue #672): `.github/workflows/pr.yml` runs on every pull request to `dev`, `beta` or
-`stable` and shows as the check **`pr / test`**. It runs `npm ci`, `npm run typecheck`, `npm run lint`,
-`npm run build:ui` and `npm test` with `HOPPER_TEST_HOST_SERVICES=0`, which leaves out the tests that need
+`stable`. Its job `pr / gates` runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build:ui`;
+its jobs `pr / shard (1)` to `(3)` run `npm test` in three shards, so the check stays well under 10 minutes.
+The check to require is **`pr / test`**: it passes only when the gates and every shard passed. The tests run
+with `HOPPER_TEST_HOST_SERVICES=0`, which leaves out the tests that need
 their own containers, a real sshd, LDAP or a vault (the list: `test/support/host-services.ts`; a new test
 that needs one of those goes there). It reads the repository only and uses no secrets (`pull_request`, never
 `pull_request_target`), so a fork's pull request is safe. Yolo mode merges a pull request only once a check

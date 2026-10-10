@@ -11,11 +11,12 @@ import { HOST_SERVICE_TESTS, testExclude } from '../support/host-services.ts';
 const ROOT = join(import.meta.dirname, '..', '..');
 
 type Step = { uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> };
+type Job = { needs?: string[]; if?: string; 'timeout-minutes'?: number; strategy?: { matrix: { shard: number[] } }; steps: Step[] };
 type Workflow = {
   name: string;
   on: Record<string, { branches?: string[] } | null>;
   permissions: Record<string, string>;
-  jobs: Record<string, { 'timeout-minutes'?: number; steps: Step[] }>;
+  jobs: Record<string, Job>;
 };
 const workflow = parse(readFileSync(join(ROOT, '.github', 'workflows', 'pr.yml'), 'utf8')) as Workflow;
 
@@ -30,20 +31,30 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     expect(readFileSync(join(ROOT, '.github', 'workflows', 'pr.yml'), 'utf8')).not.toMatch(/secrets\./);
   });
 
-  it('is the check `pr / test`, with a time limit', () => {
+  it('is the check `pr / test`: it waits on every gate and shard, and passes only when each passed', () => {
     expect(workflow.name).toBe('pr');
-    expect(Object.keys(workflow.jobs)).toEqual(['test']);
-    expect(workflow.jobs.test!['timeout-minutes']).toBeLessThanOrEqual(15);
+    const test = workflow.jobs.test!;
+    expect(test.needs).toEqual(['gates', 'shard']);
+    // Run even when a needed job failed: a skipped check would count as passing.
+    expect(test.if).toBe('always()');
+    expect(test.steps.map((s) => s.run)).toEqual(['test "$GATES" = success && test "$SHARDS" = success']);
+    expect(test.steps[0]!.env).toEqual({ GATES: '${{ needs.gates.result }}', SHARDS: '${{ needs.shard.result }}' });
+    for (const job of Object.values(workflow.jobs)) expect(job['timeout-minutes']).toBeLessThanOrEqual(10);
   });
 
-  it('installs with the npm cache, then runs every gate, the tests without host services', () => {
-    const steps = workflow.jobs.test!.steps;
-    const node = steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
-    expect(node?.with).toMatchObject({ 'node-version': 24, cache: 'npm' });
-    const runs = steps.map((s) => s.run).filter(Boolean);
-    for (const gate of ['npm ci', 'npm run typecheck', 'npm run lint', 'npm run build:ui']) expect(runs).toContain(gate);
-    const test = steps.find((s) => s.run?.startsWith('npm test'));
-    expect(test?.env).toMatchObject({ HOPPER_TEST_HOST_SERVICES: '0' });
+  it('runs every gate with the npm cache, and the tests in shards without host services', () => {
+    for (const name of ['gates', 'shard']) {
+      const node = workflow.jobs[name]!.steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
+      expect(node?.with, name).toMatchObject({ 'node-version': 24, cache: 'npm' });
+    }
+    const runs = workflow.jobs.gates!.steps.map((s) => s.run).filter(Boolean);
+    expect(runs).toEqual(['npm ci', 'npm run typecheck', 'npm run lint', 'npm run build:ui']);
+    const shard = workflow.jobs.shard!;
+    const shards = shard.strategy!.matrix.shard;
+    expect(shards).toEqual(shards.map((_, i) => i + 1));
+    const test = shard.steps.find((s) => s.run?.startsWith('npm test'));
+    expect(test?.run).toBe(`npm test -- --shard=\${{ matrix.shard }}/${shards.length}`);
+    expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
   });
 });
 
