@@ -8790,6 +8790,16 @@ reach or write reach to prod; `medium` for any other write reach; `low` otherwis
 every Decision and every view: a rule change applies at once. The reasons are the reaches that set the level, each with
 its evidence.
 
+**A box's blast radius includes its template's** (issue #605). A box (a client target joined with a template's line)
+is rated for the higher of its reach and its template's rating ("A template's blast radius"): its tools decide what it
+could do, its template what it may do. `machineRadius` (`rate.ts`, pure) gives the level and its **source** — `reach`,
+`template`, or `both` when they are the same. The engine reads the template's rating live from the vault
+(`VaultService.boxRadius`) at every Decision and every view, so a template widened to high gates its boxes at the next
+Decision, as a rule change does; a template saved or removed, a profile approved and a vault secret set or removed wake
+the engine. A box not yet discovered is rated by its template alone: a high template gates it before its first
+discovery. An actor box's mismatch compares the level declared with this level. The discovery record keeps the level
+of the reach alone.
+
 **The gate** (`src/decider/gate.ts`, pure; `DecisionInputs.blastRadius`). A machine is **gated** when it is an actor
 machine, or rated at or above `gateAt` (`high` by default; `medium`; `off`: only actor machines). Placement leaves a
 gated machine to the jobs that **pass**: let through by a person (`Job.gatePass`), with one of `pass.labels`, from one of
@@ -8798,7 +8808,8 @@ rules). A job resuming returns to its pane on its machine. A job every machine i
 (online, its executor, its pin, home known, work tree usable, disk not low, no open problem) keeps from it is held:
 `held at the blast-radius gate: desk is rated high; only a job let through the gate runs there`. Otherwise it goes to
 a machine that is not gated, or waits for a lane there. A gated machine's idle reason says it is gated. A machine never
-discovered is not gated by rating: discovery runs at the next Decision after it comes online.
+discovered is not gated by rating — unless it is a box of a template rated at or above `gateAt` (issue #605):
+discovery runs at the next Decision after it comes online.
 
 **Let through** (`POST /ui/api/jobs/:id/gate-pass`, admin — it widens what the job may reach): only a job held at the
 gate (409 otherwise); `gatePass { at }`, `job.gate_passed { reason }`, and it is placed at the next Decision. The
@@ -8817,15 +8828,18 @@ Always gated. A rating other than the level declared is a **mismatch**: flagged 
 repos (`owner/name`), account ids (12 digits), machines and bounds are checked (400). Saving is
 `blast_radius.settings_changed { from, to }`. `GET /api/blast-radius` answers `BlastRadiusView`: the settings and
 defaults, the curated AWS actions and kubectl checks, and per machine whether it can be discovered, its record, its
-rating now, its actor declaration with `mismatch`, and why it is gated.
+rating now (`rating`: its reach), a box's `template` (its name and rating, issue #605), its blast radius `radius`
+(`level` and `source`: `reach`, `template` or `both`), its actor declaration with `mismatch`, and why it is gated.
 
 **Events.** `machine.discovered { machineId, level, changes }` (the first discovery, or one that changed something),
 `machine.discovery_failed`, `machine.radius_grew { from, to }`, `machine.actor_mismatch { expected, found }`,
 `blast_radius.settings_changed`, `job.gate_passed`. `machine.discovered`, the settings change and `job.gate_passed` wake
-the engine.
+the engine; so do `template.saved`, `template.removed`, `template.profile_approved`, `vault.secret_set` and
+`vault.secret_removed`, which change a template's rating and so its boxes' (issue #605).
 
 **UI.** Machines: the Blast radius panel — the settings in a sentence; per machine its level, *gated* and why, *actor*
-and a mismatch, *grew*, when it was discovered and what changed, the reasons, and on demand every reach with its access,
+and a mismatch, *grew*, when it was discovered and what changed, the reasons, a box's template with its rating and
+reasons, the level's source (`high radius, from template kube`), and on demand every reach with its access,
 prod and evidence, its tools and its credential sources; Discover per machine and Discover all (operator); an admin edits
 the settings and the actor machines.
 
@@ -9400,7 +9414,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`), and rated (`rating.ts`, issues #584 and #605); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,

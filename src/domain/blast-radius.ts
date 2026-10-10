@@ -17,6 +17,10 @@ export type GateAt = typeof GATE_AT[number];
 export const UNCONFIRMED_AS = ['write', 'read'] as const;
 export type UnconfirmedAs = typeof UNCONFIRMED_AS[number];
 
+/** What set a machine's blast radius (issue #605): its own reach, its template's rating (a box), or both alike. */
+export const RADIUS_SOURCES = ['reach', 'template', 'both'] as const;
+export type RadiusSource = typeof RADIUS_SOURCES[number];
+
 /** The prefix of every hold the gate gives. */
 export const GATE_HOLD = 'held at the blast-radius gate';
 
@@ -170,8 +174,12 @@ export interface MachineRadiusView {
   /** Whether discovery can run there: a container target has no shell the hopper reaches it by. */
   discoverable: boolean;
   discovery?: DiscoveryRecord;
-  /** Rated now, with the rules now. Absent: never discovered. */
+  /** Its reach rated now, with the rules now. Absent: never discovered. */
   rating?: Rating;
+  /** A box (issue #605): the template it joined as, and that template's rating now. */
+  template?: { name: string; radius: TemplateRadius };
+  /** Its blast radius: the higher of its reach and its template's rating, and which set it. Absent: neither is known. */
+  radius?: { level: RadiusLevel; source: RadiusSource };
   /** Its declaration, when it is an actor machine; `mismatch` when its rating is not the level declared. */
   actor?: ActorMachine & { mismatch: boolean };
   /** Why the gate keeps it from ordinary placement; absent: it is not gated. */

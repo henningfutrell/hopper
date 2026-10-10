@@ -128,6 +128,8 @@ async function boot(o: { container?: boolean } = {}): Promise<{ a: TestApp; sess
     seams: { authorizationServer: createFakeAuthorizationServer() },
   });
   const session = await t.login();
+  // The write profile rates kube high, and so its boxes (issue #605); the blast-radius gate is not under test here.
+  await t.ui('/ui/api/blast-radius/settings', { gateAt: 'off' }, { token: session });
   const edit = async (body: Record<string, unknown>) => expect((await t!.ui('/ui/api/vault', body, { token: session })).status).toBe(200);
   await edit({ action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: KUBE_MINTING_TOKEN }) });
   await edit({ action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: AWS_MINTING_SECRET, Region: 'us-east-1', Endpoint: sts.url }) });

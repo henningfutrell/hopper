@@ -67,6 +67,8 @@ async function boot(): Promise<{ a: TestApp; session: string; server: FakeAuthor
   });
   const session = await t.login();
   const vault = (body: Record<string, unknown>) => t!.ui('/ui/api/vault', body, { token: session });
+  // The prod secret rates kube high, and so its boxes (issue #605); the blast-radius gate is not under test here.
+  await t.ui('/ui/api/blast-radius/settings', { gateAt: 'off' }, { token: session });
   await vault({ action: 'set', name: 'KUBE_TOKEN', scope: 'cluster prod, read only', value: 'k3s-token-never-in-access' });
   for (const name of ['kube', 'other']) expect((await vault({ action: 'save-template', name, image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'] })).status).toBe(200);
   expect((await t.ui('/ui/api/access', { action: 'approve', template: 'kube', operation: 'read', asset: PROD }, { token: session })).status).toBe(200);

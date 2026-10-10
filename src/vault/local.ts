@@ -14,7 +14,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   removeTemplate: (name, by) => v.removeTemplate(name, by),
   approveTemplate: (name, by) => v.approveTemplate(name, by),
   approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
-  scopeOf: (machine) => v.scopeOf(machine),
+  scopeOf: (machine) => v.scopeOf(machine), boxRadius: (machine) => v.boxRadius(machine),
   boxes: () => v.boxes(),
   templateScopes: () => v.templateScopes(),
 });

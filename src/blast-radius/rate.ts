@@ -6,7 +6,7 @@
 import { AWS_ADMIN_ACTIONS } from '../client/discover.ts';
 import {
   RADIUS_LEVELS, type AwsIdentity, type BlastRadiusSettings, type DiscoveryChanges, type DiscoveryFacts, type KubeContext,
-  type RadiusLevel, type RadiusRules, type Rating, type Reach,
+  type RadiusLevel, type RadiusRules, type RadiusSource, type Rating, type Reach,
 } from '../domain/types.ts';
 
 const rankOf = (level: RadiusLevel): number => RADIUS_LEVELS.indexOf(level);
@@ -109,6 +109,16 @@ export function changesOf(before: DiscoveryFacts | undefined, after: DiscoveryFa
     removed: was.filter((n) => !nowSet.has(n)),
     ...(levelBefore !== undefined && levelBefore !== levelAfter ? { level: { from: levelBefore, to: levelAfter } } : {}),
   };
+}
+
+/**
+ * A machine's blast radius (issue #605): the higher of its reach and, for a box, its template's rating, and which set
+ * it. A box's tools decide what it could do; its template what it may do: it is rated for the wider of the two.
+ */
+export function machineRadius(reach: RadiusLevel | undefined, template: RadiusLevel | undefined): { level: RadiusLevel; source: RadiusSource } | undefined {
+  if (reach === undefined) return template === undefined ? undefined : { level: template, source: 'template' };
+  if (template === undefined || higher(reach, template)) return { level: reach, source: 'reach' };
+  return { level: template, source: higher(template, reach) ? 'template' : 'both' };
 }
 
 /** Whether a level is higher than another. */

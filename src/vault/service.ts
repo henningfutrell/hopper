@@ -14,12 +14,12 @@ import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type 
 import { mintsForProblem } from '../domain/minting.ts';
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
-import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/blast-radius.ts';
-import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
-import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
-import type { RadiusRules } from '../domain/blast-radius.ts';
+import type { RadiusRules, TemplateRadius } from '../domain/blast-radius.ts';
+import { givesOf, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
+import { highRadius, type TemplateScope } from '../blast-radius/template.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
+import { templateRating } from './rating.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 
 /** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
@@ -48,6 +48,8 @@ export interface VaultService {
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<VaultResult>;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
+  /** A box's template and that template's rating now (issue #605): what the box's blast radius includes. Undefined: no box, or its template is gone. */
+  boxRadius(machine: string): { name: string; radius: TemplateRadius } | undefined;
   /**
    * Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581).
    * Only a template the vault holds (issue #604): a box of one that is not there is an instance of nothing.
@@ -76,7 +78,7 @@ export interface VaultService {
  * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
  * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
  */
-export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxes' | 'templateScopes'> {
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes'> {
   /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
@@ -211,17 +213,7 @@ export function createVaultService(o: {
     return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t) : [] };
   }
 
-  const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
-  const rules = (): RadiusRules => (o.store.settings.getBlastRadius() ?? DEFAULT_BLAST_RADIUS_SETTINGS).rules;
-  /** What the rating reads of a template: its secrets' names and scope lines, never a value, and its profiles. */
-  const scopeOfTemplate = (t: Template): TemplateScope => ({
-    secrets: t.secrets.map((n) => { const s = vault.get(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
-    profiles: t.profiles ?? [],
-  });
-  const viewOf = (t: Template): TemplateView => {
-    const approved = approvedOf(t.name);
-    return templateView(t, approved, rateTemplate(scopeOfTemplate(t), approved, rules()));
-  };
+  const { approvedOf, rules, scopeOfTemplate, viewOf } = templateRating(o);
   const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
   const declares = (t: Template, p: OperationProfile): boolean => (t.profiles ?? []).some((x) => keyOf(x) === keyOf(p));
   const approveIn = async (t: Template, p: OperationProfile, by: string): Promise<void> => {
@@ -333,6 +325,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
+    boxRadius: (machine) => { const name = scopeOf(machine).template, t = name === undefined ? undefined : vault.template(name); return t ? { name: t.name, radius: viewOf(t).radius } : undefined; },
     boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined && vault.template(m.template) ? [{ machine: m.name, template: m.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),

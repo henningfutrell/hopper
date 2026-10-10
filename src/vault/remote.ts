@@ -93,6 +93,7 @@ export function remoteVault(o: {
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),
     approveProfile: (name, profile, by) => o.local.approveProfile(name, profile, by),
     scopeOf: (machine) => o.local.scopeOf(machine),
+    boxRadius: (machine) => o.local.boxRadius(machine),
     boxes: () => o.local.boxes(),
     templateScopes: () => o.local.templateScopes(),
   };

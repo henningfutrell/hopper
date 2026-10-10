@@ -2,7 +2,7 @@
 // medium; write reach to prod, or reach that can grant itself more, is high. What discovery could not confirm counts
 // as a write unless the rules say otherwise. Every level carries its evidence.
 import { describe, expect, it } from 'vitest';
-import { changesOf, gateOf, rate } from '../../src/blast-radius/rate.ts';
+import { changesOf, gateOf, machineRadius, rate } from '../../src/blast-radius/rate.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type AwsIdentity, type DiscoveryFacts, type KubeContext } from '../../src/domain/types.ts';
 
 const rules = DEFAULT_BLAST_RADIUS_SETTINGS.rules;
@@ -121,5 +121,16 @@ describe('the gate', () => {
     expect(gateOf('m', undefined, s)).toBeUndefined();
     const actors = { ...s, gateAt: 'off' as const, actors: [{ machineId: 'm', purpose: 'prod deploys', expected: 'high' as const }] };
     expect(gateOf('m', undefined, actors)).toBe('an actor machine (prod deploys)');
+  });
+});
+
+describe('a box\'s blast radius (issue #605)', () => {
+  it('is the higher of its reach and its template\'s rating, and says which set it', () => {
+    expect(machineRadius('low', 'high')).toEqual({ level: 'high', source: 'template' });
+    expect(machineRadius(undefined, 'high')).toEqual({ level: 'high', source: 'template' });
+    expect(machineRadius('high', 'medium')).toEqual({ level: 'high', source: 'reach' });
+    expect(machineRadius('medium', undefined)).toEqual({ level: 'medium', source: 'reach' });
+    expect(machineRadius('low', 'low')).toEqual({ level: 'low', source: 'both' });
+    expect(machineRadius(undefined, undefined)).toBeUndefined();
   });
 });
