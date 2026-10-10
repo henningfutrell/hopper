@@ -4627,7 +4627,7 @@ check in "UI session and mutations" 5 stands.
 
 **Logging a device in.** `open-ui.sh` works only on this machine. The other way is through the same
 one-time login code (`POST /ui/login`; using it rotates it):
-1. **Device link** — a logged-in browser's header button calls `POST /ui/api/device-link` and shows
+1. **Device link** — a logged-in browser's user menu item (issue #666) calls `POST /ui/api/device-link` and shows
    `http://<LAN name>:<port>/#login=<code>` per LAN name, each also as a QR code for a phone's camera
    (issue #95, `qrcode.react`). The code rides in the fragment, which the browser never sends; the
    page strips it from the address bar and history, then posts it. The QR follows the code: while the
@@ -6947,10 +6947,14 @@ the operating system enforces runs their jobs on a machine of their own (an ssh,
 
 ### UI
 
-The top bar shows the session's user (its name; the identity that signed in on hover) and role.
+The top bar shows the session's user in the **user menu** (issue #666): one button, the user's initials, labelled with the
+name and role, the identity that signed in on hover. It opens a menu (Radix `DropdownMenu`: keyboard, outside tap and
+Escape close it) with the name and role, the theme, the device link and, last and set apart, Sign out. Sign out needs a
+second tap, and asks again each time the menu opens. Every target is at least 44 px. On a phone the bar holds only the
+logo, the version badge with its channel, the connection dot and that button, so no control sits next to Sign out.
 
 **Who you are, and sign-in first (issue #167).** The top bar says who you are at every width: the
-session's user and role. `GET /ui/api/session` answers, logged out, `viewing: { id, name }` — the user a
+session's user and role, in the user menu. `GET /ui/api/session` answers, logged out, `viewing: { id, name }` — the user a
 read without a session reads (loopback on a one-user hopper: that user; absent with several users and on
 a LAN or public request) — and `signIn.required`, true while the instance has more than one user.
 **Logged out, the page is only the landing page (issue #213)**, however many users: `load` stops after
