@@ -14,6 +14,7 @@
   "scripts": {
     "start": "node src/main.ts",
     "test": "vitest run",
+    "test:e2e:sse-vault": "bash test/e2e/sse-vault-wiremock/run.sh",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json && tsc -p ui/tsconfig.json && tsc -p site/tsconfig.json",
     "schemas": "node scripts/export-schemas.ts",
