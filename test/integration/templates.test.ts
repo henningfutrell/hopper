@@ -19,13 +19,27 @@
 //   Scenario: a template with an attached box is not removed; the answer names the box (issue #604)
 //   Scenario: a join line whose template was removed is refused, and adds no machine
 //   Scenario: a machine is not set to a template that does not exist
+//
+// Feature: template approval gates job placement (issue #602)
+//   Scenario: a box of a template not approved takes no job until a person approves it; a revoke stops new jobs
+//     Given the template kube, saved and not approved, and a box joined as kube
+//     Then Machines shows the box waiting for template approval
+//     When a job is queued
+//     Then the hopper holds it, and its timeline says it waits for template approval
+//     When an admin approves kube
+//     Then the hopper places the job on the box
+//     When an admin revokes the approval of kube
+//     Then Machines shows the box waiting again, and the hopper places no new job on it
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { joinHopper } from '../../src/client/join.ts';
+import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { boxes } from '../support/vault-box.ts';
+import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -35,8 +49,10 @@ const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
 const saved = { ...process.env };
+const box = boxes();
 
 afterEach(async () => {
+  await box.end();
   await t?.stop();
   t = undefined;
   for (const c of cleanups.splice(0)) c();
@@ -47,7 +63,7 @@ async function boot(): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
-  t = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['test'] } } });
+  t = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } } });
   const session = await t.login();
   for (const name of ['KUBE_TOKEN', 'PROD_KEY']) await t.ui('/ui/api/vault', { action: 'set', name, value: `${name}-value-0123456789` }, { token: session });
   return { a: t, session };
@@ -181,5 +197,35 @@ describe('templates', () => {
     const r = await a.ui<{ error: string }>('/ui/api/plugins', { action: 'options', role: 'machine-source', name: 'hopper-sandbox-kube', options, version: cfg.version }, { token: session });
     expect(r.status).toBe(404);
     expect(r.body.error).toMatch(/no template gone/);
+  });
+
+  it('a box of a template not approved takes no job until a person approves it; a revoke stops new jobs at once (issue #602)', async () => {
+    const { a, session } = await boot();
+    process.env.FAKE_HERDR_RUNNING = '1';
+    await edit(a, session, { action: 'save-template', name: 'kube', image: IMAGE, secrets: ['KUBE_TOKEN'] });
+    await box.join(a, session, 'hopper-sandbox-kube', 'kube');
+    const machine = async (): Promise<MachineSnapshot> => ((await a.api('GET', '/api/machines')).body.machines as MachineSnapshot[]).find((m) => m.id === 'hopper-sandbox-kube')!;
+    expect((await machine()).template).toEqual({ name: 'kube', waiting: expect.stringContaining('waiting for template approval') });
+
+    const first = await a.pull({ op: 'sleep', ms: 100 });
+    const held = await waitFor(async () => { const j = await a.job(first.id); return j.status === 'held' && j.holdReason?.includes('waiting for template approval') ? j : undefined; }, { timeoutMs: 10000, what: 'the job held for template approval' });
+    expect(held.laneId).toBeUndefined();
+    const heldEvents = (await a.events()).filter((e) => e.type === 'job.held' && e.jobId === first.id);
+    expect(heldEvents.map((e) => (e.data as { reason: string }).reason)).toContainEqual(expect.stringContaining('waiting for template approval'));
+
+    expect((await edit(a, session, { action: 'approve-template', name: 'kube' })).status).toBe(200);
+    expect((await machine()).template).toEqual({ name: 'kube' });
+    expect((await a.waitForStatus(first.id, 'finished', 10000)).laneId).toBe('hopper-sandbox-kube/lane-1');
+
+    expect((await edit(a, session, { action: 'revoke-template', name: 'kube' })).status).toBe(200);
+    expect((await template(a, 'kube'))!.approval).toBeUndefined();
+    expect((await a.events()).map((e) => e.type)).toContain('vault.revoked');
+    expect((await machine()).template).toEqual({ name: 'kube', waiting: expect.stringContaining('waiting for template approval') });
+    const second = await a.pull({ op: 'sleep', ms: 100 });
+    await waitFor(async () => { const j = await a.job(second.id); return j.status === 'held' && j.holdReason?.includes('waiting for template approval') ? j : undefined; }, { timeoutMs: 10000, what: 'the second job held for template approval' });
+    // Several Decisions later it is still not placed.
+    await new Promise((r) => setTimeout(r, 500));
+    expect((await a.job(second.id)).status).toBe('held');
+    expect((await edit(a, session, { action: 'revoke-template', name: 'none' })).status).toBe(404);
   });
 });

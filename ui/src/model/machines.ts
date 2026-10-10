@@ -68,6 +68,12 @@ export function workTreeText(m: MachineSnapshot): string | null {
   return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
 }
 
+/** A sandbox box's template the Machines view shows (issue #602): its name, and whether it takes jobs; null for a machine of no template. */
+export function templateText(m: MachineSnapshot): string | null {
+  if (!m.template) return null;
+  return m.template.waiting ? `${m.template.name}: takes no job, ${m.template.waiting}` : `${m.template.name}, approved: takes jobs`;
+}
+
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
 
@@ -291,6 +297,9 @@ export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
     ? { boxUrl: `http://hopper:${port}`, boxNetwork: 'hopper_default', boxImage: BOX_IMAGE }
     : { boxUrl: `http://127.0.0.1:${port}`, boxNetwork: 'host', boxImage: BOX_IMAGE };
 }
+
+/** How a person signs in the agent of a box the hopper started (issue #603): once, in the box, on the computer. */
+export const boxSignInLine = (container: string, agent: BoxAgent): string => `podman exec -it ${container} ${agent}`;
 
 /**
  * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper

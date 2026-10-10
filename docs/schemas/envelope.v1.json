@@ -125,6 +125,7 @@
         "template.saved",
         "template.removed",
         "vault.approved",
+        "vault.revoked",
         "template.profile_approved",
         "vault.delivered",
         "vault.refused",

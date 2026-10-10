@@ -11,7 +11,8 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Minted, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
-import type { ClientTarget, Vault, VaultResult, VaultService } from './service.ts';
+import type { ClientTarget, VaultResult, VaultService } from './service.ts';
+import type { Vault } from './vault.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, type VaultOp } from './wire.ts';
 
 const TIMEOUT_MS = 10_000;
@@ -91,6 +92,7 @@ export function remoteVault(o: {
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),
+    revokeTemplate: (name, by) => o.local.revokeTemplate(name, by),
     approveProfile: (name, profile, by) => o.local.approveProfile(name, profile, by),
     scopeOf: (machine) => o.local.scopeOf(machine),
     boxRadius: (machine) => o.local.boxRadius(machine),

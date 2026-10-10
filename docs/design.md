@@ -62,9 +62,10 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `local.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/sandboxes/` | sandbox boxes the hopper starts (issue #603, "Sandbox boxes the hopper launches"): the launch, the keeping in step with the machines and the cleanup problems (`service.ts`); rootless Podman at the `SandboxEngine` port (`podman.ts`, its libpod API over node:http). The machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -3999,7 +4000,10 @@ about where a machine can reach the hopper from, so both were run, not assumed:
    (`hopper-box-<agent>`, the computer's host name). Nothing is typed into the hopper but a name.
 2. **Not B, for now.** One click instead of one paste is not worth handing an admin session the host's
    account. Revisit only with an engine API filter that checks request bodies (a create's binds, devices,
-   privileges), and then as an opt-in mount, never in the default compose file.
+   privileges), and then as an opt-in mount, never in the default compose file. *Since issue #603 (owner
+   direction): B is built, as that opt-in mount — `compose.sandboxes.yaml`, not the default compose file — and
+   the hopper builds every request body itself, so no request carries a bind, a device or a privilege
+   ("Sandbox boxes the hopper launches").*
 3. **C as the bulk form of A, later.** When a set of boxes is wanted at once, a compose profile with a
    reusable join code is the same box line in a file; it needs nothing A does not build.
 4. **D's two cheap parts land anyway, on the ssh path #312 demotes:** no ssh-config warning (#309), herdr
@@ -4119,6 +4123,63 @@ session, a taken name, a restart and a rename keeping the machine, a forged key 
 refused, the install served. `test/client/link.test.ts` (the token), `test/adapters/client-transport.test.ts`
 (the link), `test/integration/client-release.test.ts` (releases over the link), `test/ui/machines.test.ts`
 (the lines), `test/store/tenant-migration-12.test.ts`.
+
+## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
+
+Owner direction, from a live test: a person had to start a sandbox box by hand, and removing its machine left the
+container running. The hopper now starts, stops and removes sandbox boxes itself, through rootless Podman. This is
+#310's option B, which that research put off; the owner asked for it.
+
+**The sandbox engine** (`SandboxEngine`, `src/domain/ports.ts`; `src/sandboxes/podman.ts`). Rootless Podman at the
+API socket `HOPPER_PODMAN_SOCKET` names — its libpod REST API over node:http, six calls: `info`, list containers
+(by label), image exists and pull, volume create, container create and start, container and volume delete. Written
+here, not taken from a library: dockerode speaks the Docker API, which has no rootless answer and other volume
+semantics, and six calls cost less than its dependency tree. `problem()` refuses a socket that is not reached or a
+Podman that is not rootless: rootful Podman is root on the computer. Unset: the hopper starts no box, and Add machine
+shows the line ("Joining a machine").
+
+**Launch** (`POST /ui/api/machines/sandbox` `{agent, template?}`, admin). The hopper picks a free name —
+`hopper-sandbox-<template or agent>`, then `-2`, `-3`, … against every container Podman holds — mints a join code
+that names it (instance migration 32: `join_codes.container`, a column only), and starts the box: the published
+`ghcr.io/henningfutrell/hopper:box-<agent>` or the template's image, only once that image is approved (409 else), the
+box line's sandbox flags fixed in the adapter (every capability dropped, `no-new-privileges`, a read-only root, `/tmp` a
+tmpfs, the home the volume `<name>-home`, restart `unless-stopped`), `HOPPER_CLIENT_NAME` its name and `HOPPER_JOIN`
+the join line on the sandbox network (`hopper_default` in the container, `host` on the host; `HOPPER_SANDBOX_NETWORK`).
+Labels: `io.hopper.box` = the hopper's **instance id** (made once, kept in the instance settings) and `io.hopper.user`.
+A box that does not start is removed again, its volume too; the answer is 502 with Podman's reason. It joins as any
+box does; `POST /client/join` gives the client target the code's `container` option. Nothing a request carries
+reaches the create body but an agent from a fixed list or a template's name.
+
+**Keeping in step** (`src/sandboxes/service.ts`, every 10 s and at start, after the runtimes). The hopper lists the
+boxes with its own instance label — another hopper's are not its — and keeps each one a client target of its user
+names (`UserRuntime.sandboxBoxes`) or a live join code waits for (`JoinCodeRepository.waiting`). Any other is removed
+— stopped (10 s, then killed) and deleted with its volumes — once it is found so twice in a row: a join's config write
+may lag one check. A user's runtime whose plugins config cannot be read names nothing and keeps all its boxes: a box
+holds an agent's sign-in, so nothing is removed on a config that cannot say which machines there are. A box of a user
+the instance no longer has goes.
+
+**Cleanup problems.** A remove that fails is kept in memory with its reason and time, logged once per reason, tried
+again at the next check, and dropped when the box is gone. `GET /api/sandboxes` answers `{launch: {available,
+problem?}, problems}` for the session's user; Machines shows the problems under *Sandbox boxes not removed*, and Add
+machine starts a box with **Start the box** when `launch.available`, else says why and shows the line.
+
+**Deploy.** Opt-in: `compose.sandboxes.yaml`, saved as `compose.override.yaml` beside `compose.yaml` (every compose
+command reads that file with no flag; podman-compose does not read `COMPOSE_FILE` from `.env`), mounts the
+rootless socket under `$XDG_RUNTIME_DIR`, sets `HOPPER_PODMAN_SOCKET` and adds group 0 — the user's own group in a
+rootless container, which `podman.socket` (mode 0660) lets open it. `docs/deploy.md` "Sandbox boxes the hopper starts".
+
+**Residual risk.** The socket is the user's account: a compromise of the hopper's process can start any container as
+the user. What the hopper itself starts is fixed in code, and an admin UI session can start and remove boxes as it can
+add and remove machines. A box the hopper did not start (one run from the line) is not the hopper's: it is never
+removed by it.
+
+**Verification.** `test/integration/sandbox-lifecycle.test.ts` (the real daemon, the engine double): a started box
+joins as the machine that names it; a template's box only once approved; removing the machine removes the box and its
+volume; a box not joined yet is kept; at start an orphan of its own goes and another hopper's stays; a failed remove is
+shown with its reason until it goes; a box that does not start leaves nothing; no socket, or a rootful one, starts
+nothing and says why. `test/adapters/podman-sandbox.test.ts` against real rootless Podman when
+`HOPPER_TEST_PODMAN_SOCKET` names its socket: the flags, the labels, no capability left, removal with the volume.
+`test/scripts/compose.test.ts`: the socket only with `compose.sandboxes.yaml`.
 
 ## Client releases (issue #70, 2026-10-05)
 
@@ -9414,7 +9475,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`), and rated (`rating.ts`, issues #584 and #605); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9445,6 +9506,17 @@ migration 29, a table only), the last approval in its body.
   scope — recording who and when (`vault.approved`). A scope widened since (a secret added) or a new image waits for a
   person again (`pending`); meanwhile its boxes are given what was approved, and nothing at all while the image is not
   the approved one. Narrowing needs no approval. `gives` says what its boxes may be given now.
+- **Approval gates job placement too** (issue #602). A box of a template that is not approved — not saved, never
+  approved, its approval revoked, or its image changed since — joins and shows on Machines, but takes no new job: its
+  snapshot carries `template: { name, waiting }` (`approvalWait`, src/domain/vault.ts, read at every machine list), and
+  the decider holds a job from it as from a machine whose work tree is not usable (`templateHolds`, src/decider/assign.ts).
+  A job that can run nowhere else is held with the reason (`job.held`, on its timeline); the box's lanes stay idle with
+  the reason (the Overview's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
+  next Decision places jobs there (`vault.approved` wakes the engine). A widened scope does not close it: its boxes keep
+  working on what was approved. A job resuming in its pane there returns to it; a job running there keeps running.
+- **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Settings → Vault → Revoke) drops the template's approval
+  and every access approval of its operation profiles (`vault.revoked`): the next Decision places no new job on its
+  boxes, and they are given no vault secret, until a person approves it again.
 - **The scope is the template's.** Never a job's: nothing a job sends can name a template or a secret beyond it.
 - **A box is an instance of a template.** Add machine → A sandbox box → a template: the join code names it (instance
   migration 29: `join_codes.template`, a column only), so the line carries no template the box could change. The box
@@ -9458,8 +9530,9 @@ migration 29, a table only), the last approval in its body.
   was removed after the line was made is refused (409, the join adds no machine), and a machine's options are not set to
   a template the vault does not hold (`POST /ui/api/plugins`, 404). A box record from before this rule, of a template
   that is not there, is an instance of nothing: `boxes()` leaves it out, so Access writes no tuple for it, and the
-  vault refuses it every secret. Placement is not changed: it is a machine as before, and a person removes it.
-- **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
+  vault refuses it every secret. It takes no new job: it waits for template approval (issue #602), and a person
+  removes it.
+- **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved`, `vault.revoked` — names,
   never a value.
 
 **The vault mints only through Access** (issue #580, "Minting: short-lived credentials" below). It calls
@@ -9478,9 +9551,11 @@ that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance; a template
-with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template),
+with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template; a box of a template
+not approved takes no job until approved, and none after a revoke),
 `test/integration/access-requesters.test.ts` (the removed template's tuples gone), `test/vault/missing-template.test.ts`
 (a box of a template that is not there is no instance),
+`test/decider/template-approval.test.ts`, `test/ui/machine-template.test.ts`,
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
 
 ### A template's blast radius (issue #584)

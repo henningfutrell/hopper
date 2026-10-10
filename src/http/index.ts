@@ -33,6 +33,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
+import type { Sandboxes } from '../sandboxes/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { instanceRoutes } from './instance.ts';
@@ -56,6 +57,8 @@ export interface ServerOptions {
   updater: Updater;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
+  /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
+  sandboxes: Sandboxes;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -96,7 +99,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   jobRoutes(app, tenant);
-  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port });
+  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes });
   questionRoutes(app, tenant);
   reviewRoutes(app, tenant);
   sectionRoutes(app, tenant);
@@ -132,7 +135,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater, instanceAdmin, access: o.access,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes,
   });
   return app;
 }

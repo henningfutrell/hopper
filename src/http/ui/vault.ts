@@ -8,7 +8,7 @@ import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
 import { MINTS_FOR_KINDS } from '../../domain/minting.ts';
 import { CREDENTIAL_NOTE_MAX, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { holdsTemplate, vaultView, type Vault } from '../../vault/service.ts';
+import { holdsTemplate, vaultView, type Vault } from '../../vault/vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
 
@@ -30,6 +30,7 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   }),
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),
+  z.strictObject({ action: z.literal('revoke-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-profile'), name: z.string().max(64), ...profile }),
   // A credential request (issue #583): give a credential — a new value, or a secret the vault holds — or decline it.
   z.strictObject({
@@ -63,6 +64,7 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
           : edit.action === 'save-template' ? await vault.saveTemplate(edit, by)
             : edit.action === 'remove-template' ? await vault.removeTemplate(edit.name, by)
               : edit.action === 'approve-template' ? await vault.approveTemplate(edit.name, by)
+                : edit.action === 'revoke-template' ? await vault.revokeTemplate(edit.name, by)
                 : edit.action === 'approve-profile' ? await vault.approveProfile(edit.name, { operation: edit.operation, asset: edit.asset }, by)
                   : edit.action === 'give-credential' ? await vault.give(edit.request, giveOf(edit), by)
                     : vault.decline(edit.request, edit.reason, by);

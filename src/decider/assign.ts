@@ -64,6 +64,12 @@ export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low 
  */
 export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTreeProblem !== undefined && job.pendingAnswer === undefined;
 
+/**
+ * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
+ * take it, never fails there. A job resuming there returns to the pane it holds.
+ */
+export const templateHolds = (m: MachineSnapshot, job: Job): boolean => m.template?.waiting !== undefined && job.pendingAnswer === undefined;
+
 const GIB = 1024 ** 3;
 const freeOf = (m: MachineSnapshot): string => `${Math.round((m.disk!.freeBytes / GIB) * 10) / 10} GiB free`;
 export const NO_NEW_JOB = 'no new job is claimed there';
@@ -87,7 +93,9 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
     if (known.every((m) => workTreeHolds(m, job))) {
       return `no machine running executor ${executor} has a usable work tree: ${known.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
     }
-    const usable = known.filter((m) => !workTreeHolds(m, job));
+    const tree = known.filter((m) => !workTreeHolds(m, job));
+    if (tree.every((m) => templateHolds(m, job))) return `${tree.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
+    const usable = tree.filter((m) => !templateHolds(m, job));
     if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
     return undefined;
   }
@@ -97,6 +105,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
+  if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
 }
@@ -202,14 +211,14 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !workTreeHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
+    && !homeless(m) && !workTreeHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
   return gateHold(job, usable, gate);
 }
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
-    && !workTreeHolds(s.machine, job)
+    && !workTreeHolds(s.machine, job) && !templateHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }
 

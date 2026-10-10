@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
+import type { Sandboxes } from '../sandboxes/service.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -47,7 +48,7 @@ export function routerView(plugins: PluginsView) {
 }
 
 /** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
-export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number }): void {
+export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'> }): void {
   const startedAt = o.clock.now().getTime();
 
   // A request with no user (loopback without a session, several users: issue #221) reads the instance's
@@ -71,6 +72,11 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));
+  // The sandbox boxes the hopper starts (issue #603): whether it can start one now, and the boxes it could not remove.
+  app.get('/api/sandboxes', async (req) => {
+    o.tenant(req);
+    return o.sandboxes.view(userIdOf(req)!);
+  });
 
   app.get('/api/decisions', async (req) => {
     const { limit } = parseWith(decisionsQuery, req.query);

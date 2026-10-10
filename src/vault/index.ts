@@ -11,10 +11,12 @@ import { vaultKeys } from './keys.ts';
 import { localKms } from './kms.ts';
 import { remoteVault } from './remote.ts';
 import { randomUUID } from 'node:crypto';
-import { localVault } from './local.ts';
-import { createVaultService, openVault, withCredentialRequests, type ClientTarget, type Vault } from './service.ts';
+import { createVaultService, openVault, type ClientTarget } from './service.ts';
+import { localVault, withCredentialRequests, type Vault } from './vault.ts';
 
-export { clientTargets, vaultView, type Vault } from './service.ts';
+export { clientTargets } from './service.ts';
+export { vaultView, type Vault } from './vault.ts';
+export { approvalWait } from '../domain/vault.ts';
 
 export async function openUserVault(o: {
   vaultUrl?: string; kms?: { url: string; key: string };

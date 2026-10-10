@@ -259,11 +259,18 @@ export interface LoginCodeRepository {
 }
 
 /** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
+/**
+ * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
+ * the sandbox box the hopper launched with it (issue #603), when it did.
+ */
+export interface JoinCodePlace { template?: string; container?: string }
+
 export interface JoinCodeRepository {
-  /** `template`: the template the machine joins as (issue #558), when the line names one. */
-  create(codeHash: string, expiresAt: string, userId: string, template?: string): void;
-  /** The code's user (and template), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): { userId: string; template?: string } | undefined;
+  create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
+  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
+  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /** The sandbox boxes live codes name (issue #603): launched, not joined yet. */
+  waiting(now: string): string[];
 }
 
 /**

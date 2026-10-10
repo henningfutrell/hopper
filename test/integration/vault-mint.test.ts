@@ -4,10 +4,11 @@
 // The minting credential the hopper mints from never leaves the hopper (design.md "Minting: short-lived credentials").
 //
 // Feature: the vault mints short-lived credentials only through Access
-//   Scenario: a profile the template declares but nobody approved waits at the first-time gate, and mints nothing
+//   Scenario: a profile the template declares but nobody approved now waits at the first-time gate, and mints nothing
 //     Given the minting credentials KUBE_LAB (cluster/lab) and AWS_LAB (aws-account/123456789012)
 //     And the template kube, which declares read and write on namespace/lab/web and read on aws-role/123456789012/diag
-//     And a job running on a box joined as kube
+//     And a job running on a box joined as kube, which takes a job only once kube is approved (issue #602)
+//     And the read on namespace/lab/web revoked in Settings → Access while the job runs
 //     When the job runs `$HOPPER_SECRET kube read namespace/lab/web`
 //     Then it is refused: the profile waits for a person's approval on Settings → Vault
 //     And the Kubernetes API is not asked
@@ -177,7 +178,11 @@ function mintingCredentialsNowhere(a: TestApp, dir: string): void {
 describe('the vault mints short-lived credentials only through Access', () => {
   it('waits at the first-time gate until approved; then mints a short-lived token, the audit naming Access\'s decision; a write mints nothing', async () => {
     const { a, session, kube } = await boot();
+    // A box of a template not approved takes no job (issue #602): approve, then revoke the read while the job runs.
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
     const { dir, job, token } = await boxWithJob(a, session);
+    const read = (await accessOf(a, session)).templates.find((x) => x.template === 'kube')!.approvals.find((p) => p.profile.operation === 'read' && p.profile.asset.kind === 'namespace')!;
+    expect((await a.ui('/ui/api/access', { action: 'revoke', approval: read.id }, { token: session })).status).toBe(200);
 
     const gated = await helper(dir, ['kube', 'read', 'namespace/lab/web'], token);
     expect(gated.code).not.toBe(0);

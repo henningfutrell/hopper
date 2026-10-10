@@ -9,7 +9,7 @@
 // checks it, reads as the user it is linked to, and a GitHub realm's only as the user whose connected
 // GitHub account it is. A token given and refused is refused, on loopback too. A token reads only: every
 // mutation stays behind a UI session (src/http/ui/guard.ts).
-import type { Vault } from '../vault/service.ts';
+import type { Vault } from '../vault/vault.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';

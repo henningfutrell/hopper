@@ -8,7 +8,7 @@
 // credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
 // never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
 // vault does not give; an admin gives one — of the kind suggested, or another — or declines.
-import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
+import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template' | 'revoke-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -241,9 +241,15 @@ function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secret
               <Button size="sm" variant="outline" disabled={!can || busy}><ShieldAlert />Approve {profileText(p)}</Button>
             </Confirm>
           ))}
+          {t.approval && (
+            <Confirm title={`Revoke the approval of ${t.name}?`} action="Revoke" onConfirm={() => void send({ action: 'revoke-template', name: t.name }, `${t.name}: approval revoked`)}
+              description="Its boxes take no new job and get nothing from the vault until a person approves it again. Jobs that run there now keep running.">
+              <Button size="sm" variant="outline" disabled={!can || busy}><Ban />Revoke</Button>
+            </Confirm>
+          )}
           <Button size="sm" variant="outline" disabled={!can || busy} onClick={() => setEditing(true)}><Pencil />Edit</Button>
           <Confirm title={`Remove ${t.name}?`} action="Remove" onConfirm={() => void send({ action: 'remove-template', name: t.name }, `${t.name}: removed`)}
-            description="Its boxes keep running, and get nothing from the vault.">
+            description="Its boxes keep running, take no new job, and get nothing from the vault.">
             <Button size="sm" variant="destructive" disabled={!can || busy}><Trash2 />Remove</Button>
           </Confirm>
         </div>

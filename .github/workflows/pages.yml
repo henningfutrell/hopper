@@ -19,6 +19,7 @@ on:
       - docs/screenshots/**
       - scripts/get.sh
       - compose.yaml
+      - compose.sandboxes.yaml
       - package-lock.json
       - .github/workflows/pages.yml
   workflow_dispatch:

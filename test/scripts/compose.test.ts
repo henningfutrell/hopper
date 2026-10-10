@@ -15,6 +15,8 @@ const IMAGE = 'ghcr.io/henningfutrell/hopper:latest';
 
 interface Service {
   image?: string;
+  group_add?: string[];
+  security_opt?: string[];
   build?: { context: string };
   environment?: Record<string, string | null>;
   ports?: { host_ip?: string; published?: string; target: number }[];
@@ -24,10 +26,11 @@ interface Service {
 }
 interface Rendered { name: string; services: Record<string, Service>; volumes: Record<string, unknown> }
 
-/** `docker compose config` of compose.yaml copied alone into a fresh directory, with `.env` when given. */
-function render(dotenv?: string, env: Record<string, string> = {}): Rendered {
+/** `docker compose config` of compose.yaml copied alone into a fresh directory, with `.env` when given (and compose.sandboxes.yaml as compose.override.yaml, `override`). */
+function render(dotenv?: string, env: Record<string, string> = {}, override = false): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'jh-compose-'));
   copyFileSync(join(ROOT, 'compose.yaml'), join(dir, 'compose.yaml'));
+  if (override) copyFileSync(join(ROOT, 'compose.sandboxes.yaml'), join(dir, 'compose.override.yaml'));
   if (dotenv !== undefined) writeFileSync(join(dir, '.env'), dotenv);
   const out = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
     cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...env },
@@ -278,5 +281,23 @@ describe('optional services (issue #586): each behind a compose profile, none re
     const script = svc(on, 'postgres').command!.join('\n');
     expect(script).toMatch(/\[ -s \$\$?s\/vault_key \] \|\| head -c 32 \/dev\/urandom/);
     expect(script).toMatch(/chown 1000:1000 [^\n]*\$\$?s\/vault_key/);
+  });
+});
+
+describe('sandbox boxes the hopper starts (issue #603): opt in with compose.sandboxes.yaml, saved as compose.override.yaml', () => {
+  it('compose.yaml alone gives the hopper no Podman socket', () => {
+    const hopper = svc(render(), 'hopper');
+    expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBeUndefined();
+    expect(hopper.volumes?.map((v) => v.target)).not.toContain('/run/podman/podman.sock');
+  });
+
+  it('beside compose.yaml, it gives the hopper the rootless Podman socket under XDG_RUNTIME_DIR, and the group that opens it', () => {
+    const hopper = svc(render(undefined, { XDG_RUNTIME_DIR: '/run/user/1000' }, true), 'hopper');
+    expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBe('/run/podman/podman.sock');
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/run/user/1000/podman/podman.sock', target: '/run/podman/podman.sock' }));
+    expect(hopper.group_add).toEqual(['0']);
+    // Nothing else changes: the rest of the hopper's service is compose.yaml's.
+    expect(hopper.image).toBe(IMAGE);
+    expect(hopper.environment?.HOPPER_LAN_NAMES).toBe('hopper');
   });
 });

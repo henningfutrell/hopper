@@ -127,6 +127,18 @@ export function givesOf(t: Template): string[] {
   return t.approval?.image !== t.image ? [] : t.secrets.filter((s) => approved.includes(s));
 }
 
+/**
+ * Why a box of the template `name` takes no new job (issue #602), or undefined when the template is approved: saved, and
+ * approved with the image it names now. A scope widened since keeps its boxes working on what was approved.
+ */
+export function approvalWait(name: string, t: Template | undefined): string | undefined {
+  const wait = 'waiting for template approval';
+  if (!t) return `${wait}: no template ${name} is saved`;
+  if (!t.approval) return `${wait}: ${name} is not approved`;
+  if (t.approval.image !== t.image) return `${wait}: the image of ${name} changed since it was approved`;
+  return undefined;
+}
+
 /** The template's view, with the profiles access approves it for (`approvedProfiles`) and its rating. */
 export function templateView(t: Template, approvedProfiles: readonly OperationProfile[], radius: TemplateRadius): TemplateView {
   const approved = t.approval?.secrets ?? [];

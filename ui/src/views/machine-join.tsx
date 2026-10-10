@@ -2,12 +2,14 @@
 // with a one-time join code (POST /ui/api/machines/join), run it there. Nothing is typed into the hopper:
 // the machine joins itself, dials in, and shows in the Machines view, online. Attaching over ssh stays
 // behind a link, for a machine that cannot run the client. Phone width first: every control stacks.
+// A sandbox box the hopper can start itself (issue #603: it is given a rootless Podman socket) is started with one
+// click (POST /ui/api/machines/sandbox): no line to run. When it cannot, the form says why and shows the line.
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { get, post } from '@/lib/api';
-import { BOX_AGENTS, boxPlace, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
-import type { TemplateView, MachinesConfig, VaultView } from '@/model/wire';
+import { BOX_AGENTS, boxPlace, boxSignInLine, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
+import type { TemplateView, MachinesConfig, SandboxesView, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 
 interface Minted { code: string; expiresAt: string }
@@ -33,6 +35,10 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [template, setTemplate] = useState<TemplateView | null>(null);
   useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
+  // Whether the hopper starts a box itself (issue #603), and why not.
+  const [launch, setLaunch] = useState<SandboxesView['launch'] | null>(null);
+  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => setLaunch(v.launch), () => setLaunch(null)); }, []);
+  const [started, setStarted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
   // The machines there were when the line was shown: the first new one online is the one that joined.
@@ -60,6 +66,19 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
       setBusy(false);
     }
   };
+  const start = async () => {
+    setBusy(true);
+    try {
+      before.current = new Set(machines.map((m) => m.id));
+      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}) });
+      setStarted(r.container);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const hopperStarts = kind === 'box' && launch?.available === true;
   const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
 
   return (
@@ -74,25 +93,49 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">agent</span>
           {BOX_AGENTS.map((a) => <Button key={a} type="button" size="sm" variant={agent === a ? 'default' : 'outline'} className="min-h-9" onClick={() => setAgent(a)}>{a}</Button>)}
-          <span className="ml-2 text-muted-foreground">engine</span>
-          {(['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={engine === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setEngine(e)}>{e}</Button>)}
+          {!hopperStarts && <span className="ml-2 text-muted-foreground">engine</span>}
+          {!hopperStarts && (['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={engine === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setEngine(e)}>{e}</Button>)}
         </div>
       )}
       {kind === 'box' && templates.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">template</span>
-          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(null)}>none</Button>
-          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
-          {template && <span className="text-muted-foreground">its boxes get {template.gives.join(', ') || 'nothing yet: approve the template in Settings → Vault'}</span>}
+          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(null)}>none</Button>
+          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
+          {template && <span className="text-muted-foreground">{!template.approval || template.pending.image ? 'its boxes take no job and get nothing until a person approves the template in Settings → Vault' : `its boxes get ${template.gives.join(', ') || 'no vault secret'}`}</span>}
         </div>
       )}
-      {!line && (
+      {kind === 'box' && launch && !launch.available && (
+        <p className="text-xs text-muted-foreground">The hopper does not start sandbox boxes itself here: {launch.problem} Run the line instead.</p>
+      )}
+      {hopperStarts && !started && (
+        <div className="grid gap-2 text-xs">
+          <span className="text-muted-foreground">The hopper starts the box in rootless Podman on the computer it runs on. Removing the machine stops the box and removes it, with its volume.</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="lg" disabled={busy} onClick={() => void start()}>{busy ? 'Starting the box…' : 'Start the box'}</Button>
+            <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {hopperStarts && started && (
+        <div className="grid gap-2 text-xs">
+          <span className="font-medium text-foreground/90">Started {started}. It shows here, online, when it joins.</span>
+          <span className="text-muted-foreground">
+            Then sign its agent in once, on the computer the hopper runs on: <code className="font-mono">{boxSignInLine(started, agent)}</code> — the sign-in stays in the box&apos;s home volume.
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground">Waiting for it to join…</span>
+            <Button type="button" size="sm" variant="ghost" className="min-h-9" onClick={onDone}>Close</Button>
+          </div>
+        </div>
+      )}
+      {!hopperStarts && !line && (
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" size="lg" disabled={busy} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
           <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
         </div>
       )}
-      {line && minted && (
+      {!hopperStarts && line && minted && (
         <div className="grid gap-2 text-xs">
           <span className="font-medium text-foreground/90">
             {kind === 'computer' ? 'Run this in a terminal on the computer:' : 'Run this on the computer the hopper runs on:'}

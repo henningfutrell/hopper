@@ -187,6 +187,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 31: an access decision names its requester (issue #581): a decision for a job names the job as the requester. The
   // build before reads a decision with no job as a trial's: it still runs.
   decisionsNameTheirRequester,
+  // 32: a join code may name the sandbox box the hopper launched with it (issue #603). A column only: the build before
+  // runs on it.
+  'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS container TEXT;',
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */

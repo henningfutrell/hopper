@@ -9,8 +9,9 @@
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142). Below the machines, the
 // priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
 // blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
-// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx).
-import { Activity, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
+// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). A sandbox box the
+// hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes).
+import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -20,10 +21,10 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, workTreeText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, templateText, workTreeText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
-import type { MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries } from '@/model/wire';
+import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
 import { AddMachineForm, AddThisMachineForm, EditMachineForm, LocalMachineForm, MachineDefaultsForm } from './machine-forms';
 import { useCanAdmin } from '@/store/selectors';
@@ -34,6 +35,26 @@ import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-res
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
+
+/** The sandbox boxes the hopper could not remove (issue #603): each with the reason, until it goes. */
+function CleanupProblems({ problems }: { problems: CleanupProblem[] }) {
+  return (
+    <Panel title="Sandbox boxes not removed" icon={Box}>
+      <div role="alert" className="grid gap-2 text-sm">
+        <p className="text-xs text-muted-foreground">Their machines are gone, but the hopper could not stop or remove these boxes. It tries again every few seconds. To remove one by hand: <code className="font-mono">podman rm -f &lt;box&gt;</code>, then <code className="font-mono">podman volume rm &lt;box&gt;-home</code>.</p>
+        <ul className="grid gap-1.5">
+          {problems.map((p) => (
+            <li key={p.container} className="text-xs break-words">
+              <span className="font-mono font-medium text-foreground">{p.container}</span>
+              <span className="text-destructive">: {p.reason}</span>
+              <span className="text-muted-foreground"> (since {new Date(p.at).toLocaleTimeString()})</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </Panel>
+  );
+}
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -76,7 +97,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
         <div><div className="text-[11px] text-muted-foreground">open</div><div className="num text-lg font-semibold">{m.lanes.length}</div></div>
@@ -89,6 +110,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {m.client && <Fact label="connection">client, dialled in</Fact>}
+        {templateText(m) && <Fact label="template">{templateText(m)}</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}
         {reservedText(m) && <Fact label="reserved lanes">{reservedText(m)}</Fact>}
         {res && <Fact label="CPU">{res.cpu}</Fact>}
@@ -105,6 +127,9 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
             <Button type="button" size="sm" variant="outline" className="min-h-9" onClick={() => void navigator.clipboard?.writeText(updateLine).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'))}>Copy</Button>
           </div>
         </div>
+      )}
+      {m.template?.waiting && (
+        <p role="alert" className="text-sm text-warn">Takes no job: {m.template.waiting}. Its jobs wait for another machine until a person approves the template on Settings → Vault.</p>
       )}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
@@ -140,7 +165,11 @@ export function Machines() {
   const open = useRef(false);
   useEffect(() => { open.current = adding !== false || defaulting || editing !== null; }, [adding, defaulting, editing]);
 
-  const load = useCallback(() => fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }), []);
+  const [cleanup, setCleanup] = useState<CleanupProblem[]>([]);
+  const load = useCallback(() => Promise.all([
+    fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }),
+    get<SandboxesView>('/api/sandboxes').then((v) => setCleanup(v.problems), () => setCleanup([])),
+  ]), []);
   useEffect(() => {
     void load();
     const t = setInterval(() => { if (!open.current) void load(); }, REFRESH_MS);
@@ -195,6 +224,7 @@ export function Machines() {
       {authed && config && adding === 'ssh' && !defaulting && (
         <Panel title="Attach a machine over ssh" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
+      {cleanup.length > 0 && <CleanupProblems problems={cleanup} />}
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>

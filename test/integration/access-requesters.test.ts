@@ -53,7 +53,7 @@ const temp = (prefix: string): string => {
   return dir;
 };
 
-/** A hopper with the vault templates kube and other, and kube approved in Access to read on cluster prod. */
+/** A hopper with the vault templates kube and other, both approved in the vault, and kube approved in Access to read on cluster prod. */
 async function boot(): Promise<{ a: TestApp; session: string; server: FakeAuthorizationServer }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
@@ -71,6 +71,8 @@ async function boot(): Promise<{ a: TestApp; session: string; server: FakeAuthor
   await t.ui('/ui/api/blast-radius/settings', { gateAt: 'off' }, { token: session });
   await vault({ action: 'set', name: 'KUBE_TOKEN', scope: 'cluster prod, read only', value: 'k3s-token-never-in-access' });
   for (const name of ['kube', 'other']) expect((await vault({ action: 'save-template', name, image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'] })).status).toBe(200);
+  // Each box takes jobs: its template's vault approval (issue #602). An approval in Access is apart from it.
+  for (const name of ['kube', 'other']) expect((await vault({ action: 'approve-template', name })).status).toBe(200);
   expect((await t.ui('/ui/api/access', { action: 'approve', template: 'kube', operation: 'read', asset: PROD }, { token: session })).status).toBe(200);
   return { a: t, session, server };
 }

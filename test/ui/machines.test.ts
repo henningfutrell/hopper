@@ -3,7 +3,7 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, boxSignInLine, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -344,5 +344,11 @@ describe('reservedText', () => {
   it('says nothing for a machine that keeps none', () => {
     expect(reservedText({ maxLanes: 4 })).toBeNull();
     expect(reservedText({ maxLanes: 4, reservedLanes: 0 })).toBeNull();
+  });
+});
+
+describe('boxSignInLine (issue #603)', () => {
+  it('a box the hopper started is signed in once, in that box, through Podman', () => {
+    expect(boxSignInLine('hopper-sandbox-claude-2', 'claude')).toBe('podman exec -it hopper-sandbox-claude-2 claude');
   });
 });

@@ -70,7 +70,7 @@ export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pend
 
 /** What a template's card says of its approval: approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {
-  if (!t.approval) return 'not approved yet: its boxes get nothing from the vault';
+  if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
   const waits = [
     ...(t.pending.image ? ['a new image'] : []), ...(t.pending.secrets.length ? [`${t.pending.secrets.join(', ')} added`] : []),
     ...t.pending.profiles.map((p) => `${profileText(p)}${highRadius(p) ? ' (explicit)' : ''}`),

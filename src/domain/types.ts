@@ -256,6 +256,11 @@ export interface MachineSnapshot {
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
   resources?: ResourceReading;
+  /**
+   * A sandbox box (issue #558): the template its join line named, and why it takes no new job while that template is
+   * not approved (issue #602): not saved, never approved, approval revoked, or its image changed since. Absent `waiting`: approved.
+   */
+  template?: { name: string; waiting?: string };
   /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. */
   sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number };
 }
@@ -417,7 +422,7 @@ export type { SourceStatus } from './sources.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type ClientMachine, type ConfiguredMachine, type ContainerMachine, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
