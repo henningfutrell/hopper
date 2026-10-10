@@ -163,6 +163,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     reap: (jobId, scratch, keep) => shell.reap(jobId, scratch, keep),
     survey: (roots) => shell.survey(roots),
     discover: () => shell.discover(),
+    reach: (url) => shell.reach(url),
     keepCredential: (jobId, dir, file, content, make) => shell.keepCredential(jobId, dir, file, content, make),
   };
 }

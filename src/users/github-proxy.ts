@@ -48,6 +48,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       const url = o.url(machine);
       if (!url) return undefined;
       return {
+        url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
         // (issue #624) puts what the job makes for a person to see.
         files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT },

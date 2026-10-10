@@ -275,9 +275,10 @@ export interface MachineSnapshot {
   /**
    * A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is
    * the hopper's (issue #70); `update` when the hopper's release has not taken there after its tries, and why (issue #545);
-   * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558).
+   * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558); `door`: its
+   * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695).
    */
-  client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string };
+  client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string; door?: string };
   /** The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410). Absent: not read (a container target, a client older than this). */
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */

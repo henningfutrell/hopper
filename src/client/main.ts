@@ -16,6 +16,7 @@ import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dialIn } from './dial.ts';
+import { startDoor, type Door } from './door.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
 import { linkToken } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
@@ -26,7 +27,8 @@ export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-
 
 /**
  * The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's
- * public half; and its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through.
+ * public half; its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through; and its door
+ * (door.ts, issue #695), the loopback URL its jobs reach the hopper at.
  */
 export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
   const link = readLink(o.dir);
@@ -34,11 +36,18 @@ export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herd
   const { dir, ...rest } = o;
   const vault = startVault({ dir, installDir: o.installDir, ask: askHopper({ url: link.url, user: link.user, key: link.key, token: () => token }), ...(o.log ? { log: o.log } : {}) });
   vault.catch((e: unknown) => o.log?.(`hopper-client: the vault's socket could not be served: ${(e as Error).message}`));
-  const client = startClient({ ...rest, vaultHelper: join(dir, HELPER_FILE), token: () => token, dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }) });
+  let open: Door | undefined;
+  const door = startDoor({ url: link.url, ...(o.log ? { log: o.log } : {}) }).then((d) => { open = d; return d; });
+  door.catch((e: unknown) => o.log?.(`hopper-client: the client door could not be opened: ${(e as Error).message}`));
+  const client = startClient({
+    ...rest, vaultHelper: join(dir, HELPER_FILE), door: () => open?.url, token: () => token,
+    dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }),
+  });
   return {
     async stop() {
       await client.stop();
       await vault.then((v) => v.stop(), () => undefined);
+      await door.then((d) => d.stop(), () => undefined);
     },
   };
 }

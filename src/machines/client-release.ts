@@ -63,7 +63,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       return { online: true, client: { current: false } };
     }
     const running = answer.release;
-    const vault = answer.vault ? { vault: answer.vault } : {};
+    const vault = { ...(answer.vault ? { vault: answer.vault } : {}), ...(answer.door ? { door: answer.door } : {}) };
     const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}) };
     if (running === ours) {
       tries.delete(t.machine);

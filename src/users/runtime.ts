@@ -95,10 +95,11 @@ export interface UserRuntimeOptions {
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
   otherUsersKnow?(keys: string[]): Set<string>;
   /**
-   * The hopper's URL as a job on `machine` reaches it (issue #563): `dialled`, the URL a client target dialled in
-   * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
+   * The hopper's URL as a job on `machine` reaches it (issues #563, #695): `dialled`, the URL a client target dialled in
+   * at; `linkBase`, the user's (Settings → Artifacts). Undefined: the machine cannot reach the hopper, and its jobs get no
+   * GitHub proxy. Absent: none.
    */
-  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
+  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
   /**
    * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
@@ -237,7 +238,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id)) });
+  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({

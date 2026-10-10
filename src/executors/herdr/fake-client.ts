@@ -3,6 +3,7 @@
 // appends one `steps` line per `getAgent` poll, then the turn's `output`, and settles in `end`.
 
 import { HerdrError } from './client.ts';
+import { fakeMachineShell } from './fake-machine.ts';
 import { seedSays, shellSays, type FakeClaudeConfig } from './fake-shell.ts';
 import { CTRL_END } from './screen.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
@@ -311,18 +312,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       if (o.waitAnswersEarly) return o.waitAnswersEarly === 'matched';
       return fake.screen(paneId).includes(text);
     },
-    // The machine's fixed scripts (issues #410, #441, #542): recorded, and refused while it cannot be reached.
-    async reap(jobId, scratch, keep) {
-      onMachine('reap', jobId, scratch);
-      fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}) });
-      return { kept: [...(o.reapKeeps ?? [])], ...(o.reapPushes?.length ? { pushed: [...o.reapPushes] } : {}) };
-    },
-    survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),
-    discover: async () => (onMachine('discover'), o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } }),
-    async keepCredential(jobId, dir, file, content, make) {
-      onMachine('keepCredential', jobId, dir, file);
-      fake.credentials.push({ jobId, dir, file, content, ...(make ? { make } : {}) });
-    },
+    ...fakeMachineShell(o, () => fake, onMachine),
     async closePane(paneId) {
       record('closePane', paneId);
       const p = livePane(paneId);

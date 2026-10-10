@@ -217,6 +217,11 @@ export interface MachineShell {
   keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
   /** What the machine holds (issue #542): its tools, its access, its credential sources — names only. */
   discover(): Promise<DiscoveryFacts>;
+  /**
+   * Whether the machine reaches the hopper at `url` (issue #695), checked there: undefined when it does, or when the
+   * check cannot run there (a client older than it); else why not, plainly, naming the URL.
+   */
+  reach(url: string): Promise<string | undefined>;
 }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
@@ -542,6 +547,8 @@ export interface JobSource extends FollowsPullRequests {
  * where its machine keeps files: the token is never in an environment variable.
  */
 export interface JobProxyCredentials {
+  /** The hopper's URL as the job's machine reaches it (HOPPER_URL): what the reach check asks for before the job starts (issue #695). */
+  url: string;
   files: Record<string, string>;
   paths: Record<string, string>;
   vars: Record<string, string>;

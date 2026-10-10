@@ -8,6 +8,7 @@ import type { MachineShell } from '../domain/ports.ts';
 import { CREDENTIAL_KEPT, credentialArgv } from '../client/credential.ts';
 import { readReap, readSurvey, reapArgv, surveyArgv } from '../client/server.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from '../client/discover.ts';
+import { REACH_TIMEOUT_MS, reachArgv, readReach } from '../client/reach.ts';
 import { readDiscovery } from '../blast-radius/read.ts';
 import { clientScript, type ClientAnswer, type ClientTransport } from './client.ts';
 import { scrubbedEnv, userProcessEnv } from './env.ts';
@@ -17,7 +18,7 @@ import { shellQuote, sshArgv, type SshTransport } from './ssh.ts';
 const TIMEOUT_MS = 60000;
 
 type Call = { reap: { jobId: string; scratch?: string; keep?: boolean } } | { survey: { roots: string[] } }
-  | { credential: { jobId: string; dir: string; file: string; content: string; make: boolean } } | { discover: true };
+  | { credential: { jobId: string; dir: string; file: string; content: string; make: boolean } } | { discover: true } | { reach: { url: string } };
 
 function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): MachineShell {
   const unfinished = (what: string, r: ClientAnswer): Error =>
@@ -41,6 +42,15 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
       if (!found) throw unfinished('discovery', r);
       return found;
     },
+    async reach(url) {
+      let r: ClientAnswer;
+      try { r = await run({ reach: { url } }); } catch (e) {
+        // A client older than the check has no `/reach`: the job starts unchecked, as before it.
+        if (/runs an older client release/.test((e as Error).message)) return undefined;
+        return `this machine cannot reach the hopper at ${url}: the check did not run on ${where}: ${(e as Error).message}`;
+      }
+      return readReach(r, url);
+    },
     async keepCredential(jobId, dir, file, content, make = false) {
       const r = await run({ credential: { jobId, dir, file, content, make } });
       if (!r.stdout.split('\n').some((l) => l.trimEnd() === CREDENTIAL_KEPT)) throw unfinished('credential write', r);
@@ -49,10 +59,10 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
 }
 
 const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jobId, call.reap.scratch, call.reap.keep)
-  : 'survey' in call ? surveyArgv(call.survey.roots) : 'discover' in call ? discoverArgv()
+  : 'survey' in call ? surveyArgv(call.survey.roots) : 'discover' in call ? discoverArgv() : 'reach' in call ? reachArgv(call.reach.url)
     : credentialArgv(call.credential.jobId, call.credential.dir, call.credential.file, call.credential.make));
 /** A discovery asks each tool with a timeout of its own, so it may take longer than the other scripts. */
-const timeoutOf = (call: Call): number => ('discover' in call ? DISCOVER_TIMEOUT_MS : TIMEOUT_MS);
+const timeoutOf = (call: Call): number => ('discover' in call ? DISCOVER_TIMEOUT_MS : 'reach' in call ? REACH_TIMEOUT_MS : TIMEOUT_MS);
 /** What the call's script reads on stdin: a credential's content, never an argument. */
 const inputOf = (call: Call): string => ('credential' in call ? call.credential.content : '');
 
@@ -88,5 +98,5 @@ export function sshShell(ssh: SshTransport): MachineShell {
 /** A client target: its client runs its own copy of the scripts, signed calls like every other (design.md "Client targets"). */
 export const clientShell = (t: ClientTransport): MachineShell =>
   shellOver(`client ${t.machine}`, (call) => ('reap' in call ? clientScript(t, '/reap', call.reap)
-    : 'survey' in call ? clientScript(t, '/survey', call.survey) : 'discover' in call ? clientScript(t, '/discover', {})
+    : 'survey' in call ? clientScript(t, '/survey', call.survey) : 'discover' in call ? clientScript(t, '/discover', {}) : 'reach' in call ? clientScript(t, '/reach', call.reach)
       : clientScript(t, '/credential', call.credential)));
