@@ -682,6 +682,17 @@ any Postgres will do). `npm test` starts its own throwaway Postgres container (t
 needs docker), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres://…` uses an
 existing database instead.
 
+**The PR check** (issue #672): `.github/workflows/pr.yml` runs on every pull request to `dev`, `beta` or
+`stable`. Its job `pr / gates` runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build:ui`;
+its jobs `pr / shard (1)` to `(3)` run `npm test` in three shards, so the check stays well under 10 minutes.
+The check to require is **`pr / test`**: it passes only when the gates and every shard passed. The tests run
+with `HOPPER_TEST_HOST_SERVICES=0`, which leaves out the tests that need
+their own containers, a real sshd, LDAP or a vault (the list: `test/support/host-services.ts`; a new test
+that needs one of those goes there). It reads the repository only and uses no secrets (`pull_request`, never
+`pull_request_target`), so a fork's pull request is safe. Yolo mode merges a pull request only once a check
+passed on it; this is that check. To have GitHub hold every merge to it, make `pr / test` a required status
+check in the branch protection of `dev` (Settings → Branches): an owner's step, not the workflow's.
+
 **Agent boxes** (`docs/design.md` "Agent boxes"): `bash scripts/agent-boxes.sh` starts one container per
 agent CLI (claude, codex, cursor, omp, opencode), each an ssh target with its own herdr session, and
 attaches every one to the hopper, running its agent's executor. It finds the hopper itself: the compose

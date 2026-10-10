@@ -1,6 +1,7 @@
 // `node src/main.ts --help` (issue #68): how to run the daemon, every setting it reads with its
 // default, where to read on. Needs no database: it is what a first run on a new machine asks.
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS, daemonHelp } from '../src/config.ts';
 
@@ -19,7 +20,7 @@ describe('daemon help', () => {
   });
 
   it.each([['--help'], ['-h']])('node src/main.ts %s prints it and exits 0 without a database', (flag) => {
-    const r = spawnSync(process.execPath, ['src/main.ts', flag], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' }, timeout: 20_000 });
+    const r = spawnSync(process.execPath, ['src/main.ts', flag], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', TMPDIR: tmpdir() }, timeout: 20_000 });
     expect(r.status, r.stderr).toBe(0);
     expect(r.stdout).toBe(daemonHelp());
   });
