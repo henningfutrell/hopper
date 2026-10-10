@@ -26,7 +26,7 @@ beforeAll(() => {
   process.env.FAKE_CURSOR_DIR = dir;
   process.env.FAKE_HERDR_DIR = dir;
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
-  delete process.env.GH_TOKEN;
+  delete process.env.HOPPER_URL;
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {
@@ -72,11 +72,11 @@ describe('cursor-agent executor', () => {
     expect(readFileSync(join(work, '.hopper-scratch', '.gitignore'), 'utf8')).toBe('*\n');
   });
 
-  it('runs with the job\'s GitHub credential, as herdr-claude does (issue #214)', async () => {
+  it('runs with the job\'s way to the hopper, as herdr-claude does (issues #214, #652)', async () => {
     reply('Done.\n\nHOPPER_DONE');
     const { ctx } = ctxFor({ prompt: 'go', cwd: work }, HERE);
-    await ex.run({ ...ctx, credentials: async () => ({ GH_TOKEN: 'gho_job' }) });
-    expect(calls().at(-1)!.env.GH_TOKEN).toBe('gho_job');
+    await ex.run({ ...ctx, credentials: async () => ({ HOPPER_URL: 'http://hopper.test' }) });
+    expect(calls().at(-1)!.env.HOPPER_URL).toBe('http://hopper.test');
   });
 
   it('carries the job rules it starts with in place of the default (issue #172)', async () => {

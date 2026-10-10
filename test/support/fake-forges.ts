@@ -14,6 +14,7 @@
 // grant. With `tokenLimit`, GitHub keeps at most that many per user (ten, issue #514): one more revokes the
 // one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
 // GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -28,10 +29,12 @@ export interface FakeIssue {
   /** Default: the author (issue #387: intake is by label and assignee). */
   assignees?: string[];
   state?: 'open' | 'closed';
+  /** Why it was closed (issue #652: a job closes its own issue as completed). */
+  stateReason?: string;
 }
 
-/** A pull request opened on the fake (issue #563). */
-interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string }
+/** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
+interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
 
 export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string }
 
@@ -64,6 +67,12 @@ export interface FakeForge {
   onRevoke?: (credentials: string[]) => void;
   /** GitHub: the revoke endpoint answers this status, revoking nothing. */
   revokeDown?: number;
+  /**
+   * GitHub's git over HTTP (issue #652), when made with `gitRoot`: the bare repositories `<gitRoot>/<owner>/<name>.git`,
+   * served by git's own `git-http-backend`. A read without credentials is answered as for a public repository; a push
+   * needs a token the forge accepts, as the password of Basic auth. Each request is recorded with its auth.
+   */
+  gitRequests: ForgeRequest[];
   /** Mint a pair as the device flow grants it (issue #441), for tests that start with an account already connected. */
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
@@ -85,14 +94,66 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][] }): Promise<FakeForge> {
+const GIT_PATH = /^\/([^/]+\/[^/]+?)(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
+
+/** One git request answered by `git-http-backend` (CGI) over the bare repositories under `root`. */
+function gitBackend(root: string, req: IncomingMessage, res: ServerResponse, u: URL, repo: string, rest: string, user: string | undefined): void {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH, GIT_PROJECT_ROOT: root, GIT_HTTP_EXPORT_ALL: '1', PATH_INFO: `/${repo}.git/${rest}`,
+    QUERY_STRING: u.search.slice(1), REQUEST_METHOD: req.method ?? 'GET', CONTENT_TYPE: req.headers['content-type'] ?? '',
+    ...(req.headers['content-encoding'] ? { HTTP_CONTENT_ENCODING: req.headers['content-encoding'] } : {}),
+    ...(req.headers['git-protocol'] ? { GIT_PROTOCOL: String(req.headers['git-protocol']) } : {}),
+    ...(user ? { REMOTE_USER: user } : {}),
+  };
+  const cgi = spawn('/usr/lib/git-core/git-http-backend', [], { env });
+  req.pipe(cgi.stdin);
+  let head = Buffer.alloc(0);
+  let started = false;
+  cgi.stdout.on('data', (chunk: Buffer) => {
+    if (started) { res.write(chunk); return; }
+    head = Buffer.concat([head, chunk]);
+    const end = head.indexOf('\r\n\r\n');
+    if (end < 0) return;
+    started = true;
+    const headers: Record<string, string> = {};
+    let status = 200;
+    for (const line of head.subarray(0, end).toString('latin1').split('\r\n')) {
+      const i = line.indexOf(':');
+      const name = line.slice(0, i).trim().toLowerCase();
+      const value = line.slice(i + 1).trim();
+      if (name === 'status') status = Number(value.split(' ')[0]);
+      else headers[name] = value;
+    }
+    res.writeHead(status, headers);
+    res.write(head.subarray(end + 4));
+  });
+  cgi.on('close', () => { if (!started) res.writeHead(500); res.end(); });
+}
+
+async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
+  const gitRequests: ForgeRequest[] = [];
   let base = '';
   let handle: Handler = () => ({ status: 500 });
   const server = createServer((req, res) => {
     void (async () => {
       const u = new URL(req.url ?? '/', base);
       const auth = req.headers.authorization ?? '';
+      const git = extra.gitRoot ? GIT_PATH.exec(u.pathname) : null;
+      if (git && extra.gitRoot) {
+        gitRequests.push({ method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: {}, auth });
+        const basic = /^basic\s+(\S+)$/i.exec(auth)?.[1];
+        const password = basic ? Buffer.from(basic, 'base64').toString('utf8').split(':').slice(1).join(':') : undefined;
+        const user = password !== undefined ? extra.tokens.get(password) : undefined;
+        const pushing = u.pathname.endsWith('/git-receive-pack') || u.searchParams.get('service') === 'git-receive-pack';
+        if ((password !== undefined && !user) || (pushing && !user)) {
+          res.writeHead(401, { 'www-authenticate': 'Basic realm="GitHub"', 'content-type': 'text/plain' });
+          res.end('Invalid username or token.');
+          return;
+        }
+        gitBackend(extra.gitRoot, req, res, u, git[1]!, git[2]!, user);
+        return;
+      }
       const r: ForgeRequest = { method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: await readBody(req), auth };
       requests.push(r);
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
@@ -106,7 +167,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
   handle = handler(base);
   const pending = () => extra.devices.filter((d) => d.state === 'pending').at(-1);
   return {
-    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked,
+    url: base, requests, gitRequests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked,
     approve(login) { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'approved'; d.login = login; },
     deny() { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'denied'; },
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
@@ -125,7 +186,7 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string }): Promise<FakeForge> {
   const issues = o.issues ?? [];
   const pulls: FakePull[] = [];
   const tokens = new Map<string, string>();
@@ -170,7 +231,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
-      number: p.number, title: p.title, body: p.body, state: 'open', draft: false, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
+      number: p.number, node_id: `PR_${p.repo}_${p.number}`, title: p.title, body: p.body, state: 'open', draft: p.draft === true, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
       head: { ref: p.head }, base: { ref: p.base },
     });
     return (r, login) => {
@@ -264,6 +325,13 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author)));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
+      if (r.method === 'POST' && path === '/graphql') {
+        const id = String((r.body.variables as Record<string, unknown> | undefined)?.id ?? '');
+        const pull = pulls.find((p) => `PR_${p.repo}_${p.number}` === id);
+        if (!String(r.body.query).includes('markPullRequestReadyForReview') || !pull) return { status: 200, body: { errors: [{ message: `Could not resolve to a node with the global id of '${id}'` }] } };
+        pull.draft = false;
+        return { status: 200, body: { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false, url: `${base}/${pull.repo}/pull/${pull.number}` } } } } };
+      }
       const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(.*))?$/.exec(path);
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
@@ -296,6 +364,10 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
+      if (r.method === 'PATCH' && !im[2]) {
+        if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
+        return { status: 200, body: restIssue(issue) };
+      }
       if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: [] };
       if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
         const id = ++n;
@@ -314,7 +386,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       return { status: 404, body: { message: 'Not Found' } };
     };
   }, {
-    issues, tokens, refreshTokens, devices, revoked,
+    issues, tokens, refreshTokens, devices, revoked, ...(o.gitRoot ? { gitRoot: o.gitRoot } : {}),
     mint: (login, web = false) => { const g = grant(login, web, ''); return { accessToken: g.access_token, refreshToken: g.refresh_token! }; },
   }).then((f) => (forge = f));
 }
