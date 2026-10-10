@@ -115,7 +115,7 @@ describe('gate-router options and detection', () => {
     const seen: string[] = [];
     const kit = fakeKit({ exists: async (p) => { seen.push(p); return true; } });
     const d = await gateRouter.detect(kit, options({ jevPath: '/jev' }));
-    expect(d).toMatchObject({ status: 'available', detail: expect.stringMatching(/Jev off until TYPESAFE_API_KEY is set; Claude haiku answers the other gates/) });
+    expect(d).toMatchObject({ status: 'available', detail: expect.stringMatching(/Jev off until a TypeSafe API key is set; Claude haiku answers the other gates/) });
     expect(seen).toContain('/jev/src/router.py');
   });
 

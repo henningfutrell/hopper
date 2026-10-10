@@ -25,6 +25,7 @@ function fakeJev(answer: (ask: MinorDecisionAsk) => JevPick): JevChooser & { ask
     asks,
     available: () => ({ available: true }),
     pick: async (ask) => { asks.push(ask); return answer(ask); },
+    check: async () => ({ ok: true }),
   };
 }
 
@@ -252,6 +253,6 @@ describe('without the TypeSafe key', () => {
     await a.waitForStatus(job.id, 'finished');
     expect(l.calls).toHaveLength(1);
     expect(await ofType(a, 'minor_decision.picked', job.id)).toEqual([]);
-    expect((await view(a)).jev).toMatchObject({ available: false, why: expect.stringContaining('TYPESAFE_API_KEY') });
+    expect((await view(a)).jev).toMatchObject({ available: false, why: 'Jev is off until a TypeSafe API key is set' });
   });
 });

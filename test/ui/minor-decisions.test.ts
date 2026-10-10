@@ -1,7 +1,7 @@
 // The decider calls in the UI (issue #550), pure: the agreement rate as a percent, a pick in plain words — what Jev
 // picked, how sure, whether it was applied and why not, what was decided —, the mode names, and a pick's event line.
 import { describe, expect, it } from 'vitest';
-import { MODE_TEXT, pickDecided, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
+import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
 
 const base = {
   pickId: 'p1', at: '2026-10-09T10:00:00.000Z', point: 'question-answer' as const, options: [{ id: '1', label: 'ledger' }, { id: '2', label: 'journal' }],
@@ -37,5 +37,16 @@ describe('decider calls model', () => {
   it('pickedEventDetail: a pick event as one line', () => {
     expect(pickedEventDetail({ point: 'failure-assessment', options: [{ id: 'retry', label: 'Run it again' }, { id: 'person', label: 'Hand it to a person' }], pick: 'retry', confidence: 0.9, mode: 'active', threshold: 0.85, applied: true }))
       .toBe('Jev: Run it again (retry) at 90% — applied');
+  });
+
+  it('keyStatus: set or not set, the last 4 characters, and when; never more of the key (issue #657)', () => {
+    expect(keyStatus({ set: false })).toBe('Not set');
+    expect(keyStatus({ set: true, last4: 'wxyz', setAt: '2026-10-10T15:30:12.000Z', setBy: 'Ada' })).toBe('Set — ends in wxyz — set 2026-10-10 15:30 UTC by Ada');
+  });
+
+  it('environmentNote: the variable the key came from, to remove', () => {
+    expect(environmentNote({ set: true, last4: 'wxyz' })).toBeUndefined();
+    expect(environmentNote({ set: true, last4: 'wxyz', environment: { variable: 'TYPESAFE_API_KEY' } }))
+      .toBe('TYPESAFE_API_KEY is still set. The key was imported from it once; the hopper does not read it now. Remove it from the environment.');
   });
 });
