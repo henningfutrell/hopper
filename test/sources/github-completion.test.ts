@@ -4,6 +4,7 @@
 // it, the issue closed as completed at or after the job's createdAt, by a commit or with no code at
 // all (issue #350). A merge is never needed (issue #579).
 import { describe, expect, it } from 'vitest';
+import { finishBrief, judge } from '../../src/domain/types.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { REPO, jobForIssue, setup, type FakeGitHub } from './fixtures/github-support.ts';
 
@@ -178,5 +179,62 @@ describe('closed as complete (issue #350)', () => {
     expect(await Promise.all([1, 2, 3, 4].map((n) => source.itemClosed!(failed(n))))).toEqual([true, true, false, true]);
     gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     await expect(source.itemClosed!(failed(3))).rejects.toThrow('Bad Gateway');
+  });
+});
+
+describe('a pull request the job left in conflict or as a draft (issue #626)', () => {
+  const NOT_DONE = notDone(URL1);
+
+  it('the job\'s own pull request with merge conflicts continues the job with the rebase brief: no hand-off', async () => {
+    const { gh, source, job } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, conflicting: true });
+    expect(await judge(source, job)).toEqual({ done: false, why: NOT_DONE, finish: { pullRequest: pr.url, step: 'rebase' } });
+  });
+
+  it('the job\'s own draft, otherwise ready, continues the job with the mark-ready brief', async () => {
+    const { gh, source, job } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
+    expect(await judge(source, job)).toEqual({ done: false, why: NOT_DONE, finish: { pullRequest: pr.url, step: 'mark_ready' } });
+  });
+
+  it('a draft with merge conflicts is rebased first: a draft is marked ready only once it can merge', async () => {
+    const { gh, source, job } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true, conflicting: true });
+    expect(await source.unfinishedPullRequest!(job)).toEqual({ pullRequest: pr.url, step: 'rebase' });
+  });
+
+  it('the job\'s own pull request that ships part of the issue, left as a draft, is marked ready too', async () => {
+    const { gh, source, job } = withIssue();
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
+    expect(await source.unfinishedPullRequest!(job)).toEqual({ pullRequest: pr.url, step: 'mark_ready' });
+  });
+
+  it.each([
+    ['no pull request', () => undefined],
+    ['a draft opened before the job began', { createdAt: BEFORE, isDraft: true }],
+    ['a pull request with merge conflicts opened before the job began', { createdAt: BEFORE, conflicting: true }],
+  ] as const)('%s keeps the hand-off: the verdict has no brief', async (_n, pr) => {
+    const { gh, source, job } = withIssue();
+    if (typeof pr === 'object') gh.openPullRequest(REPO, 1, pr);
+    expect(await judge(source, job)).toEqual({ done: false, why: NOT_DONE });
+  });
+
+  it('a pull request that is done needs no brief: the job is done', async () => {
+    const { gh, source, job } = withIssue();
+    gh.openPullRequest(REPO, 1, { createdAt: AFTER });
+    expect(await judge(source, job)).toEqual({ done: true });
+  });
+
+  it('the brief is fixed text: the same pull request and step give the same brief, and it names what to do', () => {
+    const url = `https://github.com/${REPO}/pull/1001`;
+    const rebase = finishBrief({ pullRequest: url, step: 'rebase' });
+    expect(finishBrief({ pullRequest: url, step: 'rebase' })).toBe(rebase);
+    expect(rebase).toContain(url);
+    expect(rebase).toMatch(/rebase/i);
+    expect(rebase).toContain('--force-with-lease');
+    const ready = finishBrief({ pullRequest: url, step: 'mark_ready' });
+    expect(ready).toContain(url);
+    expect(ready).toMatch(/ready for review/i);
+    expect(ready).not.toBe(rebase);
   });
 });
