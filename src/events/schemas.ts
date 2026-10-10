@@ -32,7 +32,7 @@ const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), la
 
 /**
  * A review section's events (issues #537, #543), the same for every one: a job asked for one, the item and each version
- * (`<first part>`: its first part, a proposal's goal, a report's question), its review by the reviewer levels and a
+ * (`<first part>`: its first part, a proposal's TL;DR (v2, issue #651; v1: its goal), a report's question), its review by the reviewer levels and a
  * person, and its sign-off. Every one but `<prefix>.asked` names its item (`proposalId`, `researchId`) and the version
  * it is at, and the raising machine, as question events do; `priority`, `high`: the job's live priority.
  */
@@ -43,14 +43,17 @@ function reviewEvents(kind: ReviewKind) {
   const headline = { [first]: z.string().optional() };
   return {
     asked: strict({ by: z.enum(['user']) }),
-    submitted: strict({ ...item, ...headline, missing: z.array(z.enum(t.parts.map((p) => p.id) as [string, ...string[]])) }),
+    // `paths` (issue #651): how many paths a proposal's version has.
+    submitted: strict({ ...item, ...headline, missing: z.array(z.enum(t.parts.map((p) => p.id) as [string, ...string[]])), paths: z.number().int().min(0).optional() }),
     escalated: strict({ ...item, target: stage, reason: z.string(), ...headline }),
     escalated_to_human: strict({ ...item, reason: z.string() }),
-    reviewed: strict({ ...item, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional() }),
+    // `paths` (issue #651, additive): the paths a level added to a proposal, and those it found not viable, by id.
+    reviewed: strict({ ...item, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional(), paths: strict({ added: z.array(z.string()), notViable: z.array(z.string()) }).optional() }),
     // `decision`: what sent it back — a level's or a person's request for changes, a person's dig deeper or steer (additive).
     revision_requested: strict({ ...item, stage, decision: z.enum(REVIEW_DECISIONS).optional(), notes: z.string(), by: z.string().optional() }),
     // `then` (issue #548, additive): accepted in a switched phase, what the person picked for the job next.
-    accepted: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional(), then: z.enum(SHIFT_THEN).optional() }),
+    // `selected` (issue #651, additive): a proposal's paths the person continues with, each with its note.
+    accepted: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional(), then: z.enum(SHIFT_THEN).optional(), selected: z.array(strict({ id: z.string(), note: z.string().optional() })).optional() }),
     rejected: strict({ ...item, stage, by: z.string().optional(), notes: z.string().optional() }),
     cancelled: strict({ ...item, reason: z.string() }),
   };
@@ -107,6 +110,8 @@ export const EVENT_SCHEMAS = {
   'job.queued': strict({
     spec: jobSpec, priority: z.number(), source: jobSourceRef.optional(),
     forkOf: strict({ jobId: z.string(), questionId: z.string(), kind: reviewKind }).optional(),
+    // A follow-on of an accepted proposal (issue #651; additive): its parent job, the proposal and the path it continues.
+    followOn: strict({ jobId: z.string(), proposalId: z.string(), pathId: z.string() }).optional(),
   }),
   // v3: no `mode` (issue #211: the advice is always applied). v2: advice without top-level `jevUsed`.
   'job.prioritized': strict({ advice, statusAtAdvice: jobStatus }),
@@ -251,6 +256,8 @@ export const EVENT_SCHEMAS = {
   'proposal.accepted': proposal.accepted,
   'proposal.rejected': proposal.rejected,
   'proposal.cancelled': proposal.cancelled,
+  // Issue #651: an accepted proposal's selected paths, each continuing as its follow-on job, on the parent job's timeline.
+  'proposal.followed_on': strict({ proposalId: z.string(), version: z.number().int().min(1), followOns: z.array(strict({ pathId: z.string(), jobId: z.string() })), ...priority }),
   'research.asked': research.asked,
   'research.submitted': research.submitted,
   'research.escalated': research.escalated,

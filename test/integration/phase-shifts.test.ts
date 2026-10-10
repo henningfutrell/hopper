@@ -90,10 +90,11 @@ describe('a question answered with Switch', () => {
     // Only a research phase goes on to a proposal.
     expect(p.then).toEqual(['work', 'end']);
     expect((await a.job(job.id)).phase).toBe('proposal');
-    expect((await decide(a, token, 'proposals', p.id, 'accept', { then: 'proposal' })).status).toBe(409);
-    expect((await decide(a, token, 'proposals', p.id, 'accept', { then: 'end' })).status).toBe(200);
+    expect((await decide(a, token, 'proposals', p.id, 'accept', { then: 'proposal', paths: [{ id: '1' }] })).status).toBe(409);
+    // Ended here, its selected path continues as a follow-on (issue #651).
+    expect((await decide(a, token, 'proposals', p.id, 'accept', { then: 'end', paths: [{ id: '1' }] })).status).toBe(200);
     const done = await a.waitForStatus(job.id, 'finished');
-    expect(done.result).toEqual({ research: { id: item.id, version: 1, decision: 'accept' }, proposal: { id: p.id, version: 1, decision: 'accept' } });
+    expect(done.result).toEqual({ research: { id: item.id, version: 1, decision: 'accept' }, proposal: { id: p.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: expect.any(String) }] } });
     expect(ofJob(await a.events(), job.id).filter((e) => e.type === 'job.phase_changed').map((e) => [e.data.from, e.data.to]))
       .toEqual([['work', 'research'], ['research', 'proposal']]);
   });
@@ -306,11 +307,11 @@ describe('a fork on its question (issue #570)', () => {
     expect((await a.job(fork.id)).forkOf!.answered).toMatchObject({ answer: 'Use OAuth', by: 'human' });
     const item = await waitForItem(a, 'proposals', fork.id, (x) => x.status === 'open' && x.stage === 'human');
     expect(item.forkQuestion).toEqual({ status: 'answered', answeredBy: 'human' });
-    expect((await decide(a, token, 'proposals', item.id, 'request-changes', { notes: 'shorter' })).status).toBe(200);
+    expect((await decide(a, token, 'proposals', item.id, 'steer', { notes: 'shorter' })).status).toBe(200);
     const v2 = await waitForItem(a, 'proposals', fork.id, (x) => x.versions.length === 2 && x.status === 'open');
     expect(v2.versions[1]!.text).toContain('Use OAuth');
     // Accepted, it delivers nothing to the parent: the decision says so.
-    const accepted = await decide(a, token, 'proposals', item.id, 'accept');
+    const accepted = await decide(a, token, 'proposals', item.id, 'accept', { paths: [{ id: '1' }] });
     expect(accepted.body.forkQuestion).toEqual({ status: 'answered', answeredBy: 'human' });
     await waitFor(async () => ofJob(await a.events(), parent.id).find((e) => e.type === 'job.fork_resolved'), { what: 'job.fork_resolved' });
     expect(ofJob(await a.events(), parent.id).find((e) => e.type === 'job.fork_resolved')!.data).toMatchObject({ delivered: false, question: 'answered' });

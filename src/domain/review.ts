@@ -5,6 +5,7 @@
 // sends it back to the same job for the next version. One model for every review section: each is declared once,
 // here, by its ReviewSectionType, and a future one follows the same path. Pure: no I/O. Re-exported from types.ts.
 import type { ShiftThen } from './phase.ts';
+import { pathsOf, proposalDocument, type FollowOnView, type PathSelection, type ProposalPathSet, type SelectedPath } from './proposal-paths.ts';
 import type { JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
 
 /**
@@ -32,7 +33,7 @@ export const REVIEW_VERDICTS = ['approve', 'request_changes', 'escalate'] as con
 export type ReviewVerdict = typeof REVIEW_VERDICTS[number];
 
 /** Every decision a person may take on a review item, in any section; each section declares which it offers. */
-export const REVIEW_DECISIONS = ['accept', 'reject', 'request_changes', 'dig_deeper', 'steer'] as const;
+export const REVIEW_DECISIONS = ['accept', 'reject', 'request_changes', 'dig_deeper', 'steer', 'more_paths'] as const;
 export type ReviewDecisionId = typeof REVIEW_DECISIONS[number];
 
 /** What a decision does: signs the item off accepted or rejected, or sends it back to its job for the next version. */
@@ -54,6 +55,8 @@ export interface ReviewVersion {
   sections: Record<string, string>;
   /** The parts it left out, in order. */
   missing: string[];
+  /** A proposal's paths (issue #651), as read when it was written and amended by the reviewer levels; absent on one written before paths. */
+  paths?: ProposalPathSet;
   recentOutput: string;
   at: string;
 }
@@ -74,6 +77,8 @@ export interface ReviewEntry {
   model?: string;
   machine?: { id: string; why: string };
   error?: string;
+  /** A reviewer level's changes to a proposal's paths (issue #651): the paths it added and those it found not viable, by id. */
+  paths?: { added: string[]; notViable: string[] };
   startedAt: string;
   finishedAt: string;
 }
@@ -91,6 +96,8 @@ export interface ReviewSignOff {
   notes?: string;
   /** Accepted in a switched phase (issue #548): what the person picked for the job next. */
   then?: ShiftThen;
+  /** A proposal's paths the person selected (issue #651), each with its note and the follow-on job it continues as. */
+  selected?: SelectedPath[];
 }
 
 /** A proposal or a research report: one per job and kind, its versions and review trail in it. */
@@ -117,6 +124,8 @@ export interface ReviewItem {
   switchedFrom?: { jobId: JobId; questionId: string };
   /** When a person first saw it in the UI. */
   seenAt?: string;
+  /** The paths a person had selected when they asked for more paths or steered (issue #651): kept for the next version. */
+  selection?: PathSelection;
   createdAt: string;
   updatedAt: string;
 }
@@ -126,7 +135,7 @@ export interface ReviewItem {
  * phase of its kind, what a person may pick for the job at Accept (issue #548). A fork's (issue #570): the question it
  * was forked from as it is now — answered without it, its acceptance delivers nothing to that job.
  */
-export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion };
+export type ReviewItemView = ReviewItem & PriorityTag & { then?: ShiftThen[]; forkQuestion?: ForkQuestion; followOns?: FollowOnView[] };
 
 /** The question a fork's item was forked from, as it is now: its status, and who answered it. */
 export interface ForkQuestion { status: QuestionStatus | 'missing'; answeredBy?: string }
@@ -202,9 +211,10 @@ export interface ReviewSectionType {
   goesOn: boolean;
 }
 
+// A proposal's top parts (issue #651); its paths, between Paths and Recommended, are read by proposalDocument.
 const PROPOSAL_PARTS: readonly ReviewPart[] = [
-  { id: 'goal', label: 'Goal' }, { id: 'approach', label: 'Approach' }, { id: 'alternatives', label: 'Alternatives considered', aliases: ['Alternatives'] },
-  { id: 'risks', label: 'Risks' }, { id: 'effort', label: 'Effort' }, { id: 'context', label: 'Context' },
+  { id: 'tldr', label: 'TL;DR' }, { id: 'problem', label: 'Problem' }, { id: 'paths', label: 'Paths' },
+  { id: 'recommended', label: 'Recommended' }, { id: 'context', label: 'Context' },
 ];
 const RESEARCH_PARTS: readonly ReviewPart[] = [
   { id: 'question', label: 'Question' }, { id: 'findings', label: 'Findings' }, { id: 'sources', label: 'Sources and evidence', aliases: ['Sources', 'Evidence'] },
@@ -239,19 +249,33 @@ export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = 
     kind: 'proposal', section: 'proposals', noun: 'proposal', prefix: 'proposal', idField: 'proposalId', jobField: 'proposalId', specFlag: 'proposal',
     marker: 'HOPPER_PROPOSAL', label: 'hopper:proposal', heading: 'proposal', askPath: 'propose',
     parts: PROPOSAL_PARTS,
+    // Accept is "Continue with selected" (issue #651): it takes the selected paths, or none on a proposal of zero paths.
     decisions: [
-      { id: 'accept', route: 'accept', label: 'Accept', effect: 'accept', notes: 'optional' },
-      { id: 'request_changes', route: 'request-changes', label: 'Request changes', effect: 'send_back', notes: 'required' },
-      { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'required' },
+      { id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' },
+      { id: 'more_paths', route: 'more-paths', label: 'Ask for more paths', effect: 'send_back', notes: 'optional' },
+      { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
+      { id: 'reject', route: 'reject', label: 'Reject all', effect: 'reject', notes: 'required' },
     ],
-    protocol: `When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) —. ${MARKDOWN_PARTS} End your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.`,
-    ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_PROPOSAL. Change nothing, and open no pull request.',
-    brief: (item, from, _decision, notes) => [
-      `[hopper proposal] Your proposal (version ${item.versions.length}) was sent back by ${whoOf(from)}. What to change:`,
-      notes,
-      'Write the revised proposal in full, as before, and end with HOPPER_PROPOSAL.',
-    ].join('\n'),
-    check: 'Check whether the proposal makes sense for the job: does it serve the goal the job states, is the approach sound and the smallest that does it, were the real alternatives weighed, are the risks named and the effort believable, and does the context it relied on hold up.',
+    protocol: 'When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on), then a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.',
+    ask: '[hopper proposal] This job asks you for a proposal, not for the work: read what you need, then write the proposal as a set of alternative paths, as the protocol says, in Simplified Technical English (ASD-STE100), and end with HOPPER_PROPOSAL. Give the real alternatives, mark the recommended path or combination, and say why. Change nothing, and open no pull request.',
+    brief: (item, from, decision, notes) => {
+      const v = item.versions.at(-1)!;
+      const ids = pathsOf(v).paths.map((p) => p.id);
+      const next = ids.reduce((n, id) => Math.max(n, Number(id) || 0), 0) + 1;
+      if (decision === 'more_paths') {
+        return [
+          `[hopper proposal] A person asks for more paths on your proposal (version ${item.versions.length}).`,
+          ...(notes ? [`Their note: ${notes}`] : []),
+          `${ids.length > 0 ? `Keep paths ${ids.join(', ')} with their numbers, and add new paths from ${next}.` : `Add paths, from ${next}.`} Write the whole proposal again, as before, and end with HOPPER_PROPOSAL.`,
+        ].join('\n');
+      }
+      return [
+        `[hopper proposal] Your proposal (version ${item.versions.length}) was ${decision === 'steer' ? 'steered' : 'sent back'} by ${whoOf(from)}. ${decision === 'steer' ? 'Their note' : 'What to change'}:`,
+        notes,
+        'Write the revised proposal in full, as before, keep the numbers of the paths you keep, and end with HOPPER_PROPOSAL.',
+      ].join('\n');
+    },
+    check: 'Check the proposal\'s paths for the job: does each path serve the goal the job states, are its tradeoffs (security, effort, risk, friction for the person) named and believable, and is what it creates right? Does the set cover the real options, and is the recommendation sound? Did the context it relied on hold up? Where an option is missing, you may add it as a path; where a path cannot work, you may mark it not viable, with why.',
     goesOn: false,
   },
 };
@@ -295,8 +319,20 @@ function partStart(labels: Map<string, string>, line: string): { part: string; r
   return part ? { part, rest: '' } : undefined;
 }
 
+/**
+ * A review item's document as a version keeps it: its parts, those it left out, and — a proposal's (issue #651) — its
+ * paths.
+ */
+export function reviewDocument(kind: ReviewKind, text: string): { sections: Record<string, string>; missing: string[]; paths?: ProposalPathSet } {
+  return kind === 'proposal' ? proposalDocument(text) : reviewSections(kind, text);
+}
+
 /** The parts of a review item's text, each from its label to the next; a part said twice keeps both. */
 export function reviewSections(kind: ReviewKind, text: string): { sections: Record<string, string>; missing: string[] } {
+  if (kind === 'proposal') {
+    const { sections, missing } = proposalDocument(text);
+    return { sections, missing };
+  }
   const labels = labelMap(kind);
   const found = new Map<string, string[]>();
   let current: string | undefined;

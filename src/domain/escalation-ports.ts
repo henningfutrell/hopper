@@ -2,7 +2,7 @@
 // answer a question, and to review a review item — a proposal or a research report (issues #537, #543, design.md
 // "Sections"); the document an executor reports; the review.
 import type { RunLogins } from './logins.ts';
-import type { Confidence, Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
+import type { Confidence, PathAmendments, PathPick, Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
 
 /** Everything an escalation level is given. */
 export interface AnswerRequest {
@@ -96,11 +96,13 @@ export interface ReviewReply {
   notes: string;
   model?: string;
   machine?: { id: string; why: string };
+  /** A proposal's paths (issue #651): a path the level adds, or one it finds not viable, before a person sees them. */
+  paths?: PathAmendments;
 }
 
 export type ReviewActionResult =
   | { ok: true; item: ReviewItem }
-  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched'; message: string };
+  | { ok: false; reason: 'not_found' | 'not_open' | 'not_offered' | 'not_switched' | 'bad_selection' | 'no_paths'; message: string };
 
 /**
  * Runs one review section's review (issues #537, #543): reviewer levels, lowest first, then a person. Every write is
@@ -116,8 +118,10 @@ export interface ReviewService {
   /**
    * A person's decision, one the section declares, at any stage: `by` is who. `then` (issue #548): accepting an item
    * whose job is in a switched phase of this kind, what the job does next (thenChoices); refused for any other.
+   * `paths` (issue #651): a proposal's selected paths, each with its note — at Accept, the paths that continue; with
+   * a decision that sends it back, the selection kept for the next version.
    */
-  decide(itemId: string, decision: ReviewDecisionId, by: string, notes?: string, then?: ShiftThen): ReviewActionResult;
+  decide(itemId: string, decision: ReviewDecisionId, by: string, notes?: string, then?: ShiftThen, paths?: readonly PathPick[]): ReviewActionResult;
   /** A person saw it in the UI: `seenAt` set once. */
   markSeen(itemId: string): ReviewActionResult;
   /** Cancel the open items whose job ended or is gone. Run on each tick and by `recover`. */

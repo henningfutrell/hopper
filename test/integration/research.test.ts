@@ -188,11 +188,11 @@ describe('an item structured with Research and Proposal sections', () => {
     expect((await decide(a, token, 'research', r.id, 'accept')).body).toMatchObject({ status: 'accepted' });
     // Accepted research moves the job on to the next section it asks for: the proposal, in the same job.
     const p = await waitForItem(a, 'proposals', job.id, forPerson);
-    expect(p.versions[0]!.sections.goal).toBe('act on the research');
+    expect(p.versions[0]!.paths!.paths.map((x) => x.title)).toEqual(['act on the research']);
     expect(await a.job(job.id)).toMatchObject({ status: 'waiting_answer', researchId: r.id, proposalId: p.id });
-    expect((await decide(a, token, 'proposals', p.id, 'accept')).status).toBe(200);
+    expect((await decide(a, token, 'proposals', p.id, 'accept', { paths: [{ id: '1' }] })).status).toBe(200);
     expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({
-      research: { id: r.id, version: 1, decision: 'accept' }, proposal: { id: p.id, version: 1, decision: 'accept' },
+      research: { id: r.id, version: 1, decision: 'accept' }, proposal: { id: p.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: expect.any(String) }] },
     });
     const types = ofJob(await a.events(), job.id).map((e) => e.type);
     expect(types.indexOf('research.accepted')).toBeLessThan(types.indexOf('proposal.submitted'));

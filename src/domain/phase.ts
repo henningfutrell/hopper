@@ -8,6 +8,7 @@
 // question (issue #570), and is told when the question is answered without it; its parent, that it still runs. Pure:
 // no I/O. Re-exported from types.ts.
 import { asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, type ReviewItem, type ReviewKind, type ReviewStatus } from './review.ts';
+import { selectedLines } from './proposal-paths.ts';
 import type { JobStatus } from './types.ts';
 
 /** The phases a job is in: the work, or a review section's special job. */
@@ -153,11 +154,15 @@ export function forkRunningBrief(forkId: string, f: ForkOf): string {
   return `[hopper fork] A ${t.noun} about ${f.note ?? 'your question'} was forked from your question and is still being written (job ${forkId}). Your question is answered now, so its result does not come to you: it goes to review on its own, and its reviewer is told your question was answered.`;
 }
 
+/** The paths a person selected on an accepted proposal (issue #651), as a job is told them: continue with these. */
+const selectedOf = (p: ReviewItem): string =>
+  (p.signOff?.selected?.length ? `\nThe person selected these paths to continue with:\n${selectedLines(p.signOff.selected)}` : '');
+
 /** The accepted result of a fork, as its parent is told it: the answer to its question. */
 export function forkAnswer(p: ReviewItem, f: ForkOf): string {
   const t = REVIEW_SECTIONS[p.kind];
   const notes = p.signOff?.notes ? `\nThe person's notes: ${p.signOff.notes}` : '';
-  return `[hopper fork] A ${t.noun} was made about your question${f.note ? ` (${f.note})` : ''} and accepted. Use it as the answer, or as context for it:${notes}\n\n${p.versions.at(-1)!.text}`;
+  return `[hopper fork] A ${t.noun} was made about your question${f.note ? ` (${f.note})` : ''} and accepted. Use it as the answer, or as context for it:${notes}${selectedOf(p)}\n\n${p.versions.at(-1)!.text}`;
 }
 
 /** What a switched job is told when it goes back to work: its document's decision, with the document as context. */
@@ -165,5 +170,5 @@ export function backToWorkBrief(p: ReviewItem): string {
   const t = REVIEW_SECTIONS[p.kind];
   const how = p.status === 'accepted' ? 'was accepted' : 'was rejected';
   const notes = p.signOff?.notes ? ` Its notes: ${p.signOff.notes}` : '';
-  return `[hopper phase] Your ${t.noun} ${how}.${notes}\nGo back to the work, in this session, with it as context. When the job is completely finished, end your message with a line containing only HOPPER_DONE.`;
+  return `[hopper phase] Your ${t.noun} ${how}.${notes}${selectedOf(p)}\nGo back to the work, in this session, with it as context. When the job is completely finished, end your message with a line containing only HOPPER_DONE.`;
 }

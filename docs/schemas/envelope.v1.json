@@ -101,6 +101,7 @@
         "proposal.accepted",
         "proposal.rejected",
         "proposal.cancelled",
+        "proposal.followed_on",
         "research.asked",
         "research.submitted",
         "research.escalated",

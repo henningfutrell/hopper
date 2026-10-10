@@ -31,7 +31,8 @@ describe('restart with a proposal', () => {
     expect((await second.job(job.id)).status).toBe('waiting_answer');
     expect((await open(second)).map((x) => [x.id, x.status])).toEqual([[p.id, 'open']]);
     const token = await second.login();
-    expect((await second.ui(`/ui/api/proposals/${p.id}/accept`, {}, { token })).status).toBe(200);
-    expect((await second.waitForStatus(job.id, 'finished')).result).toEqual({ proposal: { id: p.id, version: 1, decision: 'accept' } });
+    // Written before paths, it reads as one path (issue #651): selecting it continues as one follow-on.
+    expect((await second.ui(`/ui/api/proposals/${p.id}/accept`, { paths: [{ id: '1' }] }, { token })).status).toBe(200);
+    expect((await second.waitForStatus(job.id, 'finished')).result).toEqual({ proposal: { id: p.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: expect.any(String) }] } });
   });
 });

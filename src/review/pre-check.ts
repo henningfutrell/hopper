@@ -1,8 +1,8 @@
 // The structural pre-check (issue #631, design.md "Sections"): before the reviewer levels, the newest version of a review
 // item is checked for structure, with no model call. Each gap is one fixed line: a part left out, no summary (the
-// section's first part), a broken link, or a next version the same as the one sent back. Offline: a link is checked for
+// section's first part), a proposal's path that leaves out a part or a set with no recommendation (issue #651), a broken link, or a next version the same as the one sent back. Offline: a link is checked for
 // form, an anchor against the document's own headings; a relative path is not checked. Pure: no I/O.
-import { REVIEW_SECTIONS, type ReviewKind, type ReviewVersion } from '../domain/types.ts';
+import { pathGaps, pathsOf, REVIEW_SECTIONS, type ReviewKind, type ReviewVersion } from '../domain/types.ts';
 
 /** A markdown heading's anchor, as GitHub makes it: `## Notes on paint` → `notes-on-paint`. */
 const slug = (heading: string): string => heading.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').replace(/ /g, '-');
@@ -48,6 +48,8 @@ export function preCheck(kind: ReviewKind, versions: readonly ReviewVersion[]): 
   const gaps: string[] = [];
   if (v.missing.includes(summary!.id)) gaps.push(`Missing summary: write the ${summary!.label}: part.`);
   for (const p of required) if (v.missing.includes(p.id)) gaps.push(`Missing part: ${p.label}.`);
+  // A proposal's paths (issue #651): each has its parts, and the set is recommended from, or says why it is empty.
+  if (kind === 'proposal') gaps.push(...pathGaps(pathsOf(v)));
   gaps.push(...linkGaps(v.text));
   const before = versions.at(-2);
   if (before && before.text.trim() === v.text.trim()) {

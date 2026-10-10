@@ -6,7 +6,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { UserStore } from '../domain/ports.ts';
-import { highFirst, jobPriorityTag, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
+import { highFirst, jobPriorityTag, pathsOf, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
 import { reviewSettingsView } from '../review/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
@@ -21,15 +21,19 @@ const idParams = z.object({ id: z.string() });
 /**
  * The item with its job's live priority: 0 and not high when its job is gone. While it is open and its job is in a
  * phase a question switched it to (issue #548), `then`: what a person may pick for the job at Accept. A fork's (issue
- * #570): the question it was forked from as it is now.
+ * #570): the question it was forked from as it is now. A proposal's (issue #651): its paths, and its follow-ons' live status.
  */
 export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView {
   const switched = p.status === 'open' && store.jobs.get(p.jobId)?.shift?.to === p.kind;
   const q = p.forkOf ? store.questions.get(p.forkOf.questionId) : undefined;
   const forkQuestion = p.forkOf ? { status: q?.status ?? 'missing' as const, ...(q && q.status !== 'open' && q.answeredBy ? { answeredBy: q.answeredBy } : {}) } : undefined;
+  // A proposal (issue #651): every version with its paths — one written before paths reads as one —, and each
+  // follow-on of its selected paths with its job's live status.
+  const versions = p.kind === 'proposal' ? p.versions.map((v) => (v.paths ? v : { ...v, paths: pathsOf(v) })) : p.versions;
+  const followOns = (p.signOff?.selected ?? []).flatMap((x) => (x.jobId ? [{ pathId: x.id, jobId: x.jobId, jobStatus: store.jobs.get(x.jobId)?.status ?? 'missing' }] : []));
   return {
-    ...p, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
-    ...(forkQuestion ? { forkQuestion } : {}),
+    ...p, versions, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
+    ...(forkQuestion ? { forkQuestion } : {}), ...(followOns.length > 0 ? { followOns } : {}),
   };
 }
 

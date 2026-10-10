@@ -24,6 +24,12 @@ const divergence = strict({
   native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
 });
 
+/** A proposal event's item fields before issue #651. */
+const proposalV1 = {
+  proposalId: z.string(), version: z.number().int().min(1), priority: z.number().optional(), high: z.boolean().optional(),
+  raisedBy: strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional(),
+};
+
 /** Types nothing emits any more; their stored events still read. */
 export const LEGACY_EVENT_TYPES = ['jev.mode_changed', 'router.mode_changed'] as const;
 
@@ -48,4 +54,7 @@ export const LEGACY_EVENT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
   'question.answered.v1': strict({ questionId: z.string(), by: answerTier, answer: z.string() }),
+  // Issue #651 made a proposal a set of paths: its headline is its TL;DR, no more its goal, and its parts changed.
+  'proposal.submitted.v1': strict({ ...proposalV1, goal: z.string().optional(), missing: z.array(z.enum(['goal', 'approach', 'alternatives', 'risks', 'effort', 'context'])) }),
+  'proposal.escalated.v1': strict({ ...proposalV1, target: z.string().min(1), reason: z.string(), goal: z.string().optional() }),
 };

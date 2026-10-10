@@ -16,10 +16,10 @@ import { commandOn } from '../../../executors/command.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { CLAUDE_TIMEOUT_MS, claudeModelChoices, claudePrint, ON_MACHINE, parsePrint, type ClaudePrintOptions } from '../../claude-print.ts';
 import { containerRefusal, notConfigured, offlineNote, pickMachine } from '../../../domain/machine-pick.ts';
-import { CONFIDENCES, REVIEW_KINDS, REVIEW_VERDICTS, type RunLogins } from '../../../domain/types.ts';
+import { CONFIDENCES, REVIEW_KINDS, type RunLogins } from '../../../domain/types.ts';
 import type { LevelReply, MachineSnapshot, PluginDefinition, ReviewReply } from '../../sdk.ts';
 import { buildLevelPrompt } from './prompt.ts';
-import { buildReviewPrompt } from './review-prompt.ts';
+import { buildReviewPrompt, REVIEW_REPLY_JSON_SCHEMA, REVIEW_REPLY_SCHEMA } from './review-prompt.ts';
 
 export interface ClaudeCliOptions {
   bin: string;
@@ -49,15 +49,9 @@ const REPLY: z.ZodType<LevelReply> = z.object({
   suggest: z.object({ to: z.enum(REVIEW_KINDS), note: z.string().optional() }).optional(),
 });
 
-/** A reviewer level's reply (issue #537). */
-const REVIEW_JSON_SCHEMA = {
-  type: 'object',
-  properties: { verdict: { type: 'string', enum: [...REVIEW_VERDICTS] }, notes: { type: 'string' } },
-  required: ['verdict', 'notes'],
-  additionalProperties: false,
-};
-
-const REVIEW: z.ZodType<ReviewReply> = z.object({ verdict: z.enum(REVIEW_VERDICTS), notes: z.string() });
+/** A reviewer level's reply (issues #537, #651). */
+const REVIEW_JSON_SCHEMA = REVIEW_REPLY_JSON_SCHEMA;
+const REVIEW: z.ZodType<ReviewReply> = REVIEW_REPLY_SCHEMA;
 
 /** One print-mode run: its prompt, and the reply it must give. */
 interface Call<T> { prompt: string; jsonSchema: Record<string, unknown>; schema: z.ZodType<T> }

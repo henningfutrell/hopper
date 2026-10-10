@@ -10,6 +10,12 @@
       "minimum": 1,
       "maximum": 9007199254740991
     },
+    "priority": {
+      "type": "number"
+    },
+    "high": {
+      "type": "boolean"
+    },
     "raisedBy": {
       "type": "object",
       "properties": {
@@ -27,12 +33,6 @@
         "machineId"
       ],
       "additionalProperties": false
-    },
-    "priority": {
-      "type": "number"
-    },
-    "high": {
-      "type": "boolean"
     },
     "target": {
       "type": "string",

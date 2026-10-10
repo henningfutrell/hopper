@@ -8,6 +8,7 @@ import { createFakeLevel } from '../../src/questions/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeWebhooks } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
+import { THREE_PATHS } from '../support/proposal-paths.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
@@ -30,14 +31,8 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const PROPOSAL = [
-  'Goal: paint the shed',
-  'Approach: two coats with a brush',
-  'Alternatives considered: a spray gun',
-  'Risks: rain on the second day',
-  'Effort: an afternoon',
-  'Context: the shed is bare wood',
-].join('\n');
+// A proposal is a set of paths (issue #651): tests/integration/proposal-paths.test.ts covers the paths themselves.
+const PROPOSAL = THREE_PATHS;
 const propose = (message = PROPOSAL) => ({ op: 'propose', message });
 
 /** A reviewer level that answers each review with the next verdict of `verdicts` (the last one repeats). */
@@ -61,7 +56,7 @@ const waitForProposal = (a: TestApp, jobId: string, ok: (p: ReviewItemView) => b
 }, { what: `a matching proposal on job ${jobId}` });
 const ofJob = (events: DomainEvent[], jobId: string) => events.filter((e) => e.jobId === jobId);
 const settings = (a: TestApp, token: string, body: Record<string, unknown>) => a.ui<Record<string, unknown>>('/ui/api/proposals/settings', body, { token });
-const decide = (a: TestApp, token: string, id: string, how: 'accept' | 'reject' | 'request-changes', body: Record<string, unknown> = {}) =>
+const decide = (a: TestApp, token: string, id: string, how: 'accept' | 'reject' | 'steer', body: Record<string, unknown> = {}) =>
   a.ui<ReviewItemView>(`/ui/api/proposals/${id}/${how}`, body, { token });
 
 describe('a job that comes back with a proposal', () => {
@@ -72,13 +67,17 @@ describe('a job that comes back with a proposal', () => {
     expect(p).toMatchObject({ status: 'open', stage: 'human', priority: 50, high: false, source: { title: 'paint the shed' } });
     expect(p.versions).toEqual([expect.objectContaining({
       number: 1, text: PROPOSAL, missing: [],
-      sections: { goal: 'paint the shed', approach: 'two coats with a brush', alternatives: 'a spray gun', risks: 'rain on the second day', effort: 'an afternoon', context: 'the shed is bare wood' },
+      sections: {
+        tldr: 'Paint the shed with a brush. It is cheap and safe.', problem: 'The shed is bare wood, and it rots in the rain.',
+        recommended: '1 and 3 — the brush is cheap; look again next year.', context: 'the shed is bare wood.',
+      },
     })]);
+    expect(p.versions[0]!.paths!.paths).toHaveLength(3);
     expect(await a.job(job.id)).toMatchObject({ status: 'waiting_answer', proposalId: p.id });
     expect(await a.questionsOf(job.id)).toEqual([]);
     expect((await a.api('GET', `/api/proposals/${p.id}`)).body).toMatchObject({ id: p.id, status: 'open' });
     const events = ofJob(await a.events(), job.id);
-    expect(events.find((e) => e.type === 'proposal.submitted')!.data).toMatchObject({ proposalId: p.id, version: 1, goal: 'paint the shed', missing: [], priority: 50, high: false });
+    expect(events.find((e) => e.type === 'proposal.submitted')!.data).toMatchObject({ proposalId: p.id, version: 1, tldr: 'Paint the shed with a brush. It is cheap and safe.', missing: [], paths: 3, priority: 50, high: false });
     expect(events.filter((e) => e.type === 'proposal.escalated').map((e) => e.data.target)).toEqual(['human']);
     expect(events.filter((e) => e.type === 'proposal.escalated_to_human')).toHaveLength(1);
     expect(events.some((e) => e.type.startsWith('question.'))).toBe(false);
@@ -86,9 +85,9 @@ describe('a job that comes back with a proposal', () => {
 
   it('a proposal that leaves parts out says which', async () => {
     const a = await start();
-    const job = await a.pull(propose('Goal: paint it\nApproach: a brush'));
+    const job = await a.pull(propose('TL;DR: paint it\nProblem: bare wood'));
     const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
-    expect(p.versions[0]).toMatchObject({ sections: { goal: 'paint it', approach: 'a brush' }, missing: ['alternatives', 'risks', 'effort', 'context'] });
+    expect(p.versions[0]).toMatchObject({ sections: { tldr: 'paint it', problem: 'bare wood' }, missing: ['paths', 'context'] });
   });
 });
 
@@ -114,8 +113,9 @@ describe('review through the reviewer levels', () => {
     const job = await a.pull(propose());
     const done = await a.waitForStatus(job.id, 'finished');
     const [p] = await proposalsOf(a, job.id);
-    expect(p).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', stage: 'high', version: 1 } });
-    expect(done.result).toEqual({ proposal: { id: p!.id, version: 1, decision: 'accept' } });
+    // The top level continues with the recommended paths (issue #651).
+    expect(p).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', stage: 'high', version: 1, selected: [{ id: '1' }, { id: '3' }] } });
+    expect(done.result).toEqual({ proposal: { id: p!.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: expect.any(String) }, { path: '3', jobId: expect.any(String) }] } });
     expect(ofJob(await a.events(), job.id).find((e) => e.type === 'proposal.accepted')!.data).toMatchObject({ proposalId: p!.id, stage: 'high', version: 1 });
   });
 
@@ -160,7 +160,7 @@ describe('the structural pre-check before the reviewer levels (issue #631)', () 
     expect(p.levelRevisions).toBe(0);
     expect(p.versions.map((v) => v.number)).toEqual([1, 2, 3]);
     expect(p.versions[1]!.text).toContain('sent back by the structural pre-check');
-    expect(p.versions[1]!.text).toContain('Missing part: Alternatives considered.');
+    expect(p.versions[1]!.text).toContain('Missing part: Problem.');
     expect(p.versions[1]!.text).toContain('Broken link: [the plan]() has no target.');
     expect(p.reviews.map((r) => [r.stage, r.role, r.verdict, r.version])).toEqual([
       ['pre-check', 'check', 'request_changes', 1], ['pre-check', 'check', 'request_changes', 2], ['pre-check', 'check', 'request_changes', 3],
@@ -168,7 +168,7 @@ describe('the structural pre-check before the reviewer levels (issue #631)', () 
     const events = ofJob(await a.events(), job.id);
     expect(events.filter((e) => e.type === 'proposal.revision_requested').map((e) => e.data.stage)).toEqual(['pre-check', 'pre-check']);
     expect(events.filter((e) => e.type === 'proposal.escalated').map((e) => e.data.target)).toEqual(['human']);
-    expect(events.find((e) => e.type === 'proposal.escalated_to_human')!.data.reason).toMatch(/^the structural pre-check sent it back 2 times; still: Missing part/);
+    expect(events.find((e) => e.type === 'proposal.escalated_to_human')!.data.reason).toMatch(/^the structural pre-check sent it back 2 times; still: Missing summary/);
   });
 
   it('lets a complete proposal through to the reviewer levels', async () => {
@@ -193,12 +193,12 @@ describe('a person signs off', () => {
     const token = await a.login();
     const job = await a.pull(propose());
     const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
-    const r = await decide(a, token, p.id, 'accept', { notes: 'go ahead' });
+    const r = await decide(a, token, p.id, 'accept', { notes: 'go ahead', paths: [{ id: '1' }] });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', stage: 'human', version: 1, notes: 'go ahead' } });
+    expect(r.body).toMatchObject({ status: 'accepted', signOff: { decision: 'accept', stage: 'human', version: 1, notes: 'go ahead', selected: [{ id: '1', title: 'Brush two coats' }] } });
     expect(r.body.signOff!.by).toEqual(expect.any(String));
     expect(Date.parse(r.body.signOff!.at)).not.toBeNaN();
-    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ proposal: { id: p.id, version: 1, decision: 'accept' } });
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ proposal: { id: p.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: r.body.signOff!.selected![0]!.jobId }] } });
     const got = await waitFor(() => receiver!.received[0], { what: 'a proposal.accepted delivery' });
     expect(JSON.parse(got.body)).toMatchObject({ type: 'proposal.accepted', jobId: job.id, data: { proposalId: p.id, stage: 'human', version: 1 } });
     expect((await decide(a, token, p.id, 'reject', { notes: 'no' })).status).toBe(409);
@@ -215,17 +215,17 @@ describe('a person signs off', () => {
     expect(ofJob(await a.events(), job.id).find((e) => e.type === 'proposal.rejected')!.data).toMatchObject({ proposalId: p.id, notes: 'too costly' });
   });
 
-  it('request changes: the job revises with the feedback, both versions are kept, and the new one is reviewed', async () => {
+  it('steer: the job revises with the feedback, both versions are kept, and the new one is reviewed', async () => {
     const a = await start();
     const token = await a.login();
     const job = await a.pull(propose());
     const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
-    expect((await decide(a, token, p.id, 'request-changes')).status).toBe(400);
-    expect((await decide(a, token, p.id, 'request-changes', { notes: 'use oil paint' })).body).toMatchObject({ status: 'revising' });
+    expect((await decide(a, token, p.id, 'steer')).status).toBe(400);
+    expect((await decide(a, token, p.id, 'steer', { notes: 'use oil paint' })).body).toMatchObject({ status: 'revising' });
     const revised = await waitForProposal(a, job.id, (x) => x.versions.length === 2 && x.stage === 'human');
     expect(revised.status).toBe('open');
     expect(revised.versions[1]!.text).toContain('use oil paint');
-    expect(revised.reviews).toEqual([expect.objectContaining({ stage: 'human', role: 'human', verdict: 'request_changes', notes: 'use oil paint', version: 1 })]);
+    expect(revised.reviews).toEqual([expect.objectContaining({ stage: 'human', role: 'human', verdict: 'steer', notes: 'use oil paint', version: 1 })]);
   });
 
   it('an unknown proposal is 404', async () => {

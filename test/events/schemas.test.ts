@@ -73,8 +73,17 @@ describe('superseded payload versions (stored events are never rewritten)', () =
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
     expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
       'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2',
-      'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
+      'proposal.escalated.v1', 'proposal.submitted.v1', 'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
     ]);
+  });
+
+  it('a proposal\'s events before paths (v1, its goal as headline) still validate; v2 names its TL;DR (issue #651)', () => {
+    const at = '2026-10-01T00:00:00.000Z';
+    const env = (type: string, schemaVersion: number, data: Record<string, unknown>) => ({ schemaVersion, seq: 1, id: '00000000-0000-4000-8000-000000000000', type, at, data });
+    expect(validateEvent(env('proposal.submitted', 1, { proposalId: 'p', version: 1, goal: 'paint it', missing: ['effort'] }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.escalated', 1, { proposalId: 'p', version: 1, target: 'human', reason: 'r', goal: 'paint it' }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.submitted', 2, { proposalId: 'p', version: 1, tldr: 'paint it', missing: ['context'], paths: 3 }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.submitted', 2, { proposalId: 'p', version: 1, goal: 'paint it', missing: [] })).ok).toBe(false);
   });
 
   it('a stored v2 job.prioritized, v2 decision.made and router.mode_changed still validate; v3 carries no mode', () => {

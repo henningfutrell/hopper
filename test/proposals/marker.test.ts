@@ -22,7 +22,9 @@ const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
 describe('the proposal marker', () => {
   it('the protocol tells every job how to come back with a proposal, before the turn anchor', () => {
-    expect(PROTOCOL_LINES.slice(0, -1).some((l) => l.includes('HOPPER_PROPOSAL') && l.includes('Goal:') && l.includes('Context:'))).toBe(true);
+    // A set of paths (issue #651): a TL;DR, the problem, each path with its tradeoffs, the recommendation, the context.
+    expect(PROTOCOL_LINES.slice(0, -1).some((l) => ['HOPPER_PROPOSAL', 'TL;DR:', 'Problem:', 'Path N: <title>', 'Friction:', 'Creates:', 'Recommended:', 'Paths: none', 'Context:', 'Markdown']
+      .every((w) => l.includes(w)))).toBe(true);
     expect(FOOTER_ANCHOR).toContain('HOPPER_FAILED');
   });
 
@@ -46,30 +48,30 @@ describe('the proposal marker', () => {
 });
 
 describe('the parts of a proposal', () => {
-  it('each part runs from its label to the next; headings, lists and emphasis read too', () => {
+  it('each top part runs from its label to the next; headings, lists and emphasis read too; paths are read apart', () => {
     const text = [
       'Some preamble.',
-      '## Goal',
+      '## TL;DR',
       'Paint the shed.',
-      '- **Approach:** two coats',
-      'with a brush',
-      '*Alternatives:* spray',
-      'Risks: rain',
-      'Effort: an afternoon',
+      '- **Problem:** bare wood',
+      'rots in the rain',
+      '## Path 1: Brush',
+      'Summary: two coats',
+      '*Recommended:* 1, because it is cheap',
       'Context: the shed is wood; see docs/shed.md',
     ].join('\n');
     expect(proposalSections(text)).toEqual({
-      sections: { goal: 'Paint the shed.', approach: 'two coats\nwith a brush', alternatives: 'spray', risks: 'rain', effort: 'an afternoon', context: 'the shed is wood; see docs/shed.md' },
+      sections: { tldr: 'Paint the shed.', problem: 'bare wood\nrots in the rain', recommended: '1, because it is cheap', context: 'the shed is wood; see docs/shed.md' },
       missing: [],
     });
   });
 
   it('a part left out, or left empty, is missing; text with no labels is all missing', () => {
-    expect(proposalSections('Goal: x\nRisks:\nEffort: y').missing).toEqual(['approach', 'alternatives', 'risks', 'context']);
-    expect(proposalSections('').missing).toEqual(['goal', 'approach', 'alternatives', 'risks', 'effort', 'context']);
+    expect(proposalSections('TL;DR: x\nProblem:\nPath 1: y').missing).toEqual(['problem', 'recommended', 'context']);
+    expect(proposalSections('').missing).toEqual(['tldr', 'problem', 'paths', 'context']);
   });
 
   it('a word that is not a label, with a colon, stays in its part', () => {
-    expect(proposalSections('Goal: x\nNote: keep it\nApproach: y').sections).toEqual({ goal: 'x\nNote: keep it', approach: 'y' });
+    expect(proposalSections('TL;DR: x\nNote: keep it\nProblem: y').sections).toEqual({ tldr: 'x\nNote: keep it', problem: 'y' });
   });
 });

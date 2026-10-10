@@ -59,5 +59,9 @@ export function createReviewItemRepository(c: StoreContext, kind: ReviewKind): R
       const p = need(id);
       return save({ ...p, versions: [...p.versions, version] });
     },
+    setPaths(id, paths) {
+      const p = need(id);
+      return save({ ...p, versions: [...p.versions.slice(0, -1), { ...p.versions.at(-1)!, paths }] });
+    },
   };
 }

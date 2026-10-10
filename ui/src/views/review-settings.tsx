@@ -15,6 +15,7 @@ import { firstLine } from '@/model/questions';
 import { headlineOf, REVIEW_UI } from '@/model/reviews';
 import type { ReviewItemView, ReviewKind, ReviewSectionView, ReviewSettingsView, ReviewSignOffBy } from '@/model/wire';
 import { saveReviewSettings } from '@/store/reviews';
+import { FollowOns } from './proposal-paths';
 
 const TONE: Record<string, 'ok' | 'bad' | 'muted'> = { accepted: 'ok', rejected: 'bad' };
 
@@ -28,6 +29,8 @@ export function ReviewHistory({ kind, items, type }: { kind: ReviewKind; items: 
             <StatusBadge status={p.status} tone={TONE[p.status] ?? 'muted'} />
             {p.signOff && <span className="text-xs text-muted-foreground">version {p.signOff.version} · by {p.signOff.by ?? p.signOff.stage}</span>}
             <span className="num ml-auto text-xs text-muted-foreground">{clock(p.signOff?.at ?? p.updatedAt)}</span>
+            {/* A proposal's selected paths and their follow-ons (issue #651). */}
+            {kind === 'proposal' && <FollowOns p={p} />}
           </li>
         ))}
       </ul>
