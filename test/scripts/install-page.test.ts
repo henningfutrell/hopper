@@ -112,6 +112,22 @@ describe('the Windows install (WSL)', () => {
   });
 });
 
+describe('a Windows computer as a machine (issue #704)', () => {
+  const machines = page.slice(page.indexOf('id="windows-machine"'));
+
+  it('says native Windows is not supported, and the client runs inside WSL', () => {
+    expect(page).toContain('id="windows-machine"');
+    expect(machines).toContain('not supported natively');
+    expect(machines).toContain('inside WSL');
+  });
+
+  it('turns systemd on in WSL, starts podman.socket, and joins the WSL distro with the Add machine line', () => {
+    expect(machines).toContain('systemd=true');
+    expect(machines).toContain('systemctl --user enable --now podman.socket');
+    expect(machines).toContain('Add machine');
+  });
+});
+
 describe('get.sh without a running systemd (WSL with systemd off)', () => {
   it('stops before cloning, and says how to turn systemd on in WSL', () => {
     const bin = mkdtempSync(join(tmpdir(), 'get-sh-bin-'));

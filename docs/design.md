@@ -4283,6 +4283,27 @@ refused, the install served. `test/client/link.test.ts` (the token), `test/adapt
 (the link), `test/integration/client-release.test.ts` (releases over the link), `test/ui/machines.test.ts`
 (the lines), `test/store/tenant-migration-12.test.ts`.
 
+### Windows: only inside WSL (issue #704, 2026-10-10)
+
+Owner decision: hopper does not support native Windows. A Windows computer runs its machine, and its sandbox boxes,
+on Podman inside WSL (a Linux distro with systemd on and `podman.socket` started); that is the one supported Windows
+path. A native client (Node.js for Windows, MSYS or Git Bash) failed every job within seconds: discovery's
+`spawn env ENOENT`, the vault socket's `listen EACCES` on a Windows path, and an unusable scratch dir under MSYS.
+
+- **The check, and nothing more.** `unsupportedPlatform` (`src/client/link.ts`, one of the client's files) names
+  `win32` as unsupported, with `Windows isn't supported natively. Run the client inside WSL.` The client stops with
+  it at start, before it joins or dials in. The join sends Node's `process.platform`; `POST /client/join` answers
+  400 with the same text when it is `win32`, before the join code is spent, so the same line then joins from WSL.
+  No machine is added, so no job is placed on it. A join with no platform (a client from before) is not refused.
+- **Not built, not planned:** a named-pipe vault, discovery without `env`, MSYS path or scratch handling, and any VM
+  path (Podman machine, Docker Desktop, Hyper-V). The Windows code from before (a drive-letter home, the PowerShell
+  check, load averages) stays as it is; no Windows code is added beyond the check.
+- **Docs:** the install page's "A Windows computer as a machine" (`site/install.html#windows-machine`) and the
+  README's Add machines list give the WSL steps.
+
+Tests: `test/client/link.test.ts` (the platforms), `test/integration/machine-join.test.ts` (a `win32` join refused
+with the WSL text, the code still good), `test/scripts/install-page.test.ts` (the WSL machine steps).
+
 ## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
 
 Owner direction, from a live test: a person had to start a sandbox box by hand, and removing its machine left the

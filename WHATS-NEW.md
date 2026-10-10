@@ -9,6 +9,7 @@ numbers, no commit hashes, no file names, no code words. Never edit a line once 
 update notice would show it again as new.
 
 - Sandbox boxes the hopper starts now have CPU and memory limits, and a template can set a time limit after which its boxes stop by themselves. A box that is removed keeps its home, so a new box of the same name is still signed in. The hopper can now also start boxes through rootless Docker when Podman is not there.
+- A Windows computer now joins only from inside WSL: run the Add machine line in your Linux distro there, with Podman. Windows itself is not supported, and the hopper now says so at once in place of failing every job.
 - A machine can now keep a separate folder for each repository: a job for that repository works in its own folder, which the hopper makes and fills when it is missing, and jobs for other repositories keep the machine's usual folder.
 - You can now report a hopper bug from the menu under your initials. Give it a title and say what happened. The hopper adds its version and setup, with tokens, keys, host names and IP addresses hidden, and you can read and change all of it before you send. The report goes to the hopper's issues on GitHub with your own GitHub account, and you get its link. When a similar report is already open, you can add yours to it.
 - A machine you reach over ssh now finds by itself which address of the hopper it can reach, and its jobs use that one. When it can reach none, Machines says so and what to set, and its jobs wait for another machine instead of failing halfway.
