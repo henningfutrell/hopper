@@ -11,10 +11,9 @@ import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts'
 import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type OperationProfile, type TemplateApprovals } from '../domain/access.ts';
-import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/blast-radius.ts';
+import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
-import type { RadiusRules } from '../domain/blast-radius.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
@@ -45,6 +44,8 @@ export interface VaultService {
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<VaultResult>;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
+  /** A box's template and that template's rating now (issue #605): what the box's blast radius includes. Undefined: no box, or its template is gone. */
+  boxRadius(machine: string): { name: string; radius: TemplateRadius } | undefined;
   /**
    * Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581).
    * Only a template the vault holds (issue #604): a box of one that is not there is an instance of nothing.
@@ -66,7 +67,7 @@ export interface VaultService {
  * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
  * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
  */
-export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxes' | 'templateScopes'> {
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes'> {
   /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
@@ -105,7 +106,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   removeTemplate: (name, by) => v.removeTemplate(name, by),
   approveTemplate: (name, by) => v.approveTemplate(name, by),
   approveProfile: (name, profile, by) => v.approveProfile(name, profile, by),
-  scopeOf: (machine) => v.scopeOf(machine),
+  scopeOf: (machine) => v.scopeOf(machine), boxRadius: (machine) => v.boxRadius(machine),
   boxes: () => v.boxes(),
   templateScopes: () => v.templateScopes(),
 });
@@ -308,6 +309,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
+    boxRadius: (machine) => { const name = scopeOf(machine).template, t = name === undefined ? undefined : vault.template(name); return t ? { name: t.name, radius: viewOf(t).radius } : undefined; },
     boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined && vault.template(m.template) ? [{ machine: m.name, template: m.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),

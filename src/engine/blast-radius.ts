@@ -2,11 +2,13 @@
 // connection — when it comes online in this run, every `everyMinutes`, and on demand —, the record kept in the user's
 // settings with what changed since the one before; each machine rated from its record with the rules now, so a rule
 // change applies at the next Decision; the gate the decider reads; a person letting a held job through.
+// A box is rated for the higher of its reach and its template's rating (issue #605), read live, so a widened template
+// gates its boxes at the next Decision.
 // `machine.discovered` when a discovery changed something, `machine.radius_grew` when it raised the level,
 // `machine.actor_mismatch` when an actor machine's rating is not what was declared; saving the settings is
 // `blast_radius.settings_changed`. Both of the last two wake the engine, as does `job.gate_passed`.
 import { AWS_ADMIN_ACTIONS, AWS_WRITE_ACTIONS, KUBE_CHECKS } from '../client/discover.ts';
-import { changesOf, gateOf, higher, rate } from '../blast-radius/rate.ts';
+import { changesOf, gateOf, higher, machineRadius, rate } from '../blast-radius/rate.ts';
 import type { MachineShell } from '../domain/ports.ts';
 import {
   BLAST_RADIUS_BOUNDS, DEFAULT_BLAST_RADIUS_SETTINGS, GATE_AT, heldAtGate, RADIUS_LEVELS, UNCONFIRMED_AS,
@@ -112,6 +114,12 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
     const facts = recordOf(id)?.facts;
     return facts ? rate(facts, s.rules) : undefined;
   };
+  /** The machine's blast radius now: its reach and, a box, its template's rating; the higher of the two. */
+  const radiusOf = (id: string, s: BlastRadiusSettings) => {
+    const rating = levelOf(id, s);
+    const template = c.boxRadius(id);
+    return { rating, template, radius: machineRadius(rating?.level, template?.radius.level) };
+  };
 
   /** The machine as the first executor there that reaches it does; a container target has no shell. */
   const shellOf = (m: MachineSnapshot): MachineShell | undefined => {
@@ -150,7 +158,8 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
     const grew = prev?.level !== undefined && higher(level, prev.level) ? { from: prev.level, to: level, at }
       : prev?.grew && prev.level === level ? prev.grew : undefined;
     const actor = s.actors.find((a) => a.machineId === m.id);
-    const mismatch = actor !== undefined && actor.expected !== level ? { expected: actor.expected, found: level } : undefined;
+    const radius = machineRadius(level, c.boxRadius(m.id)?.radius.level)!.level;
+    const mismatch = actor !== undefined && actor.expected !== radius ? { expected: actor.expected, found: radius } : undefined;
     const told = mismatch !== undefined && prev?.mismatch?.expected === mismatch.expected && prev.mismatch.found === mismatch.found;
     const record: DiscoveryRecord = { machineId: m.id, at, facts, changes, level, ...(grew ? { grew } : {}), ...(mismatch ? { mismatch } : {}) };
     records.set(m.id, record);
@@ -194,13 +203,13 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
     const s = settings();
     const machines: MachineRadiusView[] = (await c.machines.list()).map((m) => {
       const discovery = recordOf(m.id);
-      const rating = levelOf(m.id, s);
+      const { rating, template, radius } = radiusOf(m.id, s);
       const actor = s.actors.find((a) => a.machineId === m.id);
-      const gated = gateOf(m.id, rating?.level, s);
+      const gated = gateOf(m.id, radius?.level, s);
       return {
         machineId: m.id, label: m.label, online: m.online, discoverable: shellOf(m) !== undefined,
-        ...(discovery ? { discovery } : {}), ...(rating ? { rating } : {}),
-        ...(actor ? { actor: { ...actor, mismatch: rating !== undefined && rating.level !== actor.expected } } : {}),
+        ...(discovery ? { discovery } : {}), ...(rating ? { rating } : {}), ...(template ? { template } : {}), ...(radius ? { radius } : {}),
+        ...(actor ? { actor: { ...actor, mismatch: radius !== undefined && radius.level !== actor.expected } } : {}),
         ...(gated ? { gated } : {}),
       };
     });
@@ -214,14 +223,14 @@ export function createBlastRadius(c: EngineContext, log: (line: string) => void 
     settings,
     gates(machineId) {
       const s = settings();
-      return gateOf(machineId, levelOf(machineId, s)?.level, s) !== undefined;
+      return gateOf(machineId, radiusOf(machineId, s).radius?.level, s) !== undefined;
     },
     input(machines) {
       const s = settings();
       // A machine online and not yet tried in this run: it attached, or the hopper started.
       if (!busy && machines.some((m) => m.online && !last.has(m.id) && !m.docker)) void serially((m) => !last.has(m.id));
       const gated = machines.flatMap((m) => {
-        const reason = gateOf(m.id, levelOf(m.id, s)?.level, s);
+        const reason = gateOf(m.id, radiusOf(m.id, s).radius?.level, s);
         return reason ? [{ machineId: m.id, reason }] : [];
       });
       return { gated, pass: s.pass };

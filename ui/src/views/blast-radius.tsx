@@ -1,4 +1,5 @@
-// Blast radius on the Machines view (issue #542): the gate in one sentence; each machine's level, whether it is gated
+// Blast radius on the Machines view (issue #542): the gate in one sentence; each machine's level and what set it — its
+// reach, or a box's template (issue #605) —, whether it is gated
 // and why, an actor machine's declaration and whether its rating matches, a radius that grew, when it was last
 // discovered and what changed; on demand its evidence — every reach with its access, prod or not, and why —, its tools
 // and its credential sources (names only). An operator discovers a machine now; an admin edits the settings, applied
@@ -11,7 +12,7 @@ import { FIELD } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { changesText, levelTone, summaryOf } from '@/model/blast-radius';
+import { changesText, levelTone, radiusText, summaryOf } from '@/model/blast-radius';
 import type { ActorMachine, BlastRadiusView, GateAt, MachineRadiusView, RadiusLevel, UnconfirmedAs } from '@/model/wire';
 import { useHopper } from '@/store';
 import { discoverNow, refreshBlastRadiusSoon, saveBlastRadiusSettings, type BlastRadiusPatch } from '@/store/blast-radius';
@@ -59,10 +60,10 @@ function MachineRow({ m, operator }: { m: MachineRadiusView; operator: boolean }
     <div data-radius-machine={m.machineId} className="space-y-1.5 py-2">
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
         <span className="font-medium">{m.label}</span>
-        <StatusBadge status={m.rating?.level ?? 'not discovered'} tone={levelTone(m.rating?.level)} label={m.rating ? `${m.rating.level} radius` : 'not discovered'} />
+        <StatusBadge status={m.radius?.level ?? 'not discovered'} tone={levelTone(m.radius?.level)} label={radiusText(m)} />
         {m.gated && <StatusBadge status="gated" tone="warn" title={`Only jobs let through the gate run here: ${m.gated}`} label="gated" />}
         {m.actor && <StatusBadge status="actor" tone="operator" label={`actor: ${m.actor.purpose}`} title={`Declared ${m.actor.expected}`} />}
-        {m.actor?.mismatch && <StatusBadge status="mismatch" tone="bad" label={`declared ${m.actor.expected}, rated ${m.rating?.level}`} />}
+        {m.actor?.mismatch && <StatusBadge status="mismatch" tone="bad" label={`declared ${m.actor.expected}, rated ${m.radius?.level}`} />}
         {d?.grew && <StatusBadge status="grew" tone="bad" label={`grew ${d.grew.from} → ${d.grew.to}`} title={`Since ${d.grew.at}`} />}
         {operator && m.discoverable && m.online && (
           <Button size="xs" variant="ghost" className="ml-auto" disabled={busy} onClick={async () => { setBusy(true); await discoverNow(m.machineId); setBusy(false); }}>
@@ -77,6 +78,12 @@ function MachineRow({ m, operator }: { m: MachineRadiusView; operator: boolean }
       </div>
       {m.gated && <div className="text-xs text-warn">{m.gated}: only jobs let through the gate run here</div>}
       {m.rating && <ul className="list-disc pl-5 text-xs text-muted-foreground">{m.rating.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+      {m.template && (
+        <div data-box-template={m.template.name} className="text-xs text-muted-foreground">
+          A box of template {m.template.name}, rated {m.template.radius.level}:
+          <ul className="list-disc pl-5">{m.template.radius.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+        </div>
+      )}
       {d?.facts && <Evidence m={m} />}
     </div>
   );
