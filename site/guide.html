@@ -258,8 +258,11 @@ Without it the page says Jev is off and which variable to set, and every decisio
 
 <h2 id="needs-a-person">Needs a person</h2>
 <p>A failed job that hopper stopped trying to fix by itself comes to <strong>Failures → Needs a person</strong>. It stays there
-until someone resolves it; age and restarts do not remove it. Each card starts with <em>Next step</em>: what to do for its
-reason.</p>
+until someone resolves it; age and restarts do not remove it. Each card starts with one plain sentence that says what
+happened, for example <em>The job updated PR #616. #616 is merged.</em> hopper checks the job's pull requests and its issue
+first, at once and then every 10 minutes. Under it is the button to press, with why; the other buttons follow, smaller.
+When the work is already done (a pull request of the job's is merged, or its issue is closed as completed), hopper marks the
+job done itself and the card leaves Needs a person.</p>
 <h3>Reasons</h3>
 <div class="table-wrap"><table class="stack">
 <tr><th>Reason</th><th>Means</th></tr>
@@ -269,21 +272,21 @@ reason.</p>
 <tr><td><strong>run again refused</strong></td><td>hopper tried to run it again and was refused; the assessment says why.</td></tr>
 <tr><td><strong>dismissed from the queue</strong></td><td>Its locked queue entry was dismissed while the failure was open.</td></tr>
 </table></div>
-<p>The folded <em>Assessment</em> shows the assessor's reasons and the error.</p>
+<p>The folded <em>Details</em> shows the assessment, the known cause, the assessor's reasons and the error.</p>
 <h3>Resolve it, with a note</h3>
 <p>Write a <strong>Note</strong>: what you did, or what the job should do next. It goes to the job and to its issue. Then:</p>
 <div class="table-wrap"><table class="stack">
 <tr><th>Button</th><th>Then</th></tr>
 <tr><td><strong>Continue</strong></td><td>The job carries on with your note. If its agent session can be resumed, the same job goes back in the queue on its machine and resumes that session in its work tree, told the error and your note. Otherwise a new job runs, told the error, the assessment and your note.</td></tr>
-<tr><td><strong>I fixed it</strong></td><td>You fixed the cause outside the job (a machine, a credential, the repository). A new job runs, told your note.</td></tr>
-<tr><td><strong>Done by hand</strong></td><td>You did the work. Give the <strong>Link</strong> to it (a pull request or commit). The job ends as finished.</td></tr>
+<tr><td><strong>Run again</strong></td><td>You fixed the cause outside the job (a machine, a credential, the repository). A new job runs, told your note.</td></tr>
+<tr><td><strong>Done</strong></td><td>The work is done, by the job's pull request or by you. The <strong>Link</strong> to it (a pull request or commit) is filled in when the card knows it. The job ends as finished.</td></tr>
 <tr><td><strong>Won't do</strong></td><td>The work should not be done, or it was not a real failure. The note is required. Its queue entry is dismissed.</td></tr>
 </table></div>
 <p>A button hopper would refuse now is not shown; the card says <em>not now</em> and why (for example, a newer job of the same
 issue exists).</p>
 <h3>What goes to the issue</h3>
 <p>hopper posts one short comment: <em>Resolved from Needs a person:</em> and what was done, then your note and the link. It
-names no person, you included. Done by hand sets <code>hopper:done</code>, Won't do sets <code>hopper:rejected</code>, and
+names no person, you included. Done sets <code>hopper:done</code>, Won't do sets <code>hopper:rejected</code>, and
 <code>hopper:failed</code> is removed. If GitHub refuses, hopper tries again at each sync; the card says whether the issue was
 told.</p>
 <h3>Follow the next job</h3>

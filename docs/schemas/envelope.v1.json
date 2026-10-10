@@ -84,6 +84,7 @@
         "failure.released",
         "handoff.opened",
         "handoff.closed",
+        "handoff.checked",
         "usage.limits_changed",
         "priority_lanes.changed",
         "priority_lanes.settings_changed",

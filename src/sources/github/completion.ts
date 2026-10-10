@@ -10,7 +10,7 @@
 // pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
 // not complete, and not failed either.
 
-import type { Job } from '../../domain/types.ts';
+import type { Job, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
@@ -92,19 +92,40 @@ export async function partlyDone(api: GitHubApi, job: Job): Promise<string | und
   return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
 }
 
+/** A pull request's number, from its URL. */
+const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+
 /**
- * Whether the job's issue is closed, by any means, or gone (issue #529): a hand-off of its job waits on nobody. No
- * access (403) cannot tell: false. A transient error throws, to be asked again.
+ * What a failed job's work shows on GitHub (issues #529, #621): its issue — open, closed as completed (`done`), closed
+ * any other way, or gone — and the pull requests the job opened (created at or after the job) or pushed to (an
+ * updated pull request, issue #618: an older one that closes the issue, one that mentions it, or one its text names),
+ * each with its state. Undefined: no access (403), it cannot tell. A transient error throws, to be asked again.
  */
-export async function issueClosed(api: GitHubApi, job: Job): Promise<boolean> {
+export async function workState(api: GitHubApi, job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined> {
   const { repo, number } = job.source ?? {};
-  if (!repo || !number) return false;
+  if (!repo || !number) return undefined;
+  let issue: GitHubIssue;
   try {
-    return (await api.getIssue(repo, number)).state === 'closed';
+    issue = await api.getIssue(repo, number);
   } catch (err) {
-    if (err instanceof GitHubApiError && err.permanent) return err.status === 404 || err.status === 410;
+    if (err instanceof GitHubApiError && err.permanent) return err.status === 404 || err.status === 410 ? { item: 'gone', pullRequests: [] } : undefined;
     throw err;
   }
+  const found = new Map<string, WorkPullRequest>();
+  const add = (pr: { url: string; createdAt: string; headCommittedAt?: string; isDraft: boolean; conflicting: boolean }, state: WorkPullRequest['state']): void => {
+    const by = isOwnPullRequest(pr, job) ? 'opened' : isUpdatedBy(pr, job) ? 'updated' : undefined;
+    if (by && !found.has(pr.url)) found.set(pr.url, { url: pr.url, number: numberOf(pr.url), by, state, draft: pr.isDraft, conflicting: state === 'open' && pr.conflicting });
+  };
+  const closer = await api.closingPullRequest(repo, number);
+  if (closer) add({ ...closer, isDraft: false, conflicting: false }, 'merged');
+  for (const pr of await api.openClosingPullRequests(repo, number)) add(pr, 'open');
+  for (const pr of await api.referencingPullRequests(repo, number)) if (pr.repo.toLowerCase() === repo.toLowerCase()) add(pr, pr.state);
+  for (const n of namedNumbers(issue)) {
+    const pr = await pullRequestOrNone(api, repo, n);
+    if (pr) add(pr, pr.state);
+  }
+  const item = issue.state === 'open' ? 'open' : issue.stateReason === 'completed' || closer !== undefined ? 'done' : 'closed';
+  return { item, pullRequests: [...found.values()] };
 }
 
 /**

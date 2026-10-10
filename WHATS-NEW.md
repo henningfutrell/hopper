@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Each card in Needs a person now starts with one plain sentence that says what happened, for example that the job's pull request is merged, and shows the one button to press, with why. The hopper checks the job's pull requests and its issue first. When the work is already merged or the issue is done, the job is marked done by itself and leaves Needs a person. The error and the assessment are under Details. The buttons now read Done, Continue, Run again and Won't do.
 - When reviewer levels check proposals or research reports, an item with a part left out, no summary, a broken link, or no change since it was sent back now goes straight back to its job with a list of what to fix, and no model is asked. Complete items go through the levels as before.
 - A sandbox box can now get a short-lived AWS or Kubernetes credential made for it on the spot, only for what its template is approved to do. Revoking the approval stops the next one.
 - A job that only has to bring an existing pull request up to date, for example rebase it or fix its conflicts, now ends done when it has pushed to that pull request and it has no conflicts. It no longer has to open a new pull request, and it no longer goes to Needs a person.

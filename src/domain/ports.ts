@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson, WorkState,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -537,11 +537,10 @@ export interface JobSource extends FollowsPullRequests {
    */
   closedAsComplete?(job: Job): Promise<boolean>;
   /**
-   * Whether the job's item is closed at the source, by any means, or gone (issue #529): asked for a failed job handed
-   * off to a person, whose hand-off then closes — nothing waits on it any more. Throws when it cannot tell now: asked
-   * again later. Absent: the source cannot tell, and a hand-off waits on a person.
+   * What a handed-off job's work shows at the source (issues #529, #621): its item, and the pull requests the job opened
+   * or pushed to. Undefined: it cannot tell. Throws: asked again later. Absent: a hand-off waits on a person.
    */
-  itemClosed?(job: Job): Promise<boolean>;
+  workState?(job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined>;
   /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
   credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**
@@ -608,8 +607,12 @@ export interface SourceHost {
   refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
-  /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
-  finishClosedAsComplete(jobId: JobId): boolean;
+  /**
+   * A failed job whose work shipped (issue #350: its item closed as complete, found before its failure was reported;
+   * issue #621: a pull request of its merged, found by the failure assessor's work check): finished, with `result`
+   * (default: issue closed as complete), and its end to be reported to its source again. false: it is no longer failed.
+   */
+  finishShipped(jobId: JobId, result?: { summary: string; link?: string }): boolean;
   /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
   finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
