@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createSealer } from '../../src/secrets/sealer.ts';
-import { edit, ENTERED, KEY, list, NEW_KEY, nextDelivery, REPLACED, rowOf, signatureOf, storedRows, subOf, TWO, useWebhookApp } from '../support/webhooks.ts';
+import { edit, ENTERED, KEY, list, NEW_KEY, nextDelivery, REPLACED, rowOf, secretRowOf, signatureOf, storedRows, subOf, TWO, useWebhookApp } from '../support/webhooks.ts';
 
 const { start, restart, receiver, nowhere } = useWebhookApp();
 
@@ -43,11 +43,11 @@ describe('the encryption key (HOPPER_MASTER_KEY)', () => {
     const rx = await receiver();
     const { a: first, token: t1 } = await start();
     await edit(first, t1, { action: 'add', name: 'rx', url: rx.url, events: ['job.finished'], secret: ENTERED });
-    const sealed = rowOf(first, 'rx').secret_sealed;
+    const sealed = secretRowOf(first, 'rx')!.sealed;
     await expect(restart(first, { HOPPER_MASTER_KEY: NEW_KEY })).rejects.toThrow('the master key does not match this database');
     const { a } = await restart(first, { HOPPER_MASTER_KEY: KEY });
-    expect(rowOf(a, 'rx').secret_sealed).toBe(sealed);
-    expect(String(sealed).split('.')[1]).toBe(createSealer(KEY).keyId);
+    expect(secretRowOf(a, 'rx')!.sealed).toBe(sealed);
+    expect(sealed.split('.')[1]).toBe(createSealer(KEY).keyId);
   });
 
   it('a new key with the old one as HOPPER_MASTER_KEY_PREVIOUS: sealed again under the new key at start; deliveries keep signing', async () => {
@@ -55,7 +55,7 @@ describe('the encryption key (HOPPER_MASTER_KEY)', () => {
     const { a: first, token: t1 } = await start();
     await edit(first, t1, { action: 'add', name: 'rx', url: rx.url, events: ['job.finished'], secret: ENTERED });
     const { a } = await restart(first, { HOPPER_MASTER_KEY: NEW_KEY, HOPPER_MASTER_KEY_PREVIOUS: KEY });
-    expect(String(rowOf(a, 'rx').secret_sealed).split('.')[1]).toBe(createSealer(NEW_KEY).keyId);
+    expect(secretRowOf(a, 'rx')!.sealed.split('.')[1]).toBe(createSealer(NEW_KEY).keyId);
     const got = await nextDelivery(a, rx);
     expect(got.headers['x-hopper-signature']).toBe(signatureOf(ENTERED, got));
     await nowhere(a, ENTERED);
