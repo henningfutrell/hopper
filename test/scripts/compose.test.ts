@@ -24,7 +24,7 @@ interface Service {
   depends_on?: Record<string, { condition: string }>;
   command?: string[];
 }
-interface Rendered { name: string; services: Record<string, Service>; volumes: Record<string, unknown> }
+interface Rendered { name: string; services: Record<string, Service & { networks?: Record<string, unknown> }>; volumes: Record<string, unknown>; networks?: Record<string, { name?: string; external?: boolean }> }
 
 /** `docker compose config` of compose.yaml copied alone into a fresh directory, with `.env` when given (and compose.sandboxes.yaml as compose.override.yaml, `override`). */
 function render(dotenv?: string, env: Record<string, string> = {}, override = false): Rendered {
@@ -52,6 +52,14 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('is its own project, apart from the host install\'s bundled Postgres (deploy/compose.yaml)', () => {
     expect(r.name).toBe('hopper');
+  });
+
+  // Issue #711: one shared network, made by the release compose itself, so `http://hopper:<port>` resolves on it.
+  it('makes its own network, named hopper_default whatever the project is called, and every service is on it', () => {
+    expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
+    expect(r.networks?.default?.external).toBeFalsy();
+    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }), name).toEqual(['default']);
+    expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
 
   it('pulls the hopper\'s public image by its full name: no clone, no build, no short-name prompt in Podman', () => {

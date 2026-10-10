@@ -43,6 +43,26 @@ describe('attached machine source', () => {
   });
 });
 
+describe('a machine off the hopper\'s network (issue #711)', () => {
+  it('its snapshot carries the command that joins it to the hopper\'s network, and none once it reaches the hopper', async () => {
+    let found: { hopperUrl: string } | { addressProblem: string } = { addressProblem: 'the hopper cannot be reached from it: http://hopper:4790 (no connection)' };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'seat', ssh: 'agent@hopper-box-claude', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, network: 'hopper_default',
+      probe: async () => ({ online: true, home: '/home/agent', ...found }),
+    });
+    await src.list();
+    await flush();
+    expect((await src.list())[0]).toMatchObject({ addressProblem: found.addressProblem, addressFix: 'podman network connect hopper_default hopper-box-claude' });
+    found = { hopperUrl: 'http://hopper:4790' };
+    t += 30000;
+    await src.list();
+    await flush();
+    expect((await src.list())[0]).not.toHaveProperty('addressFix');
+  });
+});
+
 describe('probeSsh', () => {
   let dir: string;
   beforeEach(() => {
