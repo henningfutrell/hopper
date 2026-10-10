@@ -1,9 +1,9 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the job rules (issue #172), yolo mode (issue #579), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the TL;DR (issue #569), the job rules (issue #172), yolo mode (issue #579), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one.
-import { CirclePause, FolderOpen, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
+import { CirclePause, FolderOpen, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -19,13 +19,14 @@ import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
 import { Realms } from '@/views/realms';
 import { Routing } from '@/views/routing';
+import { TldrSettings } from '@/views/tldr-settings';
 import { Users } from '@/views/users';
 import { Vault } from '@/views/vault';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { YoloMode } from '@/views/yolo-mode';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'job-rules', 'yolo-mode', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'tldr', 'job-rules', 'yolo-mode', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -34,6 +35,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   history: { label: 'Question history', icon: History, view: QuestionHistory },
   decider: { label: 'Decider', icon: Scale, view: MinorDecisions },
   'auto-park': { label: 'Auto-park', icon: CirclePause, view: AutoPark },
+  tldr: { label: 'TL;DR', icon: TextQuote, view: TldrSettings },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },

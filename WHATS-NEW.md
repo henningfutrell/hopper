@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A long question, research report or failed-job card now starts with a TL;DR: one or two plain sentences that say what is asked and what you decide. Claude Haiku writes it once. Show all opens the agent's full text. Notifications start with it too. You can turn it off in Settings, TL;DR. Without it, a card shows the agent's own summary.
 - You can now turn Jev on from its page: paste your TypeSafe API key in Settings → Decider. The hopper checks the key, keeps it encrypted, and shows only its last 4 characters. Replace or remove it at any time, with no restart. A key that was set in the hopper's environment is moved in once; then remove it from there.
 - Jobs no longer hold your GitHub token: their git fetch and push, and every GitHub step they take, go through the hopper, and a job pushes only to a new branch of its own repository. Your ssh agent no longer reaches jobs either.
 - With merging on, the hopper now merges a pull request only after a check passed on it: a pull request with no checks waits, and the Pull requests view says so.

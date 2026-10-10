@@ -4,7 +4,7 @@
 // the text as it is now). Pure.
 import { describe, expect, it } from 'vitest';
 import type { Handoff, Question, ReviewItem } from '../../src/domain/types.ts';
-import { agentSummary, hashOf, isLong, leadOf, plainText, shownTldr, sourceOf, tldrPrompt, TLDR_MAX } from '../../src/tldr/index.ts';
+import { agentSummary, hashOf, isLong, tldrOrSummary, plainText, shownTldr, sourceOf, tldrPrompt, TLDR_MAX } from '../../src/tldr/index.ts';
 
 const T0 = '2026-10-10T12:00:00.000Z';
 const LONG = ['## Branch', '', 'Which branch do I rebase the fix onto?', '', ...Array.from({ length: 10 }, (_, i) => `${i + 1}. option ${i + 1}`)].join('\n');
@@ -70,10 +70,10 @@ describe('the prompt', () => {
 describe('the TL;DR is plain text', () => {
   it('HTML, script, images, links and Markdown marks are taken out; the words stay', () => {
     expect(plainText('<script>alert(1)</script>Use **`dev`**, see [the docs](https://x.test) ![img](https://x.test/i.png)'))
-      .toBe('alert(1)Use dev, see the docs img');
+      .toBe('alert(1) Use dev, see the docs img');
     expect(plainText('## Heading\n\n- one\n- two')).toBe('Heading one two');
     expect(plainText('a <img src=x onerror=alert(1)> b < c > d')).toBe('a b c d');
-    expect(plainText('bell\u0007 and\u001b[31m color')).toBe('bell and[31m color');
+    expect(plainText('bell\u0007 and\u001b[31m color')).toBe('bell and31m color');
   });
 
   it('cut at a word, at most TLDR_MAX characters, with an ellipsis', () => {
@@ -107,10 +107,10 @@ describe('which TL;DR a card shows', () => {
     expect(shownTldr('proposal', { ...p, versions: [...p.versions, { ...p.versions[0]!, number: 2, text: `${LONG}\nmore` }] }, on)).toBeUndefined();
   });
 
-  it('the lead a notification carries: the TL;DR, else the agent\'s summary; nothing for a short text or with the setting off', () => {
-    expect(leadOf('question', question(LONG, { tldr: tldrOf(LONG) }), on)).toBe('Pick a branch: dev or main.');
-    expect(leadOf('question', question(LONG), on)).toBe('Which branch do I rebase the fix onto?');
-    expect(leadOf('question', question('Which?'), on)).toBeUndefined();
-    expect(leadOf('question', question(LONG, { tldr: tldrOf(LONG) }), { enabled: false })).toBeUndefined();
+  it('what a notification carries: the TL;DR, else the agent\'s summary; nothing for a short text or with the setting off', () => {
+    expect(tldrOrSummary('question', question(LONG, { tldr: tldrOf(LONG) }), on)).toBe('Pick a branch: dev or main.');
+    expect(tldrOrSummary('question', question(LONG), on)).toBe('Which branch do I rebase the fix onto?');
+    expect(tldrOrSummary('question', question('Which?'), on)).toBeUndefined();
+    expect(tldrOrSummary('question', question(LONG, { tldr: tldrOf(LONG) }), { enabled: false })).toBeUndefined();
   });
 });

@@ -9,6 +9,7 @@ import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { pullRequestsView, yoloModeView } from './ui/yolo-mode.ts';
 import { autoParkView } from './ui/auto-park.ts';
+import { tldrView } from './ui/tldr.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
   if (!s) return undefined;
@@ -72,6 +73,8 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/yolo-mode', async (req) => yoloModeView(o.tenant(req)));
   // Auto-park (issue #650): how long a question waits on a person before its job parks by itself.
   app.get('/api/auto-park', async (req) => autoParkView(o.tenant(req)));
+  // The TL;DR (issue #569): whether a cheap model writes one for every long card, and the cards show it.
+  app.get('/api/tldr', async (req) => tldrView(o.tenant(req)));
   // The Pull requests list (issue #637): the waiting pull requests, per repository, their state and yolo mode; where merging waits.
   app.get('/api/pull-requests', async (req) => pullRequestsView(o.tenant(req)));
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));

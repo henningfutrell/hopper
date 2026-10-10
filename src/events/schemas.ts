@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS, TLDR_KINDS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
@@ -46,7 +46,8 @@ function reviewEvents(kind: ReviewKind) {
     // `paths` (issue #651): how many paths a proposal's version has.
     submitted: strict({ ...item, ...headline, missing: z.array(z.enum(t.parts.map((p) => p.id) as [string, ...string[]])), paths: z.number().int().min(0).optional() }),
     escalated: strict({ ...item, target: stage, reason: z.string(), ...headline }),
-    escalated_to_human: strict({ ...item, reason: z.string() }),
+    // `tldr` (issue #569, additive): what a notification leads with — the TL;DR, else the agent's summary.
+    escalated_to_human: strict({ ...item, reason: z.string(), tldr: z.string().optional() }),
     // `paths` (issue #651, additive): the paths a level added to a proposal, and those it found not viable, by id.
     reviewed: strict({ ...item, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional(), paths: strict({ added: z.array(z.string()), notViable: z.array(z.string()) }).optional() }),
     // `decision`: what sent it back — a level's or a person's request for changes, a person's dig deeper or steer (additive).
@@ -102,6 +103,7 @@ const reviewKind = z.enum(REVIEW_KINDS);
 const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()) });
 const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES) });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
+const tldrSettings = strict({ enabled: z.boolean() });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
 export const EVENT_SCHEMAS = {
@@ -152,13 +154,15 @@ export const EVENT_SCHEMAS = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
     // Additive (issue #376): the question is a dialog the agent denies by itself at this time.
     lapsesAt: z.string().optional(),
+    // Additive (issue #569), at the human stage: what a notification leads with — the TL;DR, else the agent's summary.
+    tldr: z.string().optional(),
     raisedBy, ...priority,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(), raisedBy, ...priority,
+    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority,
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
@@ -298,6 +302,9 @@ export const EVENT_SCHEMAS = {
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
   'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }),
+  // The TL;DR (issue #569): plain text a cheap model wrote for a long card, and the setting that turns it off.
+  'tldr.written': strict({ kind: z.enum(TLDR_KINDS), id: z.string(), text: z.string(), model: z.string().optional() }),
+  'tldr.settings_changed': strict({ from: tldrSettings, to: tldrSettings, by: z.string() }),
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
   // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository.

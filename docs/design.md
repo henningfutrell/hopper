@@ -50,6 +50,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
+| `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
@@ -10820,10 +10821,7 @@ Markdown heading or bold: `reviewSections` reads it either way (issue #537).
 Grok Bot routine's question body has `question` (the text) and `questionFormat: 'markdown'`; the events keep `text`
 (`question.asked`), `goal` (`proposal.submitted`) and `question` (`research.submitted`) as the agent wrote them.
 
-**Not built here, carried (issue #569, the next part):** the TL;DR — one or two plain sentences a cheap model (Claude
-Haiku, or Jev first, issue #550) writes once per card, stored with it and written again when its text changes, shown at
-the top of the card, the agent's own summary as the fallback; notifications and webhooks leading with it; a live
-setting to turn it off.
+The TL;DR on top of a long card is the next section's.
 
 Tests: `test/ui/markdown.test.ts` (the renderer: every element kind, line breaks, raw HTML and script escaped, no image,
 new-tab links, refused link schemes, inline lines; the summary and the long-text rule), `test/ui/markdown-cards.test.ts`
@@ -10831,6 +10829,53 @@ new-tab links, refused link schemes, inline lines; the summary and the long-text
 and the rest behind Show all; reviewer notes), `test/job-rules/markdown-format.test.ts`, `test/herdr/screen.test.ts` (the
 footer verbatim), `test/plugins/grokbot-payload.test.ts`.
 
+
+## TL;DR (issue #569, 2026-10-10)
+
+Owner requirement: agents are long-winded, so every long card — a question, a proposal, a research report, a Needs a
+person hand-off — leads with a **TL;DR**: one or two plain sentences a cheap model writes, what is asked or proposed and
+what the person must decide (for a question, its options in a few words each). The agent's Markdown is behind Show all.
+
+- **Which cards** (`src/tldr/text.ts`). A card whose text is long by the card's own rule (more than 600 characters or
+  8 lines, "Agent text as Markdown"): a question's text, a review item's newest version, a hand-off's summary and
+  reasons. A short card is whole already and gets none. The UI keeps its copy of the long-text and summary rules
+  (`ui/src/model/card-text.ts`): it may not import `src/` at run time.
+- **The model** (`src/tldr/haiku.ts`). Claude Haiku (the `haiku` alias) through the `claude` CLI in print mode, locked
+  down as an escalation level's run is (no tools, MCP, settings or session; the answer bound to a JSON Schema; the prompt
+  on stdin), with the user's CLI config dirs, in the user's work dir; 60 s at most. Jev (issue #550) is not asked: it
+  picks one of a decision's options and writes no text. Tests put a double at the seam (`UserSeams.tldrWriter`); the
+  test app's default fails, so no test starts `claude`.
+- **The prompt.** One or two plain sentences, at most 300 characters, in Simplified Technical English (one clause, as
+  the protocol lines name it, issue #571), plain text only. The agent's text is fenced as data — it may hold whatever an
+  issue's author wrote — and the model is told it is not instructions; a closing fence marker inside it is broken.
+- **Plain text, whatever the model says** (`plainText`). Control characters, HTML tags, `<` and `>`, Markdown marks
+  are taken out; an image or a link is its words; one line, cut at a word. The UI shows it as text (React escapes it),
+  never as HTML; a receiver that renders Markdown finds none in it.
+- **Written once, stored with the card** (`src/tldr/service.ts`). A sweep, every tick, over the open questions, review
+  items and hand-offs asks the model, one card at a time, for each long card whose stored TL;DR (`tldr: { text, of,
+  model?, at }` in its body; no migration) was not written from its text as it is now — `of` is the SHA-256 of that
+  text. So a review item's next version gets a new one, and nothing is written again on a render or a restart. A text
+  the model failed on is not asked again for the same text (in memory: a restart tries once more). A card is never
+  waited on; a text that changed while the model wrote is left for the next sweep. Each one written is
+  `tldr.written { kind, id, text, model? }` on the card's job.
+- **Shown while it matches** (`withShownTldr`). The question, review item and hand-off routes answer a card's `tldr`
+  only while it was written from the card's text as it is now and the setting is on.
+- **The card** (`CardText`, `TldrLine`). A long text with a TL;DR shows the TL;DR, marked TL;DR, and Show all opens the
+  whole text below it; without one, the summary as before. A review item's newest version: the TL;DR alone, every part
+  behind Show all. A hand-off: the TL;DR under what happened.
+- **Notifications and webhooks lead with it.** The human-stage events — `question.escalated` with target `human`,
+  `question.escalated_to_human`, `proposal.escalated_to_human`, `research.escalated_to_human` — carry `tldr` for a long
+  card: its TL;DR when written, else the agent's own summary (its first paragraph that is not a heading, as plain text).
+  The Grok Bot routine's question body has `tldr` first, after the sender and the job. A card that reaches a person
+  before the model answers carries the agent's summary: the notification never waits.
+- **The setting** (`tldr`, a user setting: `GET /api/tldr`, `POST /ui/api/tldr { enabled }`, admin,
+  `tldr.settings_changed`; Settings → TL;DR). On by default. Off: nothing is written, the routes answer none, the
+  events carry none; turned on again, the open cards get theirs at once. Read on every sweep and read, so no restart.
+
+Tests: `test/tldr/text.test.ts` (the rules), `test/integration/tldr.test.ts` (written once, stored and shown; a short
+question; the answer made plain; the model failing and the agent's summary in the event; a proposal's next version;
+the setting), `test/plugins/grokbot-payload.test.ts` (the body leads with it), `test/ui/markdown-cards.test.ts` (the
+card, HTML in the TL;DR as text, the setting).
 ## A job's own wait (issue #483, 2026-10-10)
 
 A job blocked on something only a person or the outside world can do (write access to be granted, a review, a release)

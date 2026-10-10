@@ -73,7 +73,7 @@ function HandledRow({ q }: { q: Question }) {
       </CollapsibleTrigger>
       <CollapsibleContent className="space-y-2 px-4 pb-3 pl-9">
         {job && <JobTitle job={job} />}
-        <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-2 text-xs"><CardText text={q.text} /></div>
+        <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-2 text-xs"><CardText text={q.text} tldr={q.tldr?.text} /></div>
         {q.answer && <div className="space-y-1">
           <div className="text-[11px] text-muted-foreground">{q.status === 'closed' ? 'closed without answering' : 'answer'} · by {q.answeredBy ?? 'unknown'}</div>
           <div className="rounded-md bg-muted/50 p-2 text-xs"><CardText text={q.answer} /></div>

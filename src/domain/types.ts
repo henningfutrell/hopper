@@ -473,6 +473,7 @@ export * from './auto-answer.ts';
 export * from './auto-park.ts';
 export * from './access.ts';
 export * from './artifacts.ts';
+export * from './tldr.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

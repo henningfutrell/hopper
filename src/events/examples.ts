@@ -123,6 +123,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high' }, to: { enabled: true, threshold: 'medium' }, by: 'admin' },
   'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
+  'tldr.written': { kind: 'question', id: 'q1', text: 'The job asks which branch to rebase onto: dev or main.', model: 'claude-haiku-4-5' },
+  'tldr.settings_changed': { from: { enabled: true }, to: { enabled: false }, by: 'admin' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {

@@ -21,6 +21,7 @@ import { readRules } from '../questions/rules.ts';
 import { preCheck } from './pre-check.ts';
 import { REVIEW_REPLY } from './reply.ts';
 import { reviewSettings } from './settings.ts';
+import { tldrData } from '../tldr/service.ts';
 
 export interface ReviewServiceOptions {
   store: UserStore;
@@ -83,7 +84,8 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
   /** Inside a tx. A person decides from here. */
   function toHuman(p: ReviewItem, reason: string) {
     const updated = enter(p, HUMAN, reason);
-    emit(updated, 'escalated_to_human', { reason });
+    // What a notification leads with (issue #569): the TL;DR, else the agent's own summary; never waited for.
+    emit(updated, 'escalated_to_human', { reason, ...tldrData(store, updated.kind, updated) });
   }
 
   /** Inside a tx. Accepted or rejected: signed off, and the job told. The item as the job's handler left it. */

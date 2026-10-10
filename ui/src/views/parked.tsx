@@ -86,7 +86,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
       {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}><InlineMarkdown text={firstLine(q.text)} /></div>}
       {q && open && (
         <div className="space-y-2 pt-1 pl-8">
-          <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} /></div>
+          <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
           {canOperate && !answered && <AnswerAndPickUp job={job} q={q} />}
         </div>
       )}

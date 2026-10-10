@@ -4,7 +4,7 @@
 import type { IntakeMigration } from './intake.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -65,6 +65,9 @@ export interface UserSettingsRepository {
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
   getAutoPark(): AutoParkSettings | undefined;
   setAutoPark(settings: AutoParkSettings): void;
+  /** The TL;DR setting (issue #569); absent: never set, on. */
+  getTldr(): TldrSettings | undefined;
+  setTldr(settings: TldrSettings): void;
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
