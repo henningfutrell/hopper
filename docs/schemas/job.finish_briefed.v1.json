@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "rebase",
+        "mark_ready"
+      ]
+    }
+  },
+  "required": [
+    "pullRequest",
+    "step"
+  ],
+  "additionalProperties": false
+}

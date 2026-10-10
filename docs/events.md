@@ -2653,6 +2653,22 @@ Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pul
 }
 ```
 
+## `job.finish_briefed`
+
+Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts or as a draft (issue #626): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first) or `mark_ready` (a draft, marked ready for review). At most two per run; then the job is judged as any other.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `step` | `rebase` \| `mark_ready` | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "step": "rebase"
+}
+```
+
 ## `skill.listed`
 
 Version 1 (`docs/schemas/skill.listed.v1.json`). A running job asked the hopper what it can set up (issue #582) and was answered the catalog. `machine` and `template`: the job's machine and the template it joined as, when it has one.

@@ -8,9 +8,10 @@
 // request — is not complete; an error asking GitHub throws. A failed job whose issue is closed as complete is
 // finished too (`closedAsComplete`, asked by the sync loop before it reports the failure): its work landed, and its
 // pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
-// not complete, and not failed either.
+// not complete, and not failed either. A job whose own open pull request has merge conflicts, or is a draft, is not
+// complete either, but one fixed step finishes it (`unfinishedPullRequest`, issue #626): rebase it, or mark it ready.
 
-import type { Job } from '../../domain/types.ts';
+import type { Job, UnfinishedPullRequest } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
@@ -74,6 +75,20 @@ export async function notComplete(api: GitHubApi, job: Job): Promise<string | un
     if (pr && updatedDone(pr, job)) return undefined;
   }
   return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`;
+}
+
+/**
+ * The job's own open pull request that one fixed step finishes (issue #626): one that closes the issue or ships part
+ * of it, with merge conflicts (rebase it first) or a draft (mark it ready). The newest first; undefined: none.
+ */
+export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<UnfinishedPullRequest | undefined> {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) return undefined;
+  const parts = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && isPartOf(pr, repo, number));
+  const own = [...await api.openClosingPullRequests(repo, number), ...parts]
+    .filter((pr) => isOwnPullRequest(pr, job) && (pr.conflicting || pr.isDraft))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return own && { pullRequest: own.url, step: own.conflicting ? 'rebase' : 'mark_ready' };
 }
 
 /** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */

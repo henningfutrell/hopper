@@ -3,7 +3,7 @@
 // GitHub at the GitHubApi seam; issues carry a scripted-executor op as their first body line.
 // A job whose issue closed as complete is finished, not failed (issue #350).
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Job } from '../../src/domain/types.ts';
+import { finishBrief, MAX_FINISH_BRIEFS, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { opensPullRequest } from '../support/scripted-executor.ts';
@@ -52,7 +52,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     expect(await a.events('types=job.queued')).toHaveLength(1);
   });
 
-  it('a draft pull request is not done: the job ends failed, saying why (issue #579)', async () => {
+  it('a draft pull request is not done: briefed to mark it ready and still a draft, the job ends failed, saying why (issues #579, #626)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
@@ -61,6 +61,29 @@ describe('GitHub done-check: a pull request ready for review', () => {
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
     expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`);
+    expect((await a.events('types=job.finish_briefed')).filter((e) => e.jobId === job.id)).toHaveLength(MAX_FINISH_BRIEFS);
+  });
+
+  it.each([
+    ['its own draft is marked ready', 'mark_ready', { isDraft: true }, (gh: FakeGitHub, url: string) => gh.markReady(url)],
+    ['its own pull request with merge conflicts is rebased', 'rebase', { conflicting: true }, (gh: FakeGitHub, url: string) => gh.pushToPullRequest(url, new Date().toISOString())],
+  ] as const)('a job goes on with the fixed brief, not a hand-off, and finishes once %s (issue #626)', async (_n, step, left, finish) => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    let pr: string | undefined;
+    a.scripted.ships((j) => {
+      if (pr === undefined) pr = gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString(), ...left }).url;
+      else finish(gh, pr);
+    });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    const finished = await a.waitForStatus(job.id, 'finished');
+    const briefed = (await a.events('types=job.finish_briefed')).filter((e) => e.jobId === job.id);
+    expect(briefed.map((e) => e.data)).toEqual([{ pullRequest: pr, step }]);
+    expect((finished.result as { answer: string }).answer).toBe(finishBrief({ pullRequest: pr!, step }));
+    expect(await a.events('types=job.failed')).toEqual([]);
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
   });
 
   it('a job whose issue asks to update an existing pull request is finished when it pushed to it and it has no merge conflicts: no new pull request (issue #618)', async () => {
