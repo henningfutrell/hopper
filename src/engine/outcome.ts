@@ -7,6 +7,7 @@ import { suggestionIn } from '../domain/phase.ts';
 import type { Job, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
+import { maskTokens, maskTokensIn } from '../secrets/mask.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
 export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string };
@@ -69,10 +70,11 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: cancelReason } });
     } else if (outcome.kind === 'finished') {
       const part = outcome.partlyDone ? { partlyDone: outcome.partlyDone } : {};
-      store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined, ...part });
-      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result, ...part } });
+      const result = maskTokensIn(outcome.result); // never a GitHub token kept (#597)
+      store.jobs.update(job.id, { status: 'finished', result, finishedAt: at, pendingAnswer: undefined, ...part });
+      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result, ...part } });
     } else if (outcome.kind === 'failed') {
-      fail(c, job, laneId, outcome.error, at, outcome.tail);
+      fail(c, job, laneId, maskTokens(outcome.error), at, outcome.tail === undefined ? undefined : maskTokens(outcome.tail));
     } else if (outcome.kind === 'report') {
       const r = recordReport(c, job, lane, laneId, machine, outcome.review, outcome.report, at);
       recorded = { kind: 'report', review: r.kind, itemId: r.itemId };

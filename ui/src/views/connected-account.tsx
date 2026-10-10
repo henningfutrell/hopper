@@ -36,7 +36,7 @@ import { SourceSync } from './source-sync';
 const POLL_MS = 2000;
 type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
-const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'sign-in expired', unreadable: 'cannot be read' };
+const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'reconnect needed', unreadable: 'cannot be read' };
 
 export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
@@ -113,7 +113,7 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
         )}
         {s.state === 'expired' && <>
           <div data-expired className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
-            The sign-in of <span className="font-mono">{s.account}</span> expired: {s.error}. No jobs come from {name} until you connect it again.
+            Reconnect needed: the {name} connection of <span className="font-mono">{s.account}</span> ended: {s.error}. No jobs come from {name} until you connect it again.
           </div>
           {signedInWith
             ? <div>Your hopper session ended with it: sign in with {name} again to connect it.</div>

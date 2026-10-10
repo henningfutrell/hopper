@@ -31,11 +31,11 @@ function wait(ms: number, signal: AbortSignal): Promise<boolean> {
   });
 }
 
-async function runSleep(ctx: ExecutionContext, ms: number): Promise<ExecutionOutcome> {
+async function runSleep(ctx: ExecutionContext, ms: number, message?: string): Promise<ExecutionOutcome> {
   const step = ms / 10;
   for (let i = 1; i <= 10; i++) {
     if (!(await wait(step, ctx.signal))) return ABORTED;
-    ctx.progress(i / 10);
+    ctx.progress(i / 10, message);
   }
   return { kind: 'finished', result: { slept: ms } };
 }
@@ -55,7 +55,7 @@ export function createTestExecutor(): Executor {
     },
     async run(ctx) {
       const { op, ms, message } = ctx.job.spec.payload as unknown as TestPayload;
-      if (op === 'sleep') return runSleep(ctx, ms ?? 1000);
+      if (op === 'sleep') return runSleep(ctx, ms ?? 1000, message);
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'echo') return { kind: 'finished', result: { echo: message } };
       if (op === 'fail') return { kind: 'failed', error: message ?? 'failed on purpose' };

@@ -57,7 +57,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
-| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
+| `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the deletion of the access token a disconnect drops (`token-deletion.ts`; issue #597, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
@@ -7232,19 +7232,38 @@ fresh 6 months; ten tokens per user, app and scope, and at most ten made per hou
 sign in again; it revokes nothing). An installation token (1 hour) acts as the app, not as the person: no
 stand-in for the connection.
 
-**Revoke what is replaced or dropped** (`src/connected-accounts/revocation.ts`). Before a new grant is kept
-over a live one — `keep`, from Connect in Sources or from a sign-in with GitHub (`adopt`) — and before a
-disconnect deletes the row, the stored grant's access token and refresh token are revoked at GitHub:
-`POST /credentials/revoke` (through @octokit/request), which takes both kinds of token, needs no
-authentication and no client secret (the hopper's app ships none), and makes GitHub email the account's
-owner that they were revoked. Both tokens, so nothing of the grant is left (D3). Not when the stored grant
-ended (GitHub holds it no more), not a token the new grant keeps, and not a row that cannot be opened (logged:
-the grant is left alive, its tokens unknown). Best effort: GitHub refusing or not answering within 10 s
-(`REVOKE_TIMEOUT_MS`) is logged — the grant then counts toward the ten until it expires — and the new pair is
-kept, or the row deleted, all the same. It runs with no renewal of the account under way
-(`Renewer.exclusive`: the in-process renewal settled, the account's advisory lock taken as a renewal takes
-it), so the grant revoked is the one stored, and a renewal in another process never sees its refresh token
-refused before the new pair is there.
+**No revocation at GitHub on connect or sign-in** (issue #597, 2026-10-09; it replaces #514's revocation). #514
+revoked the stored grant before a new one was kept, and on a disconnect, through `POST /credentials/revoke`.
+That endpoint is GitHub's public leak report, not a cleanup call: it ended the whole authorization of the user at
+the app — the new grant's token too, refused 20 s after a sign-in — after which every renewal answered
+`incorrect_client_credentials`, and GitHub emailed the owner a security notice that the app's access was revoked.
+So now:
+
+- A connect from Sources or a sign-in with GitHub (`keep`) sends nothing to GitHub: the grant it replaces stays
+  until it expires (its token 8 hours; its refresh token about 6 months, unused).
+- A disconnect (`drop`, *Stop working through GitHub*) deletes the stored **access token** alone through the app
+  token API, `DELETE /applications/{client_id}/token` (`src/connected-accounts/token-deletion.ts`,
+  @octokit/oauth-methods `deleteToken`), which needs the app's client secret (`HOPPER_GITHUB_CLIENT_SECRET`).
+  With no client secret it sends nothing, and says so in the log. Best effort: GitHub refusing or not answering
+  within 10 s (`DELETE_TIMEOUT_MS`) is logged and the row is deleted all the same. The refresh token is never sent
+  anywhere.
+- `POST /credentials/revoke` is never called. A confirmed leak is reported by a person, at GitHub.
+- A new connection is **checked once kept** (`check`, `GET /user` through `whoIs`): GitHub refusing its token (401)
+  ends it at once (`connected_account.expired`, reason `reconnect needed: …`), and Sources reads *reconnect
+  needed*. Anything else (GitHub not answering) is logged and ends nothing.
+- A **401 on a token not due for renewal, then its renewal refused as the app's** (`incorrect_client_credentials`,
+  `invalid_client`, `unauthorized_client`) ends the connection the first time (`renewer.ts`): GitHub answers so once
+  the user's authorization of the app has ended, and no retry brings it back. The same refusal on a renewal that is
+  due (no 401) stays a renewal trouble, tried again with backoff, as #441 had it: that is how a hopper set up with a
+  wrong client id or secret looks.
+
+The cost is the one #514 was made for: a replaced grant counts toward GitHub's ten per user and app until it
+expires, so many reconnects as one user on the shared app can evict an older grant, another hopper's included.
+The owner's rule (#597) puts a working connection and no security email first; the operational rule below
+stands.
+
+Both run with no renewal of the account under way (`Renewer.exclusive`: the in-process renewal settled, the
+account's advisory lock taken as a renewal takes it), so the row kept or deleted is the one stored.
 
 **Connect again only when it ended.** The Sources panel offers *Connect GitHub again* only for an `expired`
 connection (GitHub refused the refresh token itself, or it is past its own expiry). A **renewal trouble**
@@ -7260,13 +7279,13 @@ under the new key.
 **Sharing one app and one user** (D1, D2: conservative — the shipped public app stays shared; the
 operational rule below, nothing enforced in code). A hopper holds **one** grant per connected account, so
 the budget is: hoppers connected as one GitHub user on one app, plus any short-lived instance connected as
-that user, at most ten — fewer leaves room for a person's own reconnects (each revokes the grant it
-replaces, so it does not add to the count). The hopper cannot see how many grants GitHub holds for the user
+that user, at most ten — fewer leaves room for a person's own reconnects (since #597 nothing is revoked, so
+each reconnect adds one until it expires). The hopper cannot see how many grants GitHub holds for the user
 (no GitHub API answers it), so the count is the operator's to keep. A verify, test or CI container must not
 connect as a person whose hoppers matter on the hopper's app: give it its own GitHub App
 (`HOPPER_GITHUB_CLIENT_ID`) or its own GitHub user, or let it run with no connection (an internal-only
 network, as the verifications of a release do); one that connected anyway uses *Stop working through
-GitHub* before it is removed, which revokes its grant. `docs/deploy.md` "GitHub sign-in" says the same.
+GitHub* before it is removed, which deletes its access token when the client secret is set. `docs/deploy.md` "GitHub sign-in" says the same.
 
 **Not done, and why.**
 - **Renewing a hopper's place in GitHub's least-recently-used order** (D5: an authenticated call such as
@@ -7279,18 +7298,25 @@ GitHub* before it is removed, which revokes its grant. `docs/deploy.md` "GitHub 
 - **One GitHub App per durable hopper** (D1): an install may already name its own app
   (`HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHUB_APP_SLUG`, docs/deploy.md); the shipped app stays one.
 
-**Verification:** `test/connected-accounts/grants.test.ts` (real Postgres, the real revocation and renewal
-over HTTP to a fake GitHub that keeps at most ten grants per user and revokes the least recently used:
-connecting again revokes the old pair before the new one is stored; a sign-in over a live grant revokes it,
-the same grant handed over again does not; disconnect revokes then deletes, and GitHub failing deletes all
-the same and logs it; twelve reconnects on one hopper leave another hopper's grant alive, renewed hours
-later, and fail without the revocation; another key reads `unreadable`, names `HOPPER_TOKEN_KEY_PREVIOUS`,
-is not expired and revokes nothing; the old key as `HOPPER_TOKEN_KEY_PREVIOUS` opens it and the next look
-seals it under the new key), `test/integration/grant-hygiene.test.ts` (the daemon: *Stop working through
-GitHub* revokes at GitHub, unauthenticated; an unreadable connection pauses its source with what to do and
-no `expired`), `test/secrets/token-box.test.ts`, `test/ui/sources-view.test.ts` (no Connect, no header
-prompt for `unreadable`), and #441's `test/connected-accounts/rotation.test.ts` unchanged but for the state's
-name (renewal trouble still ends nothing).
+**Verification:** `test/connected-accounts/grants.test.ts` (real Postgres; the real check, token deletion and
+renewal over HTTP to a fake GitHub whose leak report ends the user's whole authorization, as GitHub's did: a connect
+or a sign-in over a live grant sends nothing to GitHub, and the new connection renews on a 401 and hours later; a
+disconnect with the client secret deletes the access token alone, with basic authentication, and GitHub failing
+deletes the row all the same and logs it; with no client secret nothing is sent; a new token GitHub refuses reads
+*reconnect needed*, told once; another key reads `unreadable`, names `HOPPER_TOKEN_KEY_PREVIOUS`, is not expired and
+revokes nothing; the old key as `HOPPER_TOKEN_KEY_PREVIOUS` opens it and the next look seals it under the new key),
+`test/connected-accounts/rotation.test.ts` (a 401 long before expiry, then `incorrect_client_credentials`, ends the
+connection once and is not retried; the same refusal on a due renewal ends nothing),
+`test/integration/grant-hygiene.test.ts` (the daemon: connecting again revokes nothing and stays connected; *Stop
+working through GitHub* deletes the access token with the client secret and sends nothing without it; an
+unreadable connection pauses its source with what to do and no `expired`), `test/secrets/token-box.test.ts`, and
+`test/ui/sources-view.test.ts` (*reconnect needed* in the panel and the header; no Connect, no header prompt for
+`unreadable`).
+
+**GitHub tokens masked in what a job gives** (issue #597, `src/secrets/mask.ts`). A job's progress message, its
+result and its error, and the title and body it asks the GitHub proxy to post, are kept and sent with every GitHub
+token in them (`gh` and one letter then `_`, and `github_pat_`) replaced by `[masked GitHub token]`. Verification:
+`test/secrets/mask.test.ts`, `test/github-proxy/proxy.test.ts`, `test/integration/jobs.test.ts`.
 
 ## The hopper's app, for everyone (issue #352, 2026-10-07)
 

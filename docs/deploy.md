@@ -457,12 +457,14 @@ GitHub Enterprise: `HOPPER_GITHUB_URL`, `HOPPER_GITHUB_CLIENT_ID`, `HOPPER_GITHU
 
 **GitHub keeps ten sign-ins per person and app.** Each hopper connected as one GitHub user holds one; an
 eleventh made anywhere — another hopper, a test container, a connect in a browser — revokes the oldest
-unused one, which may be a running hopper's, and that hopper then reads *sign-in expired*. Disconnecting,
-and connecting again, revoke the sign-in they replace, so they add none. Keep hoppers plus short-lived
+unused one, which may be a running hopper's, and that hopper then reads *reconnect needed*. The hopper
+revokes nothing at GitHub when you connect again or sign in again (GitHub's revocation ends the new sign-in
+too, and emails you a security notice): the sign-in replaced counts until it expires. *Stop working through
+GitHub* deletes its token only when `HOPPER_GITHUB_CLIENT_SECRET` is set. Keep hoppers plus short-lived
 instances connected as one user on one app at most ten. A test, verify or CI container does not connect as
 a person whose hoppers matter on the shared app: give it its own app (`HOPPER_GITHUB_CLIENT_ID`) or its own
 GitHub user, or no connection at all; one that connected anyway uses Sources → *Stop working through
-GitHub* before it is removed (docs/design.md "One grant per connection").
+GitHub* before it is removed, with the client secret set (docs/design.md "One grant per connection").
 
 ## Update channels and promotion
 

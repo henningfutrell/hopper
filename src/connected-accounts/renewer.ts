@@ -6,8 +6,11 @@
 // before anything else awaits — only while the refresh token it used is still the stored one. It runs
 // ahead of expiry whether or not anything asks, at start too, and on a 401. GitHub not answering, a 5xx, a
 // rate limit, a lock held too long, or a hopper set up so it cannot renew ends nothing: it is tried again with
-// backoff and shown on the account. Only GitHub refusing the refresh token itself (`bad_refresh_token`:
-// revoked, expired, or the app's authorization removed) with no newer pair stored ends the sign-in.
+// backoff and shown on the account. GitHub refusing the refresh token itself (`bad_refresh_token`: revoked,
+// expired, or the app's authorization removed) with no newer pair stored ends the sign-in. So does a 401 on a
+// token not yet due for renewal whose renewal GitHub then refuses as the app's (`incorrect_client_credentials`,
+// issue #597): GitHub answers so once the user's authorization of the app has ended, and nothing a retry
+// does brings it back — the account reads as needing a reconnect, never as connected and retrying.
 import type { ConnectedAccount, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, type ConnectedAccountProvider } from '../domain/types.ts';
 import { PROVIDER_NAME, recordOf, type AtRest } from './at-rest.ts';
@@ -151,6 +154,10 @@ export function createRenewer(o: RenewerOptions): Renewer {
         const after = o.live(provider);
         if (after.stored.refreshToken !== used) return again ? held(provider, undefined, false) : after.account.accessToken;
         throw o.end(after.stored, `${PROVIDER_NAME[provider]} refused the refresh token (${code})`);
+      }
+      // A token refused long before its expiry, then its renewal refused as the app's: the authorization ended (#597).
+      if (code && APP_REFUSED.has(code) && refused !== undefined && !due(a)) {
+        throw o.end(stored, `reconnect needed: ${PROVIDER_NAME[provider]} refused the token before it was due for renewal, then refused its renewal (${code})`);
       }
       const why = err instanceof RenewalBlocked ? err.message
         : code && APP_REFUSED.has(code) ? `${PROVIDER_NAME[provider]} refused this hopper's app while renewing the token (${code}): check ${CLIENT_ID_VARIABLE[provider]} and the client secret`

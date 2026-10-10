@@ -11,6 +11,7 @@ import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, proxyRequest, type ProxyRequest } from './policy.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
+import { maskTokens } from '../secrets/mask.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
@@ -48,6 +49,11 @@ export interface GitHubProxyOptions {
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+
+/** The request with every GitHub token in its title and body masked (issue #597). */
+const maskText = (req: ProxyRequest): ProxyRequest => ({
+  ...req, ...('title' in req ? { title: maskTokens(req.title) } : {}), ...('body' in req ? { body: maskTokens(req.body) } : {}),
+} as ProxyRequest);
 
 /** A job's own repository: its source's, or for a fork its parent's (issue #548). */
 const repoOf = (job: Job): string | undefined => job.source?.repo ?? job.forkOf?.source?.repo;
@@ -95,8 +101,10 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
-      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it.
-      const sent: ProxyRequest = req.op === 'issue.create' ? { ...req, body: `${req.body}${filedNote(job.id, requestId)}` } : req;
+      // No GitHub token a job wrote reaches GitHub (issue #597). An issue says the hopper filed it, for which job:
+      // never labelled or assigned, so a person triages it.
+      const masked = maskText(req);
+      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId)}` } : masked;
       try {
         const result = await api.perform(sent);
         record('github_proxy.done', { op: req.op, repo: req.repo, number: result.number, url: result.url });

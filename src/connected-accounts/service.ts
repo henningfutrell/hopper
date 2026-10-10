@@ -14,22 +14,23 @@
 // account reads as expired — never as connected — offers no login, its source says to connect again —
 // nothing reads GitHub in its place (issue #359) — and the owner is told once (`onExpired`).
 //
-// One grant per connection, never more (issue #514): GitHub keeps at most ten tokens per user and app, and
-// making an eleventh revokes an older one, whoever holds it. Each connect and each sign-in with GitHub is a
-// new grant; so the grant a new one replaces, and the one a disconnect drops, is revoked at GitHub first
-// (revocation.ts) — best effort, logged when GitHub does not take it — with no renewal under way. A
-// connection the runtime cannot open reads `unreadable`: give the key back, never a new grant.
+// Nothing is revoked at GitHub on a connect or a sign-in (issue #597): the grant a new one replaces is left to
+// expire. GitHub's credential revocation is its leak report, and it ended the new grant too. Only a disconnect
+// deletes the dropped access token, through the app token API with the client secret (token-deletion.ts) —
+// best effort, logged — and with no client secret sends nothing. A new connection is checked once kept: GitHub
+// refusing its token (401) ends it, and it reads as needing a reconnect. A connection the runtime cannot open
+// reads `unreadable`: give the key back, never a new grant.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { tokenBoxOf, type TokenBox } from '../secrets/token-box.ts';
 import { createAtRest, PROVIDER_NAME, recordOf } from './at-rest.ts';
-import { revocation } from './revocation.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import { renewal, type Renewal } from './renewal.ts';
 import { createRenewer, type Live } from './renewer.ts';
+import { tokenDeletion } from './token-deletion.ts';
 import { CLIENT_SECRET_VARIABLE } from './web-flow.ts';
 
 export { PROVIDER_NAME };
@@ -37,6 +38,8 @@ export { RENEW_AHEAD_MS, RENEW_EVERY_MS, RETRY_MS } from './renewer.ts';
 export const notConnected = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]} is not connected: Sources → Connect ${PROVIDER_NAME[provider]}`;
 /** What an account whose sign-in ended says, on its source and where its token is asked for (issue #358). */
 export const expired = (provider: ConnectedAccountProvider) => `${PROVIDER_NAME[provider]}'s sign-in expired: Sources → Connect ${PROVIDER_NAME[provider]} again`;
+/** Why a new connection ended at once (issue #597): GitHub refused its token when it was checked. */
+export const refusedAtConnect = (provider: ConnectedAccountProvider) => `reconnect needed: ${PROVIDER_NAME[provider]} refused the new connection's token when it was checked (401)`;
 
 interface Waiting { userCode: string; verificationUri: string; expiresAt: string; abort: AbortController }
 
@@ -61,8 +64,8 @@ export interface ConnectedAccountsOptions {
   onExpired?(provider: ConnectedAccountProvider, account: string, reason: string): void;
   /** Called after this process renewed an account's token (issue #441): running jobs are handed the new one. */
   onRenewed?(provider: ConnectedAccountProvider): void;
-  /** Revokes a grant's tokens at GitHub (issue #514): the one a new grant replaces, or a disconnect drops. Absent: none is revoked. */
-  revoke?(provider: ConnectedAccountProvider, credentials: string[]): Promise<void>;
+  /** Deletes the access token a disconnect drops (issue #597): true once deleted, false with no client secret to send. Absent: none is deleted. */
+  deleteToken?(provider: ConnectedAccountProvider, accessToken: string): Promise<boolean>;
   /** Seals the tokens at rest (issue #441); absent: the runtime gives no HOPPER_TOKEN_KEY, and they are kept in clear. */
   box?: TokenBox | undefined;
   /** How often the renewer looks; default RENEW_EVERY_MS. */
@@ -76,11 +79,11 @@ export type { Renewal };
  * secret when the runtime gives one — read at each renewal, so a rotated one counts — and the box that
  * seals the tokens at rest, under the instance's HOPPER_TOKEN_KEY.
  */
-export function fromRuntime(apps: HopperApps, env: Record<string, string | undefined>, logger: { warn(line: string): void }): Pick<ConnectedAccountsOptions, 'refresh' | 'revoke' | 'box'> {
+export function fromRuntime(apps: HopperApps, env: Record<string, string | undefined>, logger: { warn(line: string): void }): Pick<ConnectedAccountsOptions, 'refresh' | 'deleteToken' | 'box'> {
   const clientSecret = (): string | undefined => { try { return runtimeSecrets(env)(CLIENT_SECRET_VARIABLE); } catch { return undefined; } };
   return {
     refresh: (provider, refresh, grantedBy) => renewal(apps[provider], clientSecret)(refresh, grantedBy),
-    revoke: (provider, credentials) => revocation(apps[provider])(credentials),
+    deleteToken: (provider, accessToken) => tokenDeletion(apps[provider], clientSecret)(accessToken),
     box: tokenBoxOf(runtimeSecrets(env), logger),
   };
 }
@@ -185,31 +188,44 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   };
 
   /**
-   * Revoke the account's grant at GitHub (issue #514), unless it ended — GitHub holds it no more — or is one
-   * of `keeping`; then `write`. With no renewal under way, so the grant revoked is the one stored.
+   * Forget the account (a disconnect), with no renewal under way: its access token is deleted at GitHub first
+   * (issue #597) when there is a client secret to send — best effort, logged — unless it ended or cannot be opened.
    */
-  const replace = (provider: ConnectedAccountProvider, keeping: readonly string[], write: () => void): Promise<void> => renewer.exclusive(provider, async () => {
+  const drop = (provider: ConnectedAccountProvider, write: () => void): Promise<void> => renewer.exclusive(provider, async () => {
     const c = current(provider);
-    if (c && 'unreadable' in c) o.logger.warn(`hopper: the ${PROVIDER_NAME[provider]} grant of ${c.stored.account} was not revoked: its tokens cannot be opened`);
-    else if (c && !c.ended && o.revoke) {
-      const credentials = [c.account.accessToken, c.account.refreshToken].filter((t): t is string => t !== undefined && !keeping.includes(t));
+    if (c && !('unreadable' in c) && !c.ended && o.deleteToken) {
       try {
-        if (credentials.length > 0) {
-          await o.revoke(provider, credentials);
-          o.logger.info(`hopper: the ${PROVIDER_NAME[provider]} grant of ${c.account.account} revoked`);
-        }
+        const deleted = await o.deleteToken(provider, c.account.accessToken);
+        o.logger.info(deleted
+          ? `hopper: the ${PROVIDER_NAME[provider]} token of ${c.account.account} deleted`
+          : `hopper: the ${PROVIDER_NAME[provider]} token of ${c.account.account} was not deleted: no client secret (${CLIENT_SECRET_VARIABLE}); it expires by itself`);
       } catch (err) {
-        o.logger.warn(`hopper: could not revoke the ${PROVIDER_NAME[provider]} grant of ${c.account.account}: ${(err as Error).message}; it counts toward GitHub's ten per user and app until it expires`);
+        o.logger.warn(`hopper: could not delete the ${PROVIDER_NAME[provider]} token of ${c.account.account}: ${(err as Error).message}; it expires by itself`);
       }
     }
     write();
   });
 
+  /** Keep a new grant over the one there was, with no renewal under way. Nothing is revoked at GitHub (issue #597): the old grant expires. */
   const keep = (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string): Promise<void> =>
-    replace(provider, [g.accessToken, ...(g.refreshToken ? [g.refreshToken] : [])], () => {
+    renewer.exclusive(provider, async () => {
       o.store.connectedAccounts.put(atRest.sealed(recordOf(provider, who, g, connectedAt)));
       renewer.clear(provider);
     });
+
+  /** The new connection checked at GitHub once kept (issue #597): a 401 ends it, reconnect needed; anything else ends nothing. */
+  const check = async (provider: ConnectedAccountProvider, accessToken: string): Promise<void> => {
+    try {
+      await o.whoIs(provider, accessToken);
+    } catch (err) {
+      if ((err as { status?: unknown }).status !== 401) {
+        o.logger.warn(`hopper: could not check the new ${PROVIDER_NAME[provider]} connection: ${(err as Error).message}`);
+        return;
+      }
+      const c = current(provider);
+      if (c && !('unreadable' in c) && c.account.accessToken === accessToken) end(c.stored, refusedAtConnect(provider));
+    }
+  };
 
   /** Wait for the user in the background; the UI reads the outcome. */
   function follow(provider: ConnectedAccountProvider, w: Waiting, grant: (s: AbortSignal) => Promise<Grant>): void {
@@ -219,6 +235,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         const who = await o.whoIs(provider, g.accessToken);
         if (waiting.get(provider) !== w) return;
         await keep(provider, who, g, o.clock.now().toISOString());
+        await check(provider, g.accessToken);
         failed.delete(provider);
         o.link?.(provider, who.subject);
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} connected as ${who.account}`);
@@ -273,6 +290,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
         ...(c.refreshTokenExpiresAt ? { refreshTokenExpiresAt: new Date(c.refreshTokenExpiresAt) } : {}),
       };
       await keep(c.provider, c, g, o.clock.now().toISOString());
+      await check(c.provider, g.accessToken);
       o.logger.info(`hopper: ${PROVIDER_NAME[c.provider]} connected as ${c.account} (signed in with it)`);
       o.onChange?.(c.provider);
     },
@@ -294,7 +312,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       stopWaiting(provider);
       failed.delete(provider);
       let gone = false;
-      await replace(provider, [], () => { gone = o.store.connectedAccounts.delete(provider); });
+      await drop(provider, () => { gone = o.store.connectedAccounts.delete(provider); });
       renewer.clear(provider);
       if (gone) {
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} disconnected`);

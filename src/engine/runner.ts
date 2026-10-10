@@ -13,6 +13,7 @@ import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
 import { forkResume } from './phase-shifts.ts';
+import { maskTokens } from '../secrets/mask.ts';
 
 const PROGRESS_EVERY_MS = 500;
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
@@ -85,6 +86,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     let lastAt = -Infinity;
     let pending: { fraction: number; message?: string } | undefined;
     const emit = (p: { fraction: number; message?: string }): void => {
+      if (p.message !== undefined) p = { ...p, message: maskTokens(p.message) }; // never a GitHub token kept (#597)
       lastAt = c.clock.now().getTime();
       pending = undefined;
       c.store.tx(() => {

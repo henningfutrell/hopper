@@ -708,7 +708,7 @@ export interface Connection {
 export interface ConnectedAccounts {
   /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
   status(): Promise<ConnectedAccountStatus[]>;
-  /** Keep the connection a GitHub sign-in made (it replaces the account there was, whose grant is revoked at GitHub first; issue #514). */
+  /** Keep the connection a GitHub sign-in made (it replaces the account there was; nothing is revoked at GitHub, issue #597). */
   adopt(connection: Connection): Promise<void>;
   /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;

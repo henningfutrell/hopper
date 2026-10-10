@@ -910,7 +910,7 @@ Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in erro
 
 ## `connected_account.expired`
 
-Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the user's connected account ended: GitHub refused its refresh token itself and no newer pair was stored (revoked, or the app's authorization removed), or the token expired with nothing to renew it (`reason`). A renewal that failed for a reason that may pass (GitHub not answering, a 5xx, a rate limit) never ends it. The account reads as expired until connected again; its source pauses and asks to connect again; nothing reads GitHub in its place. Recorded once. The notifiers send it.
+Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the user's connected account ended: GitHub refused its refresh token itself and no newer pair was stored (revoked, or the app's authorization removed), GitHub refused a token not yet due for renewal and then refused its renewal as the app's, or refused a new connection's token when it was checked (both `reconnect needed`, issue #597), or the token expired with nothing to renew it (`reason`). A renewal that failed for a reason that may pass (GitHub not answering, a 5xx, a rate limit) never ends it. The account reads as expired until connected again; its source pauses and asks to connect again; nothing reads GitHub in its place. Recorded once. The notifiers send it.
 
 | field | type | required |
 |---|---|---|
