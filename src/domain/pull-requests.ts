@@ -6,6 +6,9 @@
 // closed without a merge. Pure but for the source it asks.
 import type { Job } from './types.ts';
 
+/** A pull request's head commit checks (issue #637): all passed, some still running, or one failed. None: absent. */
+export type ChecksState = 'passing' | 'pending' | 'failing';
+
 /** Why a done job is not done, from its source; undefined when it is. A throw: the source could not tell. */
 type NotComplete = (job: Job) => Promise<string | undefined>;
 
@@ -22,15 +25,32 @@ export interface FollowsPullRequests {
    */
   unfinishedPullRequest?(job: Job): Promise<UnfinishedPullRequest | undefined>;
   /**
-   * Follow an ended job's pull request, as its source state after its report names it: undefined while it waits; merged
-   * or closed without a merge, with the source state to keep. A throw is asked again on a later sync. Absent: nothing followed.
+   * Follow an ended job's pull request, as its source state after its report names it: undefined while it waits as it
+   * did; open, with what was seen of it, when that changed (issue #637); merged — with yolo mode on, by the hopper once it
+   * is ready — or closed without a merge, with the source state to keep. A throw is asked again on a later sync. Absent: nothing followed.
    */
   follow?(job: Job): Promise<FollowUp | undefined>;
 }
 
+/**
+ * What following a waiting pull request last saw of it (issue #637), kept in the job's source state (`seen`): what the
+ * Pull requests list shows. `checks` none: it has no checks. `mergeError`: the hopper's own merge (yolo mode) was refused.
+ */
+export interface PullRequestSeen {
+  draft: boolean;
+  conflicting: boolean;
+  checks: ChecksState | 'none';
+  /** When it was opened. */
+  openedAt?: string;
+  mergeError?: string;
+}
+
 export interface FollowUp {
-  outcome: 'merged' | 'closed';
+  /** Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. */
+  outcome: 'open' | 'merged' | 'closed';
   pullRequest: string;
+  /** Merged by the hopper itself (issue #637): yolo mode on for its repository, and it was ready. */
+  byHopper?: boolean;
   /** The pull request shipped part of the item: merged, the next part may be taken. */
   part: boolean;
   /** The job's source state from now on. */

@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
+| `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`) | http, decider |
@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place (`done-at-source.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -1779,7 +1779,8 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 
 **Write criteria.** The hopper's only issue writes are labels (state); it posts no comments at all
 (owner decision, 2026-10-04: a finished issue needs no comment). It never closes an issue (issue
-#187): the merge of the job's own pull request does — a person's, or the job's own with yolo mode on (issue #579) —;
+#187): the merge of the job's own pull request does — a person's, the job's own with yolo mode on (issue #579), or the
+hopper's own with yolo mode on (issue #637, "PR waiting" below) —;
 until then the issue stays open, labelled `hopper:done`. (Issue #38 had the hopper close a finished job's issue; once
 done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open.
 The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). No claim, progress,
@@ -1809,6 +1810,9 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    conflicts (GraphQL `mergeable` is not `CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), or is
    merged at or after the job's `createdAt`. Whoever opened it, whenever. One that says `Part of #N` ships a part, not the
    whole (partly done, below). A merge before the job, on an issue still open, is work the job was asked to redo: not done.
+   An open pull request of the repo that names the issue **only on its branch** (`namesIssue`: `issue-N`, `issue_N`,
+   `issueN` anywhere, or `N-…` at the start or after a slash; not `fix-N`), ready for review, counts the same
+   (`GitHubApi.openPullRequests`, the newest 100 open; asked only on a miss): no cross-reference shows it.
 3. The issue **asks to update the pull requests it names** (`asksToUpdate`: its title, or a line of its body, starts with
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
@@ -1818,8 +1822,8 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
 what was looked at (issue #637): `not complete: the issue <url> is open, and no pull request in <repo> that closes or
 references it is ready for review or merged since the job began: #12 (open, draft), #13 (open, merge conflicts)` — plus,
 for an update, the named pull requests and their state. **A miss is asked again** once after `HOPPER_DONE_RECHECK_MS`
-(default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. Not checked:
-a pull request that names the issue only in its branch name.
+(default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. The failure
+assessor looks a third time before it assesses the failure ("Failure assessment": a done-check miss).
 
 **A pull request left in conflict or as a draft** (issue #626) is not done, but the next step is fixed, so no person
 is asked. When a done job is neither complete nor partly done, the runner asks its source for the job's own open pull
@@ -1839,7 +1843,11 @@ builds a job's prompt (`JobSourceContext.yoloMode(repo)`), so a change applies t
 running job keeps what it was told. It never changes what done is. Off by default because a merge with nobody
 reviewing it is a merge nothing else stops where a repository has no branch protection, and a merge to the default
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
-Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above).
+Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
+yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
+not a draft, no merge conflicts, its checks passed or it has none — with a merge commit (`GitHubApi.merge`, `PUT
+/pulls/{n}/merge`, through the job's source's own connection). One definition of done; the merge is an extra step after
+it.
 
 | yolo mode | the job's prompt says |
 |-----------|-----------------------|
@@ -1874,7 +1882,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 
 | the pull request | then |
 |------------------|------|
-| still open | nothing |
+| still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged — the issue closed as complete by it, or the pull request merged | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`. A part: `hopper:partly-done` only comes off, so the next sync offers the issue again and a new job takes the next part |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
 
@@ -1885,6 +1893,33 @@ done — and still waiting on a person in Needs a person is judged again at each
 now, it is finished (`SourceHost.finishComplete`), its hand-off closes on `job.finished`, and its end is reported again,
 so its issue loses `hopper:failed`. The failure assessor's `not-complete` cause says so: a pull request waiting for its
 merge is never a failure.
+
+**PR waiting and the Pull requests list** (issue #637, `src/domain/pull-request-list.ts`). A finished job whose pull
+request is open and followed is **PR waiting**: done, not failed, using no lane, and kept in sight until its pull request
+merges (it drops off) or closes without a merge (it shows `closed` and waits on a person: `hopper:pr-closed`). It is not a
+job status: the job is `finished`, its source state `follow: open`. The report names the newest ready pull request that
+closes the issue, else one that references it, else one on a branch named for it, so the list can link it; one it cannot
+name is followed only to its merge. `GET /api/pull-requests` (`PullRequestsView`), the UI's Pull requests view and `hopper
+prs` give the same: per job repository (and any other a card is in), its yolo mode and its cards, oldest first — the
+issue, the pull request, `state` (`open`, `closed`), `checks` (`passing`, `pending`, `failing`, `none`, `unknown` until
+seen), `mergeable` (`mergeable`, `conflicts`, `unknown`), `draft`, `openedAt`, `yolo`, and for an open one why its merge
+`waits`: the first of `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `merge
+refused` (`mergeError` says what GitHub said). At the top, `yolo: { on, total }` over those repositories, and `waiting`:
+per repository and reason, how many, the most first. All of it is what the last sync saw (`seen`), never asked of GitHub
+at read time. Only the newest job of an item counts. Each repository's yolo switch is `POST /ui/api/yolo-mode` with
+`repos`; `hopper yolo <owner/repo> on|off|default`.
+
+**The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
+waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are
+judged once by today's rule (`doneAtSource`). Done: in one transaction its hand-off closes (`finished`), its record turns
+`resolved`, and its job ends finished with one event, `job.finished` with `result.backfill: "done-check"`; its end is told
+to its source again, so the issue gets `hopper:done`, or `hopper:pr-ready` and is followed (PR waiting) when a pull request
+of it is still open. Its issue is never reopened and nothing runs again. Not done: it stays in Failures; the answer gives
+its card's plain sentence. It runs once per store at the first start of a build that has it, before the sync and the
+assessor start (`backfills` in the user's settings, set once every job's source could tell; a GitHub error leaves it for
+the next start), and again whenever asked: `POST /ui/api/backfill/done-check` (operator), `hopper backfill done-check`,
+answering `{ backfill, changed: [{ jobId, state: finished | pr-waiting }], unchanged, failures: [{ jobId, reason }] }`. A
+job it changed is no longer failed, so a second run changes nothing and writes no event.
 
 **A failed job whose issue is closed as complete is finished** (issue #350). A job can end failed
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
@@ -8057,7 +8092,10 @@ commands, on the same footing as issue #374's.
   - `hopper problem list` (the open problems), `release <id>`, `resolve <id> [--note <text>]`;
   - `hopper handoff list` (the open hand-offs), `continue <id> [--note]`, `fixed <id> [--note]`,
     `done-by-hand <id> [--note] [--link <url>]`, `wont-do <id> --note <why>`;
-  - `hopper failure list` (the open failures), `retry <id>`.
+  - `hopper failure list` (the open failures), `retry <id>`;
+  - issue #637: `hopper prs` (the Pull requests list, `GET /api/pull-requests`), `hopper yolo <owner/repo> on|off|default`
+    (admin; `POST /ui/api/yolo-mode` with `repos`) and `hopper backfill done-check` (`POST /ui/api/backfill/done-check`).
+    `--json` is taken by every command and changes nothing: the answer is JSON.
   A list is `GET /api/failures`, narrowed; each other command is the UI's own `POST /ui/api/failures/*`. The
   verbs are the glossary's words: the issue asked for `settle`, `done`, `run-again` and `clear`, but `settle` would
   be a second word for resolve and `clear` already names the `cleared` end of a hand-off.
@@ -8484,6 +8522,14 @@ or no other online machine runs its executor — with the reason `held by proble
 to its pane. With automatic hold off, problems are still grouped and shown, but hold no job. A **general** (Recurring)
 problem holds only the jobs grouped in it, never every job of its scope (issue #637): with no known cause, nothing says
 another job would meet it — problem `ba0f00fc` held every queued job of one machine for ten hours over done-check misses.
+
+**A done-check miss** (issue #637, the `not-complete` cause) is looked at once more before it is assessed
+(`lookedAgain`, `done-at-source.ts`, at most `PR_LOOKUP_MS`): its job said it was done, and its source said not done twice,
+a minute apart; GitHub may still show the work late. Done now: its record is written `resolved` (the note says done at its
+source), no hand-off opens, and its job ends finished, its source told again. Not done, or not known: assessed as before
+(a `job` cause: a person), and then it is a minor decision like a failure no known cause explains — Jev picks run it again
+or a person, in the words of a done-check miss. Whether it is done stays GitHub's to say, never Jev's, so Jev is not
+offered `done` or PR waiting: those come only from the source's own answer, here and before every run again.
 
 **Running again** is the sync loop's Run again (issues #313, #354), `by: "assessor"` on `job.rerun`: the item is
 given back by its source and a new job queued, `rerunOf` the failed one. Each run again the assessor decides is

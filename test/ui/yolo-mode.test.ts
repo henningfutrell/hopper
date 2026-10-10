@@ -20,8 +20,8 @@ describe('yolo mode model', () => {
 
   it('summary: off, on, or on for some', () => {
     expect(yoloSummary(view(false))).toBe('Off: no job merges its own pull request.');
-    expect(yoloSummary(view(true))).toBe('On: jobs merge their own pull requests once the checks pass, in every job repository.');
-    expect(yoloSummary(view(false, { 'owner/b': true }))).toBe('On in 1 repository: jobs there merge their own pull requests once the checks pass.');
+    expect(yoloSummary(view(true))).toBe('On: jobs and the hopper merge ready pull requests once the checks pass, in every job repository.');
+    expect(yoloSummary(view(false, { 'owner/b': true }))).toBe('On in 1 repository: jobs and the hopper merge ready pull requests there once the checks pass.');
     expect(yoloSummary(view(true, { 'owner/a': false, 'owner/b': false }))).toBe('Off: no job merges its own pull request.');
   });
 

@@ -1,7 +1,8 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
 // accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
 // question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
-// list or run a failure again. Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
+// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637).
+// Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
@@ -12,7 +13,7 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -32,7 +33,11 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
                                                      Done: its job ends finished; the link is the work (a pull request)
   hopper handoff wont-do <id> --note <why>           Won't do: no more work on it; the note says why
   hopper failure list                                the open failures
-  hopper failure retry <id>                          run a failure's job again`;
+  hopper failure retry <id>                          run a failure's job again
+  hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
+  hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
+  hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
+  Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 /** A refusal: the message, exit 2. */
 export class OperatorRefusal extends Error {}
@@ -152,7 +157,28 @@ function failureCall(args: string[]): Call {
   throw usage('failure list | retry <id>');
 }
 
+const YOLO_OF: Record<string, boolean | null> = { on: true, off: false, default: null };
+
+function prsCall(args: string[]): Call {
+  if (args.length > 0) throw usage('prs');
+  return { role: 'viewer', path: '/api/pull-requests' };
+}
+
+function yoloCall(args: string[]): Call {
+  const [repo, mode, ...extra] = args;
+  if (!repo || !/^[^/\s]+\/[^/\s]+$/.test(repo) || mode === undefined || !(mode in YOLO_OF) || extra.length > 0) throw usage('yolo <owner/repo> on|off|default');
+  return { role: 'admin', path: '/ui/api/yolo-mode', body: async () => ({ repos: { [repo]: YOLO_OF[mode] } }) };
+}
+
+function backfillCall(args: string[]): Call {
+  if (args.length !== 1 || args[0] !== 'done-check') throw usage('backfill done-check');
+  return { role: 'operator', path: '/ui/api/backfill/done-check', body: async () => ({}) };
+}
+
 function callOf(command: string, args: string[]): Call {
+  if (command === 'prs') return prsCall(args);
+  if (command === 'yolo') return yoloCall(args);
+  if (command === 'backfill') return backfillCall(args);
   if (command === 'job') return jobCall(args);
   if (command === 'queue') return queueCall(args);
   if (command === 'problem') return problemCall(args);
@@ -171,12 +197,13 @@ function daemonUrl(raw: string | undefined, env: Record<string, string | undefin
   }
 }
 
-/** Take `--url <url>` and `--user <id>` out of `args`, wherever they are. */
+/** Take `--url <url>` and `--user <id>` out of `args`, wherever they are, and `--json`: the answer is JSON anyway. */
 function common(args: string[]): { rest: string[]; url?: string; user?: string } {
   const rest: string[] = [];
   const found: { url?: string; user?: string } = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
+    if (a === '--json') continue;
     if (a === '--url' || a === '--user') {
       const v = args[++i];
       if (v === undefined) throw new OperatorRefusal(`${a} needs a value`);
@@ -187,7 +214,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

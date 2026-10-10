@@ -43,7 +43,7 @@ function Form({ view, onSaved }: { view: YoloModeView; onSaved: (v: YoloModeView
       <p data-slot="yolo-summary" className="font-medium">{yoloSummary(view)}</p>
       <label className="flex items-center gap-2">
         <Switch checked={draft.on} disabled={busy} aria-label="Yolo mode for every job repository" onCheckedChange={(on) => setDraft({ ...draft, on })} />
-        Jobs merge their own pull requests in every job repository
+        Jobs and the hopper merge ready pull requests in every job repository
       </label>
       {rows.length > 0 && (
         <fieldset className="grid gap-1">

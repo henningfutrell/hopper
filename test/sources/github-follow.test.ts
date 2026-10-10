@@ -99,10 +99,13 @@ describe('following the pull request', () => {
     return { ...s, pr, job: { ...base, sourceState: { source: state } } };
   }
 
-  it('still open: nothing changes', async () => {
-    const { gh, source, job } = await ended();
-    expect(await source.follow!(job)).toBeUndefined();
+  it('still open: no label changes; what is seen of it is kept once (issue #637), then nothing while it stays the same', async () => {
+    const { gh, source, job, pr } = await ended();
+    const seen = await source.follow!(job);
+    expect(seen).toEqual({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: false, conflicting: false, checks: 'none', openedAt: pr.createdAt } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
+    expect(await source.follow!({ ...job, sourceState: { ...job.sourceState, source: seen!.state } })).toBeUndefined();
+    expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
   });
 
   it('merged: the item is done — hopper:done in place of hopper:pr-ready; following ends', async () => {

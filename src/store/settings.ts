@@ -174,6 +174,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setYoloMode(settings) {
       write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos }));
     },
+    getBackfills() {
+      const text = read('backfills');
+      return text === undefined ? {} : JSON.parse(text) as Record<string, string>;
+    },
+    setBackfills(done) {
+      write('backfills', JSON.stringify(done));
+    },
     getFailureSettings() {
       const text = read('failureSettings');
       return text === undefined ? undefined : JSON.parse(text) as FailureSettings;

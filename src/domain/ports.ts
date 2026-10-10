@@ -616,7 +616,7 @@ export interface SourceHost {
    * issue #621: a pull request of its merged, found by the failure assessor's work check): finished, with `result`
    * (default: issue closed as complete), and its end to be reported to its source again. false: it is no longer failed.
    */
-  finishShipped(jobId: JobId, result?: { summary: string; link?: string }): boolean;
+  finishShipped(jobId: JobId, result?: { summary: string; link?: string; backfill?: string }): boolean;
   /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
   finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */

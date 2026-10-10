@@ -65,6 +65,9 @@ export interface UserSettingsRepository {
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
+  /** The one-time backfills that completed on this store (issue #637: `done-check`), each with when. */
+  getBackfills(): Record<string, string>;
+  setBackfills(done: Record<string, string>): void;
   /** The failure assessor's settings (issue #509); absent: never set. */
   getFailureSettings(): FailureSettings | undefined;
   setFailureSettings(settings: FailureSettings): void;

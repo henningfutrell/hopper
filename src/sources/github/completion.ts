@@ -78,6 +78,13 @@ const UPDATE_ASK = /^(please\s+)?(bring|rebase|update|refresh|fix\s+(the\s+)?(me
 export const asksToUpdate = (issue: Pick<GitHubIssue, 'title' | 'body'>): boolean =>
   [issue.title, ...issue.body.split('\n')].some((l) => UPDATE_ASK.test(l.trim()));
 
+/**
+ * A branch named for issue `n` (issue #637): `issue-N`, `issue_N` or `issueN` anywhere, or `N-…` at its start or after a
+ * slash (`fix/N-thing`); not `fix-N`, which names a number, not an issue.
+ */
+export const namesIssue = (branch: string, n: number): boolean =>
+  new RegExp(`(^|[/_-])issue[-_]?${n}(?!\\d)|(^|/)${n}(?=[-_]|$)`, 'i').test(branch);
+
 /** A pull request's number, from its URL. */
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 
@@ -93,6 +100,7 @@ function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDra
  * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
  *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
  *   not the whole (`partlyDone`);
+ * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review;
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
  *   merged, at any time; the job need not have pushed.
  * Undefined: done. Else why not, naming what was looked at. An error asking GitHub throws: the caller asks again.
@@ -112,6 +120,12 @@ export async function notComplete(api: GitHubApi, job: Job): Promise<string | un
     if (pr.repo.toLowerCase() !== repo.toLowerCase() || isPartOf(pr, repo, number)) continue;
     if (pr.state === 'open' ? isReady(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
     if (!found.has(pr.url)) found.set(pr.url, pr);
+  }
+  // A pull request that names the issue only on its branch (issue #637): no cross-reference shows it.
+  for (const pr of await api.openPullRequests(repo)) {
+    if (!namesIssue(pr.headRef, number) || found.has(pr.url)) continue;
+    if (isReady(pr)) return undefined;
+    found.set(pr.url, { ...pr, state: 'open' });
   }
   const lines = [issue.state === 'open' ? `the issue ${url ?? `${repo}#${number}`} is open`
     : `the issue ${url ?? `${repo}#${number}`} is ${issue.stateReason === 'not_planned' ? 'closed as not planned' : 'closed, not as completed'}`];

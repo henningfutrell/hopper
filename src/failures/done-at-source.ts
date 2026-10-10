@@ -1,8 +1,22 @@
 // Finished work is never run again (issue #637): before any run again of a failed job — a retry, a redirect, a release,
 // a person's Retry — its source is asked whether its work is done there (its issue closed as completed, a pull request
-// that closes it ready or merged). Done: the job ends finished, its source told again, and its record `resolved`.
+// that closes it ready or merged). Done: the job ends finished, its source told again, and its record `resolved`. And a
+// done-check miss is looked at once more before it is assessed (`lookedAgain`): GitHub may show the work some seconds late.
 import type { UserStore } from '../domain/ports.ts';
 import type { FailureRecord, Job } from '../domain/types.ts';
+import { BUILTIN_CAUSES } from './causes.ts';
+import { PR_LOOKUP_MS } from './timeouts.ts';
+
+const NOT_COMPLETE = BUILTIN_CAUSES.find((c) => c.id === 'not-complete')!.pattern;
+
+/** A done-check miss not assessed yet, its source asked once more, at most `PR_LOOKUP_MS`: true, done. Not known is not done. */
+export async function lookedAgain(store: Pick<UserStore, 'jobs'>, doneAtSource: ((job: Job) => Promise<boolean>) | undefined, jobId: string): Promise<boolean> {
+  const job = store.jobs.get(jobId);
+  if (!doneAtSource || job?.status !== 'failed' || job.assessment || !NOT_COMPLETE.test(job.error ?? '')) return false;
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), PR_LOOKUP_MS); });
+  return Promise.race([doneAtSource(job), late]).catch(() => false).finally(() => clearTimeout(timer));
+}
 
 export const DONE_NOTE = 'done at its source: its issue is closed as completed, or a pull request that closes it is ready or merged';
 

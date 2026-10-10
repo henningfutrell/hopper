@@ -1,9 +1,11 @@
 // Yolo mode (issue #579, design.md "Done is a pull request"): whether jobs may merge their own pull requests once the
 // repo's checks pass. Off unless an admin turns it on, for every job repository or per repository; read each time a
-// job's prompt is built, so it applies to the next job without a restart. Done never depends on it.
+// job's prompt is built, so it applies to the next job without a restart. Done never depends on it. Since issue #637 the
+// hopper also merges a ready pull request it follows itself, in a repository with yolo mode on; the Pull requests list
+// shows each waiting one with its repository's yolo mode.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { DEFAULT_YOLO_MODE, patchYoloMode, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
+import { DEFAULT_YOLO_MODE, patchYoloMode, pullRequestList, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
 import type { UserStore } from '../../domain/store.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -22,6 +24,12 @@ const settingsOf = (store: UserStore): YoloModeSettings => store.settings.getYol
 
 export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
   return { ...settingsOf(t.store), choices: { repos: t.store.settings.getJobRepositories('github') } };
+}
+
+/** The Pull requests list (issue #637): every waiting pull request of the user's jobs, per job repository, with its yolo mode. */
+export function pullRequestsView(t: Pick<TenantParts, 'store'>): PullRequestsView {
+  const { store } = t;
+  return pullRequestList(store.jobs.list({ status: ['finished'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'));
 }
 
 export function registerYoloModeRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

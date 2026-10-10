@@ -3,13 +3,15 @@
 // or a project closing it is undefined), and the open pull requests whose merge will close it
 // (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch), and the pull
 // requests that mention it in any state (the issue's cross-references, issue #579: a part says "Part of #N"), and a pull
-// request by its number (issue #618: one an issue names to update). Each says when its head commit was made.
+// request by its number (issue #618: one an issue names to update), and the open pull requests of a repository with their
+// branches (issue #637: one named for an issue). Each says when its head commit was made, and its checks (issue #637).
 
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
+import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
+import type { ChecksState } from '../../domain/pull-requests.ts';
 
-/** A pull request's head commit, and when it was made (issue #618). */
-const HEAD_COMMIT = 'commits(last: 1) { nodes { commit { committedDate } } }';
+/** A pull request's head commit, when it was made (issue #618), and its checks (issue #637). */
+const HEAD_COMMIT = 'commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -39,16 +41,23 @@ export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $numbe
   } }
 }`;
 
+export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: [OPEN], first: 100, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url createdAt isDraft state mergeable headRefName ${HEAD_COMMIT} } }
+  }
+}`;
+
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
 interface Referenced {
   url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string;
-  commits?: { nodes?: ({ commit?: { committedDate?: string } } | null)[] };
+  commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } } | null)[] };
+  headRefName?: string;
 }
 interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null }
 interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
 const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
-  data?: { repository?: { issueOrPullRequest?: Numbered | null; issue?: {
+  data?: { repository?: { issueOrPullRequest?: Numbered | null; pullRequests?: { nodes?: (Referenced | null)[] }; issue?: {
     timelineItems?: { nodes?: ({ closer?: Closer | null; source?: Source | null } | null)[] };
     closedByPullRequestsReferences?: { nodes?: (Referenced | null)[] };
   } | null } | null };
@@ -74,10 +83,14 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
   return { url: c.url, createdAt: c.createdAt, mergedAt: c.mergedAt };
 }
 
-/** Its head commit's time, when GitHub said. */
-const headOf = (n: Referenced): { headCommittedAt?: string } => {
-  const at = n.commits?.nodes?.at(-1)?.commit?.committedDate;
-  return at ? { headCommittedAt: at } : {};
+/** GitHub's rollup state as the port's checks: none (no checks) is absent. */
+const CHECKS: Record<string, ChecksState> = { SUCCESS: 'passing', PENDING: 'pending', EXPECTED: 'pending', FAILURE: 'failing', ERROR: 'failing' };
+
+/** Its head commit's time and checks, when GitHub said. */
+const headOf = (n: Referenced): { headCommittedAt?: string; checks?: ChecksState } => {
+  const commit = n.commits?.nodes?.at(-1)?.commit;
+  const checks = CHECKS[commit?.statusCheckRollup?.state ?? ''];
+  return { ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(checks ? { checks } : {}) };
 };
 
 /** Pull request `number`, or undefined when the number is an issue or names nothing. */
@@ -113,4 +126,11 @@ export function referencingPullRequestsFrom(body: unknown, what: string): Refere
     });
   }
   return [...byUrl.values()];
+}
+
+/** The open pull requests of a repository, each with its branch (issue #637). */
+export function repoPullRequestsFrom(body: unknown, what: string): BranchPullRequest[] {
+  const nodes = response(body, what).data?.repository?.pullRequests?.nodes ?? [];
+  return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt && n.headRefName
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, ...headOf(n) }] : []);
 }

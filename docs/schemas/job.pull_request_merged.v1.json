@@ -7,6 +7,10 @@
     },
     "part": {
       "type": "boolean"
+    },
+    "byHopper": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

@@ -12,22 +12,24 @@
 // (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
 // is active and it is sure. A timed-out job (issue #630) is assessed from its liveness: its source is asked first whether
 // a pull request of its own is open — at most `PR_LOOKUP_MS`, never holding the assessment —, and Continue, when due,
-// resumes its own agent session in its kept work tree, else runs its item again, told to go on.
+// resumes its own agent session in its kept work tree, else runs its item again, told to go on. A done-check miss (issue
+// #637) is looked at once more first: done by now, its record is `resolved` and its job finished; else Jev picks, too.
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock, type WorkState,
 } from '../domain/types.ts';
-import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
+import { assess, STALE_AFTER_MS } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
-import { attemptOf, timeoutInputOf } from './chain.ts';
+import { attemptOf, recentOf, timeoutInputOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts';
 import { rerunRecordOf } from './rerun.ts';
 import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
-import { createDoneAtSource } from './done-at-source.ts';
+import { createDoneAtSource, DONE_NOTE, lookedAgain } from './done-at-source.ts';
+import { createBackfill, type BackfillResult } from './backfill.ts';
 import { signatureOf } from './signature.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
@@ -60,6 +62,8 @@ export interface Failures {
   stop(): Promise<void>;
   /** The due runs again, the checks, the prune — now (tests, and after an action). */
   sweep(): Promise<void>;
+  /** The done-check backfill (issue #637): asked, one pass; `once`, at start, unless it completed before on this store. */
+  backfill: { run(): Promise<BackfillResult>; once(): Promise<void> };
   view(): FailuresView;
   /** The open problems the decider reads; none while automatic hold is off. */
   blocks(): ProblemBlock[];
@@ -99,23 +103,15 @@ export function createFailures(o: FailuresOptions): Failures {
   const handoffs = createHandoffs({ ...o, settings, live: () => !stopped });
   const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
   const doneCheck = createDoneAtSource({ store, doneAtSource: o.doneAtSource, finishShipped: o.finishShipped, now, live: () => !stopped });
+  const backfill = createBackfill({ store, now, doneAtSource: o.doneAtSource, workState: o.workState, finishShipped: o.finishShipped, live: () => !stopped, logger: o.logger });
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
+
+  /** The done-check misses whose source found the work done when looked at once more, before their assessment (issue #637). */
+  const doneWhenAssessed = new Set<string>();
+  const lookAgain = async (id: string): Promise<void> => { if (!stopped && await lookedAgain(store, o.doneAtSource, id) && !stopped) doneWhenAssessed.add(id); };
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
   const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); };
-
-  /** Other items' failures with this signature in the grouping window, one per item. */
-  function recentOf(job: Job, signature: string, s: FailureSettings): RecentFailure[] {
-    const since = new Date(now().getTime() - s.groupWindowMin * 60_000).toISOString();
-    const itemOf = (jobId: string) => store.jobs.get(jobId)?.source?.key ?? jobId;
-    const mine = itemOf(job.id);
-    const byItem = new Map<string, RecentFailure>();
-    for (const r of store.failures.list({ signature, since })) {
-      const item = itemOf(r.jobId);
-      if (item !== mine && !byItem.has(item)) byItem.set(item, { jobId: r.jobId, executor: r.evidence.executor, ...(r.evidence.machineId ? { machineId: r.evidence.machineId } : {}) });
-    }
-    return [...byItem.values()];
-  }
 
   /** The open problem of a signature whose scope covers this machine. */
   const openFor = (signature: string, machineId: string | undefined): Problem | undefined =>
@@ -126,6 +122,8 @@ export function createFailures(o: FailuresOptions): Failures {
     if (stopped) return;
     let grouped = false;
     let jevCase: JevCase | undefined;
+    const doneNow = doneWhenAssessed.delete(jobId);
+    let finish = false;
     store.tx(() => {
       const job = store.jobs.get(jobId);
       if (!job || job.status !== 'failed' || job.assessment || assessedRun(jobId)) return;
@@ -137,7 +135,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const machineId = machineOf(job);
       const attempt = attemptOf(store, job);
       const ranMs = job.startedAt && job.finishedAt ? Math.max(0, Date.parse(job.finishedAt) - Date.parse(job.startedAt)) : undefined;
-      const recent = recentOf(job, signature, s);
+      const recent = recentOf(store, job, signature, new Date(now().getTime() - s.groupWindowMin * 60_000).toISOString());
       const open = openFor(signature, machineId);
       const a = assess({
         error, signature, cause, attempt, recent, settings: s,
@@ -164,12 +162,14 @@ export function createFailures(o: FailuresOptions): Failures {
         evidence: evidenceOf(job, { error, attempt, sameSignature: recent.length, ...(machineId ? { machineId } : {}), ...(ranMs !== undefined ? { ranMs } : {}) }),
         ...(problem ? { problemId: problem.id } : {}),
         ...(a.decision === 'retry' && a.auto ? { retryAt: pendingAt } : {}),
-        ...(a.superseded ? { outcome: 'superseded' as const, outcomeAt: at.toISOString(), nextJobId: a.superseded }
+        ...(doneNow ? { outcome: 'resolved' as const, outcomeAt: at.toISOString(), note: DONE_NOTE }
+          : a.superseded ? { outcome: 'superseded' as const, outcomeAt: at.toISOString(), nextJobId: a.superseded }
           : acts ? { pending: a.decision as PendingRun, pendingAt } : { outcome: problem ? 'held' as const : 'surfaced' as const, outcomeAt: at.toISOString() }),
       });
-      handoffs.afterRecord(record);
-      if (!cause && a.decision === 'person' && !a.superseded && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
-        jevCase = { recordId: record.id, job, error, attempt, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) };
+      finish = doneNow;
+      if (!doneNow) handoffs.afterRecord(record);
+      if ((!cause || cause.id === 'not-complete') && !doneNow && a.decision === 'person' && !a.superseded && Date.parse(record.at) - Date.parse(job.finishedAt ?? job.updatedAt) <= STALE_AFTER_MS && attempt - 1 < s.maxAttempts) {
+        jevCase = { recordId: record.id, job, error, attempt, doneCheck: cause !== undefined, ...(ranMs !== undefined ? { ranMs } : {}), ...(machineId ? { machineId } : {}) };
       }
       store.jobs.update(job.id, {
         assessment: {
@@ -193,6 +193,7 @@ export function createFailures(o: FailuresOptions): Failures {
         });
       }
     });
+    if (finish) o.finishShipped(jobId, { summary: DONE_NOTE });
     if (grouped) o.trigger('failure.grouped');
     if (jevCase) void jevStep(jevCase);
     if (kick && !stopped) void sweep();
@@ -312,7 +313,7 @@ export function createFailures(o: FailuresOptions): Failures {
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
-        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => assessJob(id)); }); }
+        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => lookAgain(id)).catch(() => {}).then(() => assessJob(id)); }); }
         handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);
@@ -325,6 +326,7 @@ export function createFailures(o: FailuresOptions): Failures {
       await sweeping;
     },
     sweep,
+    backfill,
     view: () => viewOf(store, settings(), now(), o.resumable),
     blocks() {
       if (!settings().auto.hold) return [];

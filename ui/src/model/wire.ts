@@ -16,7 +16,7 @@ import type {
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, Confidence,
-  CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView,
+  CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
 } from '../../../src/domain/types.ts';
@@ -37,7 +37,7 @@ export type {
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, Confidence,
-  CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView,
+  CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
 };
