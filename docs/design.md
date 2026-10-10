@@ -1850,14 +1850,14 @@ reviewing it is a merge nothing else stops where a repository has no branch prot
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
-not a draft, no merge conflicts, a check passed on it (issue #652: one with no checks waits, `no checks`) — with a merge commit (`GitHubApi.merge`, `PUT
+not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below) — with a merge commit (`GitHubApi.merge`, `PUT
 /pulls/{n}/merge`, through the job's source's own connection). One definition of done; the merge is an extra step after
 it.
 
 | yolo mode | the job's prompt says |
 |-----------|-----------------------|
 | off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
-| on for the repo | the same, then: the hopper merges the pull request once a required check passed on it. Do not merge it yourself (issue #652: the job holds no token to merge with; before it, the job merged) |
+| on for the repo | the same, then: the hopper merges the pull request once its checks pass, or, when the repo has no checks, a short time after the last push. Do not merge it yourself (issue #652: the job holds no token to merge with; before it, the job merged) |
 
 Both say, before the yolo part: an issue that asks to update an existing pull request is done by pushing to its branch,
 no new pull request, once it has no merge conflicts with its base (issue #618).
@@ -1908,8 +1908,8 @@ name is followed only to its merge. `GET /api/pull-requests` (`PullRequestsView`
 prs` give the same: per job repository (and any other a card is in), its yolo mode and its cards, oldest first — the
 issue, the pull request, `state` (`open`, `closed`), `checks` (`passing`, `pending`, `failing`, `none`, `unknown` until
 seen), `mergeable` (`mergeable`, `conflicts`, `unknown`), `draft`, `openedAt`, `yolo`, and for an open one why its merge
-`waits`: the first of `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `merge
-refused` (`mergeError` says what GitHub said). At the top, `yolo: { on, total }` over those repositories, and `waiting`:
+`waits`: the first of `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `checks
+not started`, `merge refused` (`mergeError` says what GitHub said), `ready` (issue #677); `base`, the branch it merges into. At the top, `yolo: { on, total }` over those repositories, and `waiting`:
 per repository and reason, how many, the most first. All of it is what the last sync saw (`seen`), never asked of GitHub
 at read time. Only the newest job of an item counts. Each repository's yolo switch is `POST /ui/api/yolo-mode` with
 `repos`; `hopper yolo <owner/repo> on|off|default`.
@@ -9946,8 +9946,8 @@ the **untrusted issue text** block — `UNTRUSTED_LINE`, then `<<<hopper-untrust
 hopper's `[hopper issue context]` follows: repo, labels and author, priority, the `done:` line. Caps as before: the body
 64 000 characters, the comments 16 000, the oldest dropped first.
 
-**Yolo mode's merge** needs a check that passed: `checks` `passing`. A pull request with none waits (`no checks` in the
-Pull requests list, after `checks pending`); the repository's required checks are GitHub's to enforce. The job is told
+**Yolo mode's merge** needed a check that passed: `checks` `passing`; a pull request with none waited. Issue #677 changed
+this: no checks, settled, is ready ("No checks means ready"). The job is told
 the hopper merges it and not to merge it itself.
 
 **Residual risk, said plainly.** On a machine where a job runs as a person's own account (this machine, an ssh target),
@@ -11023,3 +11023,37 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   before this one runs on the migrated store and ignores both fields: it would start a held job, with the snapshot's
   text, the approved one, never the edited text.
 
+## No checks means ready (issue #677, 2026-10-10)
+
+Issue #652 had yolo mode merge only a pull request with a check that passed. A repository with no checks then never
+merged anything: its pull requests waited in the Pull requests list with `no checks`, and yolo mode did nothing there.
+
+**The rule** (`src/domain/pull-requests.ts` `readyToMerge`, `noChecksSettled`, `NO_CHECKS_GRACE_MS`). Ready for the
+hopper's merge: not a draft, no merge conflicts, and its checks passed — or it has none, and none started within the
+grace window, two minutes after its last push (`pushedAt`: the later of when it was opened and its head commit). The
+window keeps a check that starts late from being missed: a check that starts holds the merge until it passes, as
+before. A repository's required checks are GitHub's: a merge without them is refused, and the refusal is kept on the
+card (`merge refused`), as any refused merge. Yolo mode off: nothing changes, a person merges.
+
+**Card states.** The follow keeps `pushedAt` and `base` (`baseRefName`) on what it saw (`PullRequestSeen`); the list,
+given the time now, says why each card waits: `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks
+failing`, `yolo off`, `checks pending`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
+(`ui/src/model/pull-requests.ts` `waitsText`): `waiting for a person to merge`, `waiting for checks`, `waiting for checks
+to start`, `conflicts with <base>`, `ready, merging`, and so on.
+
+**A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
+newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
+else one on a branch named for the issue. Found, it is named in the job's source state and followed as any other, so a
+card never stays `not checked yet` or without its pull request for more than one sync.
+
+**Persisted state.** `pushedAt` and `base` are new, optional fields in a job's source state. A build before this one
+ignores them; a `seen` without `pushedAt` counts as pushed long ago.
+
+**Not built in this part** (carried in issue #677): spotting repositories with no checks and recommending a job that adds
+them (`hopper repo checks`); Merge now and Close PR on each card, with `hopper pr merge` and `hopper pr close`; closing the
+linked issue after a merge when the pull request has no closing keyword.
+
+Tests: `test/sources/pull-request-list.test.ts` (each card state, the grace window), `test/sources/github-follow.test.ts`
+(no checks merges after the window, waits inside it; a pull request the report missed is found and named, a part as a
+part), `test/integration/pull-requests.test.ts` (the real daemon: waits for checks to start, a late check holds it, an old
+one with no checks merges), `test/ui/pull-requests-view.test.ts` (the plain words).

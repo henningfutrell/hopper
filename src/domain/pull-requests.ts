@@ -42,8 +42,30 @@ export interface PullRequestSeen {
   checks: ChecksState | 'none';
   /** When it was opened. */
   openedAt?: string;
+  /** When it was last pushed to (issue #677): the later of when it was opened and its head commit. */
+  pushedAt?: string;
+  /** The branch it merges into (issue #677: "conflicts with dev"). */
+  base?: string;
   mergeError?: string;
 }
+
+/**
+ * How long a pull request with no checks waits for checks to start after its last push (issue #677): a check that starts
+ * late is not missed. After it, no checks counts as ready.
+ */
+export const NO_CHECKS_GRACE_MS = 2 * 60_000;
+
+/** No checks, and none started within the grace window after its last push (issue #677). Absent `pushedAt`: long ago. */
+export const noChecksSettled = (seen: PullRequestSeen, now: number): boolean =>
+  seen.checks === 'none' && (seen.pushedAt === undefined || now - Date.parse(seen.pushedAt) >= NO_CHECKS_GRACE_MS);
+
+/**
+ * Ready for the hopper's merge (yolo mode): not a draft, no merge conflicts, and its checks passed — or it has none,
+ * settled (issue #677; issue #652 had none wait for ever). A repository's required checks still hold it: GitHub refuses
+ * that merge, and the refusal is kept (`mergeError`).
+ */
+export const readyToMerge = (seen: PullRequestSeen, now: number): boolean =>
+  !seen.draft && !seen.conflicting && (seen.checks === 'passing' || noChecksSettled(seen, now));
 
 export interface FollowUp {
   /** Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. */

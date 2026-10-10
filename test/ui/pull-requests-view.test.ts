@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
+import { waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
 import type { PullRequestCard, PullRequestsView } from '../../src/domain/types.ts';
 
 const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
@@ -91,7 +91,7 @@ describe('Pull requests view', () => {
   it('the header says how many repos have yolo mode on and where merging waits', async () => {
     await boot(fixture);
     expect(text('[data-slot="pr-yolo-line"]')).toBe('yolo: on for 2 of 3 repos');
-    expect(text('[data-slot="pr-waiting-line"]')).toBe('merging waits: 2 PRs in owner/a (yolo off), 1 PR in org/b (checks pending)');
+    expect(text('[data-slot="pr-waiting-line"]')).toBe('merging waits: 2 PRs in owner/a (waiting for a person to merge), 1 PR in org/b (waiting for checks)');
     expect(waitingLine({ ...fixture, waiting: [] })).toBe('merging waits: nothing');
     expect(yoloLine(fixture)).toBe('yolo: on for 2 of 3 repos');
   });
@@ -118,12 +118,23 @@ describe('Pull requests view', () => {
     expect(cardOf('j1').querySelector('a[href="https://github.com/owner/a/issues/10"]')!.textContent).toBe('closes #10');
     expect(cardOf('j1').textContent).toContain('checks pass');
     expect(cardOf('j1').textContent).toContain('mergeable');
-    expect(cardOf('j1').textContent).toContain('waits: yolo off');
-    expect(cardOf('j2').textContent).toContain('pull request not named yet');
+    expect(text('[data-slot="pr-waits"]', cardOf('j1'))).toBe('waiting for a person to merge');
+    expect(text('[data-slot="pr-waits"]', cardOf('j3'))).toBe('waiting for checks');
+    expect(cardOf('j2').textContent).toContain('pull request not found yet');
     expect(cardOf('j2').textContent).toContain('part of #10');
     expect(cardOf('j3').textContent).toContain('checks pending');
     expect(cardOf('j4').textContent).toContain('merge conflicts');
     expect(text('[data-slot="pr-merge-error"]', cardOf('j4'))).toContain('Base branch was modified');
+  });
+
+  it('why a card waits, in plain words (issue #677)', () => {
+    expect(waitsText(card({ waits: 'conflicts', base: 'dev' }))).toBe('conflicts with dev');
+    expect(waitsText(card({ waits: 'conflicts' }))).toBe('conflicts with its base branch');
+    expect(waitsText(card({ waits: 'ready' }))).toBe('ready, merging');
+    expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
+    expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
+    expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
+    expect(waitsText(card({ waits: 'not checked yet' }))).toBe('not checked yet');
   });
 
   it('an admin turns yolo mode on for one repo: the toggle posts that repo alone, then the list is read again', async () => {
