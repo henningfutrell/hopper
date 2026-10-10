@@ -80,7 +80,8 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
     await c.runtime.start(record.containerId);
     return record;
   } catch (e) {
-    await c.runtime.remove(record.containerId || name).catch(() => {});
+    // Only by the id it made: a create that failed (a name taken meanwhile) made nothing, and the name may be another's.
+    if (record.containerId) await c.runtime.remove(record.containerId).catch(() => {});
     if (madeVolume) await c.runtime.removeVolume(record.volume).catch(() => {});
     c.repo.remove(record.id);
     throw e;
