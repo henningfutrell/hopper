@@ -30,6 +30,16 @@
         "done_by_hand",
         "wont_do"
       ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli"
+      ]
     }
   },
   "required": [

@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -620,8 +620,9 @@ export interface SourceHost {
    * ended job, in one tx. The ended job stays as it ended. A newer job of the key that already exists
    * is answered instead of a second one. `by`: who asked, the user (the default) or the failure assessor (issue #509).
    * `brief` (issue #551): what the new job is told after its item's prompt — a person's note and the failure before it.
+   * `acting` (issue #623): the person who asked from Failures, and the way, kept in job.rerun.
    */
-  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string): Job;
+  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
   /**
    * Its source gave a failed job's item back for a person's Continue (issue #551): the same job is queued again, in
    * one tx, pinned to the machine it ran on with `brief` pending (`continued`), its end to be reported to its source
@@ -644,7 +645,7 @@ export interface SourceRegistry {
    * (`JobSource.rerun`) and the new job is queued at once; it answers the new job. The ended job is kept.
    * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
-  rerun(jobId: JobId, by?: RerunBy, brief?: string): Promise<RerunResult>;
+  rerun(jobId: JobId, by?: RerunBy, brief?: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
    * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
    * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.

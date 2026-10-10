@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS } from '../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
@@ -21,6 +21,9 @@ const proxyOp = z.enum(PROXY_OPS);
 /** A question stage: an escalation level's instance name, or `human`. */
 const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
+// Who acted on a problem, a hand-off or a failure (issue #623): the person, and the way (the UI or the operator CLI).
+const acting = { person: z.string(), via: z.enum(ACTION_VIAS) };
+const actingIfPerson = { person: acting.person.optional(), via: acting.via.optional() };
 const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
 
 /**
@@ -169,7 +172,7 @@ export const EVENT_SCHEMAS = {
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
-  'job.rerun': strict({ by: z.enum(['user', 'assessor']) }),
+  'job.rerun': strict({ by: z.enum(['user', 'assessor']), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
@@ -205,13 +208,14 @@ export const EVENT_SCHEMAS = {
     problemId: z.string(), signature: z.string(), title: z.string(), opened: z.boolean(), general: z.boolean(),
     decision: z.enum(['hold', 'redirect']), scope: problemScope, affected: z.number().int().min(1),
   }),
-  'failure.resolved': strict({ problemId: z.string(), title: z.string(), by: z.enum(['user', 'check']), released: z.number().int().min(0) }),
+  'failure.resolved': strict({ problemId: z.string(), title: z.string(), by: z.enum(['user', 'check']), released: z.number().int().min(0), ...actingIfPerson, note: z.string().optional() }),
+  'failure.released': strict({ problemId: z.string(), title: z.string(), released: z.number().int().min(1), ...acting }),
   // Needs a person (issue #516): a failed job handed off to a person, and the hand-off ending.
   'handoff.opened': strict({
     handoffId: z.string(), reason: z.enum(HANDOFF_REASONS), summary: z.string(), notify: z.boolean(),
     recordId: z.string().optional(), decision: z.enum(FAILURE_DECISIONS).optional(), class: z.enum(FAILURE_CLASSES).optional(), ...priority,
   }),
-  'handoff.closed': strict({ handoffId: z.string(), end: z.enum(HANDOFF_ENDS), nextJobId: z.string().optional(), resolution: z.enum(HANDOFF_RESOLUTIONS).optional() }),
+  'handoff.closed': strict({ handoffId: z.string(), end: z.enum(HANDOFF_ENDS), nextJobId: z.string().optional(), resolution: z.enum(HANDOFF_RESOLUTIONS).optional(), ...actingIfPerson }),
   // The usage limits set in the UI (issue #522): what the decider used before, and what it uses from now on.
   'usage.limits_changed': strict({ from: usageLimits, to: usageLimits }),
   // Priority lanes (issue #535): the lanes high-priority jobs get first changed, chosen by reliability, by an admin,

@@ -21,7 +21,7 @@ const ALL: Record<EventType, true> = {
   'source.stalled': true, 'connected_account.expired': true, 'ui_session.ended': true,
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
   'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true,
-  'job.assessed': true, 'failure.grouped': true, 'failure.resolved': true, 'handoff.opened': true, 'handoff.closed': true,
+  'job.assessed': true, 'failure.grouped': true, 'failure.resolved': true, 'failure.released': true, 'handoff.opened': true, 'handoff.closed': true,
   'usage.limits_changed': true, 'priority_lanes.changed': true, 'priority_lanes.settings_changed': true,
   'proposal.asked': true, 'proposal.submitted': true, 'proposal.escalated': true, 'proposal.escalated_to_human': true, 'proposal.reviewed': true,
   'proposal.revision_requested': true, 'proposal.accepted': true, 'proposal.rejected': true, 'proposal.cancelled': true,

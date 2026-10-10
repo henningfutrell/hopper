@@ -27,7 +27,7 @@ export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceSt
   return {
     statuses: () => [...fixed().map((s) => ({ ...s })), ...running.statuses()],
     onStatus: (listener) => running.onStatus(listener),
-    rerun: (jobId, by, brief) => running.rerun(jobId, by, brief),
+    rerun: (jobId, by, brief, acting) => running.rerun(jobId, by, brief, acting),
     continueJob: (jobId, brief, handoffId) => running.continueJob(jobId, brief, handoffId),
     intakeAction: (source, action) => running.intakeAction(source, action),
   };
