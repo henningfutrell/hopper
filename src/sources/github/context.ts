@@ -6,6 +6,7 @@
 // reach the job (issue #387; the app bot's never). The job never writes to its issue, and its prompt says nothing about
 // commenting: silence about issues is the instruction.
 
+import { isArtifactDeliverable } from './completion.ts';
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
@@ -61,6 +62,14 @@ export function doneLine(n: number, yoloMode: boolean): string {
     : `${done}. Do not merge it: a person reviews and merges it`;
 }
 
+/**
+ * What done means for an issue whose deliverable is an artifact (issue #673): the artifact, linked to the issue, and its
+ * link on the issue — `share ID --owner` posts it. No pull request; one still counts (completion.ts).
+ */
+export function artifactDoneLine(): string {
+  return 'done: this issue\'s deliverable is an artifact, not a code change. Make it, put it with sh "$HOPPER_ARTIFACT" put FILE (load the artifacts skill for the help), then run sh "$HOPPER_ARTIFACT" share ID --owner: that posts its link on this issue. The job is done when an artifact it put is linked to this issue and a comment on the issue names it. No pull request is needed; when the issue also needs a code change, open one as for any issue';
+}
+
 /** What a comment line reads of a comment. */
 type CommentText = Pick<GitHubComment, 'author' | 'body' | 'createdAt'>;
 
@@ -96,7 +105,7 @@ export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean)
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
-    doneLine(issue.number, yoloMode),
+    isArtifactDeliverable(issue) ? artifactDoneLine() : doneLine(issue.number, yoloMode),
   ].join('\n');
 }
 

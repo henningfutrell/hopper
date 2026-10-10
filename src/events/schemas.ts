@@ -13,7 +13,7 @@ import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobSta
 const strict = z.strictObject;
 const artifactSettings = z.strictObject({
   maxBytes: z.number().int().min(1), userBytes: z.number().int().min(1), retentionDays: z.number().int().min(1),
-  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1),
+  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1), linkBase: z.string().optional(), // linkBase: issue #673, absent before it
 });
 const decisionPoint = z.enum(DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
@@ -357,6 +357,7 @@ export const EVENT_SCHEMAS = {
   'artifact.removed': strict({ artifact: z.string(), reason: z.enum(['removed', 'retention']), by: z.string().optional() }),
   'artifact.settings_changed': strict({ from: artifactSettings, to: artifactSettings, by: z.string() }),
   ...ITEM_EVENT_SCHEMAS,
+  'artifact.posted': strict({ artifact: z.string(), title: z.string(), by: z.string(), comment: z.string().optional(), error: z.string().optional(), issue: z.literal(false).optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

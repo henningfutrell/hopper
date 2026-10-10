@@ -23,8 +23,11 @@ export interface PutRequest { name: string; title?: string; type?: string; conte
 export type PutDone = Artifact & { warning?: string };
 /** A new share: with a user of the hopper, or a public link for `hours`. */
 export type ShareRequest = { user: { id: string; name: string } } | { link: true; hours?: number };
-/** A public link's token is said once, when it is made: only its hash is kept. */
-export interface ShareMade { share: ArtifactShare; token?: string }
+/**
+ * A share made: a public link's token is said once, when it is made, and only its hash is kept. `owner`: the share was
+ * with the artifact's owner, who sees it already — nothing is made (issue #673).
+ */
+export type ShareMade = { share: ArtifactShare; token?: string } | { owner: true };
 
 export interface UserArtifacts {
   put(job: Job, r: PutRequest): PutDone | Refusal;
@@ -33,12 +36,16 @@ export interface UserArtifacts {
   list(o?: { jobId?: string; limit?: number }): Artifact[];
   share(id: string, r: ShareRequest, by: string): ShareMade | Refusal;
   revoke(id: string, shareId: string, by: string): ArtifactShare | Refusal;
+  /** Its link was posted for its owner on the job's issue (`comment`), or could not be (`error`) (issue #673). */
+  posted(id: string, by: string, r: { comment: string } | { error: string } | { noIssue: true }): void;
   remove(id: string, by: string): Artifact | Refusal;
   /** The share a public link's token names, live or not; undefined: none. */
   shareOfToken(token: string): ArtifactShare | undefined;
   settings(): ArtifactSettings;
   setSettings(s: ArtifactSettings, by: string): ArtifactSettings;
   usedBytes(): number;
+  /** The key this user's content URLs are signed under (issue #673): it outlives a restart when the vault can keep it. */
+  contentKey(): Buffer;
   /** Removes each artifact older than the retention; the ids removed. */
   sweep(): string[];
   start(): void;
@@ -49,7 +56,10 @@ const hashToken = (token: string): string => createHash('sha256').update(token).
 const MB = 1024 * 1024;
 const inWords = (bytes: number): string => (bytes >= MB ? `${Math.round((bytes / MB) * 10) / 10} MB` : `${bytes} bytes`);
 
-export function createUserArtifacts(o: { userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; newId?: () => string; sweepMs?: number }): UserArtifacts {
+export function createUserArtifacts(o: {
+  userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; newId?: () => string; sweepMs?: number;
+  contentKey: () => Buffer;
+}): UserArtifacts {
   const repo = o.store.artifacts;
   const newId = o.newId ?? (() => randomUUID());
   const now = () => o.clock.now().toISOString();
@@ -106,7 +116,8 @@ export function createUserArtifacts(o: { userId: string; store: UserStore; clock
       const s = repo.settings();
       const at = now();
       if ('user' in r) {
-        if (r.user.id === o.userId) return { no: 'the artifact is yours already: share it with another user', status: 400 };
+        // The owner sees it already (issue #673): a share with them changes nothing, and succeeds.
+        if (r.user.id === o.userId) return { owner: true };
         const already = repo.shares(id, at).find((x) => x.kind === 'user' && x.userId === r.user.id);
         if (already) return { share: already };
         const share: ArtifactShare = { id: newId(), artifactId: id, kind: 'user', userId: r.user.id, userName: r.user.name, createdAt: at, createdBy: by };
@@ -140,6 +151,14 @@ export function createUserArtifacts(o: { userId: string; store: UserStore; clock
       });
       return { ...share, revokedAt: at, revokedBy: by };
     },
+    posted(id, by, r) {
+      const art = repo.get(id);
+      if (!art) return;
+      o.store.events.append({
+        type: 'artifact.posted', jobId: art.jobId,
+        data: { artifact: id, title: art.title, by, ...('comment' in r ? { comment: r.comment } : 'error' in r ? { error: r.error } : { issue: false }) },
+      });
+    },
     remove(id, by) {
       const art = repo.get(id);
       if (!art) return missing(id);
@@ -161,6 +180,7 @@ export function createUserArtifacts(o: { userId: string; store: UserStore; clock
       return s;
     },
     usedBytes: () => repo.usedBytes(),
+    contentKey: () => o.contentKey(),
     sweep() {
       const before = new Date(o.clock.now().getTime() - repo.settings().retentionDays * 86_400_000).toISOString();
       const gone: string[] = [];

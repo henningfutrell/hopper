@@ -14,7 +14,7 @@ import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/typ
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState } from './completion.ts';
+import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
@@ -61,6 +61,8 @@ export interface GitHubSourceOptions {
   intake?: IntakeContext;
   /** Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never. */
   yoloMode?: (repo: string) => boolean;
+  /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
+  jobArtifacts?: JobArtifacts;
 }
 
 /** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
@@ -308,7 +310,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return writeResolution({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, job, resolution);
     },
     notComplete(job) {
-      return notComplete(api, job);
+      return notComplete(api, job, o.jobArtifacts);
     },
     partlyDone(job) {
       return partlyDone(api, job);

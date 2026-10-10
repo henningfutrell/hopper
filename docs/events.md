@@ -2995,7 +2995,7 @@ Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, wi
 
 ## `artifact.settings_changed`
 
-Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.
+Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, whether public links work and for how long, and the link base (issue #673).
 
 | field | type | required |
 |---|---|---|
@@ -3019,9 +3019,32 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
     "retentionDays": 30,
     "publicLinks": false,
     "linkHours": 24,
-    "linkHoursMax": 168
+    "linkHoursMax": 168,
+    "linkBase": "http://192.0.2.10:4790"
   },
   "by": "github:octocat"
+}
+```
+
+## `artifact.posted`
+
+Version 1 (`docs/schemas/artifact.posted.v1.json`). A job shared an artifact with its owner, who sees it already (issue #673): its link was posted on the job's issue as the job's comment (`comment`, its URL), or could not be (`error`), or the job has no issue (`issue: false`). Also on the job's stream.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `title` | string | yes |
+| `by` | string | yes |
+| `comment` | string | no |
+| `error` | string | no |
+| `issue` | boolean | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "title": "Queue wait by hour",
+  "by": "job 6f1c2a9e",
+  "comment": "https://github.com/octo-org/hello/issues/7#issuecomment-1"
 }
 ```
 
