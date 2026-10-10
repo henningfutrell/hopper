@@ -58,6 +58,7 @@ function fakeDaemon(d: { questions: unknown[]; proposals: unknown[]; jobs: unkno
     '/api/proposals': { items: d.proposals, settings: { reviewers: [], signOff: 'owner', levelRevisions: 1, levels: [] }, type: TYPE },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
     '/api/accounts': { accounts: [] },
+    '/api/tldr': { enabled: true },
   };
   return vi.fn(async (input: string) => {
     const [path] = String(input).split('?') as [string];
@@ -149,5 +150,57 @@ describe('a proposal card renders its parts as Markdown', () => {
     await boot('#proposals', { proposals: [proposal('j1', { tldr: 'Fix it.' })], jobs: [job('j1', { proposalId: 'p-j1' })] });
     const card = document.querySelector('[data-item="p-j1"]')!;
     expect([...card.querySelectorAll('strong')].map((s) => s.textContent)).toContain('One');
+  });
+});
+
+// The TL;DR (issue #569): one or two plain sentences a cheap model wrote, on top of a long card; the agent's Markdown
+// sits behind Show all. It is plain text: HTML in it shows as text.
+const TLDR = { text: 'Pick a branch: <b>dev</b> or main.', of: 'h', model: 'claude-haiku', at: T0 };
+
+describe('a long card leads with its TL;DR', () => {
+  it('a question: the TL;DR as plain text, the whole question behind Show all', async () => {
+    await boot('#questions', { questions: [{ ...question, tldr: TLDR }], jobs: [job('j1', { questionId: 'q1' })] });
+    const text = document.querySelector('[data-slot="question-text"]')!;
+    const tldr = text.querySelector('[data-slot="tldr"]')!;
+    expect(tldr.textContent).toContain('Pick a branch: <b>dev</b> or main.');
+    expect(tldr.querySelector('b')).toBeNull();
+    expect(text.textContent).not.toContain('Which branch do I rebase the fix onto?');
+
+    await click(fold(text)!);
+    expect(text.querySelector('[data-slot="tldr"]')).not.toBeNull();
+    expect(text.textContent).toContain('Which branch do I rebase the fix onto?');
+    expect(text.querySelectorAll('ol > li')).toHaveLength(2);
+  });
+
+  it('a short question shows whole, with no TL;DR', async () => {
+    await boot('#questions', { questions: [{ ...question, text: 'Rebase onto **dev**?', tldr: TLDR }], jobs: [job('j1', { questionId: 'q1' })] });
+    const text = document.querySelector('[data-slot="question-text"]')!;
+    expect(text.querySelector('[data-slot="tldr"]')).toBeNull();
+    expect(text.querySelector('strong')!.textContent).toBe('dev');
+  });
+
+  it('a proposal: the TL;DR, and every part behind Show all', async () => {
+    const p = { ...proposal('j1', { goal: 'Fix the **release** script.', approach: LONG_APPROACH, risks: 'None.' }), tldr: TLDR };
+    await boot('#proposals', { proposals: [p], jobs: [job('j1', { proposalId: 'p-j1' })] });
+    const card = document.querySelector('[data-item="p-j1"]')!;
+    expect(card.querySelector('[data-slot="tldr"]')!.textContent).toContain('Pick a branch');
+    expect(card.querySelector('[data-section="goal"]')).toBeNull();
+
+    await click(fold(card)!);
+    expect(card.querySelector('[data-section="goal"] strong')!.textContent).toBe('release');
+    expect(card.querySelectorAll('[data-section="approach"] li')).toHaveLength(10);
+  });
+});
+
+describe('the TL;DR setting', () => {
+  it('Settings → TL;DR shows it on, and turning it off posts the change', async () => {
+    await boot('#settings/tldr', {});
+    const view = document.querySelector('[data-slot="tldr-settings"]')!;
+    const toggle = view.querySelector('[role="switch"]') as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await click(toggle);
+    const posted = (fetch as unknown as { mock: { calls: [string, RequestInit?][] } }).mock.calls.filter(([u]) => String(u) === '/ui/api/tldr');
+    expect(posted).toHaveLength(1);
+    expect(JSON.parse(String(posted[0]![1]!.body))).toEqual({ enabled: false });
   });
 });
