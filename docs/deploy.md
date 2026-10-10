@@ -93,7 +93,12 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   inside the container and nothing leans on a `~/.ssh` (issue #293). *A sandbox box* starts a
   locked-down container on the compose network `hopper_default`, which reaches the hopper as
   `http://hopper:<port>` — the compose file's `HOPPER_LAN_NAMES` and `HOPPER_LAN_PEERS` defaults let it
-  through. Attaching over ssh (`you@host.containers.internal`, Docker `you@host.docker.internal`) stays
+  through. The box keeps no copy of the join code (issue #606): its entrypoint moves `HOPPER_JOIN` into a
+  file only the box's user can read and starts itself again without the variable; the client reads that
+  file once and removes it, joined or not. So the box's processes, herdr and the jobs do not get the code,
+  and a restart dials in with the box's link, not the spent code. The container's own config still holds the
+  line it was created with: `podman inspect` shows it, and a `podman exec` into the box gets it. The code in
+  it is spent. Attaching over ssh (`you@host.containers.internal`, Docker `you@host.docker.internal`) stays
   for a computer that cannot run the client. A reverse proxy in front of a public hopper must pass the
   dial-in's HTTP upgrade (`Upgrade: hopper-client/1`) to `/client/connect`.
 - **Sign-ins.** GitHub: sign in with GitHub in the UI (or Sources → Connect GitHub); the hopper keeps

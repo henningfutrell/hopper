@@ -4,13 +4,14 @@
 // Process settings from its environment:
 //   HOPPER_CLIENT_DIR      its client dir: its link key and its link (default ~/.config/hopper-client)
 //   HOPPER_CLIENT_SESSION  the herdr session the hopper's jobs run in (default hopper-client; never `default`)
-//   HOPPER_JOIN            a join line: a machine that has not joined yet joins with it first (a sandbox box)
+//   HOPPER_JOIN_FILE       a file holding a join line (a sandbox box, issue #606): a machine that has not joined yet
+//                          joins with it first. Read and removed at start, joined or not, so nothing keeps the code
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
 // herdr and claude (a usage read, issue #366; a level's run, issue #482) are the ones on its PATH: the client is one long-lived process,
 // never a fresh login shell per call.
 // The client's install dir is this file's directory: the hopper loads its release there (release.ts,
 // issue #70), and the client exits 75 so whatever runs it (the unit, a box's entrypoint) starts the new files.
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +43,25 @@ export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herd
   };
 }
 
+/**
+ * The join line a box was started with (issue #606): read from HOPPER_JOIN_FILE, the file removed and the
+ * variable taken out of `env`, before anything starts — no process the client starts, and no later restart,
+ * finds the code. The line comes through a file because a process's own environment stays readable in
+ * /proc/<pid>/environ after it unsets a variable.
+ */
+export function takeJoinLine(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const file = env.HOPPER_JOIN_FILE;
+  delete env.HOPPER_JOIN_FILE;
+  if (!file) return undefined;
+  let line: string;
+  try { line = readFileSync(file, 'utf8').trim(); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw e;
+  }
+  rmSync(file, { force: true });
+  return line || undefined;
+}
+
 const say = (line: string): void => { process.stdout.write(`${line}\n`); };
 
 async function run(argv: string[]): Promise<void> {
@@ -54,8 +74,9 @@ async function run(argv: string[]): Promise<void> {
     return;
   }
   if (argv.length) throw new Error(`unknown command ${argv[0]}: main.ts join <hopper URL>#<join code> [name], or no command to serve`);
-  if (!hasLink(dir) && process.env.HOPPER_JOIN) {
-    const link = await joinHopper({ line: process.env.HOPPER_JOIN, name, dir });
+  const line = takeJoinLine();
+  if (!hasLink(dir) && line) {
+    const link = await joinHopper({ line, name, dir });
     say(`hopper-client: joined ${link.url} as ${link.machine}`);
   }
   const client = startLinkedClient({
