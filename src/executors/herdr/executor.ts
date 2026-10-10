@@ -171,9 +171,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   async function watch(ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, turn: TurnAnchor, notes: Notes = { count: 0, startedAt: clock.now().getTime() }, login = s.login): Promise<ExecutionOutcome | Interrupt> {
     const result = await watchTurn({
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
-      paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
+      paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend, markersAfter: turn.markersAfter,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
-      onQuestion: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
+      onQuestion: (seq, lapsesAt, waitLines) => ctx.saveState({ ...s, turn: waitLines === undefined ? turn : { ...turn, markersAfter: waitLines }, parkedSeq: seq, lapsesAt }),
       onOutput: (at) => outputAt.set(ctx.job.id, at),
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
     });

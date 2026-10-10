@@ -72,12 +72,14 @@ export function createQueries(c: EngineContext): Queries {
       const waitingAnswer = first(all.filter((j) => j.status === 'waiting_answer').reverse());
       const operatorLed = first(all.filter((j) => j.status === 'operator_led').reverse());
       const parked = first(all.filter((j) => j.status === 'parked').reverse());
+      // On their own wait (issue #483): the longest waiting first, after high-priority ones.
+      const waitingOn = first(all.filter((j) => j.status === 'waiting_on').reverse());
       const end = (j: Job) => j.finishedAt ?? j.updatedAt;
       const since = new Date(c.clock.now().getTime() - ENDED_WINDOW_MS).toISOString();
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, parked, locked: lockedOf(all), ended, gate: gateOf(c), presort, highPriority };
+      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all), ended, gate: gateOf(c), presort, highPriority };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
@@ -106,7 +108,7 @@ export function createQueries(c: EngineContext): Queries {
     },
     jobsOnMachine(machineId) {
       const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
-      const waitingPanes = c.store.jobs.list({ status: ['waiting_answer'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
+      const waitingPanes = c.store.jobs.list({ status: ['waiting_answer', 'waiting_on'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
       return [...new Set([...onLanes, ...waitingPanes])];
     },
   };

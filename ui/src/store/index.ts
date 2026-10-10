@@ -110,7 +110,7 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
 const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort' | 'highPriority'> => ({
-  jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.running, ...q.ended].map((j) => [j.id, j])),
+  jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
   locked: q.locked,
   gate: q.gate,

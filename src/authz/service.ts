@@ -18,8 +18,8 @@ import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, type
 import { approvalTuples, artifactObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, userObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
-/** A job is live while it is claimed, running or waiting on an answer: parked, operator-led, ended or not yet started, it gets nothing. */
-export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer'];
+/** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
+export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer', 'waiting_on'];
 /** How often everything is pushed again: drift in OpenFGA is put back, and an OpenFGA come back is found. */
 export const ACCESS_SYNC_MS = 30_000;
 /** How often who is live is compared with what OpenFGA was given: a job started or ended, a box joined or left (issue #581). */

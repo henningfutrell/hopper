@@ -1,10 +1,10 @@
 // The UI session's actions on one job: cancel, approve, operator-led, reject, run again, park and re-queue
-// (issue #501), dismiss, mark cleaned up. Least role: operator.
+// (issue #501), end its own wait (issue #483), dismiss, mark cleaned up. Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { rejectBody, requeueBody } from './job-bodies.ts';
+import { endWaitBody, rejectBody, requeueBody } from './job-bodies.ts';
 
 const idParams = z.object({ id: z.string() });
 const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
@@ -24,6 +24,10 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   });
   app.post('/ui/api/jobs/:id/park', o.operator, async (req) => o.tenant(req).engine.park(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
+  app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {
+    const { note } = parseWith(endWaitBody, req.body ?? {});
+    return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);
+  });
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', o.operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
 }

@@ -21,7 +21,7 @@ import type { Tenants } from './tenants.ts';
 
 const PING_MS = 15_000;
 const REPLAY_PAGE = 500;
-const AT_WORK = ['running', 'waiting_answer'];
+const AT_WORK = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
 
 const seq = z.coerce.number().int().min(0);

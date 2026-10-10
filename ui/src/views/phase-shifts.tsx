@@ -32,7 +32,7 @@ const MODE: Record<ShiftMode, { label: string; help: (noun: string) => string }>
 /** What each kind is called on its fork's line. */
 const FORK_NAME: Record<ReviewKind, string> = { research: 'Research', proposal: 'Proposal' };
 const ITEM_STATUS: Record<string, string> = { open: 'in review', revising: 'being revised', accepted: 'accepted', rejected: 'rejected', cancelled: 'cancelled' };
-const JOB_STATUS: Record<string, string> = { waiting_answer: 'waiting on a question', queued: 'queued', running: 'running', held: 'held', parked: 'parked' };
+const JOB_STATUS: Record<string, string> = { waiting_answer: 'waiting on a question', queued: 'queued', running: 'running', held: 'held', parked: 'parked', waiting_on: 'on its own wait' };
 /** Where a fork is looked at: its item's review, or, before it wrote one, its job in the queue. */
 const forkLink = (kind: ReviewKind, itemId: string | undefined): string => (itemId ? `#${REVIEW_UI[kind].section}` : '#queue');
 

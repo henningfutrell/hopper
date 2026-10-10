@@ -108,6 +108,11 @@ export interface TurnAnchor {
    * dialog as its question. `text` is sent once the dialog is answered.
    */
   unsent?: true;
+  /**
+   * Markers in the turn's first that many lines are left out (issue #483): the job's own wait, already taken. Claude
+   * went on from it by itself, in the same turn.
+   */
+  markersAfter?: number;
 }
 
 export interface StartDeps {

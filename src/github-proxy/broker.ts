@@ -14,7 +14,7 @@ import { checkRequest, filedNote, proxyRequest, type ProxyRequest } from './poli
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
-const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
+const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** One user's side: their jobs, the check of a token against their link key, and their event log. */
 export interface ProxyUser {

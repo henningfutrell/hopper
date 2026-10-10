@@ -11,7 +11,7 @@ import type { LaneSpan, QuestionWait, SpanOutcome } from '@/model/history';
 import { TimeAxis } from './axis';
 
 export const OUTCOME_TONE: Record<SpanOutcome, Tone> = {
-  running: 'busy', 'operator-led': 'operator', finished: 'ok', failed: 'bad', cancelled: 'muted', requeued: 'warn', question: 'question', parked: 'muted',
+  running: 'busy', 'operator-led': 'operator', finished: 'ok', failed: 'bad', cancelled: 'muted', requeued: 'warn', question: 'question', parked: 'muted', waiting: 'muted',
 };
 /** The legend swatch of a question wait: the strip's hatching. */
 export const WAIT_SWATCH = `repeating-linear-gradient(135deg, ${COLOR.question} 0 2px, transparent 2px 4px)`;

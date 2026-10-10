@@ -65,7 +65,7 @@ Version 3 (`docs/schemas/job.prioritized.v3.json`). The router's advice arrived 
 | field | type | required |
 |---|---|---|
 | `advice` | object | yes |
-| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `operator_led` \| `parked` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
+| `statusAtAdvice` | `queued` \| `held` \| `claimed` \| `running` \| `waiting_answer` \| `operator_led` \| `parked` \| `waiting_on` \| `finished` \| `failed` \| `cancelled` \| `rejected` | yes |
 
 ```json
 {
@@ -894,6 +894,38 @@ Version 1 (`docs/schemas/job.continued.v1.json`). A failed job goes on in its ow
 ```json
 {
   "handoffId": "h1"
+}
+```
+
+## `job.waiting`
+
+Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`).
+
+| field | type | required |
+|---|---|---|
+| `for` | string | yes |
+| `until` | string | no |
+
+```json
+{
+  "for": "write access to the repository",
+  "until": "a background poll of the push"
+}
+```
+
+## `job.wait_ended`
+
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, if any.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `note` | string | no |
+
+```json
+{
+  "by": "person",
+  "note": "Write access is granted."
 }
 ```
 

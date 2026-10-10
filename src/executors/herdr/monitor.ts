@@ -68,14 +68,19 @@ export interface TurnWatch {
   anchor: string;
   /** state_change_seq read just before the send. */
   seqAtSend: number;
+  /** Markers in the turn's first that many lines are a wait already taken (issue #483): left out. */
+  markersAfter?: number;
   /** Claude was at a dialog when we sent (a stale `blocked` must not count). */
   blockedAtSend: boolean;
   timeoutMs: number;
   expectedMs: number;
   /** When the job's turn began, for `timeoutMs` and progress: a nudge goes on the same turn. Default now. */
   startedAt?: number;
-  /** Called with state_change_seq when the turn stops on a question, before the outcome returns; with when its dialog lapses, if it does. */
-  onQuestion?: (seq: number, lapsesAt?: string) => void;
+  /**
+   * Called with state_change_seq when the turn stops on a question, before the outcome returns; with when its dialog lapses, if it does;
+   * with the turn's output lines when it stops on the job's own wait (issue #483).
+   */
+  onQuestion?: (seq: number, lapsesAt?: string, waitLines?: number) => void;
   /** The login the job waits on (issue #476), with `untilWorking`: Claude going on completes it. */
   login?: LoginWait;
   /** Called with the time the turn's output changed, each time it does (issue #630): a timed-out job's liveness. */
@@ -139,7 +144,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         await herdr.sendText(w.paneId, CTRL_END);
         recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       }
-      const turn = readTurn(recent, w.anchor);
+      const turn = readTurn(recent, w.anchor, w.markersAfter);
       const output = `${turn.outputLines}\n${turn.lastLine}`;
       if (turn.lastLine && output !== lastOutput) { lastOutput = output; w.onOutput?.(now); }
       if (turn.lastLine && turn.lastLine !== lastLine) {
@@ -181,6 +186,10 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'proposal' || turn.lastMarker === 'research') {
         // A proposal or a research report (issues #537, #543) waits like a question: the job resumes in this pane with the decision.
         return asked({ kind: 'report', review: turn.lastMarker, report: { text: hideCodes(turn.assistantText, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent) } });
+      } else if (turn.lastMarker === 'wait' && turn.wait) {
+        // The job's own wait (issue #483): no question, no nudge. It goes on by itself, or a person ends the wait.
+        w.onQuestion?.(agent.stateChangeSeq, undefined, turn.outputLines);
+        return { kind: 'wait', wait: { for: hideCodes(turn.wait.for, recent), ...(turn.wait.until ? { until: hideCodes(turn.wait.until, recent) } : {}) } };
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {

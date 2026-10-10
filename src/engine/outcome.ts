@@ -1,16 +1,17 @@
 // Recording an executor's outcome: one transaction that ends the job (finished / failed /
-// cancelled) or pauses it on a question, a proposal or a research report (waiting_answer), and frees its lane either way.
+// cancelled), pauses it on a question, a proposal or a research report (waiting_answer), or on its own wait (waiting_on,
+// issue #483), and frees its lane either way.
 // design.md "Questions" lifecycle and "Question budget (B6)".
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import { suggestionIn } from '../domain/phase.ts';
-import type { Job, JobLiveness, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
+import type { Job, JobLiveness, JobWait, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
-export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string };
+export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string } | { kind: 'wait' };
 
 const TERMINAL: Recorded = { kind: 'terminal' };
 
@@ -48,6 +49,20 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   return { kind: 'question', questionId: q.id };
 }
 
+/**
+ * The job's own wait (issue #483): `waiting_on` what it named, no question, its lane freed, its pane kept on its machine. It
+ * goes on when its agent goes on by itself (pane-answers.ts) or a person ends the wait (commands.ts `endWait`).
+ */
+function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: Omit<JobWait, 'since'>, at: string): Recorded {
+  const masked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}) };
+  c.store.jobs.update(job.id, {
+    status: 'waiting_on', wait: { ...masked, since: at }, laneId: undefined, pendingAnswer: undefined,
+    resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,
+  });
+  c.store.events.append({ type: 'job.waiting', jobId: job.id, laneId, data: masked });
+  return { kind: 'wait' };
+}
+
 /** Frees a lane whose job no longer runs on it: a draining one closes, any other goes idle. */
 export function releaseLane(c: EngineContext, lane: Lane | undefined, at: string): void {
   if (!lane) return;
@@ -82,6 +97,8 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
     } else if (outcome.kind === 'report') {
       const r = recordReport(c, job, lane, laneId, machine, outcome.review, outcome.report, at);
       recorded = { kind: 'report', review: r.kind, itemId: r.itemId };
+    } else if (outcome.kind === 'wait') {
+      recorded = wait(c, job, lane, laneId, outcome.wait, at);
     } else {
       recorded = ask(c, job, lane, laneId, machine, outcome.question, at);
     }

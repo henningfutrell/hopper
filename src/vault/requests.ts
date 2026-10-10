@@ -42,7 +42,7 @@ export interface CredentialRequests {
   list(): CredentialRequest[];
 }
 
-const AT_WORK = ['running', 'waiting_answer'];
+const AT_WORK = ['running', 'waiting_answer', 'waiting_on'];
 const oneLine = (s: string | undefined, max: number): string | undefined => {
   const t = s?.replace(/\s+/g, ' ').trim();
   return t ? t.slice(0, max) : undefined;

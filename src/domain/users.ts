@@ -36,7 +36,7 @@ export interface UserAdded {
 }
 
 /** The jobs the instance totals count: every one not ended. */
-export const IN_FLIGHT_STATUSES = ['queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'parked'] as const;
+export const IN_FLIGHT_STATUSES = ['queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'parked', 'waiting_on'] as const;
 
 /** How a job ends, as the instance totals count jobs ended in the last day. */
 export const ENDED_STATUSES = ['finished', 'failed', 'cancelled', 'rejected'] as const;

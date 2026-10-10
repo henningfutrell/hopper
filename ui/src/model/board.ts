@@ -5,12 +5,13 @@ import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
 import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
 
-/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Running, Ended). */
+/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
 export const GROUP = {
   queued: 'waiting', held: 'waiting',
   waiting_answer: 'waitingAnswer',
   operator_led: 'operatorLed',
   parked: 'parked',
+  waiting_on: 'waitingOn',
   claimed: 'running', running: 'running',
   finished: 'ended', failed: 'ended', cancelled: 'ended', rejected: 'ended',
 } as const satisfies Record<JobStatus, string>;
@@ -23,7 +24,7 @@ const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
 export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
-  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], parked: [], running: [], ended: [] };
+  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], parked: [], waitingOn: [], running: [], ended: [] };
   for (const j of jobs) board[GROUP[j.status]].push(j);
   const place = new Map(waitingOrder.map((id, i) => [id, i]));
   const at = (j: Job) => place.get(j.id) ?? Infinity;
@@ -32,6 +33,7 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   board.waitingAnswer.sort(oldest);
   board.operatorLed.sort(oldest);
   board.parked.sort(oldest);
+  board.waitingOn.sort(oldest);
   board.running.sort(oldest);
   board.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
   return board;
@@ -150,6 +152,8 @@ export interface Kpis {
   held: number;
   waitingAnswer: number;
   parked: number;
+  /** On their own wait (issue #483). */
+  waitingOn: number;
   finished: number;
   failed: number;
   cancelled: number;
@@ -167,6 +171,7 @@ export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
     held: board.waiting.filter((j) => j.status === 'held').length,
     waitingAnswer: board.waitingAnswer.length,
     parked: board.parked.length,
+    waitingOn: board.waitingOn.length,
     finished: ended('finished'),
     failed: ended('failed'),
     cancelled: ended('cancelled'),

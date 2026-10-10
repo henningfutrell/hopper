@@ -6,6 +6,8 @@ export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer mu
 export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() });
 /** Re-queue's confirmation (issue #530): `freshSession` true agrees that a parked job with no agent session starts a fresh one. */
 export const requeueBody = z.object({ freshSession: z.boolean().optional() }).strict();
+/** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */
+export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
 /** Assign to me, or release a claim, on items a job source listed (issue #440). */
 export const intakeActionBody = z.object({
   kind: z.enum(['assign', 'release']),

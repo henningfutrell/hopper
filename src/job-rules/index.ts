@@ -53,6 +53,9 @@ export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth lo
 /** The protocol line on skills (issue #582; artifacts, issue #624): the catalog first, a skill loaded only when needed, a no taken as it is. */
 export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, a token for another service, and the like), or a place to show a person a file you made (a chart, an HTML page, a report: the artifacts skill), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
 
+/** The protocol line on a job's own wait (issue #483). */
+export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
   '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION',
@@ -65,6 +68,8 @@ export const PROTOCOL_LINES: readonly string[] = [
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
   'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
+  // A job's own wait (issue #483): blocked on a person or the outside world, it says so; never a question only to wait.
+  WAIT_LINE,
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];

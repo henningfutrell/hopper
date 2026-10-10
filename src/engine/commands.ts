@@ -8,6 +8,7 @@ import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
+import { recordEndWait } from './wait.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -39,6 +40,11 @@ export interface Commands {
    * A job with no agent session only with `freshSession` (issue #530): its claim starts a fresh one in its kept work tree.
    */
   requeue(id: string, o?: { freshSession?: boolean }): Job;
+  /**
+   * End a job's own wait (issue #483), a person's act: it is queued again, pinned to its machine, and told in its pane that what it
+   * waited for has happened, with `note`. Conflict unless it is `waiting_on`.
+   */
+  endWait(id: string, note?: string): Job;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
   /** Tests only: the fake usage source has no HTTP route. */
@@ -121,6 +127,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
       return next;
     },
+
+    endWait: (id, note) => store.tx(() => recordEndWait(c, id, note)),
 
     markCleanedUp: (id) => cleanups.markCleanedUp(id),
 

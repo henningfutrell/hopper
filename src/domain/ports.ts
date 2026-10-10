@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -97,7 +97,12 @@ export type ExecutionOutcome =
    * The job is paused on a document it wrote for a review section — a proposal, a research report (issues #537, #543)
    * — as on a question: its executor state must allow resume.
    */
-  | { kind: 'report'; review: ReviewKind; report: ExecutionReport };
+  | { kind: 'report'; review: ReviewKind; report: ExecutionReport }
+  /**
+   * The job waits on something it named (issue #483): no question. Its executor state must let `answeredInPane` see it go
+   * on by itself, and `resume` tell it that a person ended the wait.
+   */
+  | { kind: 'wait'; wait: Omit<JobWait, 'since'> };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
