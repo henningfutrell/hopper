@@ -2,9 +2,9 @@
 // views (issue #675) —, and what other users shared with them. The list, newest first, each with its title and summary;
 // the one the hash names (#artifacts/<id>, an artifact's stable URL, which follows its latest revision; #artifacts/<id>/<n>
 // pins revision n) opens beside it with its preview, its job and issue, its revisions, and — for its owner — its shares:
-// with another user of the hopper, or a public link that expires. A public link is shown once, when it is made. HTML
-// opens only in a sandbox.
-import { Copy, Download, ExternalLink, FolderOpen, Link2, Trash2, UserPlus, X } from 'lucide-react';
+// with another user of the hopper, or a public link that expires, and a merge of another of their artifacts into it
+// (issue #687). A public link is shown once, when it is made. HTML opens only in a sandbox.
+import { Copy, Download, ExternalLink, FolderOpen, Link2, Merge, Trash2, UserPlus, X } from 'lucide-react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { useSection } from '@/app/nav';
@@ -16,7 +16,7 @@ import { Input } from '@/components/ui/input';
 import { useNow } from '@/hooks/use-now';
 import { bytesInWords, findArtifact, liveShare, revisionHash, revisionOfHash, shareInWords } from '@/model/artifacts';
 import type { ArtifactView } from '@/model/wire';
-import { refreshArtifacts, removeArtifact, revokeShare, shareLink, shareWithUser, useArtifacts } from '@/store/artifacts';
+import { mergeArtifacts, refreshArtifacts, removeArtifact, revokeShare, shareLink, shareWithUser, useArtifacts } from '@/store/artifacts';
 import { cn } from '@/lib/utils';
 import { Revisions, useRevisions } from './artifact-revisions';
 
@@ -81,7 +81,33 @@ function Shares({ a }: { a: ArtifactView }) {
   );
 }
 
-function Detail({ a }: { a: ArtifactView }) {
+/** Issue #687: another of the owner's artifacts merged into this one — its revisions added, oldest first; then it goes. */
+function MergeInto({ a, mine }: { a: ArtifactView; mine: ArtifactView[] }) {
+  const others = mine.filter((x) => x.id !== a.id);
+  const [from, setFrom] = useState('');
+  if (others.length === 0) return null;
+  const merge = () => {
+    const src = others.find((x) => x.id === from);
+    if (!src || !window.confirm(`Merge ${src.title} into ${a.title}? Its ${src.revision} revision${src.revision > 1 ? 's' : ''} are added here, oldest first, and it is removed.`)) return;
+    void mergeArtifacts(a.id, [src.id]).then((r) => { if (r) setFrom(''); });
+  };
+  return (
+    <div data-slot="artifact-merge" className="space-y-2 text-sm">
+      <h3 className="text-xs font-medium text-muted-foreground">Merge into this</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={from} onChange={(e) => setFrom(e.target.value)} aria-label="The artifact to merge into this one"
+          className="h-8 min-w-0 max-w-full flex-1 rounded-md border bg-background px-2 text-xs">
+          <option value="">Choose an artifact…</option>
+          {others.map((x) => <option key={x.id} value={x.id}>{x.title} · revision {x.revision}</option>)}
+        </select>
+        <Button size="sm" variant="outline" disabled={!from} onClick={merge}><Merge />Merge</Button>
+      </div>
+      <p className="text-xs text-muted-foreground">Its revisions become revisions of this artifact, and the newest is the latest. Then it is removed.</p>
+    </div>
+  );
+}
+
+function Detail({ a, mine }: { a: ArtifactView; mine: ArtifactView[] }) {
   const remove = () => { if (window.confirm(`Remove ${a.title}? Every revision goes, and its shares stop working.`)) void removeArtifact(a.id).then(() => { location.hash = '#artifacts'; }); };
   const [revs, reload] = useRevisions(a);
   const pinned = usePinnedRevision();
@@ -118,6 +144,7 @@ function Detail({ a }: { a: ArtifactView }) {
           {!a.owner && <Button size="sm" variant="outline" onClick={remove}><Trash2 />Remove</Button>}
         </div>
         <Revisions a={a} revs={revs} open={old ? old.n : a.revision} reload={reload} />
+        {!a.owner && <MergeInto a={a} mine={mine} />}
         {!a.owner && <Shares a={a} />}
       </div>
     </Panel>
@@ -146,7 +173,7 @@ export function Artifacts() {
           </Panel>
         )}
       </div>
-      {open ? <Detail key={open.id} a={open} />
+      {open ? <Detail key={open.id} a={open} mine={view.artifacts} />
         : id ? <Panel title="Artifact"><Empty>No artifact {id} of yours or shared with you. It was removed, or its share was revoked.</Empty></Panel>
           : null}
     </div>

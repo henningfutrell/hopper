@@ -1,11 +1,12 @@
 // The UI session's actions on artifacts (issue #624, design.md "Artifacts"): share one of the user's artifacts with
 // another user or as a public link, revoke a share, remove an artifact, restore an older revision as the latest, pin a
-// revision so the retention sweep keeps it (operator; revisions: issue #675); Settings → Artifacts — the limits,
+// revision so the retention sweep keeps it (operator; revisions: issue #675), revise it with a file or another
+// artifact's latest content, merge artifacts into it (operator; issue #687); Settings → Artifacts — the limits,
 // the retention, and whether public links work (admin). Who acts is the session's sign-in.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isRefusal, LINK_PATH, type Refusal } from '../../artifacts/index.ts';
-import { ARTIFACT_LIMITS, type ArtifactSettings } from '../../domain/artifacts.ts';
+import { ARTIFACT_LIMITS, ARTIFACT_MAX_BYTES, type ArtifactSettings } from '../../domain/artifacts.ts';
 import type { ArtifactEdge } from '../artifacts.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
@@ -36,6 +37,20 @@ export const artifactSettingsBody = z.strictObject({
 const revisionParams = params.extend({ n: z.coerce.number().int().min(1) });
 export const artifactRestoreBody = z.strictObject({ revision: z.number().int().min(1) });
 export const artifactPinBody = z.strictObject({ pinned: z.boolean() });
+const artifactId = z.string().regex(/^[A-Za-z0-9-]{1,100}$/);
+const note = z.string().max(2000).optional();
+/** Issue #687: a file (its content in base64), or `from` another artifact of the user's: its latest content is copied. */
+export const artifactReviseBody = z.union([
+  z.strictObject({
+    file: z.strictObject({ name: z.string().trim().min(1).max(500), type: z.string().trim().min(1).max(100).optional(), content: z.base64() }),
+    note,
+  }),
+  z.strictObject({ from: artifactId, note }),
+]);
+/** Issue #687: the artifacts whose revisions are added to this one, in this order; each is removed after. */
+export const artifactMergeBody = z.strictObject({ from: z.array(artifactId).min(1).max(50) });
+/** A file's base64 is a third larger than the file: the most one artifact may hold, and room for the rest of the body. */
+const REVISE_BODY_LIMIT = Math.ceil(ARTIFACT_MAX_BYTES / 3) * 4 + 64 * 1024;
 
 const refused = (r: Refusal): never => { throw new HttpError(r.status, r.no); };
 
@@ -60,7 +75,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
   const viewOf = (req: FastifyRequest, t: TenantParts, id: string) => {
     const a = t.artifacts.get(id);
     if (!a) throw new HttpError(404, `no artifact ${id}`);
-    return o.edge.view(t, a, userIdOf(req)!, o.edge.baseOf(req));
+    return o.edge.view(t, a, userIdOf(req)!, o.edge.viewBase(req, t));
   };
 
   app.post('/ui/api/artifacts/settings', o.admin, async (req) => {
@@ -91,7 +106,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
     // With the owner (issue #673): they see it already; nothing is made.
     if ('owner' in made) return { artifact: viewOf(req, t, id), owner: true };
     // The link is said once, here: only its hash is kept.
-    return { artifact: viewOf(req, t, id), share: made.share, ...(made.token ? { link: `${o.edge.baseOf(req)}${LINK_PATH}/${made.token}` } : {}) };
+    return { artifact: viewOf(req, t, id), share: made.share, ...(made.token ? { link: `${o.edge.viewBase(req, t)}${LINK_PATH}/${made.token}` } : {}) };
   });
 
   app.post('/ui/api/artifacts/:id/shares/:share/revoke', o.operator, async (req) => {
@@ -112,6 +127,30 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
     const r = t.artifacts.restore(id, revision, who);
     if (isRefusal(r)) return refused(r);
     return { artifact: viewOf(req, t, id) };
+  });
+
+  // Issue #687: the owner's own revision — a file, or a copy of another artifact's latest content —, `revisedBy` them.
+  app.post('/ui/api/artifacts/:id/revisions', { ...o.operator, bodyLimit: REVISE_BODY_LIMIT }, async (req) => {
+    const who = by(req);
+    const t = o.tenant(req);
+    const { id } = parseWith(params, req.params);
+    const body = parseWith(artifactReviseBody, req.body);
+    const r = t.artifacts.revise(id, 'from' in body
+      ? { from: body.from, ...(body.note !== undefined ? { note: body.note } : {}) }
+      : { file: { name: body.file.name, content: Buffer.from(body.file.content, 'base64'), ...(body.file.type ? { type: body.file.type } : {}) }, ...(body.note !== undefined ? { note: body.note } : {}) }, who);
+    if (isRefusal(r)) return refused(r);
+    return { artifact: viewOf(req, t, id) };
+  });
+
+  // Issue #687: each source's revisions are added to this one, oldest first; the source goes once they are in.
+  app.post('/ui/api/artifacts/:id/merge', o.operator, async (req) => {
+    const who = by(req);
+    const t = o.tenant(req);
+    const { id } = parseWith(params, req.params);
+    const { from } = parseWith(artifactMergeBody, req.body);
+    const r = t.artifacts.merge(id, from, who);
+    if (isRefusal(r)) return refused(r);
+    return { artifact: viewOf(req, t, id), merged: r.merged };
   });
 
   app.post('/ui/api/artifacts/:id/revisions/:n/pin', o.operator, async (req) => {

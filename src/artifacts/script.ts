@@ -30,6 +30,9 @@ share previews. A put with no summary is kept, with a warning.
 
 Every change is a revision. Put a new file to an artifact (--to ID) to change it: the id and its links stay and show
 the latest revision; the older revisions stay readable, and a person can restore one. Say what changed with --note.
+Before you put, run \`list --all\`. If an artifact already shows this work, even one another job made, revise it with \`put FILE --to ID --note TEXT\`.
+A put without --to that has the file name, the title prefix or an issue reference of an artifact you have is kept,
+with a warning that names that artifact. Pass --new when it is new work.
 
 The page runs in a sandbox: its inline scripts run, but it can reach nothing (no fetch, no hopper session) and load
 nothing from outside. Put scripts, styles, images and fonts in the file. The hopper serves these libraries itself;
@@ -39,7 +42,7 @@ No other script loads, and no eval or new Function. For a phone: <meta name="vie
 and give each drawing a viewBox or a width of 100%. An HTML page with no <svg>, <canvas>, <img> or <script> shows
 nothing: it is kept, with a warning.
 
-  sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE]
+  sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--new]
                                                                 keep FILE as a new artifact; prints its id and URL
   sh "$HOPPER_ARTIFACT" put FILE --to ID [--note TEXT] [--title TEXT] [--summary TEXT]
                                                                 FILE is the next revision of artifact ID
@@ -95,14 +98,14 @@ Text artifacts are checked for GitHub tokens: one found is masked before the hop
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const ARTIFACT_SCRIPT = `#!/bin/sh
 # hopper-artifact — put files on the hopper for a person to see (issue #624). Written by the hopper at each job start.
-#   sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT]]
+#   sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT] | --new]
 #   sh "$HOPPER_ARTIFACT" list [--all] [--markdown] | get ID [--out FILE] | revisions ID | restore ID N
 #   sh "$HOPPER_ARTIFACT" share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID     [--json]
 # Load the artifacts skill for the full help: sh "$HOPPER_SKILL" artifacts
 # Exit 0: done; 1: a no, with why; 2: a bad call; 3: the hopper cannot be reached.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT]] | list [--all] [--markdown] | get ID [--out FILE] | revisions ID | restore ID N | share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT] | --new] | list [--all] [--markdown] | get ID [--out FILE] | revisions ID | restore ID N | share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; [ -z "$json" ] || printf 'accept: application/json\\n'; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
@@ -127,6 +130,7 @@ while [ $# -gt 0 ]; do
     --markdown) q="$q&markdown=1" ;;
     --public) q="$q&public=1" ;;
     --owner) q="$q&owner=1" ;;
+    --new) q="$q&new=1" ;;
     --title|--summary|--type|--to|--note|--user|--hours|--revoke|--out)
       [ $# -ge 2 ] || usage
       case $1 in --out) out=$2 ;; *) q="$q&\${1#--}=$(enc "$2")" ;; esac

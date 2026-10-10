@@ -9,8 +9,12 @@
       "type": "string",
       "enum": [
         "removed",
-        "retention"
+        "retention",
+        "merged"
       ]
+    },
+    "into": {
+      "type": "string"
     },
     "by": {
       "type": "string"

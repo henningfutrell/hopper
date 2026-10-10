@@ -3,16 +3,21 @@
 // owner shares it with another user or by an expiring public link, revokes a share, removes it; the retention sweep
 // removes what is older than the user keeps. An HTML artifact that shows nothing, or one with no summary, is kept with a
 // warning (issue #675). Every change is a revision (issue #675): a put to an artifact, or a restore of an old revision,
-// makes a new latest one and keeps the rest; the sweep removes older revisions past the retention unless pinned. Every
-// change is an event of the user's, in the same transaction; the HTTP edge puts the job's on its job stream. Never throws for a person's or a job's mistake: it answers a no with why.
+// makes a new latest one and keeps the rest; the sweep removes older revisions past the retention unless pinned. Its
+// owner revises it and merges artifacts into one (revise.ts); a put without `to` that looks like a revision of one of the
+// user's artifacts is kept, with a warning (issue #687). Every change is an event of the user's, in the same transaction;
+// the HTTP edge puts the job's on its job stream. Never throws for a person's or a job's mistake: it answers a no with why.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  ARTIFACT_NOTE_MAX, ARTIFACT_TITLE_MAX, artifactName, artifactSummary, artifactType, kindOf, NO_SUMMARY_WARNING, shareLive, TEXT_KINDS, visualWarning,
+  ARTIFACT_TITLE_MAX, artifactName, artifactSummary, artifactType, kindOf, lookAlike, lookAlikeWarning, NO_SUMMARY_WARNING, shareLive, visualWarning,
   type Artifact, type ArtifactRevision, type ArtifactSettings, type ArtifactShare,
 } from '../domain/artifacts.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
+import { artifactNote, createReviser, type MergeDone, type ReviseRequest } from './revise.ts';
+
+export type { MergeDone, ReviseRequest } from './revise.ts';
 
 /** How often the retention sweep runs. */
 export const ARTIFACT_SWEEP_MS = 60 * 60 * 1000;
@@ -22,15 +27,10 @@ export const isRefusal = (r: unknown): r is Refusal => typeof r === 'object' && 
 
 /**
  * A put: a new artifact, or, with `to`, a new revision of that one (issue #675). `summary`: one line that says what it
- * shows; `note`: what a revision changed.
+ * shows; `note`: what a revision changed. `separate`: a new artifact, whatever it looks like (`--new`, issue #687).
  */
-export interface PutRequest { name: string; title?: string; summary?: string; type?: string; to?: string; note?: string; content: Buffer }
+export interface PutRequest { name: string; title?: string; summary?: string; type?: string; to?: string; note?: string; separate?: boolean; content: Buffer }
 
-/** A revision's note as kept: one line, at most ARTIFACT_NOTE_MAX characters, secrets masked; undefined: none. */
-const artifactNote = (text: string | undefined): string | undefined => {
-  const line = maskGitHubTokens((text ?? '').replace(/\s+/g, ' ').trim()).slice(0, ARTIFACT_NOTE_MAX);
-  return line === '' ? undefined : line;
-};
 /** What a put keeps; `warning`: kept, but not what an artifact is for (issue #675). */
 export type PutDone = Artifact & { warning?: string };
 /** A new share: with a user of the hopper, or a public link for `hours`. */
@@ -51,6 +51,13 @@ export interface UserArtifacts {
   revisionContent(id: string, n: number): Buffer | undefined;
   /** Makes revision `n` the latest, as a new revision: nothing is overwritten. */
   restore(id: string, n: number, by: string): Artifact | Refusal;
+  /** The owner's new revision (issue #687): a file, or a copy of another artifact's latest content, which stays. */
+  revise(id: string, r: ReviseRequest, by: string): Artifact | Refusal;
+  /**
+   * Adds every revision of each source to `into`, oldest first — its content, title and who made it, the note "merged
+   * from <id>" —, then removes the source; all in one transaction, so a merge that fails changes nothing (issue #687).
+   */
+  merge(into: string, from: string[], by: string): MergeDone | Refusal;
   /** Pins revision `n` (the sweep keeps it), or unpins it. */
   pin(id: string, n: number, pinned: boolean, by: string): ArtifactRevision | Refusal;
   list(o?: { jobId?: string; limit?: number }): Artifact[];
@@ -96,6 +103,7 @@ export function createUserArtifacts(o: {
     return undefined;
   };
 
+  const reviser = createReviser({ store: o.store, now, missing, overLimits });
   const a: UserArtifacts = {
     put(job, r) {
       const name = artifactName(r.name);
@@ -105,40 +113,24 @@ export function createUserArtifacts(o: {
       const before = r.to === undefined ? undefined : repo.get(r.to);
       if (r.to !== undefined && !before) return missing(r.to);
       const kind = kindOf(type);
-      let content = r.content;
-      let masked = 0;
-      // A secret in a text artifact is masked before it is kept (issue #597): a person shares what they see.
-      if (TEXT_KINDS.includes(kind)) {
-        const text = content.toString('utf8');
-        const clean = maskGitHubTokens(text);
-        if (clean !== text) {
-          masked = (clean.match(/\(masked\)/g) ?? []).length - (text.match(/\(masked\)/g) ?? []).length;
-          content = Buffer.from(clean, 'utf8');
-        }
-      }
+      const { content, masked } = reviser.masking(kind, r.content);
       const full = overLimits(name, content.length);
       if (full) return full;
       const title = maskGitHubTokens((r.title ?? '').trim()).slice(0, ARTIFACT_TITLE_MAX) || before?.title || name;
       const summary = artifactSummary(r.summary === undefined ? undefined : maskGitHubTokens(r.summary)) ?? before?.summary;
       const note = artifactNote(r.note);
-      const warning = [visualWarning(kind, content), summary === undefined ? NO_SUMMARY_WARNING : undefined].filter((w) => w !== undefined).join('; ') || undefined;
+      // Issue #687: a new artifact that looks like a revision of one the user has, even another job's, is kept, and said.
+      const alike = before || r.separate ? undefined : lookAlike({ name, title }, repo.list());
+      const warning = [visualWarning(kind, content), summary === undefined ? NO_SUMMARY_WARNING : undefined, alike ? lookAlikeWarning(alike) : undefined]
+        .filter((w) => w !== undefined).join('; ') || undefined;
       const by = `job ${job.id}`;
       const sha256 = createHash('sha256').update(content).digest('hex');
       const at = now();
       // A new revision of an artifact (issue #675): the id, its URL and its shares stay; the latest so far is kept.
       if (before) {
-        const next: Artifact = {
-          ...before, title, name, type, kind, size: content.length, sha256, revision: before.revision + 1, updatedAt: at, revisedBy: by, pinned: false,
-          ...(summary !== undefined ? { summary } : {}),
-        };
-        if (note !== undefined) next.note = note; else delete next.note;
-        o.store.tx(() => {
-          repo.revise(next, content);
-          o.store.events.append({
-            type: 'artifact.revised', jobId: job.id,
-            data: { artifact: next.id, revision: next.revision, title, name, type, size: next.size, sha256, by, ...(note !== undefined ? { note } : {}), ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}) },
-          });
-        });
+        const next = o.store.tx(() => reviser.revised(before, {
+          title, summary, name, type, content, by, note, jobId: job.id, event: { ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}) },
+        }));
         return warning ? { ...next, warning } : next;
       }
       const src = job.source;
@@ -186,6 +178,8 @@ export function createUserArtifacts(o: {
       });
       return next;
     },
+    revise: reviser.revise,
+    merge: reviser.merge,
     pin(id, n, pinned, by) {
       const art = repo.get(id);
       if (!art) return missing(id);
