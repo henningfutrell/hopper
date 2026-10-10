@@ -5,6 +5,11 @@
     "artifact": {
       "type": "string"
     },
+    "revision": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 9007199254740991
+    },
     "title": {
       "type": "string"
     },
@@ -22,11 +27,16 @@
     "sha256": {
       "type": "string"
     },
-    "summary": {
+    "by": {
       "type": "string"
     },
-    "issue": {
+    "note": {
       "type": "string"
+    },
+    "restoredFrom": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
     },
     "masked": {
       "type": "integer",
@@ -39,11 +49,13 @@
   },
   "required": [
     "artifact",
+    "revision",
     "title",
     "name",
     "type",
     "size",
-    "sha256"
+    "sha256",
+    "by"
   ],
   "additionalProperties": false
 }

@@ -29,6 +29,7 @@ export const EVENT_TYPES = [
   'skill.listed', 'skill.loaded', 'skill.refused',
   'artifact.created', 'artifact.shared', 'artifact.share_revoked', 'artifact.removed', 'artifact.settings_changed', 'artifact.posted',
   'tldr.written', 'tldr.settings_changed',
+  'artifact.revised', 'artifact.revision_pinned', 'artifact.revision_removed',
   'item.snapshot_recorded', 'item.changed_since_snapshot', 'item.original_kept', 'item.new_text_accepted',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -67,5 +68,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
   'artifact.created': 1, 'artifact.shared': 1, 'artifact.share_revoked': 1, 'artifact.removed': 1, 'artifact.settings_changed': 1, 'artifact.posted': 1,
   'tldr.written': 1, 'tldr.settings_changed': 1,
+  'artifact.revised': 1, 'artifact.revision_pinned': 1, 'artifact.revision_removed': 1,
   'item.snapshot_recorded': 1, 'item.changed_since_snapshot': 1, 'item.original_kept': 1, 'item.new_text_accepted': 1,
 };

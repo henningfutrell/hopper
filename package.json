@@ -21,7 +21,7 @@
     "plugin:check": "node scripts/plugin-check.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run build:ui",
     "build:site": "vite build --config site/vite.config.ts",
-    "build:ui": "vite build --config ui/vite.config.ts && node scripts/check-ui-bundle.ts ui/dist",
+    "build:ui": "vite build --config ui/vite.config.ts && node scripts/copy-artifact-libs.ts ui/dist && node scripts/check-ui-bundle.ts ui/dist",
     "screenshots": "node scripts/screenshots/capture.ts"
   },
   "dependencies": {
@@ -60,6 +60,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3": "^7.9.0",
@@ -71,6 +72,7 @@
     "image-size": "^2.0.4",
     "lucide-react": "^1.51.0",
     "marked": "^18.1.0",
+    "mermaid": "^12.1.0",
     "oauth2-mock-server": "^9.2.0",
     "papaparse": "^5.7.0",
     "playwright": "^1.64.0",

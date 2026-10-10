@@ -1,8 +1,10 @@
 // The HTTP edge: read-only routes, SSE, the static UI, the API reference, and the UI session — the
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
+import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
+import { artifactLibRoutes } from '../artifacts/libs.ts';
 import { artifactRoutes, createArtifactEdge } from './artifacts.ts';
 import { jobArtifactRoutes } from './job-artifacts.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
@@ -146,6 +148,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
+  artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
     updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey,

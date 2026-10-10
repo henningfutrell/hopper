@@ -19,7 +19,7 @@ export function ArtifactChips({ jobId, className }: { jobId: string; className?:
   return (
     <span data-slot="artifact-chips" className={cn('inline-flex min-w-0 items-center gap-1', className)}>
       {list.slice(0, 3).map((a) => (
-        <a key={a.id} href={`#artifacts/${a.id}`} title={`${a.title} (${a.type})`} onClick={(e) => e.stopPropagation()}
+        <a key={a.id} href={`#artifacts/${a.id}`} title={a.summary ? `${a.title}: ${a.summary}` : a.title} onClick={(e) => e.stopPropagation()}
           className="inline-flex max-w-32 items-center gap-0.5 rounded border px-1 text-[10px] text-muted-foreground hover:text-foreground">
           <Paperclip className="size-2.5 shrink-0" /><span className="truncate">{a.title}</span>
         </a>
@@ -74,7 +74,7 @@ function TextPreview({ url }: { url: string }) {
 }
 
 /** The artifact as its kind shows it; a file of another kind is a download only. */
-export function ArtifactPreview({ artifact: a, height = 420 }: { artifact: ArtifactView; height?: number }) {
+export function ArtifactPreview({ artifact: a, height = 420 }: { artifact: Pick<ArtifactView, 'kind' | 'contentUrl' | 'title' | 'type'>; height?: number }) {
   const mode = previewOf(a.kind);
   switch (mode) {
     case 'frame':
@@ -104,7 +104,7 @@ export function ArtifactEmbeds({ text }: { text: string }) {
       {found.map((a) => (
         <figure key={a.id} className="space-y-1">
           <ArtifactPreview artifact={a} height={320} />
-          <figcaption className="text-xs text-muted-foreground"><a className="hover:underline" href={`#artifacts/${a.id}`}>{a.title}</a></figcaption>
+          <figcaption className="text-xs text-muted-foreground"><a className="hover:underline" href={`#artifacts/${a.id}`}>{a.title}</a>{a.summary ? ` — ${a.summary}` : ''}</figcaption>
         </figure>
       ))}
     </div>

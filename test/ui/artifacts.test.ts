@@ -1,7 +1,9 @@
 // Issue #624: the UI's artifacts model — a job's artifacts, the ones a text links to (a proposal or report embeds them),
 // sizes and shares in words, and how each kind is previewed.
 import { describe, expect, it } from 'vitest';
-import { artifactCreatedDetail, artifactsOfJob, bytesInWords, previewOf, referencedArtifacts, shareInWords } from '../../ui/src/model/artifacts.ts';
+import {
+  artifactCreatedDetail, artifactsOfJob, bytesInWords, byInWords, previewOf, referencedArtifacts, revisionHash, revisionOfHash, revisedDetail, shareInWords,
+} from '../../ui/src/model/artifacts.ts';
 import type { ArtifactsView, ArtifactView } from '../../ui/src/model/wire.ts';
 
 const ID1 = '0722a67b-8c7c-4315-8582-8794aa7b9dbc';
@@ -9,7 +11,7 @@ const ID2 = '1a2b3c4d-0000-4000-8000-000000000624';
 
 const art = (id: string, jobId: string, over: Partial<ArtifactView> = {}): ArtifactView => ({
   id, userId: 'admin', jobId, title: id, name: 'chart.html', type: 'text/html', kind: 'html', size: 10, sha256: 'x',
-  createdAt: '2026-10-10T00:00:00.000Z', url: `http://h/#artifacts/${id}`, contentUrl: `/artifact-content/chart.html?v=t-${id}`, ...over,
+  createdAt: '2026-10-10T00:00:00.000Z', revision: 1, updatedAt: '2026-10-10T00:00:00.000Z', revisedBy: `job ${jobId}`, pinned: false, url: `http://h/#artifacts/${id}`, contentUrl: `/artifact-content/chart.html?v=t-${id}`, ...over,
 });
 
 describe('artifacts in the UI (issue #624)', () => {
@@ -52,5 +54,21 @@ describe('artifacts in the UI (issue #624)', () => {
     expect(artifactCreatedDetail({ title: 'Queue wait', name: 'chart.html' })).toBe('Queue wait');
     expect(artifactCreatedDetail({ title: 'Notes', name: 'notes.html', warning: 'the artifact has no visual' }))
       .toBe('Notes: warning: the artifact has no visual');
+  });
+
+  it('links the latest revision or pins one, and reads which one a hash pins (issue #675)', () => {
+    expect(revisionHash(ID1)).toBe(`#artifacts/${ID1}`);
+    expect(revisionHash(ID1, 2)).toBe(`#artifacts/${ID1}/2`);
+    expect(revisionOfHash(`#artifacts/${ID1}/2`)).toBe(2);
+    expect(revisionOfHash(`#artifacts/${ID1}`)).toBeUndefined();
+    expect(revisionOfHash(`#artifacts/${ID1}/x`)).toBeUndefined();
+    expect(revisionOfHash(`#artifacts/${ID1}/0`)).toBeUndefined();
+  });
+
+  it('says who made a revision, and a revision on the timeline (issue #675)', () => {
+    expect(byInWords('job 6f1c2a9e-0000-4000-8000-000000000001')).toBe('job 6f1c2a9e');
+    expect(byInWords('github:octocat')).toBe('octocat');
+    expect(revisedDetail({ title: 'Flow', revision: 2, note: 'adds the fixed flow' })).toBe('Flow: revision 2, adds the fixed flow');
+    expect(revisedDetail({ title: 'Flow', revision: 3, restoredFrom: 1 })).toBe('Flow: revision 3, restored revision 1');
   });
 });

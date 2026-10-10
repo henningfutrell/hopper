@@ -23,7 +23,7 @@ import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
-import { ARTIFACT_TABLES } from './migration-artifacts.ts';
+import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { newerStore } from './migrations.ts';
 
@@ -344,6 +344,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 35: Item snapshots (issue #662): the approved text of each source item, backfilled from its first job. A table only:
   // the build before runs on it.
   itemSnapshotsBackfill,
+  // 36: Artifact revisions (issue #675); the artifact row stays the latest, so the build before runs on it.
+  ARTIFACT_REVISION_TABLES,
 ];
 
 /** A user schema's version once migrated. */

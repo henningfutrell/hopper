@@ -31,12 +31,10 @@
 //   Scenario: an SVG drawing is served in the HTML sandbox
 //     When the job puts an SVG with `--type svg`
 //     Then it has no warning, and it is served under the same sandbox policy as HTML
-//   Scenario: the skill help says an artifact is a visual, and shows an SVG flow diagram and an SVG bar chart
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HTML_POLICY } from '../../src/artifacts/content.ts';
-import { ARTIFACT_HELP } from '../../src/artifacts/script.ts';
+import { htmlPolicy } from '../../src/artifacts/content.ts';
 import { visualWarning } from '../../src/domain/artifacts.ts';
 import type { ArtifactView } from '../../src/domain/types.ts';
 import { artifactHarness, eventsOf, readArtifacts as read } from '../support/artifacts.ts';
@@ -66,7 +64,7 @@ describe('artifacts (issue #624)', () => {
     });
     expect(out.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
 
-    const text = await artifact(a, job, ['put', 'chart.html'], { cwd: dir });
+    const text = await artifact(a, job, ['put', 'chart.html', '--summary', 'Queue wait by hour'], { cwd: dir });
     expect(text.code).toBe(0);
     expect(text.stdout).toMatch(/^put: [0-9a-f-]{36} {2}chart\.html {2}text\/html {2}\d+ bytes\nurl: http:\/\/127\.0\.0\.1:\d+\/#artifacts\/[0-9a-f-]{36}\n$/);
 
@@ -88,7 +86,9 @@ describe('artifacts (issue #624)', () => {
     // Issue #673: nothing loads from outside, so nothing leaves through a request either — its own signed URL included.
     expect(csp).not.toContain('https:');
     expect(csp).not.toContain('allow-popups-to-escape-sandbox');
-    for (const d of ['script-src', 'style-src', 'img-src', 'font-src']) expect(csp).toContain(`${d} 'unsafe-inline' data: blob:;`);
+    for (const d of ['style-src', 'img-src', 'font-src']) expect(csp).toContain(`${d} 'unsafe-inline' data: blob:;`);
+    // Scripts: what the page carries, and the libraries the hopper bundles, from the hopper itself (issue #675).
+    expect(csp).toContain(`script-src 'unsafe-inline' data: blob: ${a.url}/artifact-lib/;`);
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     // A content URL whose signature is changed loads nothing.
@@ -134,7 +134,9 @@ describe('artifacts (issue #624)', () => {
     expect(made.code).toBe(0);
     const link = /^link: (\S+)$/m.exec(made.stdout)![1]!;
     expect(link).toMatch(/\/artifact-link\//);
-    const res = await fetch(link);
+    // The link opens the share page (issue #675); the content is under it.
+    expect((await fetch(link)).status).toBe(200);
+    const res = await fetch(`${link}/content`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
     expect(await res.text()).toBe('# Findings\n\nAll good.\n');
@@ -202,7 +204,7 @@ describe('artifacts (issue #624)', () => {
   it('the retention sweep removes what is older than the user keeps', async () => {
     const { a, session, job } = await boot();
     const old = new Date(Date.now() - 2 * 86_400_000).toISOString();
-    a.user().store.artifacts.add({ id: 'old-1', userId: a.user().user.id, jobId: job, title: 'old', name: 'old.txt', type: 'text/plain', kind: 'text', size: 3, sha256: 'x', createdAt: old }, Buffer.from('old'));
+    a.user().store.artifacts.add({ id: 'old-1', userId: a.user().user.id, jobId: job, title: 'old', name: 'old.txt', type: 'text/plain', kind: 'text', size: 3, sha256: 'x', createdAt: old, revision: 1, updatedAt: old, revisedBy: `job ${job}`, pinned: false }, Buffer.from('old'));
     const { dir } = file('new.txt', 'new\n');
     const id = (JSON.parse((await artifact(a, job, ['put', 'new.txt', '--json'], { cwd: dir })).stdout) as { artifact: ArtifactView }).artifact.id;
     expect(a.user().artifacts.sweep()).toEqual([]);
@@ -239,7 +241,7 @@ describe('artifacts are visuals (issue #675)', () => {
 
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="60" height="40" fill="#4a7"/><script>document.querySelector("rect").setAttribute("width","70")</script></svg>\n';
     const drawing = file('flow.xml', svg);
-    const out = JSON.parse((await artifact(a, job, ['put', 'flow.xml', '--type', 'svg', '--json'], { cwd: drawing.dir })).stdout) as { artifact: ArtifactView; warning?: string };
+    const out = JSON.parse((await artifact(a, job, ['put', 'flow.xml', '--type', 'svg', '--summary', 'A flow', '--json'], { cwd: drawing.dir })).stdout) as { artifact: ArtifactView; warning?: string };
     expect(out.artifact).toMatchObject({ type: 'image/svg+xml', kind: 'svg' });
     expect(out.warning).toBeUndefined();
     expect(eventsOf(a, 'artifact.created').find((e) => (e.data as { artifact: string }).artifact === out.artifact.id)!.data).not.toHaveProperty('warning');
@@ -248,18 +250,7 @@ describe('artifacts are visuals (issue #675)', () => {
     const res = await load(a, mine.contentUrl);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/svg+xml');
-    expect(res.headers.get('content-security-policy')).toBe(HTML_POLICY);
+    expect(res.headers.get('content-security-policy')).toBe(htmlPolicy(a.url));
     expect(await res.text()).toBe(svg);
-  });
-
-  it('the skill help says an artifact is a visual, puts prose elsewhere, and shows an SVG flow diagram and an SVG bar chart', () => {
-    expect(ARTIFACT_HELP).toMatch(/an artifact is a visual/i);
-    expect(ARTIFACT_HELP).toMatch(/prose goes in the issue comment or the job result/i);
-    expect(ARTIFACT_HELP).toMatch(/no external loads/i);
-    expect(ARTIFACT_HELP).not.toMatch(/CDN/);
-    expect(ARTIFACT_HELP).toContain('Example: a flow diagram');
-    expect(ARTIFACT_HELP).toContain('Example: a bar chart');
-    expect(ARTIFACT_HELP.match(/<svg /g)?.length).toBe(2);
-    expect(ARTIFACT_HELP).not.toMatch(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/);
   });
 });

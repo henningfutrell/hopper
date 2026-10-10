@@ -1,5 +1,6 @@
 // The UI session's actions on artifacts (issue #624, design.md "Artifacts"): share one of the user's artifacts with
-// another user or as a public link, revoke a share, remove an artifact (operator); Settings → Artifacts — the limits,
+// another user or as a public link, revoke a share, remove an artifact, restore an older revision as the latest, pin a
+// revision so the retention sweep keeps it (operator; revisions: issue #675); Settings → Artifacts — the limits,
 // the retention, and whether public links work (admin). Who acts is the session's sign-in.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -31,6 +32,10 @@ export const artifactSettingsBody = z.strictObject({
   /** An origin the hopper answers to, or empty for the default (issue #673). */
   linkBase: z.string().trim().max(300).optional(),
 }).refine((b) => Object.keys(b).length > 0, { message: 'name a setting' });
+
+const revisionParams = params.extend({ n: z.coerce.number().int().min(1) });
+export const artifactRestoreBody = z.strictObject({ revision: z.number().int().min(1) });
+export const artifactPinBody = z.strictObject({ pinned: z.boolean() });
 
 const refused = (r: Refusal): never => { throw new HttpError(r.status, r.no); };
 
@@ -96,6 +101,27 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
     const r = t.artifacts.revoke(id, share, who);
     if (isRefusal(r)) return refused(r);
     return { artifact: viewOf(req, t, id) };
+  });
+
+  // Issue #675: the revision becomes the latest as a new one; the id, its links and its shares stay.
+  app.post('/ui/api/artifacts/:id/restore', o.operator, async (req) => {
+    const who = by(req);
+    const t = o.tenant(req);
+    const { id } = parseWith(params, req.params);
+    const { revision } = parseWith(artifactRestoreBody, req.body);
+    const r = t.artifacts.restore(id, revision, who);
+    if (isRefusal(r)) return refused(r);
+    return { artifact: viewOf(req, t, id) };
+  });
+
+  app.post('/ui/api/artifacts/:id/revisions/:n/pin', o.operator, async (req) => {
+    const who = by(req);
+    const t = o.tenant(req);
+    const { id, n } = parseWith(revisionParams, req.params);
+    const { pinned } = parseWith(artifactPinBody, req.body);
+    const r = t.artifacts.pin(id, n, pinned, who);
+    if (isRefusal(r)) return refused(r);
+    return { revision: o.edge.revisionView(r, t.artifacts.get(id)!.userId, userIdOf(req)!) };
   });
 
   app.post('/ui/api/artifacts/:id/remove', o.operator, async (req) => {

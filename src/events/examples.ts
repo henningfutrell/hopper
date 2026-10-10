@@ -168,6 +168,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'artifact.shared': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', share: 's1', with: 'link', expiresAt: '2026-10-11T12:00:00.000Z', by: 'github:octocat' },
   'artifact.share_revoked': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', share: 's1', with: 'link', by: 'github:octocat' },
   'artifact.removed': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', reason: 'retention' },
+  'artifact.revised': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', revision: 2, title: 'Queue wait by hour', name: 'chart.html', type: 'text/html', size: 19210, sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', by: 'job 6f1c2a9e', note: 'adds the hours after six' },
+  'artifact.revision_pinned': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', revision: 1, pinned: true, by: 'github:octocat' },
+  'artifact.revision_removed': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', revision: 1, reason: 'retention' },
   'artifact.posted': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', title: 'Queue wait by hour', by: 'job 6f1c2a9e', comment: 'https://github.com/octo-org/hello/issues/7#issuecomment-1' },
   'artifact.settings_changed': {
     from: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 168 },

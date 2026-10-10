@@ -7,6 +7,7 @@ export const ARTIFACT_STREAM_TYPES = {
   'artifact.created': 'progress',
   'artifact.shared': 'progress',
   'artifact.posted': 'progress',
+  'artifact.revised': 'progress',
   'artifact.share_revoked': 'progress',
   'artifact.removed': 'progress',
 } as const;
