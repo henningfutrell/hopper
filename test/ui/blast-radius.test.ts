@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { changesText, summaryOf } from '../../ui/src/model/blast-radius.ts';
+import { changesText, radiusText, summaryOf } from '../../ui/src/model/blast-radius.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type BlastRadiusView } from '../../src/domain/types.ts';
 
 const view = (over: Partial<BlastRadiusView['settings']> = {}): BlastRadiusView => ({
@@ -14,6 +14,15 @@ const view = (over: Partial<BlastRadiusView['settings']> = {}): BlastRadiusView 
 });
 
 describe('blast radius, as people read it', () => {
+  it('a machine\'s rating and its source: its reach, its template (a box), or both (issue #605)', () => {
+    const tpl = (level: 'low' | 'medium' | 'high') => ({ name: 'kube', radius: { level, reasons: [], profiles: [] } });
+    expect(radiusText({ radius: { level: 'high', source: 'template' }, template: tpl('high') })).toBe('high radius, from template kube');
+    expect(radiusText({ radius: { level: 'high', source: 'reach' }, template: tpl('low') })).toBe('high radius, from its reach');
+    expect(radiusText({ radius: { level: 'low', source: 'both' }, template: tpl('low') })).toBe('low radius, from its reach and template kube');
+    expect(radiusText({ radius: { level: 'medium', source: 'reach' } })).toBe('medium radius');
+    expect(radiusText({})).toBe('not discovered');
+  });
+
   it('the settings in one sentence', () => {
     expect(summaryOf(view())).toBe('Machines rated high, and actor machines, take only jobs let through by a person. Discovered every 60 minutes.');
     expect(summaryOf(view({ gateAt: 'medium', pass: { labels: ['hopper:actor'], repos: ['org/infra'], minPriority: 90 } })))
