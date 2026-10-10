@@ -276,14 +276,6 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     return renewer.due(a) && a.refreshToken ? renewer.renew(provider) : a.accessToken;
   }
 
-  /** The token is refused with a 401 (issue #597): renew it if it has a refresh token, else end the connection. */
-  const handleRefused = async (provider: ConnectedAccountProvider, refusedToken: string): Promise<string> => {
-    const { account: a, stored } = live(provider);
-    if (a.accessToken !== refusedToken) return a.accessToken; // already renewed
-    if (!a.refreshToken) throw end(stored, `${PROVIDER_NAME[provider]} refused the token and there is no refresh token to renew it`);
-    return renewer.renew(provider, refusedToken);
-  };
-
   return {
     status: () => Promise.all(CONNECTED_ACCOUNT_PROVIDERS.map((p) => withInstallations(status(p)))),
     async adopt(c: Connection) {

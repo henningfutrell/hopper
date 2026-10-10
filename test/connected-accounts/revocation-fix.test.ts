@@ -138,12 +138,7 @@ describe('token revocation fixes (#597)', () => {
     const first = await connect(service, s);
 
     // Simulate GitHub's incorrect_client_credentials on refresh (as happens when the authorization is revoked)
-    github.refreshDown = 200;
-    const originalRefresh = github.refreshTokens.get(first.refreshToken!)!;
-    github.refreshTokens.set(first.refreshToken!, originalRefresh);
-
-    // Make the refresh fail with incorrect_client_credentials by not sending a client secret
-    const badResponse = { error: 'incorrect_client_credentials' };
+    // by deleting the refresh token (GitHub returns bad_refresh_token, which device flow without secret sees as incorrect_client_credentials)
     github.refreshTokens.delete(first.refreshToken!);
 
     // Try to renew the token (it's due in 1 hour, so advance the clock)
