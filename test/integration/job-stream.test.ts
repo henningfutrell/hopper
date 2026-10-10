@@ -153,15 +153,22 @@ async function streamOf(url: string, token: string, request?: string): Promise<{
   return { status: res.status, text, events: text.split('\n').filter((l) => l.startsWith('data: ')).map((l) => JSON.parse(l.slice(6)) as Record<string, unknown>) };
 }
 
-/** A proxy in front of the hopper that counts the job's calls: no second ask may pass it. */
+/**
+ * A proxy in front of the hopper that counts the job's calls: no second ask may pass it. `delivered` holds the ids of
+ * the stream events it passed on to the job: what the job holds, and so the Last-Event-ID it can send after a drop.
+ */
 interface Seen { method: string; path: string; lastEventId?: string }
-async function counting(port: () => number): Promise<{ url: string; seen: Seen[] }> {
+async function counting(port: () => number): Promise<{ url: string; seen: Seen[]; delivered: string[] }> {
   const seen: Seen[] = [];
+  const delivered: string[] = [];
   const server: Server = createServer((req, res) => {
     const id = req.headers['last-event-id'];
     seen.push({ method: req.method!, path: req.url!.split('?')[0]!, ...(typeof id === 'string' ? { lastEventId: id } : {}) });
     const up = request({ host: '127.0.0.1', port: port(), method: req.method, path: req.url, headers: { ...req.headers, host: `127.0.0.1:${port()}` } }, (r) => {
       res.writeHead(r.statusCode ?? 502, r.headers);
+      if (req.url!.startsWith('/job/stream')) {
+        r.on('data', (c: Buffer) => { delivered.push(...[...c.toString().matchAll(/^id: (\S+)$/gm)].map((m) => m[1]!)); });
+      }
       r.pipe(res);
       // The hopper gone mid-stream: so is the job's connection, as it would be with no proxy between.
       r.on('close', () => { if (!r.complete) res.destroy(); });
@@ -171,7 +178,7 @@ async function counting(port: () => number): Promise<{ url: string; seen: Seen[]
   });
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   cleanups.push(() => { server.closeAllConnections(); server.close(); });
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen };
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen, delivered };
 }
 
 async function freePort(): Promise<number> {
@@ -195,8 +202,7 @@ describe('a job waits on its job stream (issue #613)', () => {
 
     const wait = waiting(proxy.url, creds.dir, ASK);
     const r = await requestFor(a);
-    await waitFor(() => proxy.seen.some((s) => s.path === '/job/stream'), { what: 'the job subscribed' });
-    await new Promise((done) => setTimeout(done, 300));
+    await waitFor(() => proxy.delivered.length > 0, { what: 'skill.waiting delivered to the job' });
     expect((await edit({ action: 'give-credential', request: r.id, name: SERVICE, kind: 'asked', value: VALUE })).status).toBe(200);
 
     const done = await wait;
@@ -223,7 +229,8 @@ describe('a job waits on its job stream (issue #613)', () => {
 
     const wait = waiting(proxy.url, creds.dir, ASK);
     await requestFor(first.a);
-    await waitFor(() => proxy.seen.some((s) => s.path === '/job/stream'), { what: 'the job subscribed' });
+    // The hopper stops only once the job holds skill.waiting: before that it has no event id to reconnect with.
+    await waitFor(() => proxy.delivered.length > 0, { what: 'skill.waiting delivered to the job' });
     await first.a.stop();
     apps.splice(apps.indexOf(first.a), 1);
 
