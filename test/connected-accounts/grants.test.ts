@@ -21,7 +21,7 @@ import { createConnectedAccounts, type ConnectedAccountsOptions } from '../../sr
 import type { DeviceFlow, Grant } from '../../src/connected-accounts/device-flow.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { renewal } from '../../src/connected-accounts/renewal.ts';
-import { revocation } from '../../src/connected-accounts/revocation.ts';
+import { tokenDeletion } from '../../src/connected-accounts/revocation.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { waitFor } from '../support/wait.ts';
@@ -72,7 +72,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
     installations: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
-    revoke: (p, credentials) => revocation(apps[p])(credentials),
+    deleteToken: (p, accessToken) => tokenDeletion(apps[p], undefined)(accessToken),
     flows: { github: approvedAs(github, 'octo-user', clock) },
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
     ...o,
