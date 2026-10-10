@@ -8,6 +8,8 @@ import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
+/** Its item's text changed since the snapshot (issue #662): a person keeps the original, accepts the new text, or cancels it. */
+export const TEXT_CHANGED = 'its item changed since the snapshot: keep the original, accept the new text, or cancel';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
@@ -54,6 +56,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
+    if (job.textChange) {
+      // Before every other judgement: no approval or acceptance starts a job whose item's text nobody approved.
+      hold.push({ jobId: job.id, reason: TEXT_CHANGED });
+      continue;
+    }
     if (job.accepted === false) {
       // At the queue gate (issue #159): nothing else is judged until it is accepted.
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });

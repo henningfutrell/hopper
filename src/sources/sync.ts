@@ -15,6 +15,7 @@
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
+import { offer } from './item-text.ts';
 import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
@@ -237,8 +238,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     for (const item of items) {
       const existing = store.jobs.getBySourceKey(item.key);
       if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
-      if (existing && !isRerunnable(existing)) host.refresh(existing.id, item, { name: slot.source.name, kind: slot.source.kind });
-      else if (host.ingest(item, { name: slot.source.name, kind: slot.source.kind })) created++;
+      if (await offer(host, slot.source, item, existing)) created++;
     }
     for (const n of notRerun) {
       if (slot.loggedNotRerun.has(n.key)) continue;

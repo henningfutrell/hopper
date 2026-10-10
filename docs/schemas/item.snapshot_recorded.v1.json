@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "intake",
+        "backfill",
+        "accepted"
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "hash",
+    "reason"
+  ],
+  "additionalProperties": false
+}

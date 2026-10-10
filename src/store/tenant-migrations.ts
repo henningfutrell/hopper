@@ -24,6 +24,7 @@ import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_TABLES } from './migration-artifacts.ts';
+import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -340,6 +341,9 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noOpusLevel,
   // 34: Artifacts (issue #624): what jobs make for a person to see, their content, and their shares.
   ARTIFACT_TABLES,
+  // 35: Item snapshots (issue #662): the approved text of each source item, backfilled from its first job. A table only:
+  // the build before runs on it.
+  itemSnapshotsBackfill,
 ];
 
 /** A user schema's version once migrated. */

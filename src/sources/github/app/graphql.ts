@@ -7,6 +7,7 @@
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
+import type { ItemEdit } from '../../../domain/item-snapshots.ts';
 import {
   CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
   referencingPullRequestsFrom, repoPullRequestsFrom,
@@ -127,4 +128,35 @@ export async function openPullRequests(req: Request, token: string, repo: string
     query: OPEN_REPO_PULL_REQUESTS_QUERY, variables: { owner, name }, headers: { authorization: `token ${token}` },
   });
   return repoPullRequestsFrom(r.data, `open pull requests of ${repo}`);
+}
+
+/** Who edited an issue's body (its content edits) and title (its renames), the newest 50 of each (issue #662). */
+const ISSUE_EDITS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) {
+    userContentEdits(last: 50) { nodes { editedAt editor { login } } }
+    timelineItems(itemTypes: [RENAMED_TITLE_EVENT], last: 50) { nodes { ... on RenamedTitleEvent { createdAt actor { login } } } }
+  } }
+}`;
+
+interface EditsData {
+  repository?: { issue?: {
+    userContentEdits?: { nodes?: ({ editedAt?: string; editor?: { login?: string } | null } | null)[] };
+    timelineItems?: { nodes?: ({ createdAt?: string; actor?: { login?: string } | null } | null)[] };
+  } | null } | null;
+}
+
+/** The edits of an issue's title and body, oldest first; an editor GitHub no longer names is `ghost`. */
+export function issueEditsFrom(data: unknown): ItemEdit[] {
+  const issue = (data as EditsData | undefined)?.repository?.issue;
+  const edits: ItemEdit[] = [
+    ...(issue?.userContentEdits?.nodes ?? []).filter((n) => n?.editedAt).map((n) => ({ what: 'body' as const, editor: n!.editor?.login ?? 'ghost', at: n!.editedAt! })),
+    ...(issue?.timelineItems?.nodes ?? []).filter((n) => n?.createdAt).map((n) => ({ what: 'title' as const, editor: n!.actor?.login ?? 'ghost', at: n!.createdAt! })),
+  ];
+  return edits.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+export async function issueEdits(req: Request, token: string, repo: string, number: number): Promise<ItemEdit[]> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', { query: ISSUE_EDITS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
+  return issueEditsFrom(r.data);
 }

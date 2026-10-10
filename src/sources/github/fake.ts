@@ -8,6 +8,7 @@
 // Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
 
+import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
 import type { ChecksState } from '../../domain/pull-requests.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
@@ -20,6 +21,8 @@ export interface FakeGitHub extends GitHubApi {
   assign(repo: string, number: number, login: string, at?: string): void;
   unassign(repo: string, number: number, login: string): void;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
+  /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662). */
+  editIssue(repo: string, number: number, change: { title?: string; body?: string }, editor: string, at?: string): void;
   /**
    * Closed by hand or by a commit, no pull request: as `reason` (default completed), at `at` (default the
    * fake's clock, 2026-10-02T09:00, before any test job is created).
@@ -75,6 +78,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const issues = new Map<string, GitHubIssue>();
   const comments = new Map<string, GitHubComment[]>();
   const assigned = new Map<string, { login: string; at: string }[]>();
+  const edits = new Map<string, ItemEdit[]>();
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
@@ -140,6 +144,11 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       enter('listComments', [repo, n]);
       find(repo, n);
       return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c }));
+    },
+    async issueEdits(repo, n) {
+      enter('issueEdits', [repo, n]);
+      find(repo, n);
+      return (edits.get(key(repo, n)) ?? []).map((e) => ({ ...e }));
     },
     async projectItems(owner, n) {
       enter('projectItems', [owner, n]);
@@ -258,6 +267,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const c: GitHubComment = { id: ++commentId, author, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
       return { ...c };
+    },
+    editIssue(repo, n, change, editor, at = new Date().toISOString()) {
+      const i = find(repo, n);
+      const made: ItemEdit[] = [];
+      if (change.title !== undefined) { i.title = change.title; made.push({ what: 'title', editor, at }); }
+      if (change.body !== undefined) { i.body = change.body; made.push({ what: 'body', editor, at }); }
+      edits.set(key(repo, n), [...(edits.get(key(repo, n)) ?? []), ...made]);
     },
     closeIssue(repo, n, closedBy, c = {}) {
       const i = find(repo, n);

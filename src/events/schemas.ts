@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS, SNAPSHOT_REASONS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
@@ -27,6 +27,7 @@ const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
 // Who acted on a problem, a hand-off or a failure (issue #623): the person, and the way (the UI or the operator CLI).
 const acting = { person: z.string(), via: z.enum(ACTION_VIAS) };
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const actingIfPerson = { person: acting.person.optional(), via: acting.via.optional() };
 const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
 
@@ -351,6 +352,11 @@ export const EVENT_SCHEMAS = {
   'artifact.share_revoked': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), by: z.string() }),
   'artifact.removed': strict({ artifact: z.string(), reason: z.enum(['removed', 'retention']), by: z.string().optional() }),
   'artifact.settings_changed': strict({ from: artifactSettings, to: artifactSettings, by: z.string() }),
+  // Item snapshots (issue #662): hashes and who edited it, never the text. On the job's timeline.
+  'item.snapshot_recorded': strict({ key: z.string(), hash: sha256, reason: z.enum(SNAPSHOT_REASONS) }),
+  'item.changed_since_snapshot': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, editors: z.array(z.string()), newComments: z.number().int().min(0) }),
+  'item.original_kept': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, ...acting }),
+  'item.new_text_accepted': strict({ key: z.string(), fromHash: sha256, toHash: sha256, editors: z.array(z.string()), ...acting }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

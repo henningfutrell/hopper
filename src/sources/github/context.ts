@@ -60,13 +60,16 @@ export function doneLine(n: number, yoloMode: boolean): string {
     : `${done}. Do not merge it: a person reviews and merges it`;
 }
 
-function commentLine(c: GitHubComment): string {
+/** What a comment line reads of a comment. */
+type CommentText = Pick<GitHubComment, 'author' | 'body' | 'createdAt'>;
+
+function commentLine(c: CommentText): string {
   const body = truncate(c.body.trim(), COMMENT_CAP, '…').replace(/\r?\n/g, '\n  ');
   return `- ${c.author} at ${c.createdAt}: ${body}`;
 }
 
 /** The issue's text, as the job reads it: inside the untrusted block, with the assignee's comments that fit CONTEXT_CAP. */
-export function untrustedBlock(issue: GitHubIssue, comments: GitHubComment[], limit: number, mode: SourceMode = 'account'): string {
+export function untrustedBlock(issue: Pick<GitHubIssue, 'title' | 'body'>, comments: CommentText[], limit: number, mode: SourceMode = 'account'): string {
   const lines = comments.map((c) => defused(commentLine(c)));
   const commentsPart = (kept: string[]) => (kept.length === 0
     ? 'recent comments: none'
@@ -98,6 +101,23 @@ export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean)
 
 export function issuePrompt(untrusted: string, context: string): string {
   return `${untrusted}\n\n${context}`;
+}
+
+/**
+ * A GitHub item's prompt, title and environment rendered from `text` in place of the text it was read with (issue #662):
+ * its untrusted block made from `text`, then its context block as read now. Pure: what it reads is the item itself.
+ */
+export function promptWithText(item: { title: string; body: string; prompt: string; env: Record<string, string> }, text: { title: string; body: string; comments: { author: string; at: string; body: string }[] }, limit: number, mode: SourceMode): { title: string; body: string; prompt: string; env: Record<string, string> } {
+  // The issue's text is defused, so the first end marker on a line of its own is the block's.
+  const end = item.prompt.indexOf(`\n${UNTRUSTED_END}\n\n`);
+  if (!item.prompt.startsWith(UNTRUSTED_LINE) || end < 0) throw new Error('the item\'s prompt is not its untrusted block and context block: it cannot be rendered with another text');
+  const context = item.prompt.slice(end + UNTRUSTED_END.length + 3);
+  const comments = text.comments.map((c) => ({ author: c.author, body: c.body, createdAt: c.at }));
+  return {
+    title: text.title, body: text.body,
+    prompt: issuePrompt(untrustedBlock(text, comments, limit, mode), context),
+    env: { ...item.env, HOPPER_ISSUE_TITLE: oneLine(text.title) },
+  };
 }
 
 /** The job's issue, as read-only context. */

@@ -297,7 +297,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
-  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts });
+  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts, access: o.access });
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
 

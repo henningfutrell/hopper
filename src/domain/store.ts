@@ -5,6 +5,7 @@ import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
+import type { ItemSnapshot } from './item-snapshots.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -160,6 +161,13 @@ export interface FailureRepository {
 }
 
 /** The hand-offs (issue #516): failed jobs waiting on a person. */
+/** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
+export interface ItemSnapshotRepository {
+  get(key: string): ItemSnapshot | undefined;
+  /** Record `snapshot` as its item's approved text, in place of any before it. */
+  put(snapshot: ItemSnapshot): ItemSnapshot;
+}
+
 export interface HandoffRepository {
   create(input: Omit<Handoff, 'id'>): Handoff;
   get(id: string): Handoff | undefined;
@@ -438,6 +446,7 @@ export interface UserStore {
   failures: FailureRepository;
   problems: ProblemRepository;
   handoffs: HandoffRepository;
+  itemSnapshots: ItemSnapshotRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

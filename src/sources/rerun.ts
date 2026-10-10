@@ -5,6 +5,7 @@
 
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
+import { sourceRef, withEdits } from './item-text.ts';
 import type { ActingPerson, ContinuedBy, Job } from '../domain/types.ts';
 
 export interface RerunContext {
@@ -52,7 +53,8 @@ export function createRerun(c: RerunContext) {
         result = e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
         return;
       }
-      result = then(item, source);
+      // Who edited it since its snapshot, read before the new job is made: the job runs the snapshot's text (issue #662).
+      result = then(await withEdits(c.host, source, item), source);
     });
     // The new job's claim is reported at once, not at the next poll.
     if (result.ok) c.syncSoon(checked);
@@ -61,7 +63,7 @@ export function createRerun(c: RerunContext) {
 
   return {
     rerun(jobId: string, by: RerunBy = 'user', brief?: string, acting?: ActingPerson): Promise<RerunResult> {
-      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by, brief, acting) }));
+      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }));
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {
