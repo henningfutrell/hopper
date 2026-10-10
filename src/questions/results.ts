@@ -1,13 +1,15 @@
 // The level replies the question service accepts (design.md "Question pipeline"): every escalation
 // level's reply is validated here, so a plugin that breaks its contract escalates, it never answers.
 import { z } from 'zod';
-import { REVIEW_KINDS } from '../domain/types.ts';
+import { CONFIDENCES, REVIEW_KINDS } from '../domain/types.ts';
 
 // Only this answers: a boolean `escalate` false, a string `reason`, and a non-empty `answer`.
 // Escalating, the answer (a recommendation) is optional but never empty. `"false"`, a missing
 // field, an empty answer or anything else is an error, and an error escalates.
 export const REPLY = z.object({
   answer: z.string().min(1).optional(), escalate: z.boolean(), reason: z.string(), model: z.string().optional(),
+  // How sure the level is (issue #632): an answer goes into the job only at or above the auto-answer threshold.
+  confidence: z.enum(CONFIDENCES).optional(),
   machine: z.object({ id: z.string().min(1), why: z.string().min(1) }).optional(),
   // A phase shift the level suggests (issue #548): never an answer by itself.
   suggest: z.object({ to: z.enum(REVIEW_KINDS), note: z.string().optional() }).optional(),

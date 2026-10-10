@@ -54,7 +54,7 @@ function fakeDaemon() {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/sources': { sources: [] }, '/api/accounts': { accounts: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
-    '/api/question-gates': { rules: { text: '', version: 'missing', missing: true }, riskRules: [] },
+    '/api/question-gates': { rules: { text: '', version: 'missing', missing: true }, riskRules: [], autoAnswer: { enabled: true, threshold: 'high', stats: { windowDays: 30, answered: 0, corrected: 0 } } },
     '/api/plugin-store': { sources: [], plugins: [] },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {

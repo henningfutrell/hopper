@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { CLAUDE_TIMEOUT_MS } from '../../claude-print.ts';
-import { REVIEW_VERDICTS } from '../../../domain/types.ts';
+import { CONFIDENCES, REVIEW_VERDICTS } from '../../../domain/types.ts';
 import type { LevelReply, PluginDefinition, ReviewReply } from '../../sdk.ts';
 import { buildLevelPrompt } from '../claude-cli/prompt.ts';
 import { buildReviewPrompt } from '../claude-cli/review-prompt.ts';
@@ -23,7 +23,7 @@ export interface AnthropicApiOptions {
   effort?: Effort;
 }
 
-const REPLY = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string() });
+const REPLY = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string(), confidence: z.enum(CONFIDENCES) });
 /** A reviewer level's reply (issue #537). */
 const REVIEW = z.object({ verdict: z.enum(REVIEW_VERDICTS), notes: z.string() });
 

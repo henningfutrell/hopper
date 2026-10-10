@@ -2,10 +2,11 @@
 // the transaction that settles the question (design.md "Atomicity (B3)"), so question and job
 // change together. Both are compare-and-set: they act only on a job still waiting on that
 // question, and are a logged no-op otherwise.
-import type { Question } from '../domain/types.ts';
+import type { Job, Question } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { forksOnAnswered } from './phase-shifts.ts';
+import { correctionBrief } from '../questions/auto-answer.ts';
 
 export interface AnswerHandlers {
   /** Requeue the job with the answer (or, for a closed question, the close text) pending; the next claim resumes it. */
@@ -14,6 +15,8 @@ export interface AnswerHandlers {
   onExpired(q: Question): void;
   /** Cancel the job if it still waits on the question, parked or not (a job that moved on is left alone); its pane, or its parked work, is cleaned up after the commit. */
   onDismissed(q: Question): void;
+  /** A person corrected the auto-answer the job got (issue #632): the job keeps the correction for its next resume (src/engine/runner.ts). */
+  onCorrected(q: Question): void;
 }
 
 export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): AnswerHandlers {
@@ -50,6 +53,12 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
       // After the surrounding tx commits.
       setImmediate(() => void cleanup(q.jobId));
     },
+    onCorrected(q) {
+      const job = store.jobs.get(q.jobId);
+      if (!job) return;
+      const brief = correctionBrief(q);
+      store.jobs.update(q.jobId, { pendingCorrection: job.pendingCorrection ? `${job.pendingCorrection}\n\n${brief}` : brief });
+    },
     onDismissed(q) {
       const job = store.jobs.get(q.jobId);
       if ((job?.status !== 'waiting_answer' && job?.status !== 'parked') || job.questionId !== q.id) return;
@@ -58,4 +67,15 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
       setImmediate(() => void cleanup(q.jobId));
     },
   };
+}
+
+/**
+ * Inside the tx that starts a job's run: a person's correction it holds (issue #632) goes in ahead of `message`, what it
+ * resumes with, and is spent. A fresh start (no message) keeps it for the next resume.
+ */
+export function withCorrection(c: Pick<EngineContext, 'store'>, job: Job, message: string | undefined): string | undefined {
+  const held = c.store.jobs.get(job.id)?.pendingCorrection;
+  if (message === undefined || held === undefined) return message;
+  c.store.jobs.update(job.id, { pendingCorrection: undefined });
+  return `${held}\n\n${message}`;
 }

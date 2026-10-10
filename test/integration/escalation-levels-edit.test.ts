@@ -66,12 +66,12 @@ describe('POST /ui/api/plugins — escalation levels', () => {
     expect(read(a)).toEqual({ ...LEVELS, escalationLevels: [LEVELS.escalationLevels[1], LEVELS.escalationLevels[0]] });
   });
 
-  it('move with no section: the built-in levels are written, in the new order', async () => {
+  it('move with no section: the one built-in level stays where it is (#632)', async () => {
     const { a, token } = await start({ version: 1, executors: [{ name: 'test', plugin: 'test' }] });
     const version = (await report(a)).config.version;
-    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'level-2', to: 0, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'level-1', to: 0, version }, { token });
     expect(r.status).toBe(200);
-    expect(read(a).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['level-2', 'level-1']);
+    expect((await report(a)).escalationLevels.map((l: { instance: { name: string } }) => l.instance.name)).toEqual(['level-1']);
   });
 
   it('move refused, nothing written: an unknown level (404), a position out of range (400), another role (400), no session (403)', async () => {

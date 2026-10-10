@@ -108,12 +108,11 @@ describe('the plugins config and a custom plugin', () => {
 });
 
 describe('escalation levels in /api/plugins', () => {
-  it('no section: the built-in levels, level-1 then level-2, both claude-cli', async () => {
+  it('no section: the built-in level, level-1, claude-cli on the frontier model; no opus level (#632)', async () => {
     const a = await start();
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual([
-      { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180000 } },
-      { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
+      { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
     ]);
   });
 

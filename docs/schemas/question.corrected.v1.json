@@ -5,28 +5,18 @@
     "questionId": {
       "type": "string"
     },
-    "by": {
+    "level": {
       "type": "string",
       "minLength": 1
+    },
+    "was": {
+      "type": "string"
     },
     "answer": {
       "type": "string"
     },
-    "via": {
-      "type": "string",
-      "const": "pane"
-    },
-    "auto": {
-      "type": "boolean",
-      "const": true
-    },
-    "confidence": {
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high"
-      ]
+    "by": {
+      "type": "string"
     },
     "raisedBy": {
       "type": "object",
@@ -49,8 +39,10 @@
   },
   "required": [
     "questionId",
-    "by",
-    "answer"
+    "level",
+    "was",
+    "answer",
+    "by"
   ],
   "additionalProperties": false
 }

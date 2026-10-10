@@ -2,7 +2,7 @@
 // answer a question, and to review a review item — a proposal or a research report (issues #537, #543, design.md
 // "Sections"); the document an executor reports; the review.
 import type { RunLogins } from './ports.ts';
-import type { Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
+import type { Confidence, Question, QuestionAttempt, ReviewDecisionId, ReviewEntry, ReviewItem, ReviewKind, ReviewVerdict, ReviewVersion, ShiftThen } from './types.ts';
 
 /** Everything an escalation level is given. */
 export interface AnswerRequest {
@@ -31,6 +31,8 @@ export interface LevelReply {
   answer?: string;
   escalate: boolean;
   reason: string;
+  /** How sure it is of `answer` (issue #632): an answer goes into the job only at or above the auto-answer threshold. Absent: below every threshold. */
+  confidence?: Confidence;
   /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
   model?: string;
   /** The machine it ran on and why, when the level named none and picked it (issue #442): on the trail. */

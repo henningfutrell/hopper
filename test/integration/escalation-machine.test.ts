@@ -22,7 +22,7 @@ let cleanup: (() => void) | undefined;
 beforeEach(() => {
   for (const k of KEYS) saved[k] = process.env[k];
   process.env.FAKE_CLAUDE_OUT = join(mkdtempSync(join(tmpdir(), 'jh-claude-')), 'rec.json');
-  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine' });
+  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' });
   delete process.env.FAKE_CLAUDE_MODE;
 });
 afterEach(async () => {

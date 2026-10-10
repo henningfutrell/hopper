@@ -31,7 +31,7 @@ function fakeJev(answer: (ask: MinorDecisionAsk) => JevPick): JevChooser & { ask
 /** A level that answers every question with `answer`, and counts its calls. */
 function level(answer: string) {
   const calls: string[] = [];
-  return { calls, level: createFakeLevel({ name: 'level-1', script: (req) => { calls.push(req.question.text); return { answer, escalate: false, reason: 'clear' }; } }) };
+  return { calls, level: createFakeLevel({ name: 'level-1', script: (req) => { calls.push(req.question.text); return { answer, escalate: false, reason: 'clear', confidence: 'high' }; } }) };
 }
 
 async function start(seams: Parameters<typeof startTestApp>[0]['seams']): Promise<TestApp> {

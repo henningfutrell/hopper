@@ -95,7 +95,7 @@ describe('POST /ui/api/rules', () => {
   it('the next question\'s escalation levels get the saved rules, without a restart', async () => {
     const seen: string[] = [];
     const low = createFakeLevel({ name: 'low', script: (req: AnswerRequest) => { seen.push(`low:${req.rules}`); return { answer: 'ok', escalate: true, reason: 'not sure' }; } });
-    const high = createFakeLevel({ name: 'high', script: (req: AnswerRequest) => { seen.push(`high:${req.rules}`); return { answer: 'ok', escalate: false, reason: 'fine' }; } });
+    const high = createFakeLevel({ name: 'high', script: (req: AnswerRequest) => { seen.push(`high:${req.rules}`); return { answer: 'ok', escalate: false, reason: 'fine', confidence: 'high' }; } });
     const { a } = await start({ rules: 'before\n', seams: { levels: [low, high] } });
     const token = await a.login();
     expect((await a.ui('/ui/api/rules', { text: 'always say yes\n', version: sha('before\n') }, { token })).status).toBe(200);

@@ -83,7 +83,7 @@ describe('the pipeline end to end through the seams', () => {
   it('scripted levels answer a pulled job\'s question; the level above sees the recommendation below', async () => {
     const seen: string[] = [];
     const low = createFakeLevel({ name: 'low', script: (req) => ({ answer: `draft for ${req.question.text}`, escalate: true, reason: 'not sure' }) });
-    const high = createFakeLevel({ name: 'high', script: (req) => { seen.push(req.previous.map((x) => x.answer).join()); return { answer: 'spaces', escalate: false, reason: 'fine' }; } });
+    const high = createFakeLevel({ name: 'high', script: (req) => { seen.push(req.previous.map((x) => x.answer).join()); return { answer: 'spaces', escalate: false, reason: 'fine', confidence: 'high' }; } });
     const a = await start({}, { seams: { levels: [low, high] } });
     const job = await a.pull(ask('Tabs or spaces?'));
     expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'spaces' });
