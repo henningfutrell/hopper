@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -57,6 +57,25 @@ export function systemSecretCheck(ask: SystemSecretAsk): { tuple: RelationshipTu
     contextual: [
       { subject: userObject(ask.owner), relation: 'owner', object },
       ...(ask.admin && ask.requester.kind === 'user' ? [{ subject, relation: 'admin', object }] : []),
+    ],
+  };
+}
+/** A shared secret (issue #718): `shared_secret:<name>`, one for the whole hopper. */
+export const sharedSecretObject = (name: string): string => `shared_secret:${name}`;
+
+/**
+ * The check for an ask about a shared secret (issue #718): `can_read` or `can_change` of the user. Its readers — every
+ * user, as the wildcard, when none are named — and an admin's session are told for this check only.
+ */
+export function sharedSecretCheck(ask: SharedSecretAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = sharedSecretObject(ask.name);
+  const subject = userObject(ask.userId);
+  const readers = ask.readers ? ask.readers.map(userObject) : ['user:*'];
+  return {
+    tuple: { subject, relation: `can_${ask.action}`, object },
+    contextual: [
+      ...readers.map((r) => ({ subject: r, relation: 'reader', object })),
+      ...(ask.admin ? [{ subject, relation: 'admin', object }] : []),
     ],
   };
 }

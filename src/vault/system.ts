@@ -14,7 +14,8 @@ import type { NewEvent } from '../domain/types.ts';
 import { isSystemSecret, systemSecretKind, systemSecretName, systemSecretRow, VAULT_VALUE_MAX, type SystemSecretName, type SystemSecretView, type VaultSecret } from '../domain/vault.ts';
 import { PREVIOUS_KEYS_VARIABLE, MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { SecretUnreadable, type SealerState } from '../secrets/sealer.ts';
-import { vaultContext, type VaultResult } from './service.ts';
+import type { VaultResult } from './service.ts';
+import { resealRows, vaultContext } from './reseal.ts';
 
 /** How often a read of one system secret is an event: the hopper reads some of them every few seconds. */
 export const READ_EVENT_EVERY_MS = 60 * 60_000;
@@ -189,22 +190,7 @@ export function createSystemSecrets(o: {
       });
     },
     problem: () => (sealer ? undefined : unavailable()),
-    resealAll() {
-      if (!sealer) return 0;
-      let n = 0;
-      for (const s of vault.list()) {
-        if (!isSystemSecret(s.name)) continue;
-        const sealed = vault.sealed(s.id);
-        if (sealed === undefined || sealer.current(sealed)) continue;
-        try {
-          vault.replace(s, sealer.seal(opened(s), vaultContext(s.id)));
-          n++;
-        } catch (e) {
-          o.logger.warn(`hopper: system secret ${s.name}: ${(e as Error).message}`);
-        }
-      }
-      return n;
-    },
+    resealAll: () => resealRows({ vault, sealer, mine: isSystemSecret, what: 'system secret', logger: o.logger }),
     check() {
       const out: { name: string; problem: string }[] = [];
       for (const s of vault.list()) {

@@ -84,7 +84,8 @@ export function createFakeAuthorizationServer(): FakeAuthorizationServer {
         return us !== undefined && evaluate(us, user, relation, object, depth + 1);
       };
       const evaluate = (us: Userset, user: string, relation: string, object: string, depth: number): boolean => {
-        if (us.this) return all.some((t) => t.subject === user && t.relation === relation && t.object === object);
+        // A wildcard (`user:*`) holds for every subject of its type, as OpenFGA reads it.
+        if (us.this) return all.some((t) => (t.subject === user || t.subject === `${typeOf(user)}:*`) && t.relation === relation && t.object === object);
         if (us.computedUserset) return has(user, us.computedUserset.relation, object, depth);
         if (us.tupleToUserset) {
           const { tupleset, computedUserset } = us.tupleToUserset;

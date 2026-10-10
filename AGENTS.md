@@ -84,7 +84,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Secrets"). A credential the hopper is *given* for an outside service comes from the runtime: the variable
   `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`), named by a command-bearing
   option. A secret the hopper *owns* — one made by or for the hopper (a webhook signing secret), or one
-  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs) — is kept in the database, **sealed** under
+  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs; a **shared secret**, issue #718, one the instance admin shares with every user's agents or the readers named, `shared/<name>` in the instance's vault, read by a job only through its approved template and OpenFGA `shared_secret#can_read`) — is kept in the database, **sealed** under
   the master key `HOPPER_MASTER_KEY` (`src/secrets/sealer.ts`: a key per value from the master key
   and a salt, AES-256-GCM, bound to its place, a key id for rotation), never logged, never
   in an event, and never answered by any route but, once, a secret the hopper made in the answer that made

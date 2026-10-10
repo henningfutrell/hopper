@@ -162,11 +162,25 @@ export interface SystemSecretAsk {
   admin?: boolean;
 }
 
+/**
+ * An ask about a shared secret (issue #718): `read` it, for a job of `userId`, or `change` it — set or remove — as
+ * `userId`, `admin` when the session is the hopper's admin's. `readers`: the users it is shared with; absent, every user.
+ */
+export interface SharedSecretAsk {
+  userId: string;
+  name: string;
+  action: 'change' | 'read';
+  admin?: boolean;
+  readers?: readonly string[];
+}
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's answer, asked each time; a deny when it cannot be had. */
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
+  /** Whether a user may read or change a shared secret (issue #718): OpenFGA's answer, the readers told at each ask; a deny when it cannot be had. */
+  decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
 }
 
 /** Access's answer to one check. `unavailable`: OpenFGA could not be asked (not set up, not reached), so it is a deny by outage, not a refusal (issue #696). */

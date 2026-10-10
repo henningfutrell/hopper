@@ -9,7 +9,9 @@ import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const VAULT_USAGE = `  hopper vault                                       the vault: its secrets and templates, with what waits for a person; never a value
   hopper vault set <name> [--scope <text>]           set a vault secret from stdin (never as an argument); kept sealed, never answered back
-  hopper vault remove <name>                         remove a vault secret
+  hopper vault set <name> --shared [--scope <text>] [--reader <user id>]...
+                                                     share a secret with every user's agents, or the readers named (the hopper's admin)
+  hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
@@ -24,23 +26,29 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper sandbox launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]
                                                      start a sandbox box, of an approved template, within its limits`;
 
-const VAULT_SET = 'vault set <name> [--scope <text>] (the value on stdin, never as an argument)';
-const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name>`;
+const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
+const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared]`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]';
 const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name>';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
 
+/** A shared secret's edit (issue #718): the hopper's admin's route, `POST /ui/api/vault/shared`. */
+const shared = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault/shared', body: async () => body });
+
 export function vaultCall(args: string[], stdin: () => string): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { scope: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { scope: { type: 'string' }, shared: { type: 'boolean' }, reader: { type: 'string', multiple: true } } });
   const [verb, name, ...extra] = positionals;
-  if (verb === undefined && values.scope === undefined) return { role: 'viewer', path: '/api/vault' };
-  if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined) return edit({ action: 'remove', name });
+  const flags = Object.keys(values).length > 0;
+  if (verb === undefined && !flags) return { role: 'viewer', path: '/api/vault' };
+  if (values.reader && !values.shared) throw new OperatorRefusal('--reader names who may read a shared secret: add --shared');
+  if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined && !values.reader) return (values.shared ? shared : edit)({ action: 'remove', name });
   if (verb !== 'set' || !name || extra.length > 0) throw usage(verb === 'set' ? VAULT_SET : VAULT_VERBS);
   const value = stdin().trim();
   if (!value) throw new OperatorRefusal(`no value on stdin: pipe it in, e.g. hopper vault set ${name} < value-file`);
-  return edit({ action: 'set', name, value, ...(values.scope === undefined ? {} : { scope: values.scope }) });
+  const body = { action: 'set', name, value, ...(values.scope === undefined ? {} : { scope: values.scope }) };
+  return values.shared ? shared({ ...body, ...(values.reader ? { readers: values.reader } : {}) }) : edit(body);
 }
 
 /** `<operation>/<kind>/<asset>`, the key a launch names a profile by; the asset may hold `/` (a namespace, an AWS role). */

@@ -89,7 +89,7 @@ const readStdin = (): Promise<string> => new Promise((resolve) => {
 async function run(argv: string[]): Promise<string> {
   const [mode, name, ...rest] = argv;
   if (!mode || !name || !['get', 'git', 'aws', 'kube'].includes(mode)) throw new Error(USAGE);
-  // `aws|kube OPERATION ASSET`: minted. An asset always has a `/`, a secret's name never.
+  // `aws|kube OPERATION ASSET`: minted, told by its two words; a secret is one (a shared secret's name has a `/` too).
   const mint = (mode === 'aws' || mode === 'kube') && rest.length === 1 ? { mint: mode as MintForm, operation: name, asset: rest[0]! } : undefined;
   if (!mint && !isSecretName(name)) throw new Error(`${JSON.stringify(name)} is not a vault secret's name`);
   let user = 'x-access-token';

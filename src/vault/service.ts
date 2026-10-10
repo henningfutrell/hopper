@@ -24,8 +24,8 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-/** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
-export const vaultContext = (id: string): string => `vault:${id}/value`;
+import { resealRows, vaultContext } from './reseal.ts';
+export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
@@ -112,6 +112,8 @@ export function createVaultService(o: {
   holds?: (parts: ProxyTokenParts) => boolean;
   /** The vault backends the plugins config names now (issue #585); none when absent. */
   backends?: () => ConfiguredBackend[];
+  /** The shared secret a row name `shared/<name>` names (issue #718): a template may name one. Absent: none. */
+  shared?: (row: string) => VaultSecret | undefined;
 }): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
@@ -179,8 +181,9 @@ export function createVaultService(o: {
   const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
   const rules = (): RadiusRules => (o.store.settings.getBlastRadius() ?? DEFAULT_BLAST_RADIUS_SETTINGS).rules;
   /** What the rating reads of a template: its secrets' names and scope lines, never a value, and its profiles. */
+  const held = (n: string): VaultSecret | undefined => vault.get(n) ?? o.shared?.(n);
   const scopeOfTemplate = (t: Template): TemplateScope => ({
-    secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = vault.get(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
+    secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = held(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
     profiles: t.profiles ?? [],
   });
   const viewOf = (t: Template): TemplateView => {
@@ -244,7 +247,7 @@ export function createVaultService(o: {
       const scope = [...new Set(secrets)];
       const system = scope.filter(isSystemSecret);
       if (system.length) return fail('invalid', `${system.join(', ')} is in the vault's system scope: the hopper keeps it for its own use, so it is in no template's scope`);
-      const missing = scope.filter((n) => !vault.get(n));
+      const missing = scope.filter((n) => !held(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
       if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
@@ -358,22 +361,7 @@ export function createVaultService(o: {
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom,
 
-    resealAll() {
-      if (!sealer) return 0;
-      let n = 0;
-      for (const s of vault.list()) {
-        if (isSystemSecret(s.name)) continue;
-        const sealed = vault.sealed(s.id);
-        if (sealed === undefined || sealer.current(sealed)) continue;
-        try {
-          vault.replace(s, sealer.seal(sealer.open(sealed, vaultContext(s.id)), vaultContext(s.id)));
-          n++;
-        } catch (e) {
-          o.logger.warn(`hopper: vault secret ${s.name}: ${(e as Error).message}`);
-        }
-      }
-      return n;
-    },
+    resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }
 

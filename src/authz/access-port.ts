@@ -1,7 +1,7 @@
 // What Access answers (issue #559, design.md "Access: OpenFGA decides each mint"): the port the vault, artifacts, the
 // system scope and a changed item's acceptance ask. Implemented by createAccess (service.ts); apart for its size.
 import type {
-  AccessAnswer, AccessDecisionRecord, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SystemSecretAsk, TemplateApprovals,
+  AccessAnswer, AccessDecisionRecord, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
 
 /** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
@@ -21,6 +21,8 @@ export interface Access extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
+  /** Whether a user may read or change a shared secret (issue #718): OpenFGA's `can_read` or `can_change`, its readers and an admin told for that check only. Not recorded. */
+  decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
   /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
   tryCheck(request: Omit<MintRequest, 'requester'> & { template: string }, by: string): Promise<AccessDecisionRecord>;
   /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */

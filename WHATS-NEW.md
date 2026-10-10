@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper's admin can now share a vault secret with every user's agents, or with chosen users, so each person needs no copy of their own. Every user sees the shared secrets on the Vault page and can add one to a template; a job gets it only from a box of an approved template that names it. Secrets stay each user's own unless the admin shares them.
 - Scripts and agents on the hopper's host can now set vault secrets, save and approve templates and start sandbox boxes from the command line, with no browser sign-in. A secret's value is read from standard input only.
 - A machine whose jobs cannot reach the hopper now shows as off-network on Machines, with why. When it is a container, you also get the one command that joins it to the hopper's network, ready to copy. Its jobs wait and say why. The container setup now always makes the hopper's network under the same name, so new boxes reach the hopper with no extra step.
 - Updating a hopper that runs in containers is now one script, made by the new version itself. It backs up your database and settings, puts in the new version's compose file with every service it needs, keeps your own settings such as a LAN address, starts the whole stack and checks it. The update notice shows the two commands, and agents get the same steps from the hopper.
