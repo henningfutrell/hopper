@@ -50,6 +50,18 @@ export function artifactType(name: string, type?: string): string | undefined {
 
 export const kindOf = (type: string): ArtifactKind => ARTIFACT_TYPES[type] ?? 'file';
 
+/** An element that draws: what makes an HTML artifact a visual (issue #675). */
+const DRAWING = /<(svg|canvas|img)[\s>/]/i;
+
+/**
+ * Issue #675: an artifact is a visual — a diagram, a chart, a graph. An HTML artifact with no `<svg>`, `<canvas>` or
+ * `<img>` is styled text: the hopper keeps it, and the job hears this warning. Undefined: no warning.
+ */
+export function visualWarning(kind: ArtifactKind, content: Buffer): string | undefined {
+  if (kind !== 'html' || DRAWING.test(content.toString('utf8'))) return undefined;
+  return 'the artifact has no visual: it has no <svg>, <canvas> or <img>. Draw the diagram or the chart; put prose in the issue comment or the job result';
+}
+
 /** A file name the hopper keeps: the base name, no path, no control character, at most 200 characters. */
 export function artifactName(name: string): string {
   // eslint-disable-next-line no-control-regex -- control characters are what is removed

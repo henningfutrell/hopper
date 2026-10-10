@@ -21,6 +21,16 @@
 //   Scenario: a public link works without a session, expires, and stops when public links are turned off
 //   Scenario: limits and masking: a file over the limit is a clear no; a GitHub token in a text artifact is masked
 //   Scenario: a token that is no job's, and an unknown artifact, are clear noes; rm removes the artifact
+//
+// Feature: artifacts are visuals (issue #675)
+//   Scenario: an HTML artifact with no drawing gets a warning
+//     When the job puts an HTML page with no <svg>, <canvas> or <img>
+//     Then the hopper keeps it, and the put answers a warning that the artifact has no visual
+//     And `artifact.created` carries the warning, on the job's timeline and its job stream
+//   Scenario: an SVG drawing is served in the HTML sandbox
+//     When the job puts an SVG with `--type svg`
+//     Then it has no warning, and it is served under the same sandbox policy as HTML
+//   Scenario: the skill help says an artifact is a visual, and shows an SVG flow diagram and an SVG bar chart
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,6 +38,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ARTIFACT_SCRIPT } from '../../src/artifacts/index.ts';
+import { HTML_POLICY } from '../../src/artifacts/content.ts';
+import { ARTIFACT_HELP } from '../../src/artifacts/script.ts';
+import { visualWarning } from '../../src/domain/artifacts.ts';
 import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
@@ -40,7 +53,7 @@ import { waitFor } from '../support/wait.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
-const CHART = '<!doctype html><title>Queue wait</title><div id="c"></div><script>document.getElementById("c").textContent = "42";</script>\n';
+const CHART = '<!doctype html><title>Queue wait</title><svg viewBox="0 0 10 10"><rect width="4" height="10"/></svg><div id="c"></div><script>document.getElementById("c").textContent = "42";</script>\n';
 const GH_TOKEN = `ghp_${'a1B2'.repeat(9)}`;
 
 let t: TestApp | undefined;
@@ -265,5 +278,55 @@ describe('artifacts (issue #624)', () => {
     expect((await read(a, session)).artifacts.map((x) => x.id)).toEqual([id]);
     expect(eventsOf(a, 'artifact.removed')).toEqual([expect.objectContaining({ data: { artifact: 'old-1', reason: 'retention' } })]);
     expect(eventsOf(a, 'artifact.settings_changed')).toEqual([expect.objectContaining({ data: expect.objectContaining({ to: expect.objectContaining({ retentionDays: 1 }) }) })]);
+  });
+});
+
+describe('artifacts are visuals (issue #675)', () => {
+  it('finds a visual in HTML: <svg>, <canvas> or <img>, in any case; only HTML is checked', () => {
+    expect(visualWarning('html', Buffer.from('<p>steps</p><ol><li>one</li></ol>'))).toMatch(/^the artifact has no visual/);
+    expect(visualWarning('html', Buffer.from('<p>a</p><SVG viewBox="0 0 1 1"></SVG>'))).toBeUndefined();
+    expect(visualWarning('html', Buffer.from('<canvas id="c"></canvas>'))).toBeUndefined();
+    expect(visualWarning('html', Buffer.from('<img src="data:image/png;base64,AA">'))).toBeUndefined();
+    // A word in the text is not a drawing.
+    expect(visualWarning('html', Buffer.from('<p>use an svg or a canvas</p>'))).toMatch(/^the artifact has no visual/);
+    expect(visualWarning('svg', Buffer.from('<svg/>'))).toBeUndefined();
+    expect(visualWarning('csv', Buffer.from('a,b'))).toBeUndefined();
+  });
+
+  it('an HTML page with no drawing is kept with a warning on the put and on the timeline; an SVG has none and opens in the HTML sandbox', async () => {
+    const { a, session, job } = await boot();
+    const page = file('notes.html', '<!doctype html><title>Notes</title><ol><li>person edits</li><li>hopper re-reads</li></ol>\n');
+    const put = await artifact(a, job, ['put', 'notes.html'], { cwd: page.dir });
+    expect(put.code).toBe(0);
+    expect(put.stdout).toMatch(/\nwarning: the artifact has no visual[^\n]*\n$/);
+    const json = JSON.parse((await artifact(a, job, ['put', 'notes.html', '--json'], { cwd: page.dir })).stdout) as { artifact: ArtifactView; warning?: string };
+    expect(json.warning).toMatch(/^the artifact has no visual/);
+    expect(eventsOf(a, 'artifact.created').find((e) => (e.data as { artifact: string }).artifact === json.artifact.id)!.data).toMatchObject({ warning: json.warning });
+    expect(a.user().jobStream.repo.since(job, 0, 100).filter((e) => e.type === 'artifact.created').length).toBe(2);
+
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="60" height="40" fill="#4a7"/><script>document.querySelector("rect").setAttribute("width","70")</script></svg>\n';
+    const drawing = file('flow.xml', svg);
+    const out = JSON.parse((await artifact(a, job, ['put', 'flow.xml', '--type', 'svg', '--json'], { cwd: drawing.dir })).stdout) as { artifact: ArtifactView; warning?: string };
+    expect(out.artifact).toMatchObject({ type: 'image/svg+xml', kind: 'svg' });
+    expect(out.warning).toBeUndefined();
+    expect(eventsOf(a, 'artifact.created').find((e) => (e.data as { artifact: string }).artifact === out.artifact.id)!.data).not.toHaveProperty('warning');
+
+    const mine = (await read(a, session)).artifacts.find((x) => x.id === out.artifact.id)!;
+    const res = await load(a, mine.contentUrl);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/svg+xml');
+    expect(res.headers.get('content-security-policy')).toBe(HTML_POLICY);
+    expect(await res.text()).toBe(svg);
+  });
+
+  it('the skill help says an artifact is a visual, puts prose elsewhere, and shows an SVG flow diagram and an SVG bar chart', () => {
+    expect(ARTIFACT_HELP).toMatch(/an artifact is a visual/i);
+    expect(ARTIFACT_HELP).toMatch(/prose goes in the issue comment or the job result/i);
+    expect(ARTIFACT_HELP).toMatch(/no external loads/i);
+    expect(ARTIFACT_HELP).not.toMatch(/CDN/);
+    expect(ARTIFACT_HELP).toContain('Example: a flow diagram');
+    expect(ARTIFACT_HELP).toContain('Example: a bar chart');
+    expect(ARTIFACT_HELP.match(/<svg /g)?.length).toBe(2);
+    expect(ARTIFACT_HELP).not.toMatch(/https?:\/\/(?!www\.w3\.org\/2000\/svg)/);
   });
 });

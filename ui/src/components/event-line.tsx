@@ -1,6 +1,7 @@
 // One event as one line: time, type (coloured by what ended or started), and its subject.
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
+import { artifactCreatedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
 import type { DomainEvent, MachineView } from '@/model/wire';
 import { TEXT, type Tone } from '@/components/status';
@@ -37,6 +38,7 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';
   if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
   if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
+  if (e.type === 'artifact.created') return artifactCreatedDetail(d);
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;
