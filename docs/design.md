@@ -9798,6 +9798,14 @@ and denies when it cannot); the requester is not live; the model lacks a relatio
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
 shown in Settings → Access.
 
+**An outage is not a refusal** (issue #696). A check apart from mints (`checkOnce`: a system secret, an artifact, an
+item's new text) that OpenFGA could not answer — not set up, not reached, a change not pushed — is a deny marked
+`unavailable`. A system secret's change then fails `unavailable` (503 `access checks are unavailable: OpenFGA is not
+reachable: <why>`), never `forbidden`, and writes nothing. The UI reads a 403 as signed out only when the session
+guard says so (`session: 'ended'`, no live session); any other 403 or 503 is that change failing, and the session,
+the GitHub connection and every other secret stay. `GET /api/access/status` gives the state and why to any reader:
+the banner over every view, the TypeSafe API key's form (off with the reason) and How to update read it.
+
 **The relationship path.** OpenFGA's check answers only allowed or not. On an allow, the path is the hopper's
 reading of its own live tuples: (for a job, its owner first) the user owns the job → the job runs on the machine → the
 machine is an instance of the template → the template is approved for the profile → the profile grants the operation on

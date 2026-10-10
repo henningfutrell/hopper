@@ -287,6 +287,16 @@ every credential is denied, and Settings → Access says why.
   `podman compose up -d`.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
   filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
+- **Without OpenFGA** (issue #696): every page shows a banner that says why access checks are off, with this fix, and
+  How to update says it too. A change that needs Access — the TypeSafe API key on Settings → Decider — is off with
+  the same reason, and a save tried anyway answers 503 `access checks are unavailable: OpenFGA is not reachable`.
+  Nothing else changes: your other secrets, your GitHub connection and your session stay as they were.
+  `GET /api/access/status` answers the state to any reader.
+- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): copy the
+  `openfga-migrate` and `openfga` services, and the `postgres` service's start script that writes OpenFGA's files,
+  from the current `compose.yaml` into yours — or take the whole file and keep your `.env` —, then run
+  `podman-compose up -d` (or `podman compose up -d`) in its folder. The banner goes within a minute of OpenFGA
+  answering.
 
 ### Minting short-lived credentials
 

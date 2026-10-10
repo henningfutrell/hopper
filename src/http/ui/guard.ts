@@ -10,10 +10,13 @@ export const SESSION_HEADER = 'x-hopper-session';
 
 const one = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? undefined : v);
 
-/** Why the request is refused (`needs`: the session is live but its role is short), or null when it may mutate. */
-export function mutationRefusal(headers: IncomingHttpHeaders, port: number, lan: Lan, sessions: UiSessions, needs: UiRole): { why: string; needs?: UiRole } | null {
+/**
+ * Why the request is refused, or null when it may mutate. `needs`: the session is live but its role is short. `session:
+ * 'ended'`: there is no live session — the one refusal the UI reads as signed out (issue #696); any other 403 keeps it.
+ */
+export function mutationRefusal(headers: IncomingHttpHeaders, port: number, lan: Lan, sessions: UiSessions, needs: UiRole): { why: string; needs?: UiRole; session?: 'ended' } | null {
   const session = sessions.find(one(headers[SESSION_HEADER]));
-  if (!session) return { why: `missing or invalid ${SESSION_HEADER}` };
+  if (!session) return { why: `missing or invalid ${SESSION_HEADER}`, session: 'ended' };
   const origin = one(headers.origin)?.toLowerCase();
   if (origin === undefined || !uiOrigins(port, lan).includes(origin)) return { why: `origin ${origin ?? '(none)'} not allowed` };
   const site = one(headers['sec-fetch-site']);

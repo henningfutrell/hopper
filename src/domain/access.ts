@@ -166,8 +166,14 @@ export interface SystemSecretAsk {
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's answer, asked each time; a deny when it cannot be had. */
-  decideSystemSecret(ask: SystemSecretAsk): Promise<{ allowed: boolean; reason: string }>;
+  decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
 }
+
+/** Access's answer to one check. `unavailable`: OpenFGA could not be asked (not set up, not reached), so it is a deny by outage, not a refusal (issue #696). */
+export interface AccessAnswer { allowed: boolean; reason: string; unavailable?: true }
+
+/** What a change that needs Access says when OpenFGA cannot be asked (issue #696): a 503, never a 401 or 403 that reads as signed out. */
+export const ACCESS_UNAVAILABLE = 'access checks are unavailable: OpenFGA is not reachable';
 
 // ---- Ports ---------------------------------------------------------------------------
 

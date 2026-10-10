@@ -53,7 +53,7 @@ function fakeDaemon(d: Daemon) {
     }
     if (path.startsWith('/ui/api/')) {
       posts.push(`${init.method ?? 'GET'} ${path}`);
-      if (d.mutationStatus) return json(d.mutationStatus, { error: 'no session' });
+      if (d.mutationStatus) return json(d.mutationStatus, { error: 'missing or invalid x-hopper-session', session: 'ended' });
       return json(200, {});
     }
     return json(200, routes[path] ?? {});

@@ -2,7 +2,8 @@
 // login code (when the sign-in config leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: realms"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: realms"). Every refusal is a logged 403; only one with no live session says `session: 'ended'`, the one the
+// UI reads as signed out (issue #696). A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN"). A mutation acts for the
 // session's user only (issue #158); the instance's (update, plugin store, users, realms) need admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -157,9 +158,9 @@ const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
-const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
+const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole, session?: 'ended') => {
   console.warn(`hopper: UI ${req.method} ${req.url} refused: ${why}`);
-  return reply.code(403).send(needs ? { error: why, needs } : { error: why });
+  return reply.code(403).send({ error: why, ...(needs ? { needs } : {}), ...(session ? { session } : {}) });
 };
 
 
@@ -195,15 +196,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
   const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, needs);
-    if (r) return refuse(req, reply, r.why, r.needs);
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
   } });
   const operator = allow('operator');
   const admin = allow('admin');
   // What is the instance's (issue #240): an admin session of the hopper's admin, not any admin session.
   const instance = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, 'admin');
-    if (r) return refuse(req, reply, r.why, r.needs);
-    // `needs` keeps the session: the UI reads a bare 403 as a dead one.
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
     if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
   } };
 

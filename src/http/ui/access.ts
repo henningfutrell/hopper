@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AccessEditError, type Access } from '../../authz/service.ts';
 import { OPERATIONS, ASSET_KINDS, ASSET_NAME, TEMPLATE_NAME } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import type { Operation } from '../openapi-operation.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -40,3 +41,8 @@ export function registerAccessRoutes(app: FastifyInstance, o: { instance: Guard;
     return o.access.view();
   });
 }
+
+/** Its entry in the API reference (src/http/openapi.ts). */
+export const ACCESS_EDIT_OPERATIONS: Operation[] = [
+  { method: 'post', path: '/ui/api/access', tag: 'Access', summary: 'Approve, revoke, try a check, or save the access model', description: 'Only the instance admin (issue #559). `approve` — a template for an operation on an asset (what the vault\'s gate writes, issue #558); `revoke` — an approval by its `id`: the next check is denied; `check` — whether a live job of the template would get the operation on the asset now (a trial, recorded with the answer); `model` — the access model in OpenFGA DSL, against the `version` read: it must keep every relation the hopper writes or asks, and OpenFGA must take it when it can be asked (400 naming why; 409 when the model moved). A change is pushed to OpenFGA before the answer; one it could not take yet is pushed before the next check, which is denied until then. 404: no such approval.', role: 'admin', body: accessEditBody, returns: 'the new view, as GET /api/access; `check`: the `AccessDecisionRecord`', errors: [403, 404, 409] },
+];
