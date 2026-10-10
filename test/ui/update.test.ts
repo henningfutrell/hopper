@@ -30,15 +30,15 @@ describe('update model', () => {
       status({ state: 'available', channel, installed: { ...installed, kind: 'image', branch }, target: { commit: B, ref: channel }, ...o });
 
     for (const channel of ['dev', 'beta', 'stable'] as const) {
-      it(`${channel}: the tag of the channel, the pull and recreate of the hopper container alone, and the prune`, () => {
+      it(`${channel}: the update script made by the channel's image, run on the whole stack, and the prune (issue #697)`, () => {
         const u = imageUpdate(image(channel, channel))!;
         expect(headline(image(channel, channel))).toBe(`Update available: pull the ${channel} image and recreate the container`);
-        expect(u.env).toBe(`HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:${channel}`);
+        expect(u.image).toBe(`ghcr.io/henningfutrell/hopper:${channel}`);
         expect(u.commands).toEqual([
-          { tool: 'Podman', update: 'podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper', prune: 'podman image prune -f --filter label=org.opencontainers.image.title=hopper' },
-          { tool: 'Docker', update: 'docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper', prune: 'docker image prune -f --filter label=org.opencontainers.image.title=hopper' },
+          { tool: 'Podman', make: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:${channel} hopper update podman > hopper-update.sh`, run: 'sh hopper-update.sh', prune: 'podman image prune -f --filter label=org.opencontainers.image.title=hopper' },
+          { tool: 'Docker', make: `docker run --rm --pull=always ghcr.io/henningfutrell/hopper:${channel} hopper update docker > hopper-update.sh`, run: 'sh hopper-update.sh', prune: 'docker image prune -f --filter label=org.opencontainers.image.title=hopper' },
         ]);
-        expect(JSON.stringify(u)).not.toMatch(/postgres|volume|down/);
+        expect(JSON.stringify(u)).not.toMatch(/--no-deps|volume|down/);
         expect(u.mismatch).toBeUndefined();
       });
     }
@@ -54,7 +54,7 @@ describe('update model', () => {
       const s = image('dev', 'stable');
       expect(imageUpdate(s)!.mismatch).toBe('this container runs the stable image; the selected channel is dev: switch the image tag');
       expect(headline(s)).toBe('Update available: this container runs the stable image; the selected channel is dev: switch the image tag');
-      expect(imageUpdate(s)!.env).toBe('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
+      expect(imageUpdate(s)!.image).toBe('ghcr.io/henningfutrell/hopper:dev');
     });
 
     it('counts the running jobs a recreate would lose, and says to wait until none', () => {
