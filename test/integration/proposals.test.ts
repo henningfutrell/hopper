@@ -148,6 +148,41 @@ describe('review through the reviewer levels', () => {
   });
 });
 
+describe('the structural pre-check before the reviewer levels (issue #631)', () => {
+  it('sends a proposal with gaps back to the job with the gap list, with no model call; past the limit a person decides', async () => {
+    const seen: ReviewRequest[] = [];
+    const a = await start({ seams: { levels: [reviewer('low', ['approve'], seen)] } });
+    const token = await a.login();
+    await settings(a, token, { reviewers: ['low'] });
+    const job = await a.pull(propose('Goal: paint it\nApproach: a brush, see [the plan]()'));
+    const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(seen).toEqual([]);
+    expect(p.levelRevisions).toBe(0);
+    expect(p.versions.map((v) => v.number)).toEqual([1, 2, 3]);
+    expect(p.versions[1]!.text).toContain('sent back by the structural pre-check');
+    expect(p.versions[1]!.text).toContain('Missing part: Alternatives considered.');
+    expect(p.versions[1]!.text).toContain('Broken link: [the plan]() has no target.');
+    expect(p.reviews.map((r) => [r.stage, r.role, r.verdict, r.version])).toEqual([
+      ['pre-check', 'check', 'request_changes', 1], ['pre-check', 'check', 'request_changes', 2], ['pre-check', 'check', 'request_changes', 3],
+    ]);
+    const events = ofJob(await a.events(), job.id);
+    expect(events.filter((e) => e.type === 'proposal.revision_requested').map((e) => e.data.stage)).toEqual(['pre-check', 'pre-check']);
+    expect(events.filter((e) => e.type === 'proposal.escalated').map((e) => e.data.target)).toEqual(['human']);
+    expect(events.find((e) => e.type === 'proposal.escalated_to_human')!.data.reason).toMatch(/^the structural pre-check sent it back 2 times; still: Missing part/);
+  });
+
+  it('lets a complete proposal through to the reviewer levels', async () => {
+    const seen: ReviewRequest[] = [];
+    const a = await start({ seams: { levels: [reviewer('low', ['approve'], seen)] } });
+    const token = await a.login();
+    await settings(a, token, { reviewers: ['low'] });
+    const job = await a.pull(propose());
+    const p = await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(seen).toHaveLength(1);
+    expect(p.reviews.map((r) => [r.stage, r.verdict])).toEqual([['low', 'approve']]);
+  });
+});
+
 describe('a person signs off', () => {
   it('accept: who and when are recorded, the job ends, and proposal.accepted goes out as a webhook', async () => {
     receiver = await startReceiver();

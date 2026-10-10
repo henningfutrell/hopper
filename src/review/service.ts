@@ -1,5 +1,7 @@
 // The review (issues #537, #543, design.md "Sections"): one service per review section — Proposals, Research — built
-// from its ReviewSectionType. The reviewer levels, lowest first — escalation levels named in the section's settings —
+// from its ReviewSectionType. Where the section has reviewer levels, the structural pre-check goes first (issue #631):
+// an item with gaps goes back to the job with the gap list and no model call, and after PRE_CHECK_RETURNS such send-backs
+// to a person. The reviewer levels, lowest first — escalation levels named in the section's settings —
 // then a person. Each level approves, asks for changes or escalates; its verdict and notes go on the trail. An approval
 // goes on up, or accepts the item where the top level may sign off. A request for changes sends it back to the job,
 // until the levels have done so as often as the settings allow; then a person decides. A level that fails, times out,
@@ -7,12 +9,13 @@
 // declares, at any stage. Like the question pipeline, every write is one tx, compare-and-set.
 import type { Clock, ConfigRecords, EscalationLevel, ReviewActionResult, ReviewReply, ReviewRequest, ReviewService, ReviewServices, UserStore } from '../domain/ports.ts';
 import {
-  jobPriorityTag, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
+  jobPriorityTag, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
   thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 import { check } from '../questions/results.ts';
 import { readRules } from '../questions/rules.ts';
+import { preCheck } from './pre-check.ts';
 import { REVIEW_REPLY } from './reply.ts';
 import { reviewSettings } from './settings.ts';
 
@@ -94,7 +97,8 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
 
   /** Inside a tx. Back to the job with what to do next. */
   function sendBack(p: ReviewItem, stage: string, decision: ReviewDecisionId, notes: string, by?: string): ReviewItem {
-    const updated = items.update(p.id, { status: 'revising', ...(stage === HUMAN ? {} : { levelRevisions: p.levelRevisions + 1 }) });
+    const byLevel = stage !== HUMAN && stage !== PRE_CHECK;
+    const updated = items.update(p.id, { status: 'revising', ...(byLevel ? { levelRevisions: p.levelRevisions + 1 } : { stage }) });
     emit(updated, 'revision_requested', { stage, decision, notes, ...(by ? { by } : {}) });
     o.onRevise(updated, type.brief(updated, stage, decision, notes));
     return updated;
@@ -174,9 +178,29 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     });
   }
 
+  /** The structural pre-check, in one tx. True: the item goes on to the reviewer levels. */
+  function passesPreCheck(id: string): boolean {
+    return store.tx((): boolean => {
+      const p = items.get(id);
+      if (!p || p.status !== 'open') return false;
+      const gaps = preCheck(kind, p.versions);
+      if (gaps.length === 0) return true;
+      const at = iso();
+      const notes = gaps.map((g) => `- ${g}`).join('\n');
+      items.addReview(id, { version: p.versions.length, stage: PRE_CHECK, role: 'check', verdict: 'request_changes', notes, startedAt: at, finishedAt: at });
+      emit(p, 'reviewed', { stage: PRE_CHECK, verdict: 'request_changes', notes });
+      const now = items.get(id)!;
+      const returns = now.reviews.filter((r) => r.stage === PRE_CHECK).length - 1;
+      if (returns < PRE_CHECK_RETURNS) sendBack(now, PRE_CHECK, 'request_changes', notes);
+      else toHuman(now, `the structural pre-check sent it back ${returns} times; still: ${gaps.join(' ')}`);
+      return false;
+    });
+  }
+
   async function run(id: string, reason: string): Promise<void> {
     if (stopped) return;
     const s = reviewSettings(store, kind);
+    if (s.reviewers.length > 0 && !passesPreCheck(id)) return;
     const levels = o.levels();
     const reviewers = s.reviewers.map((name) => levels.find((l) => l.name === name) ?? missingLevel(name));
     let why: string | undefined = reason;
