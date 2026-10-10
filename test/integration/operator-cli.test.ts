@@ -138,7 +138,7 @@ describe('operator actions from the CLI (issue #374)', () => {
     expect((await a.events('types=auto_park.settings_changed')).at(-1)?.data).toMatchObject({ by: 'operator CLI', to: { minutes: 0, highPriorityMinutes: 15 } });
     expect((await hopper(a, ['auto-park', 'set'])).err).toMatch(/usage: hopper auto-park set/);
     expect((await hopper(a, ['auto-park', 'set', '--minutes', 'soon'])).err).toMatch(/--minutes must be a number of minutes/);
-    expect((await hopper(a, ['auto-park', 'set', '--minutes', '-1'])).code).toBe(2);
+    expect((await hopper(a, ['auto-park', 'set', '--minutes=-1'])).code).toBe(2);
   });
 
   it('no daemon at the URL: says so, exit 1, and leaves no session behind', async () => {

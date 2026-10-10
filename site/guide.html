@@ -316,6 +316,13 @@ the first line of its question, and whether it <em>resumes its session</em> or <
 first. Parked's count in the menu reminds you of them. Open a row to read the whole question. Its question never expires, and
 you can still answer it: the answer is kept for when the job comes back. The Overview and the Queue list parked jobs too. A
 login it waited on fails. There is no time limit.</p>
+<h3>Auto-park</h3>
+<p>A question that waits on you for too long parks its job by itself, so the job does not keep its machine busy, for example
+at night. The default wait is 30 minutes. The wait starts when the question reaches you: time spent on automatic answering
+does not count. The row in Parked says why, for example <em>Parked automatically: the question waited 30 min.</em> Type your
+answer and press <strong>Answer</strong>: the job goes back in the queue and resumes its session, with no Pick up. A question
+that a risk rule or the consequential guard sent to you never parks its job. Set the wait in <strong>Settings → Auto-park</strong>
+(admin), one for high-priority jobs and one for the rest. 0 turns it off.</p>
 <h3>Resume</h3>
 <p>Press <strong>Pick up</strong>. The job waits for its own machine (held while that machine is offline, never started
 elsewhere), opens a new pane in its kept work tree and resumes its agent session there. If its question is still open, it waits

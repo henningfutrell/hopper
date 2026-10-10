@@ -42,17 +42,20 @@ export function freshStartBrief(c: Pick<EngineContext, 'store'>, job: Job, answe
   return lines.join('\n');
 }
 
-/** Inside a tx: the job parked from `from`, its lane (if any) freed. Its question, if open, stays open. */
-export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId): Job {
+/**
+ * Inside a tx: the job parked from `from`, its lane (if any) freed. Its question, if open, stays open. `why`: auto-park
+ * parked it (issue #650), and this says why.
+ */
+export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waiting_answer', laneId?: LaneId, why?: string): Job {
   const { store } = c;
   const at = nowIso(c);
   const lane = laneId ? store.lanes.list().find((l) => l.id === laneId) : undefined;
   const machineId = lane?.machineId ?? job.resumeOn ?? job.spec.machineId;
   const parked = store.jobs.update(job.id, {
-    status: 'parked', laneId: undefined, parked: { at, from }, ...(machineId ? { resumeOn: machineId } : {}),
+    status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}) }, ...(machineId ? { resumeOn: machineId } : {}),
     holdReason: undefined, waitReason: undefined,
   });
-  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}) } });
+  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}) } });
   releaseLane(c, lane, at);
   return parked;
 }

@@ -18,7 +18,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.failed': { error: 'boom' },
   'job.cancelled': { reason: 'cancelled while queued' },
   'job.requeued': { from: 'waiting_answer', reason: 'answered' },
-  'job.parked': { from: 'running', machineId: 'laptop' },
+  'job.parked': { from: 'waiting_answer', machineId: 'laptop', auto: true, why: 'Parked automatically: the question waited 30 min.' },
   'job.unparked': { to: 'queued' },
   'job.continued': { handoffId: 'h1' },
   'job.reattached': { reason: 'daemon restart' },
@@ -119,6 +119,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high' }, to: { enabled: true, threshold: 'medium' }, by: 'admin' },
+  'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {

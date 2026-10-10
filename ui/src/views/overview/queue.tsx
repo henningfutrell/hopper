@@ -107,7 +107,8 @@ const WAITING_MEANING: Record<string, string> = {
 
 /**
  * The parked jobs (issue #501): out of their lanes, no pane or agent, their work tree and agent session kept on their
- * machine until picked up. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ * machine until picked up. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false). One
+ * auto-park parked (issue #650) says why.
  */
 export function ParkedRows({ heading = true }: { heading?: boolean }) {
   const { parked } = useJobBoard();
@@ -127,6 +128,7 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
           {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#parked" className="text-question hover:underline">question open →</a>}
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
+        {job.parked?.why && <div data-slot="parked-why" className="text-xs text-muted-foreground">{job.parked.why}</div>}
         {job.workTree && <div className="truncate font-mono text-xs text-muted-foreground" title={`work tree ${job.workTree}`}>{job.workTree}</div>}
       </div>
     ))}

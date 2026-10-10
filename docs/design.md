@@ -55,7 +55,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
-| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627) | http |
+| `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
@@ -8834,8 +8834,27 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   badge counts the parked jobs, marked when high priority, quiet (muted): a reminder, not an alarm.
 - **A login it waits on** (issue #476) fails when it is parked, as for any job that no longer runs (`the job
   ended`); the resumed session meets its tool again and reports a new one.
-- **Settings.** None of its own: who may park is the operator role, as for cancel, and roles apply live. No
-  reminder or limit for parked jobs.
+- **Auto-park** (issue #650). A question that waits on a person longer than the **park timeout** parks its job by
+  itself, so a night of unanswered questions does not keep panes and agents live on the machines. The engine checks
+  on each tick (`src/engine/auto-park.ts`): a `waiting_answer` job whose question is open at the human stage, waited
+  at least the timeout since `escalatedToHumanAt` (time at the escalation levels, Jev and the fixed answers does not
+  count), is parked on the Park button's path (`recordPark`, then `releaseParked`), with `parked: { auto: true, why }`
+  and `job.parked { auto: true, why }`; `why` reads "Parked automatically: the question waited 30 min." (the timeout
+  that applied). The timeout is the user's setting `autoPark` (`GET /api/auto-park`, `POST /ui/api/auto-park`,
+  least role `admin`, `auto_park.settings_changed`; Settings → Auto-park; `hopper auto-park [set]`): `minutes` for a
+  job that is not **high priority** and `highPriorityMinutes` for one that is, its live priority; default 30 for
+  both; 0 turns it off for those jobs; at most a week. Read on each tick, so a change applies without a restart, and a
+  restart loses no timer (the wait is from the stored time). Never parked by it: a question a risk rule or the
+  consequential guard sent to a person (`Question.keptBy`, set by `toHuman`: `risk`, `guard`) — it keeps its pane, as
+  before —; a job with no agent session (its pick up needs a person's confirmation, issue #530); one a fork of its
+  question still works for (issue #548). A job waiting on a login is running, not on a question, and never parks by
+  itself. **Its answer picks it up**: the answer (or a close) to an auto-parked job's question re-queues it in the
+  same transaction (`onAnswered` → `recordUnpark`): `queued`, its priority as it was, pinned to its machine, and its
+  claim resumes its agent session there with the answer; no Pick up. The Parked row offers **Answer** in place of
+  Answer and pick up, and the Parked row and the Overview's parked row show `why`. A job a person parked keeps the
+  answer until it is picked up, as before.
+- **Settings.** Who may park is the operator role, as for cancel, and roles apply live. Auto-park's timeouts above;
+  no limit for parked jobs.
 - **Persisted state.** No schema change: the status and the fields are in the job's JSON. A build before
   this one, on a store holding a parked job, shows it in no group and never runs it.
 

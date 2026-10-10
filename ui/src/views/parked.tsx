@@ -2,7 +2,7 @@
 // and number, the machine it resumes on, how long it has been parked, its open question's first line, and whether its
 // agent session resumes or it starts fresh —, high-priority jobs first, then the longest parked on top. Expanded, the
 // full question and, where the session may act, an answer box: Answer and pick up sends the answer and picks the job up
-// in one step. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
+// in one step. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
 // up with its question still open waits on it again, and the question is back in Questions.
 import { ChevronRight, CirclePause, Play } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -13,6 +13,7 @@ import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { machineName, parkedOrder, startsFresh } from '@/model/board';
+import { answerPicksUp } from '@/model/auto-park';
 import { goalOf } from '@/model/job';
 import { firstLine } from '@/model/questions';
 import type { Job, QuestionView } from '@/model/wire';
@@ -26,22 +27,24 @@ function AnswerAndPickUp({ job, q }: { job: Job; q: QuestionView }) {
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const fresh = startsFresh(job);
+  // Auto-parked (issue #650): the answer re-queues it on the daemon; no pick up follows.
+  const answerOnly = answerPicksUp(job);
   const submit = async () => {
     const answer = draft.trim();
     if (!answer || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     // The answer is kept on the parked job; a pick up that fails after it leaves the job parked, answered.
-    const sent = await actFor(`/ui/api/questions/${encodeURIComponent(q.id)}/answer`, { answer });
-    if (sent.ok && await act(`/ui/api/jobs/${job.id}/requeue`, fresh ? { freshSession: true } : {}, 'Answered and picked up')) setDraft('');
+    const sent = await actFor(`/ui/api/questions/${encodeURIComponent(q.id)}/answer`, { answer }, answerOnly ? 'Answered: the job goes back in the queue' : undefined);
+    if (sent.ok && (answerOnly || await act(`/ui/api/jobs/${job.id}/requeue`, fresh ? { freshSession: true } : {}, 'Answered and picked up'))) setDraft('');
     inFlight.current = false;
     setBusy(false);
     refreshQuestions().catch(() => {});
   };
-  const button = <Button size="sm" disabled={busy || !draft.trim()} onClick={fresh ? undefined : () => void submit()}><Play />{busy ? 'Sending…' : 'Answer and pick up'}</Button>;
+  const button = <Button size="sm" disabled={busy || !draft.trim()} onClick={fresh ? undefined : () => void submit()}><Play />{busy ? 'Sending…' : answerOnly ? 'Answer' : 'Answer and pick up'}</Button>;
   return (
     <div className="space-y-2">
-      <Textarea rows={3} value={draft} disabled={busy} placeholder="Answer, then pick the job up (Ctrl/Cmd+Enter)"
+      <Textarea rows={3} value={draft} disabled={busy} placeholder={answerOnly ? 'Answer: the job goes back in the queue (Ctrl/Cmd+Enter)' : 'Answer, then pick the job up (Ctrl/Cmd+Enter)'}
         onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (!fresh && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void submit(); } }} />
       {fresh
         ? <Confirm title="Answer and pick up with a fresh session?" action="Answer and start fresh" onConfirm={() => void submit()}
@@ -78,6 +81,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
         </span>
         {answered && <StatusBadge status="answered" tone="ok" title="Answered: picked up, it resumes with the answer." />}
       </div>
+      {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}
       {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}>{firstLine(q.text)}</div>}
       {q && open && (
         <div className="space-y-2 pt-1 pl-8">

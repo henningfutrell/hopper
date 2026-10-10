@@ -4,8 +4,8 @@
 // saved session. The timeouts are settings (GET /api/auto-park, POST /ui/api/auto-park); 0 turns auto-park off.
 // A question a risk rule sent to a person never parks by itself. Real daemon over the fake herdr, as park.test.ts.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { LevelReply } from '../../src/domain/ports.ts';
-import type { AutoParkSettings, DomainEvent, EscalationLevel, Job } from '../../src/domain/types.ts';
+import type { EscalationLevel, LevelReply } from '../../src/domain/ports.ts';
+import type { AutoParkSettings, DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { createFakeLevel } from '../../src/questions/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -157,5 +157,18 @@ describe('auto-park', () => {
     expect(still.status).toBe('waiting_answer');
     expect(still.parked).toBeUndefined();
     expect(herdr.closed).toHaveLength(0);
+  });
+
+  it('a job waiting on a login is running, not on a question: it never parks by itself', async () => {
+    const a = await boot(createFakeHerdrClient({ session: 'jh-test', turns: [] }));
+    const token = await a.login();
+    await setAutoPark(a, token, { minutes: SHORT, highPriorityMinutes: SHORT });
+    const job = await a.pull({ op: 'sleep', ms: 30_000 });
+    await a.waitForStatus(job.id, 'running');
+    a.user().logins.report({ kind: 'device_code', tool: 'gh', verificationUrl: 'https://github.com/login/device', userCode: 'ABCD-1234', expiresAt: new Date(Date.now() + 600_000).toISOString() },
+      { jobId: job.id, run: 'test', renewable: false });
+    await sleep(800);
+    expect((await a.job(job.id)).status).toBe('running');
+    expect((await ofJob(a, job.id)).map((e) => e.type)).not.toContain('job.parked');
   });
 });
