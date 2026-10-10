@@ -118,10 +118,12 @@ describe('token revocation fixes (#597)', () => {
     const status1 = (await service.status())[0]!;
     expect(status1).toMatchObject({ state: 'connected', account: 'octo-user' });
 
-    // Refuse the whoIs check on the next connect
+    // A sign-in with GitHub hands over a token GitHub refuses: it is kept as ended, not as live.
     refuseWhoIs = true;
-    await service.connect('github');
-    await waitFor(async () => s.connectedAccounts.get('github')?.ended !== undefined, { what: 'connection marked ended' });
+    const signIn = github.mint('octo-user');
+    await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
+    expect(s.connectedAccounts.get('github')?.ended).toMatch(/refused the new token/);
+    expect(service.expired('github')).toBe(true);
 
     const status2 = (await service.status())[0]!;
     expect(status2.state).toBe('expired');
@@ -133,24 +135,31 @@ describe('token revocation fixes (#597)', () => {
     const github = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
-    const { service, logs, told } = hopper(github, s, clock);
+    // GitHub answering a device-flow refresh (no client secret) with incorrect_client_credentials, as it did
+    // after the grant was reported through the credential revocation API.
+    const refuse = async (): Promise<Grant> => { throw Object.assign(new Error('incorrect_client_credentials'), { error: 'incorrect_client_credentials' }); };
+    const { service, logs, told } = hopper(github, s, clock, { refresh: refuse });
+    await connect(service, s);
 
-    const first = await connect(service, s);
-
-    // Simulate GitHub's incorrect_client_credentials on refresh (as happens when the authorization is revoked)
-    // by deleting the refresh token (GitHub returns bad_refresh_token, which device flow without secret sees as incorrect_client_credentials)
-    github.refreshTokens.delete(first.refreshToken!);
-
-    // Try to renew the token (it's due in 1 hour, so advance the clock)
-    clock.set(new Date(Date.parse(T0) + 7 * 3600_000).toISOString());
-
-    // The connection should end, not retry forever
+    clock.set(new Date(Date.parse(T0) + 7.5 * 3600_000).toISOString());
     await expect(service.token('github')).rejects.toThrow(/sign-in expired/);
 
-    expect(told.some((s) => s.includes('refused the refresh token'))).toBe(true);
-    expect(told.some((s) => s.includes('incorrect_client_credentials'))).toBe(true);
-    // Should not treat it as an app misconfiguration
+    expect(service.expired('github')).toBe(true);
+    expect(told.some((t) => t.includes('incorrect_client_credentials'))).toBe(true);
     expect(logs.every((l) => !l.includes('check HOPPER_GITHUB_CLIENT_ID'))).toBe(true);
+  });
+
+  it('with a client secret, incorrect_client_credentials stays a setup problem and does not end the connection', async () => {
+    const github = await forge();
+    const clock = fixedClock(T0);
+    const s = store(temp.url(), clock);
+    const refuse = async (): Promise<Grant> => { throw Object.assign(new Error('incorrect_client_credentials'), { error: 'incorrect_client_credentials' }); };
+    const { service } = hopper(github, s, clock, { refresh: refuse, hasClientSecret: () => true });
+    await connect(service, s);
+
+    clock.set(new Date(Date.parse(T0) + 7.5 * 3600_000).toISOString());
+    await service.token('github').catch(() => undefined); // the old token still lives; the renewal is retried
+    expect(service.expired('github')).toBe(false);
   });
 
   it('never deletes tokens when no client secret is provided', async () => {

@@ -210,18 +210,21 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   });
 
   const keep = async (provider: ConnectedAccountProvider, who: Pick<AccountIdentity, 'subject' | 'account'>, g: Grant, connectedAt: string): Promise<void> => {
-    await replace(provider, g.accessToken, () => {
-      o.store.connectedAccounts.put(atRest.sealed(recordOf(provider, who, g, connectedAt)));
-      renewer.clear(provider);
-    });
-    // Check the new token at GitHub (issue #597): if GitHub rejects it, mark the connection as needing reconnect.
+    // Check the new token at GitHub before it is kept (issue #597): one GitHub refuses is kept as ended, so the
+    // UI says to connect again (and a GitHub sign-in's session ends, issue #513) instead of failing quietly later.
+    let refused: string | undefined;
     try {
       await o.whoIs(provider, g.accessToken);
     } catch (err) {
-      const reason = `${PROVIDER_NAME[provider]} refused the new token: ${(err as Error).message}`;
-      o.store.connectedAccounts.put({ ...recordOf(provider, who, g, connectedAt), ended: reason });
-      o.logger.warn(`hopper: ${reason}`);
-      o.onExpired?.(provider, who.account, reason);
+      refused = `${PROVIDER_NAME[provider]} refused the new token: ${(err as Error).message}`;
+    }
+    await replace(provider, g.accessToken, () => {
+      o.store.connectedAccounts.put(atRest.sealed({ ...recordOf(provider, who, g, connectedAt), ...(refused ? { ended: refused } : {}) }));
+      renewer.clear(provider);
+    });
+    if (refused) {
+      o.logger.warn(`hopper: ${refused}`);
+      o.onExpired?.(provider, who.account, refused);
     }
   };
 
