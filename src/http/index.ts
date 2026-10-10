@@ -142,7 +142,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobStreamRoutes(app, { tenants: o.tenants, subscribed: (userId, jobId) => { void skillWaits.redrive(userId, jobId); } });
   // Artifacts (issue #624): a running job puts them with the same token; a person reads them, and their content is
   // served off /api/ under the policy of its kind, by a signed URL or a public link.
-  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port });
+  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge });
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);

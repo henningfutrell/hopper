@@ -49,6 +49,7 @@ import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault 
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
 import type { UserArtifacts } from '../artifacts/index.ts';
+import { userArtifactKey } from './artifact-key.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
@@ -353,7 +354,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
-  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  // The key content URLs are signed under, kept in the vault's system scope (issue #673).
+  const contentKey = userArtifactKey({ userId: user.id, store, keys, clock, logger });
+  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, contentKey, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy,

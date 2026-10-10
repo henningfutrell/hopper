@@ -9565,7 +9565,7 @@ job, worker or sandbox can mint, ask for or read, enforced through OpenFGA; the 
 table or column of its own. Moving the hopper's other secrets into the system scope is issue #658, not this one.
 
 - **The system scope** (`src/domain/vault.ts` `SYSTEM_SECRETS`, `src/vault/system.ts`). A **system secret** is a row of
-  `vault_secrets` named `system/<name>` (now only `system/typesafe-api-key`), a name no vault secret can take (the
+  `vault_secrets` named `system/<name>` (`system/typesafe-api-key`; since issue #673 `system/artifact-content-key`), a name no vault secret can take (the
   name rule has no `/`). It is sealed by the hopper's sealer under `HOPPER_MASTER_KEY`, bound to `vault:<id>/value`, as
   a vault secret is — under the master key even when the vault's own secrets are under a KMS's data key or in a vault
   container, so only the hopper opens one, in its own process, when it uses it. It is none of the vault's own
@@ -10688,9 +10688,13 @@ SHA-256, when. Kinds by media type (`src/domain/artifacts.ts`): `html`, `svg`, `
 **Hosting.** The **stable URL** is `<hopper>/#artifacts/<id>`: the UI's Artifacts view, which opens the artifact for
 whoever may see it. Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
 `x-hopper-session`, so the read that checked the viewer signs a **content URL** (`/artifact-content/<name>?v=<token>`,
-`src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under a key of the
-running process — a restart ends every one, and the next read signs a new one; the UI reads again every half hour and on
-every artifact event. The route checks the signature and, for a viewer who is not the owner, Access again, at each load.
+`src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under the owner's
+**content URL key** — the owner named in the token picks the key that checks it. The key is a system secret
+(`system/artifact-content-key`, "The TypeSafe API key in the vault's system scope"), sealed under the token key, made on
+the first read that signs a URL (`src/users/artifact-key.ts`, issue #673): a restart opens it again, so a URL a viewer
+holds works until its own expiry. With no token key, or a stored key that cannot be opened, the key lives only in the
+process (the log says so once, and a stored key is left as it is): a restart then ends every URL, and the next read
+signs a new one. The UI reads again every half hour and on every artifact event. The route checks the signature and, for a viewer who is not the owner, Access again, at each load.
 The token rides in the query because Fastify caps a path parameter at 100 characters.
 
 | kind | served as | policy (`Content-Security-Policy`) |
@@ -10755,7 +10759,7 @@ public URL: `list --markdown` gives links only when the hopper has one, else the
 | `src/artifacts/` | one user's artifacts — put, share, revoke, remove, the limits, the masking, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); `hopper-artifact` and the skill's text (`script.ts`); the job stream types and the events put on it (`stream.ts`). Its rows through the `ArtifactRepository` port; its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 
 Settled without asking, each one place to change: content in Postgres, not a volume (no config file, nothing on the
-machine); a content URL's key lives only in the process; a public link is on by default and expires in a day, at most a
+machine); a content URL's key is a system secret of its owner's, kept across restarts (issue #673); a public link is on by default and expires in a day, at most a
 week; views are not recorded in Access's decisions (they would drown the mint decisions); a job lists its own artifacts
 unless `--all`, and may get, share or remove any of its user's (the same person's work); SVG is neutralised by the
 policy rather than rewritten.

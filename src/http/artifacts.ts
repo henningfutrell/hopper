@@ -34,8 +34,8 @@ export interface ArtifactEdge {
   view(t: TenantParts, a: Artifact, viewer: string, owner?: string): ArtifactView;
 }
 
-export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => number }): ArtifactEdge {
-  const signer = createContentSigner({ now: () => o.clock.now().getTime() });
+export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => number; tenants: Pick<Tenants, 'user'> }): ArtifactEdge {
+  const signer = createContentSigner({ now: () => o.clock.now().getTime(), key: (owner) => o.tenants.user(owner)?.artifacts.contentKey() });
   const base = (): string => o.lan.publicUrl ?? (o.lan.names[0] ? `http://${o.lan.names[0]}:${o.port()}` : `http://127.0.0.1:${o.port()}`);
   const edge: ArtifactEdge = {
     signer, base,

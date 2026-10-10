@@ -37,6 +37,8 @@ export interface UserArtifacts {
   settings(): ArtifactSettings;
   setSettings(s: ArtifactSettings, by: string): ArtifactSettings;
   usedBytes(): number;
+  /** The key this user's content URLs are signed under (issue #673): it outlives a restart when the vault can keep it. */
+  contentKey(): Buffer;
   /** Removes each artifact older than the retention; the ids removed. */
   sweep(): string[];
   start(): void;
@@ -47,7 +49,10 @@ const hashToken = (token: string): string => createHash('sha256').update(token).
 const MB = 1024 * 1024;
 const inWords = (bytes: number): string => (bytes >= MB ? `${Math.round((bytes / MB) * 10) / 10} MB` : `${bytes} bytes`);
 
-export function createUserArtifacts(o: { userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; newId?: () => string; sweepMs?: number }): UserArtifacts {
+export function createUserArtifacts(o: {
+  userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; newId?: () => string; sweepMs?: number;
+  contentKey: () => Buffer;
+}): UserArtifacts {
   const repo = o.store.artifacts;
   const newId = o.newId ?? (() => randomUUID());
   const now = () => o.clock.now().toISOString();
@@ -158,6 +163,7 @@ export function createUserArtifacts(o: { userId: string; store: UserStore; clock
       return s;
     },
     usedBytes: () => repo.usedBytes(),
+    contentKey: () => o.contentKey(),
     sweep() {
       const before = new Date(o.clock.now().getTime() - repo.settings().retentionDays * 86_400_000).toISOString();
       const gone: string[] = [];

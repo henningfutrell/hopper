@@ -7,12 +7,16 @@ import { createJobStream, createStreamTypes, registerHopperTypes, type JobStream
 import { SKILL_STREAM_TYPES } from '../skills/index.ts';
 import { ARTIFACT_STREAM_TYPES, createUserArtifacts, streamArtifactEvents, type UserArtifacts } from '../artifacts/index.ts';
 
-type Options = { userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; inlineMax?: number };
+type Options = {
+  userId: string; store: UserStore; clock: Clock; logger: { warn(line: string): void }; inlineMax?: number;
+  /** The key the user's content URLs are signed under (issue #673). */
+  contentKey: () => Buffer;
+};
 
 /** The job stream, and the artifacts that emit on it: the stream's start and stop are theirs too (the retention sweep, the events). */
 export function openJobStream(o: Options): { jobStream: JobStream; artifacts: UserArtifacts } {
   const stream = openStream(o);
-  const artifacts = createUserArtifacts({ userId: o.userId, store: o.store, clock: o.clock, logger: o.logger });
+  const artifacts = createUserArtifacts({ userId: o.userId, store: o.store, clock: o.clock, logger: o.logger, contentKey: o.contentKey });
   let unsubscribe = (): void => {};
   const jobStream: JobStream = {
     ...stream,

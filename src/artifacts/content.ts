@@ -6,7 +6,7 @@
 // HTML runs only in a sandbox: CSP `sandbox` without `allow-same-origin` gives the page an opaque origin, so it reads
 // none of the hopper's storage, cookies or session, and `connect-src 'none'` keeps it from calling any URL; its scripts
 // run inside it, and it loads only what it carries (issue #673). SVG and the text kinds get a sandbox with no script at all. Pure but for the key.
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { ArtifactKind } from '../domain/artifacts.ts';
 
 /** How long a signed content URL works. */
@@ -66,28 +66,35 @@ export interface ContentSigner {
   verify(token: string): ContentGrant | undefined;
 }
 
-/** A signer over a key of this process: a restart ends every signed URL, and a read signs a new one. */
-export function createContentSigner(o: { now(): number; key?: Buffer; seconds?: number }): ContentSigner {
-  const key = o.key ?? randomBytes(32);
-  const mac = (body: string): Buffer => createHmac('sha256', key).update(body).digest();
+/**
+ * A signer over each owner's key (issue #673): the key of the artifact's owner signs, and the owner the token names picks
+ * the key that checks it. `key` answers undefined for an owner the hopper does not have: nothing of theirs verifies.
+ */
+export function createContentSigner(o: { now(): number; key(owner: string): Buffer | undefined; seconds?: number }): ContentSigner {
+  const mac = (key: Buffer, body: string): Buffer => createHmac('sha256', key).update(body).digest();
   return {
     sign(g) {
+      const key = o.key(g.owner);
+      if (!key) throw new Error(`no content URL key for user ${g.owner}`);
       const body = Buffer.from(JSON.stringify({ o: g.owner, a: g.id, v: g.viewer, u: o.now() + (o.seconds ?? CONTENT_URL_SECONDS) * 1000 })).toString('base64url');
-      return `${body}.${mac(body).toString('base64url')}`;
+      return `${body}.${mac(key, body).toString('base64url')}`;
     },
     verify(token) {
       const [body, sig] = token.split('.');
       if (!body || !sig) return undefined;
-      const want = mac(body);
-      const got = Buffer.from(sig, 'base64url');
-      if (got.length !== want.length || !timingSafeEqual(got, want)) return undefined;
+      let p: { o: string; a: string; v: string; u: number };
       try {
-        const p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as { o: string; a: string; v: string; u: number };
-        if (typeof p.o !== 'string' || typeof p.a !== 'string' || typeof p.v !== 'string' || typeof p.u !== 'number' || p.u <= o.now()) return undefined;
-        return { owner: p.o, id: p.a, viewer: p.v, until: p.u };
+        p = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as typeof p;
       } catch {
         return undefined;
       }
+      if (typeof p.o !== 'string' || typeof p.a !== 'string' || typeof p.v !== 'string' || typeof p.u !== 'number') return undefined;
+      const key = o.key(p.o);
+      if (!key) return undefined;
+      const want = mac(key, body);
+      const got = Buffer.from(sig, 'base64url');
+      if (got.length !== want.length || !timingSafeEqual(got, want)) return undefined;
+      return p.u > o.now() ? { owner: p.o, id: p.a, viewer: p.v, until: p.u } : undefined;
     },
   };
 }
