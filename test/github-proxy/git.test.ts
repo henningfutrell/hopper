@@ -76,4 +76,9 @@ describe('what a job is told', () => {
   it('that its machine holds no GitHub token, and its git goes through the hopper by itself', () => {
     expect(GITHUB_PROXY_LINE).toContain('This machine holds no GitHub token: git fetch and git push to GitHub go through the hopper by themselves');
   });
+
+  // Issue #698: a job that could not reach the hopper fell back to a device sign-in on GitHub.
+  it('that when the hopper cannot be reached it fails, and never signs in to GitHub another way', () => {
+    expect(GITHUB_PROXY_LINE).toContain('If the hopper cannot be reached from here (HOPPER_URL is not set, or hopper-gh or git to GitHub cannot connect to it), do not sign in to GitHub another way: end with HOPPER_FAILED and say that this machine cannot reach the hopper.');
+  });
 });
