@@ -22,6 +22,8 @@ import { createTokenBox } from '../../src/secrets/token-box.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { waitFor } from '../support/wait.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
+import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
+
 
 const EIGHT_HOURS_S = 8 * 3600;
 const T0 = '2026-10-09T10:00:00.000Z';
@@ -62,6 +64,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
   const failures: unknown[] = [];
   const deleted: string[] = [];
   const service = createConnectedAccounts({
+    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async (_, token) => {
@@ -82,10 +85,10 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
 }
 
 async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore) {
-  const before = s.connectedAccounts.get('github')?.accessToken;
+  const before = openedRow(s)?.accessToken;
   await service.connect('github');
-  await waitFor(async () => { const now = s.connectedAccounts.get('github'); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
-  return s.connectedAccounts.get('github')!;
+  await waitFor(async () => { const now = openedRow(s); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
+  return openedRow(s)!;
 }
 
 const github = async (service: ReturnType<typeof hopper>['service']) => (await service.status())[0]!;
@@ -104,7 +107,7 @@ describe('the connection\'s renewals are recorded (#647)', () => {
     expect(h.renewed).toHaveLength(1);
     expect(h.renewed[0]).toMatchObject({ account: 'octo-user', expiresAt: expect.any(String) });
     expect(JSON.stringify(h.renewed)).not.toMatch(/gh[or]_/);
-    expect(s.connectedAccounts.get('github')?.renewedAt).toBe(clock.now().toISOString());
+    expect(openedRow(s)?.renewedAt).toBe(clock.now().toISOString());
   });
 
   it('records each failed renewal with its error code', async () => {
@@ -192,7 +195,7 @@ describe('the status says how the connection was made and how it renews (#647)',
     later(clock, 7.5 * 3600_000);
     await h.service.renewDue();
     const renewedAt = clock.now().toISOString();
-    const current = s.connectedAccounts.get('github')!.accessToken;
+    const current = openedRow(s)!.accessToken;
     fail = true;
     later(clock, 3 * 3600_000);
     await h.service.renew('github', current).catch(() => undefined);
@@ -216,12 +219,12 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(s.connectedAccounts.get('github')!.accessToken).toBe(first.accessToken);
+    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
     expect(await github(h.service)).toMatchObject({ state: 'connected', held: { account: 'octo-user', at: T0 } });
     expect(h.logs.some((l) => /held/.test(l))).toBe(true);
 
     await h.service.takeHeld('github');
-    const now = s.connectedAccounts.get('github')!;
+    const now = openedRow(s)!;
     expect(now.accessToken).toBe(signIn.accessToken);
     expect(now.connectedBy).toBe('sign-in');
     expect(await github(h.service)).not.toHaveProperty('held');
@@ -237,7 +240,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
     await h.service.dropHeld('github');
-    expect(s.connectedAccounts.get('github')!.accessToken).toBe(first.accessToken);
+    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
     expect(h.deleted).toEqual([signIn.accessToken]);
     expect(await github(h.service)).not.toHaveProperty('held');
   });
@@ -250,7 +253,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     const first = await connect(h.service, s);
 
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: 'gho_refused', grantedBy: 'web' });
-    expect(s.connectedAccounts.get('github')!.accessToken).toBe(first.accessToken);
+    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
     expect(await github(h.service)).toMatchObject({ state: 'connected' });
     expect(await github(h.service)).not.toHaveProperty('held');
   });
@@ -267,7 +270,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(s.connectedAccounts.get('github')!.accessToken).toBe(signIn.accessToken);
+    expect(openedRow(s)!.accessToken).toBe(signIn.accessToken);
     expect((await github(h.service)).state).toBe('connected');
   });
 
@@ -283,7 +286,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
 });
 
 describe('a token the runtime cannot open says which key is missing, at start (#647)', () => {
-  it('names HOPPER_TOKEN_KEY when the runtime gives none', async () => {
+  it('names HOPPER_MASTER_KEY when the runtime gives none', async () => {
     const gh = await forge();
     const clock = fixedClock(T0);
     const url = temp.url();
@@ -292,9 +295,9 @@ describe('a token the runtime cannot open says which key is missing, at start (#
     await connect(sealer.service, s);
     sealer.service.stop();
 
-    const h = hopper(gh, store(url, clock), clock);
+    const h = hopper(gh, store(url, clock), clock, { box: undefined });
     h.service.start();
-    expect(h.logs.some((l) => /start check/.test(l) && /HOPPER_TOKEN_KEY is missing/.test(l))).toBe(true);
+    expect(h.logs.some((l) => /start check/.test(l) && /HOPPER_MASTER_KEY is missing/.test(l))).toBe(true);
     expect(h.logs.some((l) => /sign in/i.test(l))).toBe(false);
   });
 

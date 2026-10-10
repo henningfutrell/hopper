@@ -1,6 +1,7 @@
 // The access model's objects and tuples (issues #559, #581), pure: how a requester, a template, an operation profile
 // and an asset are named in OpenFGA, the two tuples an approval is, the tuples of who is live, and the relationship path
 // that explains an allow.
+import { createHash } from 'node:crypto';
 import {
   OPERATIONS, ASSET_KINDS, type LiveRequesters, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
@@ -32,6 +33,8 @@ export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTu
 }
 /** An artifact (issue #624), a public link to one, and the tuple each live share is: its user or link is a viewer. */
 export const artifactObject = (a: { userId: string; id: string }): string => `artifact:${a.userId}/${a.id}`;
+/** A source item (issue #662), by its owner and the SHA-256 of its key: a key is a URL, which an object id cannot carry. */
+export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
 export const linkObject = (l: { userId: string; shareId: string }): string => `link:${l.userId}/${l.shareId}`;
 export function shareTuples(shares: readonly { ownerId: string; artifactId: string; shareId: string; userId?: string }[]): RelationshipTuple[] {
   return shares.map((s) => ({

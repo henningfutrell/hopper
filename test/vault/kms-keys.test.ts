@@ -1,14 +1,14 @@
 // Issue #586: the KMS is an optional key provider for the vault. When one is named, the vault's key is a data key the
 // KMS made and wrapped (envelope encryption): the wrapped data key is kept in the user's store, opened by the KMS at
-// start, and every vault secret is sealed under it. A secret sealed under the token key before is sealed again under the
-// data key. When the KMS gives no data key, the vault says why and stores nothing (fail closed). No KMS: the token key.
+// start, and every vault secret is sealed under it. A secret sealed under the master key before is sealed again under the
+// data key. When the KMS gives no data key, the vault says why and stores nothing (fail closed). No KMS: the master key.
 //
 // Feature: the KMS as the vault's key provider
 //   Scenario: the first start wraps a new data key and keeps only its wrapped form
 //   Scenario: a later start opens the kept data key: what was sealed before still opens
-//   Scenario: a secret sealed under the token key is sealed again under the data key
+//   Scenario: a secret sealed under the master key is sealed again under the data key
 //   Scenario: a KMS that gives no data key: the vault says why, and nothing is stored
-//   Scenario: no KMS: the local key provider, under the token key
+//   Scenario: no KMS: the local key provider, under the master key
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createSealer } from '../../src/secrets/sealer.ts';
@@ -19,7 +19,7 @@ import { createVaultService, vaultContext } from '../../src/vault/service.ts';
 import type { VaultSecret } from '../../src/domain/vault.ts';
 
 const TOKEN_KEY = randomBytes(32).toString('hex');
-const secret = runtimeSecrets({ HOPPER_TOKEN_KEY: TOKEN_KEY });
+const secret = runtimeSecrets({ HOPPER_MASTER_KEY: TOKEN_KEY });
 
 /** A KMS that wraps with a key of its own: what it wrapped, only it opens. `down`: it answers nothing. */
 function fakeKms(o: { down?: boolean } = {}) {
@@ -103,7 +103,7 @@ describe('the KMS as the vault\'s key provider (issue #586)', () => {
     expect(again.sealer!.open(m.rows.get('id-1')!.sealed, vaultContext('id-1'))).toBe('v-123');
   });
 
-  it('a secret sealed under the token key before the KMS is sealed again under the data key', async () => {
+  it('a secret sealed under the master key before the KMS is sealed again under the data key', async () => {
     const m = memoryStore();
     vaultOver(m, { sealer: createSealer(TOKEN_KEY) }).set({ name: 'KUBE_TOKEN', value: 'v-old' }, 'Ada');
     const keys = await vaultKeys({ secret, kms: fakeKms(), store: m.store.vault });
@@ -125,11 +125,11 @@ describe('the KMS as the vault\'s key provider (issue #586)', () => {
     expect(m.rows.size).toBe(0);
   });
 
-  it('no KMS: the local key provider, under the token key', async () => {
+  it('no KMS: the local key provider, under the master key', async () => {
     const m = memoryStore();
     const keys = await vaultKeys({ secret, store: m.store.vault });
     expect(keys.sealer!.keyId).toBe(createSealer(TOKEN_KEY).keyId);
     expect(m.dataKey()).toBeUndefined();
-    expect((await vaultKeys({ secret: runtimeSecrets({}), store: m.store.vault })).problem).toContain('HOPPER_TOKEN_KEY');
+    expect((await vaultKeys({ secret: runtimeSecrets({}), store: m.store.vault })).problem).toContain('HOPPER_MASTER_KEY');
   });
 });

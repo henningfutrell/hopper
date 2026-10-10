@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "fromHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "toHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "editors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli"
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "fromHash",
+    "toHash",
+    "editors",
+    "person",
+    "via"
+  ],
+  "additionalProperties": false
+}

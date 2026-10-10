@@ -143,6 +143,10 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'artifact.share_revoked': 'A share of an artifact was revoked (issue #624): the user no longer sees it, or the link stops working at once.',
   'artifact.removed': 'An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`).',
   'artifact.settings_changed': 'Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.',
+  'item.snapshot_recorded': 'An item\'s approved text was recorded (issue #662): its title, body and the assignee comments its job runs, by their SHA-256 `hash`. `reason`: at its first job (`intake`), from its first job by the migration (`backfill`), or a person accepted new text (`accepted`). Never the text.',
+  'item.changed_since_snapshot': 'A job was held because its item\'s text changed since the snapshot (issue #662): at Run again, an assessor or problem-release rerun, a rediscovered item, or while it waited. `editors`: who edited the title or body since, from the timeline; `newComments`: how many assignee comments are new. Never the text.',
+  'item.original_kept': 'A person kept the original text of a changed item (Rerun the original, issue #662): the job runs the snapshot\'s text, and that live text holds it no more.',
+  'item.new_text_accepted': 'The owner accepted an item\'s new text (issue #662), allowed by Access: the job runs it, and it is the item\'s new snapshot. The hashes before and after, and who edited it.',
 };
 
 type Prop = Record<string, unknown>;

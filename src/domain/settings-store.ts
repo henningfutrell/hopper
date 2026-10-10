@@ -98,4 +98,10 @@ export interface InstanceSettingsRepository {
   setPluginStoreSource(source: PluginStoreSource): void;
   /** This hopper's id (issue #603), made at its first ask and kept: the label of the sandbox boxes it launches. */
   instanceId(): string;
+  /** The master key's fingerprint (issue #659): an HMAC under the key of a fixed label, never the key; undefined: none yet. */
+  masterKeyFingerprint(): string | undefined;
+  setMasterKeyFingerprint(fingerprint: string): void;
+  /** The fingerprint of the master key a person said they saved (issue #659); undefined: none. */
+  masterKeySaved(): string | undefined;
+  setMasterKeySaved(fingerprint: string): void;
 }

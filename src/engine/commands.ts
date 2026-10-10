@@ -2,13 +2,14 @@
 // Each command validates, writes in one transaction, emits its event, and lets the event
 // listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
-import type { Job, UsageReading } from '../domain/types.ts';
+import type { ActingPerson, Job, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait } from './wait.ts';
+import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -47,6 +48,10 @@ export interface Commands {
   endWait(id: string, note?: string): Job;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
+  /** Rerun the original (issue #662): a job held for its changed item runs the snapshot's text. item.original_kept. */
+  keepOriginalText(id: string, acting: ActingPerson): Job;
+  /** Accept the new text (issue #662), the owner's act, allowed by Access first: the job runs it, and it is the item's snapshot. */
+  acceptNewText(id: string, acting: ActingPerson): Job;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -131,6 +136,9 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     endWait: (id, note) => store.tx(() => recordEndWait(c, id, note)),
 
     markCleanedUp: (id) => cleanups.markCleanedUp(id),
+
+    keepOriginalText: (id, acting) => store.tx(() => keepOriginal(c, id, acting)),
+    acceptNewText: (id, acting) => store.tx(() => acceptNewText(c, id, acting)),
 
     setFakeUsage(reading) {
       if (!c.fakeUsage) throw new EngineError('not_found', 'no fake usage source is configured');

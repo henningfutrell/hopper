@@ -3065,3 +3065,93 @@ Version 1 (`docs/schemas/tldr.settings_changed.v1.json`). An admin turned the TL
   "by": "admin"
 }
 ```
+
+## `item.snapshot_recorded`
+
+Version 1 (`docs/schemas/item.snapshot_recorded.v1.json`). An item's approved text was recorded (issue #662): its title, body and the assignee comments its job runs, by their SHA-256 `hash`. `reason`: at its first job (`intake`), from its first job by the migration (`backfill`), or a person accepted new text (`accepted`). Never the text.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `hash` | string | yes |
+| `reason` | `intake` \| `backfill` \| `accepted` | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "hash": "6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb",
+  "reason": "intake"
+}
+```
+
+## `item.changed_since_snapshot`
+
+Version 1 (`docs/schemas/item.changed_since_snapshot.v1.json`). A job was held because its item's text changed since the snapshot (issue #662): at Run again, an assessor or problem-release rerun, a rediscovered item, or while it waited. `editors`: who edited the title or body since, from the timeline; `newComments`: how many assignee comments are new. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `snapshotHash` | string | yes |
+| `liveHash` | string | yes |
+| `editors` | string[] | yes |
+| `newComments` | integer | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "snapshotHash": "6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb",
+  "liveHash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+  "editors": [
+    "octocat"
+  ],
+  "newComments": 1
+}
+```
+
+## `item.original_kept`
+
+Version 1 (`docs/schemas/item.original_kept.v1.json`). A person kept the original text of a changed item (Rerun the original, issue #662): the job runs the snapshot's text, and that live text holds it no more.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `snapshotHash` | string | yes |
+| `liveHash` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "snapshotHash": "6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb",
+  "liveHash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+  "person": "octocat",
+  "via": "ui"
+}
+```
+
+## `item.new_text_accepted`
+
+Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an item's new text (issue #662), allowed by Access: the job runs it, and it is the item's new snapshot. The hashes before and after, and who edited it.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `fromHash` | string | yes |
+| `toHash` | string | yes |
+| `editors` | string[] | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "fromHash": "6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb",
+  "toHash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+  "editors": [
+    "octocat"
+  ],
+  "person": "octocat",
+  "via": "ui"
+}
+```

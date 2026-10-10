@@ -5,6 +5,7 @@ import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
+import type { ItemSnapshot } from './item-snapshots.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -160,6 +161,13 @@ export interface FailureRepository {
 }
 
 /** The hand-offs (issue #516): failed jobs waiting on a person. */
+/** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
+export interface ItemSnapshotRepository {
+  get(key: string): ItemSnapshot | undefined;
+  /** Record `snapshot` as its item's approved text, in place of any before it. */
+  put(snapshot: ItemSnapshot): ItemSnapshot;
+}
+
 export interface HandoffRepository {
   create(input: Omit<Handoff, 'id'>): Handoff;
   get(id: string): Handoff | undefined;
@@ -399,7 +407,7 @@ export interface ConnectedAccount {
 }
 
 export interface ConnectedAccountRepository {
-  /** The account as stored: its tokens sealed when the runtime gives a token key (issue #441). */
+  /** The account as stored: its tokens sealed when the runtime gives a master key (issue #441). */
   get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
   /** Insert or replace the provider's account. */
   put(account: ConnectedAccount): void;
@@ -438,6 +446,7 @@ export interface UserStore {
   failures: FailureRepository;
   problems: ProblemRepository;
   handoffs: HandoffRepository;
+  itemSnapshots: ItemSnapshotRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
@@ -450,6 +459,12 @@ export interface UserStore {
 }
 
 /** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */
+/** What every user's schema keeps sealed under the master key (issue #659): the sealed values' key ids, and the sealed tokens. */
+export interface KeptSecrets {
+  keyIds: readonly string[];
+  tokens: readonly string[];
+}
+
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
@@ -465,6 +480,8 @@ export interface InstanceStore {
   access: AccessRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
+  /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
+  keptSecrets(): KeptSecrets;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
   holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;

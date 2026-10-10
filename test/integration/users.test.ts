@@ -54,7 +54,7 @@ async function twoUsers(a: TestApp): Promise<{ admin: string; bea: string }> {
 
 describe('two users of one hopper', () => {
   it('each sees only their own jobs, questions, events and webhooks', async () => {
-    const a = await start({ secrets: { HOPPER_TOKEN_KEY: randomBytes(32).toString('hex') } });
+    const a = await start({ secrets: { HOPPER_MASTER_KEY: randomBytes(32).toString('hex') } });
     const { admin, bea } = await twoUsers(a);
     const adminJob = await a.pull(hard, { title: 'admin work' });
     const adminQuestion = await a.waitForQuestion(adminJob.id, (q) => q.tier === 'human');
@@ -206,7 +206,7 @@ describe('a user\'s runtime', () => {
   });
 
   it('each user keeps their own webhook secrets, sealed in their own schema (issue #451)', async () => {
-    const a = await start({ secrets: { HOPPER_TOKEN_KEY: randomBytes(32).toString('hex') } });
+    const a = await start({ secrets: { HOPPER_MASTER_KEY: randomBytes(32).toString('hex') } });
     const admin = await a.login();
     const bea = await a.addUser('Bea');
     const beaToken = await a.loginWith(mintLoginCode(a.app.instance, { now: () => new Date() }, bea.id));

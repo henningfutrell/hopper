@@ -36,7 +36,7 @@ import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
-import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
+import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
@@ -219,7 +219,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
   const connectedAccounts = createConnectedAccounts({
     // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
-    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env, logger),
+    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env),
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
     installations: (token) => installations(config.hopperApps.github, token),
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
@@ -271,12 +271,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const router = seams.router ?? host.router;
   // Seam doubles win over the host's live instances (looked up per question).
   const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
-  // The webhook signing secrets (issue #451): sealed in the user's store under the runtime's token key; one
+  // The webhook signing secrets (issue #451): sealed in the user's store under the runtime's master key; one
   // an older key sealed is sealed again under the current one now. A subscription from before reads its variable.
   if (keys.problem) logger.warn(`hopper: ${keys.problem}: webhook signing secrets cannot be stored, and a stored one is not opened`);
   const webhookSecrets = createWebhookSecrets({ store, keys, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix, logger });
   const resealed = webhookSecrets.resealAll();
-  if (resealed > 0) logger.info(`hopper: ${resealed} webhook signing secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);
+  if (resealed > 0) logger.info(`hopper: ${resealed} webhook signing secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
   const dispatcher = createWebhookDispatcher({ store, clock, secretOf: (sub) => webhookSecrets.of(sub), baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction

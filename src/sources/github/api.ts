@@ -4,6 +4,7 @@
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
 import type { ChecksState } from '../../domain/pull-requests.ts';
+import type { ItemEdit } from '../../domain/item-snapshots.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -94,6 +95,8 @@ export interface GitHubApi {
   getIssue(repo: string, number: number): Promise<GitHubIssue>;
   /** Every comment, all pages, oldest first. */
   listComments(repo: string, number: number): Promise<GitHubComment[]>;
+  /** Who edited the issue's title or body, and when, from its timeline (issue #662), oldest first. Absent: not read. */
+  issueEdits?(repo: string, number: number): Promise<ItemEdit[]>;
   /** Throws a permanent GitHubApiError mentioning `read:project` when that scope is missing. */
   projectItems(owner: string, number: number): Promise<GitHubProjectItem[]>;
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;

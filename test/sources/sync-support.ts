@@ -72,6 +72,8 @@ export function createWorld(): World {
 
   const host: SourceHost = {
     store,
+    // No snapshot is kept here (issue #662): nothing changed since one.
+    changedSince: () => undefined,
     ingest(it, source) {
       calls.ingest.push(it);
       const known = store.jobs.getBySourceKey(it.key);

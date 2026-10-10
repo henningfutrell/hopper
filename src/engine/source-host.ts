@@ -1,13 +1,14 @@
 // The engine as a SourceHost (ports.ts): everything the sync loop may do to the hopper. Each
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
-import type { RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
+import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
 import { asksOf, isRerunnable, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+import { changedSince, gateItem, holdForChange, recordSnapshot, refreshText } from './item-snapshots.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
 
@@ -129,7 +130,11 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
   const { store } = c;
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
-  function ingest(item: SourceItem, source: { name: string; kind: string }): Job | null {
+  function ingest(offered: SourceItem, source: SourceRef, brief?: string): Job | null {
+    // The item's snapshot (issue #662): a later job of the item runs the snapshot's text, held when the live text differs.
+    const gate = gateItem(store, offered, source, nowIso(c));
+    const item = brief ? { ...gate.item, prompt: `${gate.item.prompt}\n\n${brief}` } : gate.item;
+    const change = gate.change && brief ? { ...gate.change, accepted: { ...gate.change.accepted, prompt: `${gate.change.accepted.prompt}\n\n${brief}` } } : gate.change;
     const routedBy = route(c, item, source);
     const priority = clamp(routedBy?.set.priority ?? item.priority);
     const ref = refFor(item, source);
@@ -141,6 +146,9 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       if (known && !isRerunnable(known)) return null;
       const job = store.jobs.create(spec, priority, ref);
       store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } });
+      // A job that cannot run ran nothing: its item's snapshot waits for a job that can.
+      if (gate.record && invalid === undefined) recordSnapshot(c, job, item.key, gate.record, 'intake');
+      if (change && invalid === undefined) holdForChange(c, job.id, item.key, change);
       // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
       if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
       // Created and failed together: the source reports claimed, then failed — once.
@@ -154,6 +162,10 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
 
     ingest(item, source) {
       return ingest(item, source);
+    },
+
+    changedSince(item, jobId) {
+      return changedSince(store, item, jobId === undefined ? undefined : store.jobs.get(jobId));
     },
 
     cancel(jobId, reason) {
@@ -175,6 +187,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
         let changed = false;
         // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
+        // Its item's text changed while it waits (issue #662): held, its text kept. The task text is never refreshed.
+        if (refreshText(c, job, item, source)) changed = true;
         const was = job.fromConfig ?? fromSpec(job.spec);
         const waiting = job.status === 'queued' || job.status === 'held';
         if (waiting && job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
@@ -246,7 +260,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       return store.tx(() => {
         if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
-        const job = ingest(brief ? { ...item, prompt: `${item.prompt}\n\n${brief}` } : item, source) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = ingest(item, source, brief) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
         return job;
       });

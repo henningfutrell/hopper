@@ -255,5 +255,9 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
         return read('instanceId')!;
       });
     },
+    masterKeyFingerprint: () => read('masterKeyFingerprint'),
+    setMasterKeyFingerprint: (fingerprint) => write('masterKeyFingerprint', fingerprint),
+    masterKeySaved: () => read('masterKeySaved'),
+    setMasterKeySaved: (fingerprint) => write('masterKeySaved', fingerprint),
   };
 }

@@ -1,6 +1,6 @@
 // The vault's system scope (issue #657, design.md "The vault's system scope"): secrets the hopper keeps for its own use
 // for one user — their TypeSafe API key —, in the vault's table as `system/<name>`, sealed with the hopper's sealer under
-// the token key (src/secrets/sealer.ts, bound to `vault:<id>/value`) wherever the vault's own secrets are kept. Only the
+// the master key (src/secrets/sealer.ts, bound to `vault:<id>/value`) wherever the vault's own secrets are kept. Only the
 // hopper opens one, in its own process, at the moment it uses it. A change is the user's or an admin's, decided by Access
 // (OpenFGA) each time; the vault's own operations list none and give none to a job (service.ts). Nothing here logs,
 // answers or appends a value: a set or a removal is an event naming the secret and who did it.
@@ -26,9 +26,9 @@ export interface SystemSecrets {
   remove(name: SystemSecretName, who: SystemChanger): Promise<SystemResult>;
   /** Keeps `value` as the hopper itself (a one-time import at start): no Access ask, since no person asks. */
   keep(name: SystemSecretName, value: string, by: string): SystemResult;
-  /** Why none can be stored or opened now (no token key); undefined when one can. */
+  /** Why none can be stored or opened now (no master key); undefined when one can. */
   problem(): string | undefined;
-  /** Seals again, under the current token key, every system secret an older one sealed. How many. */
+  /** Seals again, under the current master key, every system secret an older one sealed. How many. */
   resealAll(): number;
 }
 
@@ -39,7 +39,7 @@ const fail = (code: 'invalid' | 'not_found' | 'forbidden' | 'unavailable', error
 
 export function createSystemSecrets(o: {
   store: Pick<UserStore, 'vault' | 'events' | 'tx'>;
-  /** The hopper's sealer under the token key: the vault's own key provider may be another. */
+  /** The hopper's sealer under the master key: the vault's own key provider may be another. */
   keys: SealerState;
   userId: string;
   access?: VaultAccess;

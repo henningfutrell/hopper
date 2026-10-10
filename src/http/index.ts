@@ -39,6 +39,7 @@ import { registerUiRoutes } from './ui/index.ts';
 import type { Sandboxes } from '../sandboxes/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
+import { masterKeyRoutes, type MasterKeyStatus } from './master-key.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
 import { machineHistoryRoutes } from './machine-history.ts';
@@ -62,6 +63,8 @@ export interface ServerOptions {
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
   sandboxes: Sandboxes;
+  /** The master key's status (issue #659): GET /api/master-key, POST /ui/api/master-key. */
+  masterKey: MasterKeyStatus;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -118,6 +121,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   connectedAccountsRoutes(app, tenant);
   sseRoutes(app, tenant);
   updateRoutes(app, o);
+  masterKeyRoutes(app, o);
   pluginStoreRoutes(app, o);
   // What is the instance's is an instance admin's alone (issue #240).
   const instanceAdmin = createInstanceAdmin({ signIn: o.signIn, instance: o.instance });
@@ -144,7 +148,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey,
   });
   return app;
 }

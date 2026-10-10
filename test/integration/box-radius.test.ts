@@ -57,7 +57,7 @@ async function boot(secrets: string[]): Promise<{ a: TestApp; session: string; e
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY },
+    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted', 'reach'] } },
     seams: { executors: [reacher()] },
   });

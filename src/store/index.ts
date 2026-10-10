@@ -8,6 +8,7 @@ import { createAccessRepository } from './access.ts';
 import { createConfigRecords } from './config.ts';
 import { createJoinCodeRepository, createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
+import { keptSecrets } from './kept-secrets.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
@@ -46,6 +47,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     settings: createInstanceSettingsRepository(ctx),
     access: createAccessRepository(ctx),
     userStore,
+    keptSecrets: () => keptSecrets(db, db.all('SELECT id FROM users').map((r) => schemaOf(String(r.id)))),
     // Session-level: held while this connection lives, one key per instance schema.
     holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
     tx: ctx.tx,

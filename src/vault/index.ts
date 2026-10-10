@@ -1,7 +1,7 @@
 // A user's vault, where it runs (issue #586, design.md "The vault in a container of its own"): its secrets in a container
 // of their own when HOPPER_VAULT_URL names one — the hopper then holds none of the vault's keys and asks it; the templates
 // stay here, with access —, else all in the hopper, under its key provider: the data key a KMS opens (HOPPER_KMS_URL), or
-// the token key.
+// the master key.
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import type { VaultAccess } from '../domain/access.ts';
 import type { ConfiguredBackend } from '../domain/vault.ts';

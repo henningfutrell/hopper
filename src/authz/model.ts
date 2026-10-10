@@ -69,6 +69,13 @@ type system_secret
     define admin: [user]
     define can_change: owner or admin
     define can_read: owner
+
+# A source item jobs run (issue #662): a GitHub issue. The hopper tells, at each check, the user whose hopper takes it as its
+# owner. Only who may accept new text replaces the text the item's jobs run.
+type item
+  relations
+    define owner: [user]
+    define can_accept_text: owner
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -81,6 +88,10 @@ export interface ModelJson {
 export function compileAccessModel(dsl: string): ModelJson {
   return transformer.transformDSLToJSONObject(dsl) as unknown as ModelJson;
 }
+
+/** What the hopper tells and asks for items (issue #662): apart, so a model edited before them still decides mints. */
+const ITEM_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['item', 'owner', 'user']];
+const ITEM_ASKED: readonly [type: string, relation: string][] = [['item', 'can_accept_text']];
 
 /** What the hopper writes (a relation and the type it accepts) and what it asks. */
 const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
@@ -114,6 +125,11 @@ export function artifactGaps(model: ModelJson): string[] {
 /** What the model lacks for system secrets (issue #657); empty: they are decided. A gap here denies every change and read, never a mint. */
 export function systemSecretGaps(model: ModelJson): string[] {
   return gapsIn(model, SYSTEM_SECRET_WRITTEN, SYSTEM_SECRET_ASKED);
+}
+
+/** What the model lacks for items (issue #662); empty: accepting new text is decided. A gap here denies every acceptance, never a mint. */
+export function itemGaps(model: ModelJson): string[] {
+  return gapsIn(model, ITEM_WRITTEN, ITEM_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

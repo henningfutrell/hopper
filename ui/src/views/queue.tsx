@@ -17,6 +17,7 @@ import { accepting, moved, queueColumns } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode } from '@/model/wire';
 import { act, useHopper } from '@/store';
 import { LockedRows, ParkedRows, WaitingOnRows } from './overview/queue';
+import { TextChangeCard } from '@/components/text-change';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 
 const MODE_TEXT: Record<QueueGateMode, string> = {
@@ -72,6 +73,7 @@ function Row({ job, position, children, note }: { job: Job; position: number; ch
         {note}
       </div>
       {children && <div className="flex flex-wrap gap-1.5 pl-7">{children}</div>}
+      {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
     </div>
   );
 }

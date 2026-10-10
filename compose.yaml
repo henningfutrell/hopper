@@ -6,6 +6,13 @@
 #   podman compose up -d
 #   then open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 #
+# The master key (issue #659, docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it, and
+# it is kept in no volume. The first start makes one and shows it once — in the UI and in `podman compose logs hopper`.
+# Save it in a password manager, then put it in .env and recreate the hopper:
+#   HOPPER_MASTER_KEY=<the 64 hex digits>
+#   podman compose up -d --force-recreate --no-deps hopper
+# A start without it, once secrets are kept, is limited: nothing is deleted, and what needs a secret stays off.
+#
 # `docker compose` works the same. Settings and secrets, all optional, go in a .env file beside this
 # one: HOPPER_* settings, CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY (an anthropic-api escalation level), … (GitHub needs none: the GitHub account
 # you sign in with is the connection). HOPPER_PORT moves the UI port;
@@ -22,11 +29,11 @@
 # is out, the UI shows how many; wait until none.
 #
 # Required services: postgres, hopper, openfga (and openfga-migrate, which runs once). A plain `podman compose up -d`
-# starts only these, and the vault works: it runs in the hopper, under the token key.
+# starts only these, and the vault works: it runs in the hopper, under the master key.
 #
 # Optional services (issue #586, docs/deploy.md "Optional services"), each behind a compose profile; the hopper starts
 # and works without them. Turn them on with lines in .env, then `podman compose up -d`:
-#   hopper-vault  the hopper's vault in a container of its own, so the hopper holds none of its keys:
+#   hopper-vault  the hopper's vault in a container of its own, with the same HOPPER_MASTER_KEY from .env:
 #                   COMPOSE_PROFILES=hopper-vault
 #                   HOPPER_VAULT_URL=http://hopper-vault:4791
 #   kms           a local KMS (local-kms) the vault's data key is wrapped by, envelope encryption:
@@ -41,7 +48,8 @@ name: hopper
 
 services:
   # Postgres makes the database password on its first start, kept in the secrets volume, before the
-  # database starts, and the hopper's token key with it (issue #441). Each file is readable only by the one service that needs it (postgres: uid 70;
+  # database starts, and sets it again at each start once it takes connections: a lost secrets volume makes a new one,
+  # and the database keeps working (issue #659). No master key is kept here (issue #659). Each file is readable only by the one service that needs it (postgres: uid 70;
   # the hopper and hopper-vault: uid 1000; OpenFGA: uid 65532). hopper-vault's preshared key (issue #586) is made the
   # same way. No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
@@ -53,11 +61,11 @@ services:
     command:
       - |
         s=/run/hopper-secrets
+        rm -f $$s/password_set
         (
           umask 077
           [ -s $$s/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/postgres_password
           printf 'postgres://hopper:%s@postgres:5432/hopper' "$$(cat $$s/postgres_password)" > $$s/database_url
-          [ -s $$s/token_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/token_key
           [ -s $$s/openfga_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/openfga_key
           [ -s $$s/vault_key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/vault_key
           mkdir -p $$s/openfga
@@ -65,9 +73,9 @@ services:
             "$$(cat $$s/postgres_password)" "$$(cat $$s/openfga_key)" > $$s/openfga/config.yaml
         )
         chown 70:70 $$s/postgres_password
-        chown 1000:1000 $$s/database_url $$s/token_key $$s/openfga_key $$s/vault_key
+        chown 1000:1000 $$s/database_url $$s/openfga_key $$s/vault_key
         chown -R 65532:65532 $$s/openfga
-        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga') &
+        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga' -c "ALTER ROLE hopper PASSWORD '$$(cat $$s/postgres_password)'" && touch $$s/password_set) &
         exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: hopper
@@ -77,7 +85,8 @@ services:
       - postgres:/var/lib/postgresql/data
       - secrets:/run/hopper-secrets
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hopper -d hopper"]
+      # Healthy once the password is set again (password_set): the hopper never meets an old one.
+      test: ["CMD-SHELL", "pg_isready -U hopper -d hopper && test -f /run/hopper-secrets/password_set"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -93,7 +102,8 @@ services:
         required: false
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
-      # The key the GitHub connection's tokens are sealed under in the database (issue #441), made beside it.
+      # The master key (issue #659) is HOPPER_MASTER_KEY in .env, never a file: see the top of this file. The old token key
+      # of an install from before, read only to move it to HOPPER_MASTER_KEY; this file makes none.
       HOPPER_TOKEN_KEY_FILE: /run/hopper-secrets/token_key
       # OpenFGA, asked before every credential a job is given (issue #559), and its preshared key.
       HOPPER_OPENFGA_URL: ${HOPPER_OPENFGA_URL:-http://openfga:8080}
@@ -101,7 +111,7 @@ services:
       # The vault in its own container (profile `hopper-vault`, issue #586) and its preshared key; unset: it runs here.
       HOPPER_VAULT_URL: ${HOPPER_VAULT_URL:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
-      # The KMS (profile `kms`), used here only when the vault runs here; unset: the token key.
+      # The KMS (profile `kms`), used here only when the vault runs here; unset: the master key.
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
       # The token of the optional `vault` service below (issue #585): read-only, made by that service on its first
       # start. Nothing reads it until a hashicorp-vault vault backend is added in Settings → Plugins.
@@ -149,7 +159,7 @@ services:
       - secrets:/run/hopper-secrets:ro
 
   # Optional (profile `hopper-vault`, issue #586): the hopper's vault in a container of its own, from the hopper's image.
-  # It holds the vault's key — the token key, or the data key the KMS opens — and the secret values, in the hopper's
+  # It holds the vault's key — the master key, or the data key the KMS opens — and the secret values, in the hopper's
   # Postgres; the templates stay in the hopper. The hopper asks it at HOPPER_VAULT_URL with the preshared key. On no
   # host port: only the hopper reaches it.
   hopper-vault:
@@ -162,8 +172,10 @@ services:
         condition: service_healthy
     environment:
       HOPPER_DATABASE_URL_FILE: /run/hopper-secrets/database_url
+      # The hopper's master key (issue #659), from .env; the old token key only while an install is moved from it.
+      HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}
+      HOPPER_MASTER_KEY_PREVIOUS: ${HOPPER_MASTER_KEY_PREVIOUS:-}
       HOPPER_TOKEN_KEY_FILE: /run/hopper-secrets/token_key
-      HOPPER_TOKEN_KEY_PREVIOUS: ${HOPPER_TOKEN_KEY_PREVIOUS:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
       HOPPER_KMS_KEY: ${HOPPER_KMS_KEY:-}

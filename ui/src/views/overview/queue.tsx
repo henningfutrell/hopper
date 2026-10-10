@@ -17,6 +17,7 @@ import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
 import { act, rerun, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 import type { Job } from '@/model/wire';
+import { TextChangeCard } from '@/components/text-change';
 import { AskButton, CancelButton, OperatorLedButton, ParkButton, PickUpButton } from './lanes';
 
 /** Run again: a new job for the item joins the queue now (issue #354). */
@@ -188,7 +189,7 @@ export function WaitingPanel() {
             <JobTitle job={job} className="flex-1" />
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
             <GatePassButton job={job} />
-            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !heldAtGate(job) && (
+            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !job.textChange && !heldAtGate(job) && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
             {authed && <RejectButton job={job} />}
@@ -207,6 +208,7 @@ export function WaitingPanel() {
             <span className="ml-auto">for <Since iso={job.createdAt} /></span>
           </div>
           {job.holdReason && <div className="truncate pl-7 text-xs text-warn/90" title={job.holdReason}>{job.holdReason}</div>}
+          {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
           {job.status === 'queued' && job.waitReason && <div className="truncate pl-7 text-xs text-muted-foreground" title={job.waitReason}>{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
         </div>
       )) : <Empty>nothing waiting</Empty>}

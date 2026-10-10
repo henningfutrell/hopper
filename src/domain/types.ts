@@ -10,6 +10,7 @@ import type { ResourceReading } from './machine-history.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
+import type { OriginalKept, TextChange } from './item-snapshots.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 
@@ -106,6 +107,13 @@ export interface Job extends JobPhaseFields {
    * pre-sort or the user accepts it. Absent (jobs from before the gate) or true: accepted.
    */
   accepted?: boolean;
+  /**
+   * Set while held because its item's text changed since the snapshot (issue #662): nothing starts it until a person
+   * keeps the original text, accepts the new text, or cancels it.
+   */
+  textChange?: TextChange;
+  /** A person kept the original text of its changed item: that live text holds it no more (issue #662). */
+  originalKept?: OriginalKept;
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;
@@ -450,6 +458,7 @@ export * from './usage-history.ts';
 export * from './machine-history.ts';
 export type { CleanupDue } from './cleanup.ts';
 export * from './plugins.ts';
+export * from './item-snapshots.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 
@@ -501,3 +510,4 @@ export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, t
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
 export * from './minting.ts';
+export * from './master-key.ts';

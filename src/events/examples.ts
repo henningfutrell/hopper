@@ -170,4 +170,17 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     from: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 168 },
     to: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: false, linkHours: 24, linkHoursMax: 168 }, by: 'github:octocat',
   },
+  'item.snapshot_recorded': { key: 'https://github.com/octo-org/hello/issues/7', hash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb', reason: 'intake' },
+  'item.changed_since_snapshot': {
+    key: 'https://github.com/octo-org/hello/issues/7', snapshotHash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb',
+    liveHash: 'f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8', editors: ['octocat'], newComments: 1,
+  },
+  'item.original_kept': {
+    key: 'https://github.com/octo-org/hello/issues/7', snapshotHash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb',
+    liveHash: 'f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8', person: 'octocat', via: 'ui',
+  },
+  'item.new_text_accepted': {
+    key: 'https://github.com/octo-org/hello/issues/7', fromHash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb',
+    toHash: 'f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8', editors: ['octocat'], person: 'octocat', via: 'ui',
+  },
 };
