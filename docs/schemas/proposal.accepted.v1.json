@@ -51,6 +51,24 @@
         "end",
         "proposal"
       ]
+    },
+    "selected": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

@@ -2,17 +2,12 @@
 // structure, with no model call — every part present, the summary (the first part) present, its links well formed, and
 // a next version changed from the one sent back. Each gap is one fixed line of the list the job is sent back with.
 import { describe, expect, it } from 'vitest';
-import { reviewSections, type ReviewKind, type ReviewVersion } from '../../src/domain/types.ts';
+import { reviewDocument, type ReviewKind, type ReviewVersion } from '../../src/domain/types.ts';
 import { preCheck } from '../../src/review/pre-check.ts';
+import { NO_PATHS } from '../support/proposal-paths.ts';
 
-const PROPOSAL = [
-  'Goal: paint the shed',
-  'Approach: two coats with a brush',
-  'Alternatives considered: a spray gun',
-  'Risks: rain on the second day',
-  'Effort: an afternoon',
-  'Context: the shed is bare wood',
-].join('\n');
+// A proposal is a set of paths (issue #651); test/proposals/paths.test.ts checks the paths' own gaps.
+const PROPOSAL = NO_PATHS;
 const REPORT = [
   'Question: which paint lasts longest',
   'Findings: oil paint',
@@ -23,7 +18,7 @@ const REPORT = [
 ].join('\n');
 
 const version = (kind: ReviewKind, text: string, number = 1): ReviewVersion =>
-  ({ number, text, ...reviewSections(kind, text), recentOutput: '', at: '2026-10-10T00:00:00.000Z' });
+  ({ number, text, ...reviewDocument(kind, text), recentOutput: '', at: '2026-10-10T00:00:00.000Z' });
 const gaps = (kind: ReviewKind, ...texts: string[]) => preCheck(kind, texts.map((t, i) => version(kind, t, i + 1)));
 
 describe('the structural pre-check', () => {
@@ -33,15 +28,14 @@ describe('the structural pre-check', () => {
   });
 
   it('names each required part that is missing, in order', () => {
-    expect(gaps('proposal', 'Goal: paint the shed\nApproach: a brush\nEffort: an hour')).toEqual([
-      'Missing part: Alternatives considered.',
-      'Missing part: Risks.',
+    expect(gaps('proposal', 'TL;DR: paint the shed\nPaths: none — painted last year.')).toEqual([
+      'Missing part: Problem.',
       'Missing part: Context.',
     ]);
   });
 
   it('names a missing summary: the first part', () => {
-    expect(gaps('proposal', PROPOSAL.replace('Goal: paint the shed\n', ''))).toEqual(['Missing summary: write the Goal: part.']);
+    expect(gaps('proposal', PROPOSAL.replace('TL;DR: No change is needed.\n', ''))).toEqual(['Missing summary: write the TL;DR: part.']);
     expect(gaps('research', REPORT.replace('Question: which paint lasts longest\n', ''))).toEqual(['Missing summary: write the Question: part.']);
   });
 

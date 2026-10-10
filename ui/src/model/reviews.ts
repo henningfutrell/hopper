@@ -14,7 +14,7 @@ export const REVIEW_UI: Readonly<Record<ReviewKind, {
 }>> = {
   proposal: {
     section: 'proposals', noun: 'proposal', label: 'Proposals', prefix: 'proposal', revising: 'Being revised', askPath: 'propose', ask: 'Propose',
-    parts: 'goal, approach, alternatives, risks, effort, the context it relied on',
+    parts: 'a TL;DR, the problem, a set of paths with their tradeoffs, the recommended one and why, the context it relied on',
   },
   research: {
     section: 'research', noun: 'research report', label: 'Research', prefix: 'research', revising: 'Continuing', askPath: 'research', ask: 'Research',

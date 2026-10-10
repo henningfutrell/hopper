@@ -9,7 +9,7 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
 (phase 5 renamed Jev → router: `jev.mode_changed` became `router.mode_changed`; slice 2 made question
 stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1;
 issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of `job.prioritized` and
@@ -37,6 +37,7 @@ Version 1 (`docs/schemas/job.queued.v1.json`). A job was created from a source i
 | `priority` | number | yes |
 | `source` | object | no |
 | `forkOf` | object | no |
+| `followOn` | object | no |
 
 ```json
 {
@@ -1454,7 +1455,7 @@ Version 1 (`docs/schemas/proposal.asked.v1.json`). A person asked a job that has
 
 ## `proposal.submitted`
 
-Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. `goal`: its Goal part, Markdown source (issue #569); `missing`: the parts it left out.
+Version 2 (`docs/schemas/proposal.submitted.v2.json`). A job came back with a proposal (issue #537): its agent ended with HOPPER_PROPOSAL instead of doing the work. Version 1, or the next version of one sent back. The job waits on it. v2 (issue #651): a proposal is a set of paths; `tldr`: its TL;DR, Markdown source (issue #569), `paths`: how many paths it has, `missing`: the parts it left out (TL;DR, Problem, Paths, Recommended, Context). v1: `goal`, its Goal part.
 
 | field | type | required |
 |---|---|---|
@@ -1463,17 +1464,19 @@ Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a pr
 | `raisedBy` | object | no |
 | `priority` | number | no |
 | `high` | boolean | no |
-| `goal` | string | no |
-| `missing` | `goal` \| `approach` \| `alternatives` \| `risks` \| `effort` \| `context`[] | yes |
+| `tldr` | string | no |
+| `missing` | `tldr` \| `problem` \| `paths` \| `recommended` \| `context`[] | yes |
+| `paths` | integer | no |
 
 ```json
 {
   "proposalId": "p1",
   "version": 1,
-  "goal": "Cache the board renders",
+  "tldr": "Cache the board renders: path 1 is small and safe.",
   "missing": [
-    "effort"
+    "context"
   ],
+  "paths": 3,
   "raisedBy": {
     "machineId": "desk",
     "name": "Desk tower",
@@ -1486,7 +1489,7 @@ Version 1 (`docs/schemas/proposal.submitted.v1.json`). A job came back with a pr
 
 ## `proposal.escalated`
 
-Version 1 (`docs/schemas/proposal.escalated.v1.json`). A proposal entered a stage of its review (issue #537): `target` is the reviewer level (an escalation level named in the proposal settings) or `human`, and `reason` why it climbed.
+Version 2 (`docs/schemas/proposal.escalated.v2.json`). A proposal entered a stage of its review (issue #537): `target` is the reviewer level (an escalation level named in the proposal settings) or `human`, and `reason` why it climbed. v2 (issue #651): `tldr`, its TL;DR; v1: `goal`.
 
 | field | type | required |
 |---|---|---|
@@ -1497,7 +1500,7 @@ Version 1 (`docs/schemas/proposal.escalated.v1.json`). A proposal entered a stag
 | `high` | boolean | no |
 | `target` | string | yes |
 | `reason` | string | yes |
-| `goal` | string | no |
+| `tldr` | string | no |
 
 ```json
 {
@@ -1505,7 +1508,7 @@ Version 1 (`docs/schemas/proposal.escalated.v1.json`). A proposal entered a stag
   "version": 1,
   "target": "opus",
   "reason": "submitted",
-  "goal": "Cache the board renders"
+  "tldr": "Cache the board renders: path 1 is small and safe."
 }
 ```
 
@@ -1534,7 +1537,7 @@ Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reach
 
 ## `proposal.reviewed`
 
-Version 1 (`docs/schemas/proposal.reviewed.v1.json`). A reviewer level gave its verdict on a proposal (issue #537): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates.
+Version 1 (`docs/schemas/proposal.reviewed.v1.json`). A reviewer level gave its verdict on a proposal (issue #537): `approve`, `request_changes` or `escalate`, with its `notes`. `error`: the review failed, which escalates. `paths` (issue #651): the paths the level added to the proposal and those it found not viable, by id, before a person sees them.
 
 | field | type | required |
 |---|---|---|
@@ -1547,20 +1550,29 @@ Version 1 (`docs/schemas/proposal.reviewed.v1.json`). A reviewer level gave its 
 | `verdict` | `approve` \| `request_changes` \| `escalate` | yes |
 | `notes` | string | yes |
 | `error` | string | no |
+| `paths` | object | no |
 
 ```json
 {
   "proposalId": "p1",
   "version": 1,
   "stage": "opus",
-  "verdict": "request_changes",
-  "notes": "Say how the cache is invalidated."
+  "verdict": "approve",
+  "notes": "Sound; one option was missing.",
+  "paths": {
+    "added": [
+      "4"
+    ],
+    "notViable": [
+      "2"
+    ]
+  }
 }
 ```
 
 ## `proposal.revision_requested`
 
-Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person; `decision` `request_changes`): `notes` is what to change. The job is re-queued with it and writes the next version.
+Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was sent back to its job (issue #537), by a reviewer level or a person (`stage`; `by` names the person): `decision` `request_changes` (a level, or the structural pre-check: `notes` is what to change), `more_paths` (a person asks for more paths, issue #651: the job keeps its paths and their numbers and adds new ones; `notes` is optional) or `steer` (a person sends a note back: `notes`). A selection the person made so far is kept on the proposal for the next version. The job is re-queued with it and writes the next version.
 
 | field | type | required |
 |---|---|---|
@@ -1570,7 +1582,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 | `priority` | number | no |
 | `high` | boolean | no |
 | `stage` | string | yes |
-| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` | no |
+| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` \| `more_paths` | no |
 | `notes` | string | yes |
 | `by` | string | no |
 
@@ -1586,7 +1598,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 
 ## `proposal.accepted`
 
-Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. Its job ends finished, with the decision as its result; the proposal stays linked to the job and its item.
+Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
 
 | field | type | required |
 |---|---|---|
@@ -1599,6 +1611,7 @@ Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off 
 | `by` | string | no |
 | `notes` | string | no |
 | `then` | `work` \| `end` \| `proposal` | no |
+| `selected` | object[] | no |
 
 ```json
 {
@@ -1606,7 +1619,16 @@ Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off 
   "version": 2,
   "stage": "human",
   "by": "owner",
-  "notes": "Go ahead."
+  "notes": "Go ahead.",
+  "selected": [
+    {
+      "id": "1",
+      "note": "Keep the cache per user."
+    },
+    {
+      "id": "3"
+    }
+  ]
 }
 ```
 
@@ -1656,6 +1678,37 @@ Version 1 (`docs/schemas/proposal.cancelled.v1.json`). A proposal waiting on a d
 }
 ```
 
+## `proposal.followed_on`
+
+Version 1 (`docs/schemas/proposal.followed_on.v1.json`). An accepted proposal's selected paths each continue as a follow-on job (issue #651): `followOns` names each path and its new job, queued (`job.queued` with `followOn`) and accepted at once, with the parent job's spec and priority, told its path and the person's note. On the parent job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `proposalId` | string | yes |
+| `version` | integer | yes |
+| `followOns` | object[] | yes |
+| `priority` | number | no |
+| `high` | boolean | no |
+
+```json
+{
+  "proposalId": "p1",
+  "version": 2,
+  "followOns": [
+    {
+      "pathId": "1",
+      "jobId": "j7"
+    },
+    {
+      "pathId": "3",
+      "jobId": "j8"
+    }
+  ],
+  "priority": 50,
+  "high": false
+}
+```
+
 ## `research.asked`
 
 Version 1 (`docs/schemas/research.asked.v1.json`). A person asked a job that has not started to research (issue #543): when it starts, its agent is told to research and write a research report instead of doing the work. A job from an item labelled `hopper:research`, or with a Research heading in its body, is asked from the start, with no event.
@@ -1683,6 +1736,7 @@ Version 1 (`docs/schemas/research.submitted.v1.json`). A job came back with a re
 | `high` | boolean | no |
 | `question` | string | no |
 | `missing` | `question` \| `findings` \| `sources` \| `confidence` \| `openThreads` \| `nextStep`[] | yes |
+| `paths` | integer | no |
 
 ```json
 {
@@ -1765,6 +1819,7 @@ Version 1 (`docs/schemas/research.reviewed.v1.json`). A reviewer level gave its 
 | `verdict` | `approve` \| `request_changes` \| `escalate` | yes |
 | `notes` | string | yes |
 | `error` | string | no |
+| `paths` | object | no |
 
 ```json
 {
@@ -1788,7 +1843,7 @@ Version 1 (`docs/schemas/research.revision_requested.v1.json`). A research repor
 | `priority` | number | no |
 | `high` | boolean | no |
 | `stage` | string | yes |
-| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` | no |
+| `decision` | `accept` \| `reject` \| `request_changes` \| `dig_deeper` \| `steer` \| `more_paths` | no |
 | `notes` | string | yes |
 | `by` | string | no |
 
@@ -1818,6 +1873,7 @@ Version 1 (`docs/schemas/research.accepted.v1.json`). A research report was acce
 | `by` | string | no |
 | `notes` | string | no |
 | `then` | `work` \| `end` \| `proposal` | no |
+| `selected` | object[] | no |
 
 ```json
 {

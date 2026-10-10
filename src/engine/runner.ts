@@ -162,7 +162,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
     const contextOf = (j: Job, m: MachineSnapshot): ExecutionContext => ({
       // The job rules as they are at this start (issue #172): an edit reaches the next job.
-      job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf),
+      job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf, j.followOn),
       // A login the job waits on (issue #476) goes to the logins, never into a question.
       logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).

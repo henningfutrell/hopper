@@ -5,7 +5,7 @@
 // tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
-import { asksOfSpec, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
+import { asksOfSpec, followOnBrief, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type FollowOnOf, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
 /** The config record that holds them. */
 export const JOB_RULES = 'job-rules';
@@ -81,9 +81,10 @@ export const askLine = (kind: ReviewKind): string => REVIEW_SECTIONS[kind].ask;
  * The job rules a job starting now is told: with its first ask, when it asks for any (research before the proposal),
  * and what follows once that one is accepted.
  */
-export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }, forkOf?: ForkOf): string {
+export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }, forkOf?: ForkOf, followOn?: FollowOnOf): string {
   const [first, ...then] = asksOfSpec(spec);
-  if (!first) return jobRules;
+  // A proposal's follow-on (issue #651) is told the path it continues.
+  if (!first) return followOn ? `${jobRules}\n${followOnBrief(followOn)}` : jobRules;
   const after = then.length > 0 ? `\nOnce your ${REVIEW_SECTIONS[first].noun} is accepted, you are asked for the ${then.map((k) => REVIEW_SECTIONS[k].noun).join(', then the ')} in this same session.` : '';
   // A fork (issue #548) is told the question it was forked from, and the aspect.
   return `${jobRules}\n${askLine(first)}${after}${forkOf ? `\n${forkBrief(forkOf)}` : ''}`;

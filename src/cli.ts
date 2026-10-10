@@ -17,6 +17,8 @@
 //                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
 //   hopper problem|handoff|failure … [--user <id>] [--url <hopper URL>]
 //                                                     the Failures actions on the running daemon (issue #623, cli-operator.ts)
+//   hopper proposal list|paths|select|accept|more-paths|steer|reject …
+//                                                     the proposals' paths on the running daemon (issue #651, cli-operator.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.

@@ -12,6 +12,7 @@
 // text links to by its URL is embedded below it (issue #624). Every part and every note is rendered as Markdown,
 // sanitized; a long item shows its summary — its first part: a proposal's Goal, a report's Question — and the rest
 // behind Show all (issue #569).
+// A proposal is a set of paths (issue #651): its card is the selection form of proposal-paths.tsx.
 import { ArtifactEmbeds } from '@/components/artifacts';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +34,7 @@ import { goalOf } from '@/model/job';
 import { actFor, useHopper } from '@/store';
 import { refreshReviews } from '@/store/reviews';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
+import { PathsDecide, PathsView } from './proposal-paths';
 import { ReviewHistory, ReviewSettingsPanel } from './review-settings';
 
 const ICON: Record<ReviewKind, LucideIcon> = { proposal: FileCheck, research: Telescope };
@@ -199,21 +201,23 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
       {!job && p.high && <HighTag priority={p.priority} className="self-start" />}
       {job ? <JobTitle job={job} /> : p.source?.title && <div className="text-sm font-medium">{p.source.title}</div>}
       <Origin p={p} />
-      <Version v={latest} type={type} fold />
+      {kind !== 'proposal' ? <Version v={latest} type={type} fold />
+        : p.status === 'open' && canAct ? <PathsDecide p={p} type={type} /> : <PathsView v={latest} />}
+      {kind === 'proposal' && <ArtifactEmbeds text={latest.text} />}
       {earlier.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />earlier versions ({earlier.length})
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 space-y-3">
-            {earlier.map((v) => <div key={v.number} className="rounded-md border p-3"><div className="mb-2 text-xs text-muted-foreground">version {v.number}</div><Version v={v} type={type} /></div>)}
+            {earlier.map((v) => <div key={v.number} className="rounded-md border p-3"><div className="mb-2 text-xs text-muted-foreground">version {v.number}</div>{kind === 'proposal' ? <PathsView v={v} /> : <Version v={v} type={type} />}</div>)}
           </CollapsibleContent>
         </Collapsible>
       )}
       {p.reviews.length > 0 && (
         <div className="space-y-1.5"><div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Review trail</div>{p.reviews.map((r, i) => <Review key={i} r={r} />)}</div>
       )}
-      {p.status === 'open' && canAct && <Decide kind={kind} p={p} type={type} />}
+      {p.status === 'open' && canAct && kind !== 'proposal' && <Decide kind={kind} p={p} type={type} />}
       {p.status === 'revising' && <div className="text-sm text-muted-foreground">Sent back: its job is writing version {latest.number + 1}.</div>}
       {p.status === 'open' && !canAct && (
         <div data-slot="login-notice" className="flex flex-wrap items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">

@@ -29,14 +29,18 @@ const job = (id: string, extra: Record<string, unknown> = {}) => ({
   spec: { executor: 'herdr-claude', payload: { prompt: 'Fix it' }, goal: `fix ${id}` }, ...extra,
 });
 const LONG_APPROACH = ['Two steps:', '', ...Array.from({ length: 10 }, (_, i) => `- step ${i + 1}: change \`file${i}.ts\``)].join('\n');
-const proposal = (id: string, sections: Record<string, string>) => ({
+// A proposal is a set of paths (issue #651): its TL;DR and problem, and each path's full text, render as Markdown.
+const proposal = (id: string, sections: Record<string, string>, pathText = 'Summary: one') => ({
   id: `p-${id}`, jobId: id, status: 'open', stage: 'human', levelRevisions: 0, priority: 50, high: false, createdAt: T0, updatedAt: T0,
-  versions: [{ number: 1, text: Object.entries(sections).map(([k, v]) => `${k}: ${v}`).join('\n'), recentOutput: '', at: T0, missing: [], sections }],
+  versions: [{
+    number: 1, text: Object.entries(sections).map(([k, v]) => `${k}: ${v}`).join('\n'), recentOutput: '', at: T0, missing: [], sections,
+    paths: { paths: [{ id: '1', title: 'Brush', summary: 'one', tradeoffs: {}, text: pathText, recommended: true }] },
+  }],
   reviews: [{ version: 1, stage: 'opus', role: 'level', verdict: 'approve', notes: 'Sound. **One** risk:\n\n- rain', startedAt: T0, finishedAt: T0 }],
 });
 const TYPE = {
-  parts: [['goal', 'Goal'], ['approach', 'Approach'], ['alternatives', 'Alternatives considered'], ['risks', 'Risks'], ['effort', 'Effort'], ['context', 'Context']],
-  decisions: [{ id: 'accept', route: 'accept', label: 'Accept', effect: 'accept', notes: 'optional' }],
+  parts: [['tldr', 'TL;DR'], ['problem', 'Problem'], ['paths', 'Paths'], ['recommended', 'Recommended'], ['context', 'Context']],
+  decisions: [{ id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' }],
 };
 
 function fakeDaemon(d: { questions: unknown[]; proposals: unknown[]; jobs: unknown[] }) {
@@ -130,23 +134,20 @@ describe('a question card renders the question as Markdown', () => {
 });
 
 describe('a proposal card renders its parts as Markdown', () => {
-  it('a long proposal shows its Goal first, the other parts behind Show all', async () => {
-    await boot('#proposals', { proposals: [proposal('j1', { goal: 'Fix the **release** script.', approach: LONG_APPROACH, risks: 'None.' })], jobs: [job('j1', { proposalId: 'p-j1' })] });
+  it('its TL;DR and problem render as Markdown; a path\'s Details open its full text as Markdown', async () => {
+    await boot('#proposals', { proposals: [proposal('j1', { tldr: 'Fix the **release** script.', problem: 'It breaks on `tags`.' }, LONG_APPROACH)], jobs: [job('j1', { proposalId: 'p-j1' })] });
     const card = document.querySelector('[data-item="p-j1"]')!;
-    expect(card.querySelector('[data-section="goal"] strong')!.textContent).toBe('release');
-    expect(card.querySelector('[data-section="approach"]')).toBeNull();
-
-    await click(fold(card)!);
-    expect(card.querySelectorAll('[data-section="approach"] li')).toHaveLength(10);
-    expect(card.querySelector('[data-section="approach"] code')!.textContent).toBe('file0.ts');
-    expect(card.querySelector('[data-section="risks"]')!.textContent).toContain('None.');
+    expect(card.querySelector('[data-slot="tldr"] strong')!.textContent).toBe('release');
+    expect(card.querySelector('[data-slot="problem"] code')!.textContent).toBe('tags');
+    expect(card.querySelector('[data-slot="path-text"]')).toBeNull();
+    await click([...card.querySelectorAll('button')].find((b) => b.textContent?.includes('Details'))!);
+    expect(card.querySelectorAll('[data-slot="path-text"] li')).toHaveLength(10);
+    expect(card.querySelector('[data-slot="path-text"] code')!.textContent).toBe('file0.ts');
   });
 
-  it('a short proposal shows every part, and the reviewer\'s notes render as Markdown', async () => {
-    await boot('#proposals', { proposals: [proposal('j1', { goal: 'Fix it.', approach: '- one\n- two' })], jobs: [job('j1', { proposalId: 'p-j1' })] });
+  it('the reviewer\'s notes render as Markdown', async () => {
+    await boot('#proposals', { proposals: [proposal('j1', { tldr: 'Fix it.' })], jobs: [job('j1', { proposalId: 'p-j1' })] });
     const card = document.querySelector('[data-item="p-j1"]')!;
-    expect(card.querySelectorAll('[data-section="approach"] li')).toHaveLength(2);
-    expect(fold(card)).toBeNull();
     expect([...card.querySelectorAll('strong')].map((s) => s.textContent)).toContain('One');
   });
 });

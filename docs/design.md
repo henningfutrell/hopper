@@ -869,7 +869,7 @@ If your work overlaps another job's, sort it out yourself. Either state the assu
 [hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
@@ -9073,7 +9073,8 @@ check runs: the decision is the job's end. Sent back, `proposal.revision_request
 revision brief (the type's `brief`: who sent it back, the notes, "write the revised proposal in full … HOPPER_PROPOSAL"),
 its next proposal is the next version, reviewed from the first level again.
 
-**What an accepted proposal becomes** (open decision D1) is not decided: for now the proposal stays linked to its job
+**What an accepted proposal becomes** (open decision D1): settled by issue #651 — a proposal is a set of paths, and each
+selected path continues as a follow-on job ("Proposals: a set of paths" below). The proposal stays linked to its job
 and the job's item (`source { key, url, title }`), and the job ends. **Who may sign off** (open decision D3) is a
 setting.
 
@@ -9097,6 +9098,67 @@ need a reason); a viewer sees a notice. Earlier proposals below, and for an admi
 counts the proposals waiting on a person (open, at the human stage), seen or not, as the Questions badge does (#499),
 marked when one is high priority. The Queue's waiting jobs get **Propose** and **Research** (ask for a proposal, for research) and a *proposal asked* or *research report asked*
 tag.
+
+## Proposals: a set of paths (issue #651, 2026-10-10)
+
+Owner requirement: a proposal is generally zero or more paths. It is a set of alternative strategies, and the person
+selects one or more of them to continue with; before, it was one document, accepted or rejected (#537). The UI supports
+the format fully, on a phone too.
+
+**The document** (`proposalDocument`, `src/domain/proposal-paths.ts`, pure). The protocol (`REVIEW_SECTIONS.proposal`)
+asks for Markdown in Simplified Technical English (#571): `TL;DR:`, `Problem:`, then each path as `Path N: <title>`
+(heading, list or emphasis marks aside) with `Summary:`, `Security:`, `Effort:`, `Risk:`, `Friction:` and `Creates:`
+and any Markdown detail, then `Recommended:` (a path's number or a combination's, and why), or `Paths: none — <why>`
+(no change is needed, or no viable path was found), then `Context:`. The top parts are the section's parts (`tldr`,
+`problem`, `paths`, `recommended`, `context`; the TL;DR is the headline, #569); each path runs from its line to the
+next path or top part. A line naming a path in prose (`Path 1 is cheaper`) starts none. A version keeps its paths
+(`ReviewVersion.paths`). A document with no path and no reason for none — a proposal written before #651, or one that
+left the format — reads as **one path** (`single`): titled by its Goal or its first line, its Risks and Effort as
+tradeoffs, the whole text as its Markdown. A version stored before #651 has no `paths`; `pathsOf` reads its one path from
+its text, and the routes answer every version with its paths. No stored row changes.
+
+**Structure** (the pre-check, #631): a path that leaves out a part, a set with no recommended path, zero paths with no
+reason, or a document not written as paths, each one fixed line.
+
+**Frontier review.** A reviewer level is shown each path in full and asked whether each serves the goal, whether the set
+covers the real options, and whether the recommendation is sound. With an approval or an escalation it may also reply
+`paths: { add: [...], notViable: [{ id, why }] }` (`PATH_AMENDMENTS`, `src/review/reply.ts`, bounded): an added path
+is numbered after the last and marked `addedBy`; a path not viable is marked `notViable { by, why }` and cannot be
+selected. Both change the newest version before a person sees it; the trail entry and `proposal.reviewed` name what
+changed (`paths { added, notViable }`). Where the top level may sign off, its approval continues with the recommended
+viable paths; with paths but none recommended, a person selects.
+
+**The decisions** (operator role): **Continue with selected** (`accept`, `paths: [{ id, note? }]` — at least one, all
+viable, each once; none on zero paths, where the button reads Accept), **Ask for more paths** (`more_paths`, notes
+optional: the job keeps its paths and their numbers and adds new ones), **Steer** (`steer`, notes required), **Reject
+all** (`reject`, notes required; refused, 409, on zero paths). A decision that sends the proposal back may carry the
+selection made so far: kept as `selection { version, paths }`, so the next version starts with it checked. A refused
+selection is 400.
+
+**Follow-ons** (`createFollowOns`, `src/engine/follow-ons.ts`). Accepted with paths selected, outside a fork (whose
+result answers its parent's question, the selected paths named in it) and a switch that goes on (whose job is told the
+selected paths), each path continues as its own **follow-on** job, in the tx of the decision: the parent's spec without
+its asks, its priority, accepted at once, `followOn { jobId, proposalId, pathId, title, text, note, siblings, source }`;
+`job.queued` with `followOn`, then `proposal.followed_on` on the parent's timeline. A follow-on is told its path after its
+job rules (`followOnBrief`): the path as written, the person's note, and the other selected paths, which run as their
+own jobs. Like a fork, it has no source of its own; the sync never reports it to the parent's item. `signOff.selected`
+keeps each path with its job; the parent ends `finished`, its result `{ proposal: { id, version, decision, followOns: [{
+path, jobId }] } }`. Paths not selected stay on the version as the record. Follow-ons are jobs only: the hopper files no
+issue (GitHub text is neutral, and the hopper opens no issue of its own).
+
+**API and CLI.** `ReviewItemView.followOns`: each follow-on with its job's live status (as `QuestionView.forks`, #570).
+The operator CLI (`hopper proposal list|paths|select|accept|more-paths|steer|reject`, `src/cli-operator.ts`) answers JSON
+and makes the UI's own call under a one-call session, as the other operator actions (#374, #623) do; the decision names
+`operator CLI` as who.
+
+**UI** (`ui/src/views/proposal-paths.tsx`). The card shows the TL;DR and the problem, then each path as its own sub-card:
+title, TL;DR, tradeoff badges, a recommended badge, *added by* or *not viable* where a level said so, what it creates,
+and **Details**, its full Markdown. Markdown (`ui/src/components/markdown.tsx`) is rendered by marked with raw HTML
+shown as text, images as their alt text and only http, https, mailto and in-page links, then sanitized by DOMPurify;
+links open in a new tab, `rel=noopener noreferrer`. A checkbox per path, a note field for each checked one, and the
+section's decisions; zero paths shows the reason with Accept, Ask for more paths and Steer only. Decided, the earlier
+proposals list each path of the signed-off version: a selected one links to its follow-on with its live status, the
+others greyed out and kept.
 
 ## Blast radius and actor machines (issue #542, 2026-10-09)
 

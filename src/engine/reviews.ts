@@ -5,17 +5,19 @@
 // re-queued, told to write that next, in the same session. A job that was not asked for the item — its agent wrote it
 // because its own item asked for it within the work — is told it was accepted and, where the type goes on (research:
 // issue #538, open decision D2), goes on in the same session: with the rest of its work, or it ends done, by its own outcome. Otherwise, accepted or
-// rejected, the job ends `finished` with every decision it reached as its result — what an accepted item becomes is
-// decided later (it stays linked to the job and its item). The handlers run inside the review service's tx.
+// rejected, the job ends `finished` with every decision it reached as its result. An accepted proposal's selected paths
+// (issue #651) each continue as a follow-on job (follow-ons.ts), named in that result. The handlers run inside the
+// review service's tx.
 import type { ExecutionReport } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import {
-  asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewSections, type EventType,
+  asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, type EventType,
   type Job, type Lane, type LaneId, type MachineSnapshot, type ReviewItem, type ReviewKind, type ReviewVersion,
 } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
+import { createFollowOns } from './follow-ons.ts';
 import { afterSwitch, resolveFork } from './phase-shifts.ts';
 
 /** The job's review items, by kind, that it has. */
@@ -32,7 +34,11 @@ export const openItemOf = (c: EngineContext, job: Job): ReviewItem | undefined =
 
 /** The job's result once its last review item is decided: each decision it reached, by kind. */
 export const decidedResult = (items: readonly ReviewItem[]) =>
-  Object.fromEntries(items.filter((p) => p.signOff).map((p) => [p.kind, { id: p.id, version: p.signOff!.version, decision: p.signOff!.decision }]));
+  Object.fromEntries(items.filter((p) => p.signOff).map((p) => {
+    // An accepted proposal's follow-ons (issue #651): each selected path and its job.
+    const follow = (p.signOff!.selected ?? []).filter((s) => s.jobId).map((s) => ({ path: s.id, jobId: s.jobId! }));
+    return [p.kind, { id: p.id, version: p.signOff!.version, decision: p.signOff!.decision, ...(follow.length > 0 ? { followOns: follow } : {}) }];
+  }));
 
 /** Inside the tx recording the outcome: the job's item (a new one, or the next version of one sent back), and the job waiting on it. */
 export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, machine: MachineSnapshot | undefined, kind: ReviewKind, report: ExecutionReport, at: string): { kind: ReviewKind; itemId: string } {
@@ -41,7 +47,7 @@ export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined,
   const items = store.reviews[kind];
   const currentId = job[type.jobField];
   const current = currentId ? items.get(currentId) : undefined;
-  const version = (number: number): ReviewVersion => ({ number, text: report.text, ...reviewSections(kind, report.text), recentOutput: report.recentOutput, at });
+  const version = (number: number): ReviewVersion => ({ number, text: report.text, ...reviewDocument(kind, report.text), recentOutput: report.recentOutput, at });
   const stage = c.reviews[kind].firstStage();
   let p: ReviewItem;
   if (current?.status === 'revising') {
@@ -66,7 +72,7 @@ export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined,
   const first = type.parts[0]!.id;
   store.events.append({
     type: `${type.prefix}.submitted` as EventType, jobId: job.id, laneId, ...(p.raisedBy ? { machineId: p.raisedBy.machineId } : {}),
-    data: { [type.idField]: p.id, version: v.number, ...(v.sections[first] ? { [first]: v.sections[first] } : {}), missing: v.missing, ...(p.raisedBy ? { raisedBy: p.raisedBy } : {}), ...priorityTagOf(c, job.id) },
+    data: { [type.idField]: p.id, version: v.number, ...(v.sections[first] ? { [first]: v.sections[first] } : {}), missing: v.missing, ...(v.paths ? { paths: v.paths.paths.length } : {}), ...(p.raisedBy ? { raisedBy: p.raisedBy } : {}), ...priorityTagOf(c, job.id) },
   });
   return { kind, itemId: p.id };
 }
@@ -125,6 +131,8 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup): Review
       // Not asked for it: the item was part of the job's own work, which goes on where its type says so (issue #538).
       const type = REVIEW_SECTIONS[p.kind];
       if (p.status === 'accepted' && !switched && type.goesOn && !job.spec[type.specFlag]) return requeue(job, goOnBrief(p), `${REVIEW_SECTIONS[p.kind].noun} accepted: the job goes on`);
+      // An accepted proposal's selected paths (issue #651), outside a fork or a switch that goes on: each a follow-on job.
+      if (p.kind === 'proposal' && p.status === 'accepted' && !job.forkOf) createFollowOns(c, job, p);
       const result = decidedResult(itemsOfJob(c, store.jobs.get(p.jobId)!));
       store.jobs.update(p.jobId, { status: 'finished', result, finishedAt: nowIso(c), pendingAnswer: undefined });
       store.events.append({ type: 'job.finished', jobId: p.jobId, data: { result } });

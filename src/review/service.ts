@@ -6,10 +6,13 @@
 // goes on up, or accepts the item where the top level may sign off. A request for changes sends it back to the job,
 // until the levels have done so as often as the settings allow; then a person decides. A level that fails, times out,
 // cannot review or replies malformed escalates: it never decides. A person takes one of the decisions the section
-// declares, at any stage. Like the question pipeline, every write is one tx, compare-and-set.
+// declares, at any stage. Like the question pipeline, every write is one tx, compare-and-set. A proposal is a set of
+// paths (issue #651): a level may add a path or mark one not viable before a person sees them; a person accepts by
+// selecting the paths to continue with (none on a proposal of zero paths), and a decision that sends it back keeps the
+// selection made so far for the next version.
 import type { Clock, ConfigRecords, EscalationLevel, ReviewActionResult, ReviewReply, ReviewRequest, ReviewService, ReviewServices, UserStore } from '../domain/ports.ts';
 import {
-  jobPriorityTag, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
+  amendPaths, jobPriorityTag, pathsOf, selectionRefusal, viablePaths, type PathPick, type SelectedPath, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
   thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
@@ -83,22 +86,25 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     emit(updated, 'escalated_to_human', { reason });
   }
 
-  /** Inside a tx. Accepted or rejected: signed off, and the job told. */
-  function signOff(p: ReviewItem, decision: 'accept' | 'reject', stage: string, notes: string | undefined, by?: string, then?: ShiftThen): ReviewItem {
+  /** Inside a tx. Accepted or rejected: signed off, and the job told. The item as the job's handler left it. */
+  function signOff(p: ReviewItem, decision: 'accept' | 'reject', stage: string, notes: string | undefined, by?: string, then?: ShiftThen, selected?: SelectedPath[]): ReviewItem {
     const at = iso();
+    const picked = selected && selected.length > 0 ? selected : undefined;
     const updated = items.update(p.id, {
-      status: decision === 'accept' ? 'accepted' : 'rejected',
-      signOff: { decision, stage, at, version: p.versions.length, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}) },
+      status: decision === 'accept' ? 'accepted' : 'rejected', selection: undefined,
+      signOff: { decision, stage, at, version: p.versions.length, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}), ...(picked ? { selected: picked } : {}) },
     });
-    emit(updated, decision === 'accept' ? 'accepted' : 'rejected', { stage, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}) });
+    const chosen = picked?.map(({ id, note }) => ({ id, ...(note ? { note } : {}) }));
+    emit(updated, decision === 'accept' ? 'accepted' : 'rejected', { stage, ...(by ? { by } : {}), ...(notes ? { notes } : {}), ...(then ? { then } : {}), ...(chosen ? { selected: chosen } : {}) });
     o.onDecided(updated);
-    return updated;
+    return items.get(p.id)!;
   }
 
-  /** Inside a tx. Back to the job with what to do next. */
-  function sendBack(p: ReviewItem, stage: string, decision: ReviewDecisionId, notes: string, by?: string): ReviewItem {
+  /** Inside a tx. Back to the job with what to do next; a person's selection so far (issue #651) is kept for the next version. */
+  function sendBack(p: ReviewItem, stage: string, decision: ReviewDecisionId, notes: string, by?: string, picks?: readonly PathPick[]): ReviewItem {
     const byLevel = stage !== HUMAN && stage !== PRE_CHECK;
-    const updated = items.update(p.id, { status: 'revising', ...(byLevel ? { levelRevisions: p.levelRevisions + 1 } : { stage }) });
+    const selection = picks && picks.length > 0 ? { selection: { version: p.versions.length, paths: picks.map(({ id, note }) => ({ id, ...(note ? { note } : {}) })) } } : {};
+    const updated = items.update(p.id, { status: 'revising', ...(byLevel ? { levelRevisions: p.levelRevisions + 1 } : { stage }), ...selection });
     emit(updated, 'revision_requested', { stage, decision, notes, ...(by ? { by } : {}) });
     o.onRevise(updated, type.brief(updated, stage, decision, notes));
     return updated;
@@ -159,23 +165,43 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
       const base = { version, stage: level.name, role: 'level' as const, ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso() };
       const record = (r: ReviewEntry) => {
         items.addReview(id, r);
-        emit(p, 'reviewed', { stage: r.stage, verdict: r.verdict, notes: r.notes, ...(r.error ? { error: r.error } : {}) });
+        emit(p, 'reviewed', { stage: r.stage, verdict: r.verdict, notes: r.notes, ...(r.error ? { error: r.error } : {}), ...(r.paths ? { paths: r.paths } : {}) });
       };
       if (!reply.ok) {
         record({ ...base, verdict: 'escalate', notes: 'the review failed', error: reply.error });
         return `${level.name} failed: ${reply.error}`;
       }
       const { verdict, notes } = reply.value;
-      record({ ...base, verdict, notes });
+      // A proposal's paths amended by the level (issue #651), on the version a person sees next; a request for changes
+      // goes back to the job instead, which writes the next version itself.
+      const amended = kind === 'proposal' && reply.value.paths && verdict !== 'request_changes' ? amend(p, reply.value.paths, level.name) : undefined;
+      record({ ...base, verdict, notes, ...(amended ? { paths: amended } : {}) });
       if (verdict === 'escalate') return `${level.name}: ${notes}`;
       if (verdict === 'approve') {
-        if (s.signOff === 'top-level' && number === of) return void signOff(items.get(id)!, 'accept', level.name, notes);
+        if (s.signOff === 'top-level' && number === of) {
+          const now = items.get(id)!;
+          if (kind !== 'proposal') return void signOff(now, 'accept', level.name, notes);
+          // A proposal (issue #651): the top level continues with the recommended paths; with paths but none recommended, a person selects.
+          const set = pathsOf(now.versions.at(-1)!);
+          const recommended = viablePaths(set).filter((x) => x.recommended);
+          if (viablePaths(set).length > 0 && recommended.length === 0) return void toHuman(now, `${level.name} approved, but no viable path is recommended: a person selects`);
+          return void signOff(now, 'accept', level.name, notes, undefined, undefined, recommended.map((x) => ({ id: x.id, title: x.title })));
+        }
         return `${level.name} approved: ${notes}`;
       }
       const now = items.get(id)!;
       if (now.levelRevisions < s.levelRevisions) return void sendBack(now, level.name, 'request_changes', notes);
       return void toHuman(now, `${level.name} asked for changes again, past the ${s.levelRevisions} the reviewer levels may ask for: ${notes}`);
     });
+  }
+
+  /** Inside a tx. A level's changes to the newest version's paths; what it changed, or undefined when nothing. */
+  function amend(p: ReviewItem, a: NonNullable<ReviewReply['paths']>, by: string): ReviewEntry['paths'] {
+    const v = p.versions.at(-1)!;
+    const r = amendPaths(pathsOf(v), a, by);
+    if (r.added.length === 0 && r.notViable.length === 0) return undefined;
+    items.setPaths(p.id, r.set);
+    return { added: r.added, notViable: r.notViable };
   }
 
   /** The structural pre-check, in one tx. True: the item goes on to the reviewer levels. */
@@ -229,7 +255,7 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     },
     handle(id) { start(id, 'submitted'); },
     /** A person's decision on an open item, over any level in flight. */
-    decide(id, decision, by, notes, then) {
+    decide(id, decision, by, notes, then, picks) {
       const offered = type.decisions.find((d) => d.id === decision);
       if (!offered) return { ok: false, reason: 'not_offered', message: `${type.noun}s are not decided by ${decision}` };
       return store.tx((): ReviewActionResult => {
@@ -243,12 +269,23 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
             return { ok: false, reason: 'not_switched', message: switched ? `a ${type.noun} accepted in a switched phase may go on to ${thenChoices(kind).join(', ')}, not ${then}` : `${type.noun} ${id}: its job is not in a phase a question switched it to; there is nothing to pick` };
           }
         }
+        // A proposal's paths (issue #651): Accept continues with the paths selected, or none on zero paths; Reject all
+        // needs paths to reject; a decision that sends it back keeps a selection.
+        let selected: SelectedPath[] | undefined;
+        if (picks !== undefined && kind !== 'proposal') return { ok: false, reason: 'bad_selection', message: `${type.noun}s have no paths to select` };
+        if (kind === 'proposal') {
+          const set = pathsOf(p.versions.at(-1)!);
+          if (offered.effect === 'reject' && viablePaths(set).length === 0) return { ok: false, reason: 'no_paths', message: `${type.noun} ${id} has no path to reject: accept it, steer it, or ask for paths` };
+          const why = offered.effect === 'reject' ? undefined : selectionRefusal(set, picks, offered.effect === 'accept');
+          if (why) return { ok: false, reason: 'bad_selection', message: why };
+          if (offered.effect === 'accept') selected = (picks ?? []).map((x) => ({ id: x.id, title: set.paths.find((q) => q.id === x.id)!.title, ...(x.note ? { note: x.note } : {}) }));
+        }
         abortReview(id, 'superseded');
         const at = iso();
         items.addReview(id, { version: p.versions.length, stage: HUMAN, role: 'human', verdict: decision, notes: notes ?? '', by, startedAt: at, finishedAt: at });
         const now = items.get(id)!;
-        if (offered.effect === 'send_back') return { ok: true, item: sendBack(now, HUMAN, decision, notes ?? '', by) };
-        return { ok: true, item: signOff(now, offered.effect, HUMAN, notes, by, then) };
+        if (offered.effect === 'send_back') return { ok: true, item: sendBack(now, HUMAN, decision, notes ?? '', by, picks) };
+        return { ok: true, item: signOff(now, offered.effect, HUMAN, notes, by, then, selected) };
       });
     },
     markSeen(id) {

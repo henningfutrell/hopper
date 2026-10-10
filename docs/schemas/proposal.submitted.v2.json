@@ -34,53 +34,32 @@
     "high": {
       "type": "boolean"
     },
-    "stage": {
-      "type": "string",
-      "minLength": 1
-    },
-    "verdict": {
-      "type": "string",
-      "enum": [
-        "approve",
-        "request_changes",
-        "escalate"
-      ]
-    },
-    "notes": {
+    "tldr": {
       "type": "string"
     },
-    "error": {
-      "type": "string"
+    "missing": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "tldr",
+          "problem",
+          "paths",
+          "recommended",
+          "context"
+        ]
+      }
     },
     "paths": {
-      "type": "object",
-      "properties": {
-        "added": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "notViable": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "added",
-        "notViable"
-      ],
-      "additionalProperties": false
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     }
   },
   "required": [
     "proposalId",
     "version",
-    "stage",
-    "verdict",
-    "notes"
+    "missing"
   ],
   "additionalProperties": false
 }

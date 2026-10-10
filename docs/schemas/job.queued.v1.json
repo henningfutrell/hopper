@@ -155,6 +155,26 @@
         "kind"
       ],
       "additionalProperties": false
+    },
+    "followOn": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "proposalId": {
+          "type": "string"
+        },
+        "pathId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "proposalId",
+        "pathId"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

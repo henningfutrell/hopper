@@ -3,18 +3,19 @@
 // question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650).
+// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';
-import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type UiRole, type User } from './domain/types.ts';
+import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type UiRole, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -41,6 +42,15 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
   hopper auto-park set [--minutes <n>] [--high-priority-minutes <n>]
                                                      change them; 0 turns auto-park off, for jobs that are not high priority or for high-priority jobs
+  hopper proposal list                               the open proposals, each with its paths in short
+  hopper proposal paths <id>                         one proposal's newest version: its problem, its paths, the recommendation
+  hopper proposal select <id> <path>... [--path-note <path>=<text>]... [--note <text>]
+                                                     Continue with selected: each path continues as its own follow-on job
+  hopper proposal accept <id> [--note <text>]        accept a proposal of zero paths (no change is needed, or no viable path)
+  hopper proposal more-paths <id> [--note <text>] [--select <path>]...
+                                                     Ask for more paths; the paths named stay selected for the next version
+  hopper proposal steer <id> --note <text>           Steer: the note goes back to the job
+  hopper proposal reject <id> --note <why>           Reject all: the job ends with the rejection
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 /** A refusal: the message, exit 2. */
@@ -200,8 +210,54 @@ function autoParkCall(args: string[]): Call {
   return { role: 'admin', path: '/ui/api/auto-park', body: async () => ({ ...(minutes === undefined ? {} : { minutes }), ...(highPriorityMinutes === undefined ? {} : { highPriorityMinutes }) }) };
 }
 
+/** A proposal's paths in short, as the CLI lists them (issue #651). */
+function pathsBrief(p: ReviewItemView) {
+  const v = p.versions.at(-1)!;
+  const set = v.paths ?? { paths: [] };
+  return {
+    id: p.id, jobId: p.jobId, status: p.status, stage: p.stage, version: v.number, title: p.source?.title, tldr: v.sections.tldr, problem: v.sections.problem,
+    paths: set.paths.map((x) => ({
+      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, creates: x.creates,
+      ...(x.recommended ? { recommended: true } : {}), ...(x.addedBy ? { addedBy: x.addedBy } : {}), ...(x.notViable ? { notViable: x.notViable } : {}),
+    })),
+    ...(set.recommendation ? { recommendation: set.recommendation } : {}), ...(set.none !== undefined ? { none: set.none } : {}),
+    ...(p.selection ? { selection: p.selection } : {}), ...(p.signOff?.selected ? { selected: p.signOff.selected } : {}), ...(p.followOns ? { followOns: p.followOns } : {}),
+  };
+}
+
+const PROPOSAL_USAGE = 'proposal list | paths <id> | select <id> <path>... [--path-note <path>=<text>]... [--note <text>] | accept <id> [--note <text>] | more-paths <id> [--note <text>] [--select <path>]... | steer <id> --note <text> | reject <id> --note <why>';
+
+function proposalCall(args: string[]): Call {
+  const { values, positionals } = parseArgs({
+    args, allowPositionals: true,
+    options: { note: { type: 'string' }, 'path-note': { type: 'string', multiple: true }, select: { type: 'string', multiple: true } },
+  });
+  const [verb, id, ...rest] = positionals;
+  if (verb === 'list' && !id) return { role: 'viewer', path: '/api/proposals', pick: (v) => (v as { items: ReviewItemView[] }).items.map(pathsBrief) };
+  if (!id) throw usage(PROPOSAL_USAGE);
+  const at = `/ui/api/proposals/${encodeURIComponent(id)}`;
+  const note = values.note === undefined ? {} : { notes: values.note };
+  if (verb === 'paths' && rest.length === 0) return { role: 'viewer', path: `/api/proposals/${encodeURIComponent(id)}`, pick: (v) => pathsBrief(v as ReviewItemView) };
+  if (verb === 'select') {
+    if (rest.length === 0) throw usage('proposal select <id> <path>... [--path-note <path>=<text>]... [--note <text>]');
+    const notes = new Map<string, string>();
+    for (const raw of values['path-note'] ?? []) {
+      const eq = raw.indexOf('=');
+      if (eq < 1 || !rest.includes(raw.slice(0, eq))) throw new OperatorRefusal(`--path-note ${raw}: write <path>=<text> for a path you select`);
+      notes.set(raw.slice(0, eq), raw.slice(eq + 1));
+    }
+    return { role: 'operator', path: `${at}/accept`, body: async () => ({ ...note, paths: rest.map((p) => ({ id: p, ...(notes.get(p) ? { note: notes.get(p) } : {}) })) }) };
+  }
+  if (rest.length > 0 || values['path-note'] !== undefined || (values.select !== undefined && verb !== 'more-paths')) throw usage(PROPOSAL_USAGE);
+  if (verb === 'accept') return { role: 'operator', path: `${at}/accept`, body: async () => note };
+  if (verb === 'more-paths') return { role: 'operator', path: `${at}/more-paths`, body: async () => ({ ...note, ...(values.select ? { paths: values.select.map((p) => ({ id: p })) } : {}) }) };
+  if ((verb === 'steer' || verb === 'reject') && values.note?.trim()) return { role: 'operator', path: `${at}/${verb}`, body: async () => note };
+  throw usage(PROPOSAL_USAGE);
+}
+
 function callOf(command: string, args: string[]): Call {
   if (command === 'auto-park') return autoParkCall(args);
+  if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
   if (command === 'yolo') return yoloCall(args);
   if (command === 'backfill') return backfillCall(args);
@@ -240,7 +296,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

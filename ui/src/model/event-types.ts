@@ -24,7 +24,7 @@ const ALL: Record<EventType, true> = {
   'job.assessed': true, 'failure.grouped': true, 'failure.resolved': true, 'failure.released': true, 'handoff.opened': true, 'handoff.closed': true, 'handoff.checked': true,
   'usage.limits_changed': true, 'priority_lanes.changed': true, 'priority_lanes.settings_changed': true,
   'proposal.asked': true, 'proposal.submitted': true, 'proposal.escalated': true, 'proposal.escalated_to_human': true, 'proposal.reviewed': true,
-  'proposal.revision_requested': true, 'proposal.accepted': true, 'proposal.rejected': true, 'proposal.cancelled': true,
+  'proposal.revision_requested': true, 'proposal.accepted': true, 'proposal.rejected': true, 'proposal.cancelled': true, 'proposal.followed_on': true,
   'research.asked': true, 'research.submitted': true, 'research.escalated': true, 'research.escalated_to_human': true, 'research.reviewed': true,
   'research.revision_requested': true, 'research.accepted': true, 'research.cancelled': true,
   'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,

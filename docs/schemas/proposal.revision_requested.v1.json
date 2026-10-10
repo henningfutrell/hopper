@@ -45,7 +45,8 @@
         "reject",
         "request_changes",
         "dig_deeper",
-        "steer"
+        "steer",
+        "more_paths"
       ]
     },
     "notes": {

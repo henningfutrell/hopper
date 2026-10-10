@@ -7,7 +7,7 @@ import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion,
+  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
   Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User,
   UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem,
 } from './types.ts';
@@ -126,6 +126,8 @@ export interface ReviewItemRepository {
   update(id: string, patch: Partial<Omit<ReviewItem, 'id' | 'kind' | 'jobId' | 'createdAt' | 'reviews' | 'versions'>>): ReviewItem;
   addReview(id: string, review: ReviewEntry): ReviewItem;
   addVersion(id: string, version: ReviewVersion): ReviewItem;
+  /** A proposal's newest version with its paths amended by a reviewer level (issue #651). */
+  setPaths(id: string, paths: ProposalPathSet): ReviewItem;
 }
 
 /** Logins (issue #476): what the hopper keeps of each, never its URL or code. */

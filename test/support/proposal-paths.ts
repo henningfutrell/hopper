@@ -1,0 +1,50 @@
+// Proposal documents for the tests of issue #651: three paths, zero paths with the reason, and one from before paths.
+export const THREE_PATHS = [
+  'TL;DR: Paint the shed with a brush. It is cheap and safe.',
+  'Problem: The shed is bare wood, and it rots in the rain.',
+  '',
+  '## Path 1: Brush two coats',
+  'Summary: Two coats of oil paint, with a brush.',
+  'Security: no change.',
+  'Effort: one afternoon.',
+  'Risk: rain on the second day.',
+  'Friction: the person buys the paint.',
+  'Creates: one job.',
+  '',
+  'The brush reaches the **corners**.',
+  '',
+  '## Path 2: Spray gun',
+  '**Summary:** Rent a spray gun.',
+  '**Security:** no change.',
+  '**Effort:** two hours.',
+  '**Risk:** overspray on the car.',
+  '**Friction:** the person rents the gun.',
+  '**Creates:** one job.',
+  '',
+  'Path 3: Leave it bare',
+  'Summary: Do nothing this year.',
+  'Security: no change.',
+  'Effort: none.',
+  'Risk: the wood rots.',
+  'Friction: none.',
+  'Creates: one research job.',
+  '',
+  'Recommended: 1 and 3 — the brush is cheap; look again next year.',
+  'Context: the shed is bare wood.',
+].join('\n');
+
+export const NO_PATHS = [
+  'TL;DR: No change is needed.',
+  'Problem: The shed looked bare.',
+  'Paths: none — the shed was painted last year.',
+  'Context: the paint shop receipt.',
+].join('\n');
+
+export const LEGACY = [
+  'Goal: paint the shed',
+  'Approach: two coats with a brush',
+  'Alternatives considered: a spray gun',
+  'Risks: rain on the second day',
+  'Effort: an afternoon',
+  'Context: the shed is bare wood',
+].join('\n');

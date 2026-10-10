@@ -8,10 +8,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import { CLAUDE_TIMEOUT_MS } from '../../claude-print.ts';
-import { CONFIDENCES, REVIEW_VERDICTS } from '../../../domain/types.ts';
+import { CONFIDENCES } from '../../../domain/types.ts';
 import type { LevelReply, PluginDefinition, ReviewReply } from '../../sdk.ts';
 import { buildLevelPrompt } from '../claude-cli/prompt.ts';
-import { buildReviewPrompt } from '../claude-cli/review-prompt.ts';
+import { buildReviewPrompt, REVIEW_REPLY_SCHEMA } from '../claude-cli/review-prompt.ts';
 
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -24,8 +24,8 @@ export interface AnthropicApiOptions {
 }
 
 const REPLY = z.object({ answer: z.string(), escalate: z.boolean(), reason: z.string(), confidence: z.enum(CONFIDENCES) });
-/** A reviewer level's reply (issue #537). */
-const REVIEW = z.object({ verdict: z.enum(REVIEW_VERDICTS), notes: z.string() });
+/** A reviewer level's reply (issues #537, #651). */
+const REVIEW = REVIEW_REPLY_SCHEMA;
 
 const MAX_TOKENS = 16000;
 

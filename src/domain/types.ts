@@ -11,6 +11,7 @@ import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './fa
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { JobPhaseFields } from './phase.ts';
+import type { FollowOnOf } from './proposal-paths.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -87,6 +88,8 @@ export interface SpecFromConfig { executor: string; model?: string; cwd?: string
 /** A job; its phase, switch and forks (issue #548) are declared in src/domain/phase.ts. */
 export interface Job extends JobPhaseFields {
   id: JobId;
+  /** A follow-on of an accepted proposal (issue #651): the job, proposal and path it continues. */
+  followOn?: FollowOnOf;
   spec: JobSpec;
   priority: number; // resolved from spec, default 50
   status: JobStatus;
@@ -463,6 +466,7 @@ export { DEFAULT_QUEUE_GATE, QUEUE_GATE_MODES, type GateActor, type PreSort, typ
 
 export * from './logins.ts';
 export * from './review.ts';
+export * from './proposal-paths.ts';
 export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';

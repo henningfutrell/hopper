@@ -5,7 +5,8 @@
 // what it was told — or, told to write a proposal next (its research accepted), with a proposal. Phase shifts (issue
 // #548): a fork comes back with `message` as the document it was forked for; `ask`, resumed with a switch into research
 // or a proposal, comes back with that document, quoting what it was told, and resumed back to work, it ends done. `fail`
-// may carry `liveness` (issue #630): it plays a timeout that showed its progress.
+// may carry `liveness` (issue #630): it plays a timeout that showed its progress. A proposal's follow-on (issue #651)
+// ends done with the path it continues; `propose` with `revised`, resumed, comes back with `revised` as its next version.
 
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import { REVIEW_SECTIONS, type JobLiveness } from '../domain/types.ts';
@@ -15,7 +16,7 @@ const MAX_MS = 600000;
 const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
 
 /** `liveness` (issue #630), with `fail`: what a timeout showed — its output `outputAgoSec` seconds before the failure, its pushes. */
-interface TestPayload { op: (typeof OPS)[number]; ms?: number; message?: string; liveness?: { outputAgoSec?: number; pushed?: boolean } }
+interface TestPayload { op: (typeof OPS)[number]; ms?: number; message?: string; revised?: string; liveness?: { outputAgoSec?: number; pushed?: boolean } }
 
 function livenessOf(l: TestPayload['liveness'], now: number): JobLiveness | undefined {
   if (!l) return undefined;
@@ -69,6 +70,7 @@ export function createTestExecutor(): Executor {
         const live = livenessOf(liveness, Date.now());
         return { kind: 'failed', error: message ?? 'failed on purpose', ...(live ? { liveness: live } : {}) };
       }
+      if (ctx.job.followOn) return { kind: 'finished', result: { followOn: ctx.job.followOn.pathId } };
       ctx.saveState({ asked: true });
       const fork = ctx.job.forkOf;
       if (fork) return { kind: 'report', review: fork.kind, report: { text: message ?? 'Findings: something', recentOutput: '' } };
@@ -77,9 +79,10 @@ export function createTestExecutor(): Executor {
       return { kind: 'question', question: { text: message ?? 'Which option?', recentOutput: '', detectedBy: 'test' } };
     },
     async resume(ctx, answer) {
-      const { op, ms, message } = ctx.job.spec.payload as unknown as TestPayload;
+      const { op, ms, message, revised } = ctx.job.spec.payload as unknown as TestPayload;
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'fail-after-answer') return { kind: 'failed', error: `failed after answer: ${answer}` };
+      if (op === 'propose' && revised !== undefined) return { kind: 'report', review: 'proposal', report: { text: `${revised}\n\nRevised after: ${answer}`, recentOutput: '' } };
       if (op === 'propose') return { kind: 'report', review: 'proposal', report: { text: `${message ?? 'Goal: something'}\nRevised after: ${answer}`, recentOutput: '' } };
       // Accepted research it was not asked for (issue #538): told to go on, it ends done.
       if (op === 'research' && answer.includes('HOPPER_DONE')) return { kind: 'finished', result: { answer } };

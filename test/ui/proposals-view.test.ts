@@ -2,7 +2,7 @@
 // The Proposals view (issue #537), rendered inside the whole app against a fake of the daemon's HTTP surface. A
 // proposal waiting on a person shows its parts, the parts it left out, its review trail and its job; the nav badge
 // counts the ones waiting on a person, high-priority ones marked and first, and never the questions. An operator
-// accepts, rejects or sends it back (the last two only with a reason); a viewer sees a notice. An admin's settings
+// continues with selected paths, steers or rejects all (the last two only with a reason, issue #651); a viewer sees a notice. An admin's settings
 // offer only the escalation levels the server names.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -17,8 +17,9 @@ const job = (id: string, priority = 50) => ({
 const proposal = (id: string, over: Record<string, unknown> = {}) => ({
   id: `p-${id}`, jobId: id, status: 'open', stage: 'human', levelRevisions: 0, priority: 50, high: false, createdAt: T0, updatedAt: T0,
   versions: [{
-    number: 1, text: 'Goal: paint the shed', recentOutput: '', at: T0, missing: ['effort'],
-    sections: { goal: 'paint the shed', approach: 'two coats with a brush', alternatives: 'a spray gun', risks: 'rain', context: 'the shed is wood' },
+    number: 1, text: 'TL;DR: paint the shed', recentOutput: '', at: T0, missing: ['context'],
+    sections: { tldr: 'paint the shed', problem: 'the shed is bare wood' },
+    paths: { paths: [{ id: '1', title: 'two coats with a brush', summary: 'a brush', tradeoffs: { risk: 'rain' }, text: 'a brush', recommended: true }, { id: '2', title: 'a spray gun', tradeoffs: {}, text: 'spray' }] },
   }],
   reviews: [{ version: 1, stage: 'opus', role: 'level', verdict: 'approve', notes: 'sound and small', startedAt: T0, finishedAt: T0 }],
   ...over,
@@ -26,11 +27,12 @@ const proposal = (id: string, over: Record<string, unknown> = {}) => ({
 const SETTINGS = { reviewers: ['opus'], signOff: 'owner', levelRevisions: 1, levels: ['opus', 'fable'] };
 // The section type as the server declares it (issue #543): the UI offers exactly these parts and decisions.
 const TYPE = {
-  parts: [['goal', 'Goal'], ['approach', 'Approach'], ['alternatives', 'Alternatives considered'], ['risks', 'Risks'], ['effort', 'Effort'], ['context', 'Context']],
+  parts: [['tldr', 'TL;DR'], ['problem', 'Problem'], ['paths', 'Paths'], ['recommended', 'Recommended'], ['context', 'Context']],
   decisions: [
-    { id: 'accept', route: 'accept', label: 'Accept', effect: 'accept', notes: 'optional' },
-    { id: 'request_changes', route: 'request-changes', label: 'Request changes', effect: 'send_back', notes: 'required' },
-    { id: 'reject', route: 'reject', label: 'Reject', effect: 'reject', notes: 'required' },
+    { id: 'accept', route: 'accept', label: 'Continue with selected', effect: 'accept', notes: 'optional' },
+    { id: 'more_paths', route: 'more-paths', label: 'Ask for more paths', effect: 'send_back', notes: 'optional' },
+    { id: 'steer', route: 'steer', label: 'Steer', effect: 'send_back', notes: 'required' },
+    { id: 'reject', route: 'reject', label: 'Reject all', effect: 'reject', notes: 'required' },
   ],
 };
 
@@ -115,14 +117,14 @@ afterEach(async () => {
 });
 
 describe('the Proposals view', () => {
-  it('shows a proposal waiting on a person: its parts, what it left out, its trail and its job; the badge counts it', async () => {
+  it('shows a proposal waiting on a person: its problem, its paths, its trail and its job; the badge counts it', async () => {
     await boot('#proposals', { proposals: [proposal('j1')], jobs: [job('j1')] });
     const c = card('j1')!;
     expect(c).not.toBeNull();
     expect(c.textContent).toContain('paint the shed');
-    expect(c.textContent).toContain('two coats with a brush');
-    expect(c.textContent).toContain('Alternatives considered');
-    expect(c.querySelector('[data-slot="missing"]')!.textContent).toContain('Effort');
+    expect(c.textContent).toContain('the shed is bare wood');
+    expect(c.querySelector('[data-path="1"]')!.textContent).toContain('two coats with a brush');
+    expect(c.querySelector('[data-path="2"]')!.textContent).toContain('a spray gun');
     expect(c.textContent).toContain('sound and small');
     expect(c.textContent).toContain('shed j1');
     expect(navBadge()!.textContent).toBe('1');
@@ -142,25 +144,26 @@ describe('the Proposals view', () => {
     expect(navBadge()!.getAttribute('data-high')).toBe('1');
   });
 
-  it('an operator accepts with a note; rejecting or sending back needs a reason', async () => {
+  it('an operator continues with a selected path and a note; steering or rejecting all needs a reason', async () => {
     await boot('#proposals', { proposals: [proposal('j1')], jobs: [job('j1')] });
     const c = card('j1')!;
-    expect(button(c, 'Request changes')!.disabled).toBe(true);
-    expect(button(c, 'Reject')!.disabled).toBe(true);
-    await type(c.querySelector('textarea')!, 'go ahead');
-    await act(async () => { button(c, 'Accept')!.click(); });
+    expect(button(c, 'Steer')!.disabled).toBe(true);
+    expect(button(c, 'Reject all')!.disabled).toBe(true);
+    await act(async () => { (c.querySelector('[data-path="1"] input[type="checkbox"]') as HTMLInputElement).click(); });
+    await type(card('j1')!.querySelector('textarea')!, 'go ahead');
+    await act(async () => { button(card('j1')!, 'Continue with selected')!.click(); });
     await settle();
-    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/p-j1/accept', body: { notes: 'go ahead' } });
+    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/p-j1/accept', body: { notes: 'go ahead', paths: [{ id: '1' }] } });
     await type(card('j1')!.querySelector('textarea')!, 'say which paint');
-    await act(async () => { button(card('j1')!, 'Request changes')!.click(); });
+    await act(async () => { button(card('j1')!, 'Steer')!.click(); });
     await settle();
-    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/p-j1/request-changes', body: { notes: 'say which paint' } });
+    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/p-j1/steer', body: { notes: 'say which paint' } });
   });
 
   it('a viewer sees a notice instead of the decisions', async () => {
     await boot('#proposals', { proposals: [proposal('j1')], jobs: [job('j1')], role: 'viewer' });
     const c = card('j1')!;
-    expect(button(c, 'Accept')).toBeUndefined();
+    expect(button(c, 'Continue with selected')).toBeUndefined();
     expect(c.querySelector('[data-slot="login-notice"]')).not.toBeNull();
   });
 

@@ -34,53 +34,22 @@
     "high": {
       "type": "boolean"
     },
-    "stage": {
+    "target": {
       "type": "string",
       "minLength": 1
     },
-    "verdict": {
-      "type": "string",
-      "enum": [
-        "approve",
-        "request_changes",
-        "escalate"
-      ]
-    },
-    "notes": {
+    "reason": {
       "type": "string"
     },
-    "error": {
+    "tldr": {
       "type": "string"
-    },
-    "paths": {
-      "type": "object",
-      "properties": {
-        "added": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "notViable": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "added",
-        "notViable"
-      ],
-      "additionalProperties": false
     }
   },
   "required": [
     "proposalId",
     "version",
-    "stage",
-    "verdict",
-    "notes"
+    "target",
+    "reason"
   ],
   "additionalProperties": false
 }
