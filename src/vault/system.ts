@@ -8,7 +8,7 @@
 // secret (`READ_EVENT_EVERY_MS`): the hopper reads its GitHub token at every source poll. A person's change is the
 // user's or an admin's, decided by Access (OpenFGA) each time; the vault's own operations list none and give none to a
 // job (service.ts). Nothing here logs, answers or appends a value.
-import type { Requester, VaultAccess } from '../domain/access.ts';
+import { ACCESS_UNAVAILABLE, type Requester, type VaultAccess } from '../domain/access.ts';
 import type { Clock, VaultRepository } from '../domain/ports.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { isSystemSecret, systemSecretKind, systemSecretName, systemSecretRow, VAULT_VALUE_MAX, type SystemSecretName, type SystemSecretView, type VaultSecret } from '../domain/vault.ts';
@@ -85,11 +85,12 @@ export function createSystemSecrets(o: {
   const lastRead = new Map<string, number>();
   const problems = new Map<string, string>();
 
-  /** Access's answer for a change; a deny when there is no Access. */
+  /** Access's answer for a change; a deny when there is no Access. OpenFGA not asked is `unavailable` (a 503), never a refusal (issue #696). */
   async function allowed(name: SystemSecretName, who: SystemChanger): Promise<SystemResult> {
     if (!o.access) return fail('unavailable', 'access is not part of this hopper: no system secret can be changed');
     const requester: Requester = { kind: 'user', userId: who.userId };
     const d = await o.access.decideSystemSecret({ requester, owner: o.userId, name, action: 'change', admin: who.admin });
+    if (d.unavailable) return fail('unavailable', `${ACCESS_UNAVAILABLE}: ${d.reason}`);
     return d.allowed ? { ok: true } : fail('forbidden', `access refused: ${d.reason}`);
   }
 

@@ -6,7 +6,7 @@
 // radius (issue #584), rated from its approvals and the vault templates of that name.
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
-import type { JobStatus, LiveRequesters } from '../domain/types.ts';
+import type { AccessAnswer, JobStatus, LiveRequesters } from '../domain/types.ts';
 import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import type { Access, LiveShare } from './access-port.ts';
 import {
@@ -214,14 +214,14 @@ export function createAccess(o: AccessOptions): Access {
     return rated.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   };
 
-  /** OpenFGA's answer to one check apart from mints (an artifact, a system secret), once everything is pushed; a deny when it cannot be had. Not recorded. */
-  const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<{ allowed: boolean; reason: string }> => {
+  /** OpenFGA's answer to one check apart from mints (an artifact, a system secret), once everything is pushed; a deny when it cannot be had, marked `unavailable` (issue #696). Not recorded. */
+  const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<AccessAnswer> => {
     const server = o.server;
-    if (!server) return { allowed: false, reason: NOT_CONFIGURED };
+    if (!server) return { allowed: false, reason: NOT_CONFIGURED, unavailable: true };
     if (gaps.length > 0) return { allowed: false, reason: `the access model lacks what ${what} need: ${gaps.join(', ')}: add it in Settings → Access` };
     if (liveKey() !== pushedRequesters) dirty = true;
     if (dirty) { await running; await sync(); }
-    if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
+    if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}`, unavailable: true };
     const pushed = pushedModel()!;
     try {
       const allowed = await server.check(pushed.storeId, pushed.modelId, tuple, contextual);
@@ -229,7 +229,7 @@ export function createAccess(o: AccessOptions): Access {
     } catch (e) {
       dirty = true;
       down((e as Error).message);
-      return { allowed: false, reason: `OpenFGA cannot be asked: ${(e as Error).message}` };
+      return { allowed: false, reason: `OpenFGA cannot be asked: ${(e as Error).message}`, unavailable: true };
     }
   };
 
@@ -305,6 +305,7 @@ export function createAccess(o: AccessOptions): Access {
       await changed();
     },
     sync: async () => { await running; await sync(); },
+    status: () => status,
     view() {
       const live = o.requesters();
       const tuples = [...o.repo.liveTuples().map(plain), ...requesterTuples(live)];
