@@ -46,6 +46,11 @@ export function decisionBody(kind: ReviewKind, d: ReviewDecision): z.ZodType {
   return keeps ? base.extend({ paths }) : base;
 }
 
+/** What the API reference says of a proposal's paths at a decision (issue #651); nothing for any other section. */
+export const decisionNote = (kind: ReviewKind, effect: ReviewDecision['effect']): string => (kind !== 'proposal' ? '' : effect === 'accept'
+  ? ' `paths` (issue #651): the paths to continue with, each `{ id, note? }` — at least one, all viable, each once —, or none on a proposal of zero paths; each continues as a follow-on job (`proposal.followed_on`), linked to the proposal and this job, and kept in `signOff.selected` with its job. 400: a selection that names no path, a path twice, a path the version lacks or one a reviewer level found not viable.'
+  : effect === 'send_back' ? ' `paths` (issue #651): the selection made so far, kept on the proposal (`selection`) for the next version.' : '');
+
 const STATUS = { not_found: 404, not_open: 409, not_offered: 404, not_switched: 409, bad_selection: 400, no_paths: 409 } as const;
 
 export function registerReviewRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

@@ -4,7 +4,7 @@
 // refuses to start when a route and this document disagree (`referenceDrift`, checked on ready).
 import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewDecision, type ReviewKind, type UiRole } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind, type UiRole } from '../domain/types.ts';
 import { jobsQuery } from './jobs.ts';
 import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
@@ -27,7 +27,7 @@ import { yoloModeBody } from './ui/yolo-mode.ts';
 import { artifactSettingsBody, artifactShareBody } from './ui/artifacts.ts';
 import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody, startQuery } from './ui/sign-in.ts';
 import { reviewQuery } from './reviews.ts';
-import { decisionBody, reviewSettingsBody } from './ui/reviews.ts';
+import { decisionBody, decisionNote, reviewSettingsBody } from './ui/reviews.ts';
 import { phaseShiftSettingsBody, shiftBody } from './ui/phase-shifts.ts';
 import { autoAnswerBody } from './ui/auto-answer.ts';
 import { autoParkBody } from './ui/auto-park.ts';
@@ -61,11 +61,6 @@ interface Operation {
 const id = (what: string) => ({ name: 'id', in: 'path', required: true, description: `the ${what}'s id`, schema: { type: 'string' } });
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
 
-/** A proposal's paths at a decision (issue #651). */
-const proposalNote = (effect: ReviewDecision['effect']): string => (effect === 'accept'
-  ? ' `paths` (issue #651): the paths to continue with, each `{ id, note? }` — at least one, all viable, each once —, or none on a proposal of zero paths; each continues as a follow-on job (`proposal.followed_on`), linked to the proposal and this job, and kept in `signOff.selected` with its job. 400: a selection that names no path, a path twice, a path the version lacks or one a reviewer level found not viable.'
-  : effect === 'send_back' ? ' `paths` (issue #651): the selection made so far, kept on the proposal (`selection`) for the next version.' : '');
-
 /** A review section's routes (issues #537, #543), the same for every one: built from its type, so none is left out. */
 function reviewOperations(kind: ReviewKind): Operation[] {
   const t = REVIEW_SECTIONS[kind];
@@ -77,7 +72,7 @@ function reviewOperations(kind: ReviewKind): Operation[] {
     { method: 'get', path: `/api/${t.section}/:id`, tag, summary: `One ${t.noun}, with its versions and review trail`, returns: view, errors: [404] },
     ...t.decisions.map((d): Operation => ({
       method: 'post', path: `/ui/api/${t.section}/:id/${d.route}`, tag, summary: `${d.label}: a person's decision on a ${t.noun}`,
-      description: `${d.effect === 'accept' ? `Signed off accepted (\`${t.prefix}.accepted\`). A job that also asks for a later section is re-queued to write it, in the same session; any other ends finished, the decision its result.` : d.effect === 'reject' ? `Signed off rejected (\`${t.prefix}.rejected\`). Its job ends finished, the decision its result.` : `Sent back (\`${t.prefix}.revision_requested\`, \`decision\` \`${d.id}\`): its job is re-queued with \`notes\`, in the same session, and its next ${t.noun} is the next version, reviewed from the first reviewer level again.`} \`notes\` ${d.notes === 'required' ? 'is required' : 'is optional'}. Over any reviewer level in flight.${d.effect === 'accept' ? ' `then` (issue #548): only while its job is in a phase a question switched it to — the item\'s `then` lists the choices —: `work` the job goes back to the work with it as context, `end` it ends finished, `proposal` (research only) it writes a proposal next, in the same session. Rejected, a switched job goes back to work, told so.' : ''}${kind === 'proposal' ? proposalNote(d.effect) : ''} 409: it is not open${d.effect === 'accept' ? ', or `then` is not one of its choices' : ''}${kind === 'proposal' && d.effect === 'reject' ? ', or it has no path to reject' : ''}.`,
+      description: `${d.effect === 'accept' ? `Signed off accepted (\`${t.prefix}.accepted\`). A job that also asks for a later section is re-queued to write it, in the same session; any other ends finished, the decision its result.` : d.effect === 'reject' ? `Signed off rejected (\`${t.prefix}.rejected\`). Its job ends finished, the decision its result.` : `Sent back (\`${t.prefix}.revision_requested\`, \`decision\` \`${d.id}\`): its job is re-queued with \`notes\`, in the same session, and its next ${t.noun} is the next version, reviewed from the first reviewer level again.`} \`notes\` ${d.notes === 'required' ? 'is required' : 'is optional'}. Over any reviewer level in flight.${d.effect === 'accept' ? ' `then` (issue #548): only while its job is in a phase a question switched it to — the item\'s `then` lists the choices —: `work` the job goes back to the work with it as context, `end` it ends finished, `proposal` (research only) it writes a proposal next, in the same session. Rejected, a switched job goes back to work, told so.' : ''}${decisionNote(kind, d.effect)} 409: it is not open${d.effect === 'accept' ? ', or `then` is not one of its choices' : ''}${kind === 'proposal' && d.effect === 'reject' ? ', or it has no path to reject' : ''}.`,
       role: 'operator', body: decisionBody(kind, d), returns: `the ${view}`, errors: kind === 'proposal' ? [400, 404, 409] : [404, 409],
     })),
     { method: 'post', path: `/ui/api/${t.section}/:id/seen`, tag, summary: `Mark a ${t.noun} seen`, role: 'operator', returns: `the ${view}`, errors: [404] },
