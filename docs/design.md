@@ -8308,6 +8308,34 @@ runs again, its hand-off is resolved (`handoff wont-do` ends it with no more wor
 
 Tests: `test/integration/operator-cli.test.ts`.
 
+## The vault and sandbox boxes from the operator CLI (issue #716, part 1, 2026-10-10)
+
+An agent that needs a template for its job could not make one: templates, vault secrets and sandbox launches were
+only `POST /ui/api/vault` and `POST /ui/api/machines/sandbox` behind an admin UI session, and the operator CLI had no
+command for them. They are now operator CLI commands, on the same footing as issue #374's: the UI's own routes on the
+running daemon, under a session the CLI mints for the one call and drops after it.
+
+- **Commands** (`src/cli-operator-vault.ts`):
+  - `hopper vault` (the vault's view: secrets and templates, never a value), `vault set <name> [--scope <text>]` with
+    the value on stdin only (never an argument: it would be in the shell history and the process list), `vault remove <name>`;
+  - `hopper template list`, `template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
+    [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]`, `template approve <name>`,
+    `template approve-profile <name> <operation>/<kind>/<asset>`, `template revoke <name>`, `template remove <name>`;
+  - `hopper sandbox list` (the user's boxes, as `GET /api/sandboxes`), `sandbox launch [--template <name>] [--secret <name>]...
+    [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]`.
+- **A save keeps what it leaves out.** As the vault keeps profiles and limits a save omits, `template save` without
+  `--secret` keeps the template's secrets (it reads them first; a new template has none). A profile is written as a launch
+  names it, `<operation>/<kind>/<asset>`; the asset may hold `/`. A malformed profile or number is refused before any call.
+- **The gate is the vault's, unchanged.** A new scope, image or read profile waits for `template approve`; a write, sync
+  or apply profile waits for `template approve-profile`. The CLI approves only what its operator runs: an agent with the
+  database's credentials can approve, as it could already through `config set` and the database itself.
+- **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
+
+**Not built (carried on issue #716).** A template made on request from what a job needs, with read scope auto-approved
+inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
+first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
+token is a second door beside the UI session), so it needs the owner's decision first.
+
 ## Reserved lanes (issue #372, 2026-10-07)
 
 Reported: every lane of a machine was taken by jobs that could run on any machine, while a job a
