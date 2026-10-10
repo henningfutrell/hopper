@@ -7,7 +7,7 @@ import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS } from '
 import type { FailureAction } from '../../failures/index.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
+import { actingOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -38,6 +38,9 @@ export const handoffResolveBody = z.strictObject({
 }).refine((b) => b.action !== 'wont_do' || (b.note ?? '') !== '', { message: 'Won\'t do says why: give a note', path: ['note'] })
   .refine((b) => b.link === undefined || b.action === 'done_by_hand', { message: 'only Done by hand takes a link', path: ['link'] });
 
+/** A problem's resolution (issue #623): a note, if any, kept in its `failure.resolved`. */
+export const problemResolveBody = z.strictObject({ note: z.string().trim().max(NOTE_MAX).optional() });
+
 const STATUS = { not_found: 404, conflict: 409 } as const;
 
 function answer<T>(r: FailureAction<T>): T {
@@ -45,17 +48,26 @@ function answer<T>(r: FailureAction<T>): T {
   throw new HttpError(STATUS[r.reason], r.message);
 }
 
+/** Who acts through the request's session; none signed in is refused. */
+function actingIn(req: FastifyRequest) {
+  const s = signedInOf(req);
+  if (!s) throw new HttpError(401, 'sign in to act on failures');
+  return actingOf(s.identity);
+}
+
 export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
-  app.post('/ui/api/failures/problems/:id/resolve', o.operator, async (req) => answer(o.tenant(req).failures.resolve(parseWith(idParams, req.params).id)));
-  app.post('/ui/api/failures/problems/:id/release', o.operator, async (req) => answer(o.tenant(req).failures.release(parseWith(idParams, req.params).id)));
+  // Who acted, and the way — the UI or the operator CLI —, is kept in the events (issue #623).
+  app.post('/ui/api/failures/problems/:id/resolve', o.operator, async (req) => {
+    const { note } = parseWith(problemResolveBody, req.body ?? {});
+    return answer(o.tenant(req).failures.resolve(parseWith(idParams, req.params).id, actingIn(req), note || undefined));
+  });
+  app.post('/ui/api/failures/problems/:id/release', o.operator, async (req) => answer(o.tenant(req).failures.release(parseWith(idParams, req.params).id, actingIn(req))));
   // Who resolved it is kept on the hand-off, never written to the source (issue #551).
   app.post('/ui/api/failures/handoffs/:id/resolve', o.operator, async (req) => {
-    const s = signedInOf(req);
-    if (!s) throw new HttpError(401, 'sign in to resolve a hand-off');
     const { action, note, link } = parseWith(handoffResolveBody, req.body);
-    return answer(await o.tenant(req).failures.resolveHandoff(parseWith(idParams, req.params).id, { action, ...(note ? { note } : {}), ...(link ? { link } : {}) }, identityName(s.identity)));
+    return answer(await o.tenant(req).failures.resolveHandoff(parseWith(idParams, req.params).id, { action, ...(note ? { note } : {}), ...(link ? { link } : {}) }, actingIn(req)));
   });
-  app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id)));
+  app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id, actingIn(req))));
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {
     const { auto, ...rest } = parseWith(failureSettingsBody, req.body);
