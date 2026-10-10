@@ -1856,7 +1856,7 @@ reviewing it is a merge nothing else stops where a repository has no branch prot
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
-not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below) — with a merge commit (`GitHubApi.merge`, `PUT
+not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below; on this repository the check is `pr / test`, issue #672, `docs/deploy.md` "Local development and tests") — with a merge commit (`GitHubApi.merge`, `PUT
 /pulls/{n}/merge`, through the job's source's own connection). One definition of done; the merge is an extra step after
 it.
 

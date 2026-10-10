@@ -1,0 +1,39 @@
+# The check on every pull request (issue #672): `pr / test`. Yolo mode merges a pull request only once a check
+# passed on it (issue #652: no checks is not passing), and this is the check. Every gate of AGENTS.md: typecheck,
+# lint, the UI build and the tests. The tests that need a host service a clean runner does not give (containers
+# they start themselves, a real sshd, LDAP, a vault) are left out (test/support/host-services.ts); the suite's own
+# Postgres still starts through testcontainers. Read-only and with no secrets, so a fork's pull request is safe:
+# `pull_request`, never `pull_request_target`.
+name: pr
+
+on:
+  pull_request:
+    branches: [dev, beta, stable]
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request cancels the check in progress: only the head commit's check counts.
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # The ssh stand-ins (test/herdr/fake-ssh-bin.mjs) run under PATH=/usr/bin:/bin, as on a host with node there.
+      - run: sudo ln -sf "$(command -v node)" /usr/bin/node
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build:ui
+      - run: npm test
+        env:
+          HOPPER_TEST_HOST_SERVICES: '0'
