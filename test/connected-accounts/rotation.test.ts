@@ -24,6 +24,8 @@ import { renewal } from '../../src/connected-accounts/renewal.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
+import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
+
 
 const EIGHT_HOURS_S = 8 * 3600;
 const H = 3600_000;
@@ -54,6 +56,7 @@ function process_(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixe
   const renewed: string[] = [];
   const logs: string[] = [];
   const service = createConnectedAccounts({
+    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
@@ -97,7 +100,7 @@ describe('the renewer (#441)', () => {
     await service.renewDue();
     expect(refreshes(github)).toHaveLength(1);
     expect(renewed).toEqual(['github']);
-    const kept = s.connectedAccounts.get('github')!;
+    const kept = openedRow(s)!;
     expect(kept.accessToken).not.toBe(first.accessToken);
     expect(github.tokens.has(kept.accessToken)).toBe(true);
     expect(github.tokens.has(first.accessToken)).toBe(false); // GitHub refuses the old one now
@@ -154,7 +157,7 @@ describe('the renewer (#441)', () => {
       // Whatever runs after GitHub answered — a crash, a stop — runs after this macrotask at the earliest.
       refresh: async (p, refresh, by) => {
         const g = await renewal(apps[p], () => undefined)(refresh, by);
-        setImmediate(() => { seenAfterAnswer = store(url, clock).connectedAccounts.get('github'); });
+        setImmediate(() => { seenAfterAnswer = openedRow(store(url, clock)); });
         return g;
       },
     });
@@ -177,7 +180,7 @@ describe('the renewer (#441)', () => {
     // An older hopper beside this one, which takes no lock, renews between this one's re-read and its call.
     const older = store(url, clock);
     const olderRenews = async () => {
-      const row = older.connectedAccounts.get('github')!;
+      const row = openedRow(older)!;
       const g = await renewal(apps.github, () => undefined)(row.refreshToken!, 'device');
       older.connectedAccounts.put({ ...row, accessToken: g.accessToken, refreshToken: g.refreshToken!, expiresAt: g.expiresAt!.toISOString() });
     };
@@ -190,7 +193,7 @@ describe('the renewer (#441)', () => {
     });
     const token = await service.token('github');
     expect(told).toEqual([]);
-    expect(token).toBe(older.connectedAccounts.get('github')!.accessToken);
+    expect(token).toBe(openedRow(older)!.accessToken);
     expect(github.tokens.has(token)).toBe(true);
     expect((await service.status())[0]).toMatchObject({ state: 'connected' });
   });
@@ -263,7 +266,7 @@ describe('the renewer (#441)', () => {
     await withSecret.service.renewDue();
     expect(refreshes(github)).toHaveLength(1);
     expect(refreshes(github)[0]!.body).toMatchObject({ client_secret: 'gh-secret' });
-    expect(s.connectedAccounts.get('github')!.grantedBy).toBe('web');
+    expect(openedRow(s)!.grantedBy).toBe('web');
   });
 
   it('seals the tokens at rest; a fresh process with the same key carries on, another key reads as unreadable', async () => {
@@ -295,6 +298,7 @@ describe('the renewer (#441)', () => {
 
 function optionsOf(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>): ConnectedAccountsOptions {
   return {
+    box: TEST_BOX,
     store: s, apps: hopperApps({ github: { clientId: 'gh-client-id', url: github.url } }), clock,
     logger: { info: () => undefined, warn: () => undefined },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }), installations: async () => [],

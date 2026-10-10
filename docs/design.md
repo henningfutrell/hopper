@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `source-item.ts` a source item and the source as the host takes it), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — sealed in the store, or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
@@ -62,11 +62,11 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_MASTER_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key") | everything |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandboxes/` | sandbox boxes the hopper starts (issue #603, "Sandbox boxes the hopper launches"): the launch, the keeping in step with the machines and the cleanup problems (`service.ts`); rootless Podman at the `SandboxEngine` port (`podman.ts`, its libpod API over node:http). The machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -6263,7 +6263,7 @@ default (unset: none).
   manager's credentials.
 - **Secrets the hopper owns**: ones it makes or that are made for it (a webhook signing secret), and
   ones only it holds (a connected account's tokens). They are kept in the database **sealed** under
-  the runtime's **token key**, `HOPPER_TOKEN_KEY` ("Sealed in the database" below). A realm's own
+  the runtime's **master key**, `HOPPER_MASTER_KEY` ("Sealed in the database" below). A realm's own
   secrets are kept in the database too (issue #216), in clear for now: sealing them is carried work.
 
 A runtime secret named `NAME` is the variable `NAME`, or the file the variable `NAME_FILE` names
@@ -6303,13 +6303,13 @@ token (issue #214; the only GitHub credential of a job since issue #359). The gi
 | UI session tokens, login codes | SHA-256 only (32 random bytes: no dictionary to try) — the hopper's own short-lived state; a hash is not a usable credential |
 | password sign-in passwords | argon2id hashes in `password_accounts` ("Sign-in: realms", issue #200) — a verifier the daemon makes from the password an admin sets, never the password |
 | a realm's own secrets | in clear, in the config record `sign-in` (issue #216) — owner direction: setting up a realm does not go through the runtime ("Realm secrets stored, sign-in from the environment"). Never answered by a route |
-| a connected account's token | the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under `HOPPER_TOKEN_KEY` by the token box since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route |
+| a connected account's token | the access token GitHub granted the hopper's app and its refresh token, in the user schema's `connected_accounts` (tenant migration 8, issue #214) — sealed under `HOPPER_MASTER_KEY` by the token box since issue #441 ("Keeping the connection"), read only by that user's sources and jobs, answered by no route |
 
 #### Sealed in the database
 
-`src/secrets/sealer.ts` (issue #451). The **token key** `HOPPER_TOKEN_KEY` (32 bytes, 64 hex digits or
-base64; also `_FILE`) is the master key. It never reaches the database: the compose install makes it in
-its `secrets` volume, `install.sh` writes one into `daemon.env`. Each value is sealed so:
+`src/secrets/sealer.ts` (issue #451). The **master key** `HOPPER_MASTER_KEY` (32 bytes, 64 hex digits or
+base64) is the pepper. It never reaches the database, and it comes from the launch ("The master key" below).
+Each value is sealed so:
 
 - **its own key**: HKDF-SHA256 of the master key, a fresh 32-byte random salt, and the context (where the
   value is kept: `webhook:<subscription id>/signing-secret`). The master key is the pepper, the salt is
@@ -6327,18 +6327,58 @@ its `secrets` volume, `install.sh` writes one into `daemon.env`. Each value is s
 is never read as "no secret". The derived key and the plaintext buffers are zeroed after use (a
 JavaScript string cannot be).
 
-**Key rotation.** Give the new key as `HOPPER_TOKEN_KEY` and the old one as `HOPPER_TOKEN_KEY_PREVIOUS`
-(one per line, or comma- or space-separated; also `_FILE`) and restart: each user's runtime seals every
+**Key rotation.** Give the new key as `HOPPER_MASTER_KEY` and the old one as `HOPPER_MASTER_KEY_PREVIOUS`
+(one per line, or comma- or space-separated) and restart: each user's runtime seals every
 webhook secret an older key sealed again under the new one (`resealAll`, logged as a count), keeping when
 it last changed. Once the log says so, drop the old key. A previous key only opens. The token box's
 `sealed:v1:` has no key id, but its GCM tag tells which key sealed a token: it opens under an older key too,
 and the renewer's next look seals it under the new one (issue #514) — a rotation asks for no new GitHub
 sign-in.
 
-**No key, a wrong key.** A token key that is no key stops the daemon (fails closed). None: the daemon
-starts and says at start that webhook signing secrets cannot be stored or opened; adding a subscription
-or storing a secret answers 503 naming `HOPPER_TOKEN_KEY`; a subscription with a stored secret sends
-nothing, and its card, its test event and its deliveries say the stored secret cannot be opened.
+**No key, a wrong key.** A master key that is no key stops the daemon (fails closed). A wrong one stops it
+too ("The master key" below). None while the database keeps secrets: the daemon starts limited; adding a
+subscription or storing a secret answers 503 naming `HOPPER_MASTER_KEY`; a subscription with a stored secret
+sends nothing, and its card, its test event and its deliveries say the stored secret cannot be opened.
+
+#### The master key
+
+Issue #659. The hopper runs in ephemeral containers, and a persistent volume cannot be assumed: a key kept in
+a volume beside the container (the compose `secrets` volume's `token_key`, before) is lost with it, and every
+secret it sealed with it. So the master key comes from the launch alone, as the variable `HOPPER_MASTER_KEY` —
+never a file (`HOPPER_MASTER_KEY_FILE` is refused, naming the variable), never a volume. `src/secrets/master-key.ts`
+resolves it once, at start, before any user's runtime; the parts read it through `withMasterKey`, and no child
+process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HOPPER_TOKEN_KEY*` variable).
+
+- **Fingerprint.** The instance settings keep `masterKeyFingerprint`: HMAC-SHA256 under the key of the fixed
+  label `hopper master key fingerprint v1`, 64 hex digits; never the key. Each start compares it. A wrong key
+  throws `MasterKeyMismatch` ("the master key does not match this database") and the daemon does not start;
+  nothing in the database changes. A new key whose `HOPPER_MASTER_KEY_PREVIOUS` holds the recorded one is a
+  rotation: its fingerprint is recorded. A database that keeps secrets but no fingerprint (from before) takes the
+  key only when it seals some of them: a sealed value's key id, or a token the token box opens with it
+  (`src/store/kept-secrets.ts`, every user's schema; a vault a KMS data key seals is left out).
+- **First start.** No key, no fingerprint and no kept secret: the hopper makes a key, records its fingerprint, and
+  shows the key once in the start log (`SAVE THIS NOW`) and once in the UI (`POST /ui/api/master-key` `reveal`, the
+  hopper's admin alone, then 409). The banner stays until the admin says it is saved (`saved`: `masterKeySaved`
+  records the fingerprint saved). The key lives only in the process: the next start without it is limited.
+- **Limited.** No key while a fingerprint or a kept secret exists: the daemon starts, says so loudly at start and
+  in a banner (`GET /api/master-key` `source: missing`, its `problem` naming the key by its fingerprint), and keeps
+  everything: no sealer, so nothing is sealed or opened; no token box, so no new GitHub grant is kept — a sign-in
+  goes on without keeping its grant, Connect GitHub says the key is missing, and the renewer does not trade a
+  refresh token it could not keep. Nothing is deleted, and no new secret is made in place of one it cannot open.
+- **The old token key.** While `HOPPER_MASTER_KEY` is unset, `HOPPER_TOKEN_KEY` (or the file
+  `HOPPER_TOKEN_KEY_FILE` names; a file that is not there is no key) is read to move an install: checked as a
+  given key is, shown once to be saved, and the log says to give it as `HOPPER_MASTER_KEY`. Once that is set,
+  the old key is not read, and the log says it can be removed. One that matches nothing kept: limited, saying so.
+- **The vault container** (issue #586) reads the same `HOPPER_MASTER_KEY` (or the old token key) and checks it
+  against the recorded fingerprint at each user's first request: a wrong key seals and opens nothing.
+
+The compose file makes no `token_key`, and Postgres sets the database password again at each start, so a lost
+`secrets` volume costs nothing: a new one gets a new password, and the database keeps working. Recreating the
+hopper anywhere with the same database and `HOPPER_MASTER_KEY` keeps every secret.
+
+Carried, part 2 of issue #659: rotation as one operator command (UI, API and CLI) that seals every secret again
+in one transaction and shows the new key once; an optional KMS as the master key's source; the `secrets` volume
+out of the default compose file.
 
 `HOPPER_SECRET_KEY` and the secret box of issue #55 stay gone: a leftover `HOPPER_SECRET_KEY` is a
 leftover variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` —
@@ -6348,13 +6388,13 @@ sealed or clear, from before — was refused at load, and is left out by migrati
 for `hopper.service`, with `Environment=<NAME>_FILE=%d/<name>`: the secret never sits in
 `daemon.env`.
 
-**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets and the token key, and a
-job on the hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file).
+**Residual risk, stated.** Whoever holds the hopper's runtime holds its secrets and the master key, and a
+job on the hopper host runs as the daemon's user (it can read `daemon.env` or a readable mounted file, or the
+daemon's environment through `/proc` as the same user).
 The database and its backups hold no usable secret but the realms' own (issue #216): the sealed ones need
-the token key, which is kept beside the database, never in it. The compose install keeps it in the same
-volume as the database password, readable only by the hopper's user; a host that holds both volumes holds
-both. Keep the token key with the database's backups but not in them: a database restored without it
-asks for every webhook secret again (Replace or Rotate) and for GitHub to be connected again. A secret is
+the master key, which is given at launch, never in the database or a volume. Keep it in a password manager,
+apart from the database's backups: a database restored without it starts limited until the key is given. The
+first start writes the key it made to the start log once: a log kept where others read it holds it. A secret is
 in the daemon's memory while it signs or is sealed.
 
 ### Login codes
@@ -7314,9 +7354,8 @@ built-in instance: an admin adds it in Plugins where it suits; existing configs 
 | `src/connected-accounts/` | the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`), the web flow (`web-flow.ts`, issue #258), who a token belongs to and where the app is installed (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`) and its tokens at rest (`at-rest.ts`, issue #441) | engine, http, store, plugins, decider |
 | `src/sources/github/account/` | the issue port over a connected GitHub account's token | engine, http, store, plugins |
 
-**Residual risk, stated.** Tokens are in the database sealed under `HOPPER_TOKEN_KEY` since issue #441, in
-clear where the runtime gives no key (as the realm secrets are, #216): then whoever holds its credentials
-or a dump (backups included) holds them. A token reaches what the user may do on the repositories the app
+**Residual risk, stated.** Tokens are in the database sealed under `HOPPER_MASTER_KEY` since issue #441; with no
+key the hopper keeps none (issue #659), and only a row from before #441 is in clear until the renewer seals it. A token reaches what the user may do on the repositories the app
 is installed on. A job's token is in a file of its own on its machine (mode 600), and in its pane's
 environment only where that file cannot be kept; any process of the daemon's account on that machine can read it. The
 command and Cursor executors run without it (their variables would sit in a long-lived argv): not built.
@@ -7383,12 +7422,10 @@ without it. The account keeps which flow granted it (`grantedBy`); a web flow gr
 variable, renewed once it is set. A grant kept before #441 has no `grantedBy` and renews as #358 did.
 
 **At rest** (`src/connected-accounts/at-rest.ts`, `src/secrets/token-box.ts`). The access and refresh
-tokens are sealed with AES-256-GCM (node:crypto) under the runtime's `HOPPER_TOKEN_KEY` (32 bytes, 64 hex
-digits or base64; also `_FILE`), `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext). The compose install
-makes the key on Postgres's first start, beside the database password in the secrets volume
-(`/run/hopper-secrets/token_key`, `HOPPER_TOKEN_KEY_FILE`); `install.sh` writes one into `daemon.env`
-once. A key that is no key stops the runtime (fails closed); no key keeps the tokens in clear, said at start.
-A row kept in clear — from before, or before a key was given — is sealed by the renewer's next look. A
+tokens are sealed with AES-256-GCM (node:crypto) under the runtime's `HOPPER_MASTER_KEY` (32 bytes, 64 hex
+digits or base64), `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext). The key comes from the launch
+("The master key", issue #659). A key that is no key stops the runtime (fails closed); no key (limited) keeps
+no new token, never one in clear. A row kept in clear from before #441 is sealed by the renewer's next look. A
 sealed row the runtime cannot open (no key, another key) reads `unreadable` with what to do — never
 connected, never ended (issue #514, "One grant per connection"). Everything a renewal needs is in Postgres and the runtime's key, so a fresh container on the
 same database and secrets carries on without a new sign-in.
@@ -7460,10 +7497,10 @@ connection (GitHub refused the refresh token itself, or it is past its own expir
 reads connected, with its reason, and is tried again (#441). A 401 on a call says GitHub refused the token;
 the renewer decides whether the sign-in ended, the message no longer says to connect again. A connection
 sealed under a key the runtime does not give reads **`unreadable`** (`ConnectedAccountStatus`): its source
-pauses saying to give the hopper the key it was sealed under, as `HOPPER_TOKEN_KEY` or as
-`HOPPER_TOKEN_KEY_PREVIOUS` beside a new one; it is not expired, so the header asks nothing and no session
+pauses saying to give the hopper the key it was sealed under, as `HOPPER_MASTER_KEY` or as
+`HOPPER_MASTER_KEY_PREVIOUS` beside a new one; it is not expired, so the header asks nothing and no session
 ends (#513); the panel offers only *Forget this connection*, after which Connect is offered. A key rotation
-asks for no new sign-in: the token box opens under `HOPPER_TOKEN_KEY_PREVIOUS` and the renewer seals again
+asks for no new sign-in: the token box opens under `HOPPER_MASTER_KEY_PREVIOUS` and the renewer seals again
 under the new key.
 
 **Sharing one app and one user** (D1, D2: conservative — the shipped public app stays shared; the
@@ -7493,8 +7530,8 @@ over HTTP to a fake GitHub that keeps at most ten grants per user and revokes th
 connecting again revokes the old pair before the new one is stored; a sign-in over a live grant revokes it,
 the same grant handed over again does not; disconnect revokes then deletes, and GitHub failing deletes all
 the same and logs it; twelve reconnects on one hopper leave another hopper's grant alive, renewed hours
-later, and fail without the revocation; another key reads `unreadable`, names `HOPPER_TOKEN_KEY_PREVIOUS`,
-is not expired and revokes nothing; the old key as `HOPPER_TOKEN_KEY_PREVIOUS` opens it and the next look
+later, and fail without the revocation; another key reads `unreadable`, names `HOPPER_MASTER_KEY_PREVIOUS`,
+is not expired and revokes nothing; the old key as `HOPPER_MASTER_KEY_PREVIOUS` opens it and the next look
 seals it under the new key), `test/integration/grant-hygiene.test.ts` (the daemon: *Stop working through
 GitHub* revokes at GitHub, unauthenticated; an unreadable connection pauses its source with what to do and
 no `expired`), `test/secrets/token-box.test.ts`, `test/ui/sources-view.test.ts` (no Connect, no header
@@ -8360,7 +8397,7 @@ authenticated encryption bound to the value's place, and a key id for rotation.
 - **Entered in the UI.** `add` takes `secret` (typed in: 32 to 4096 printable ASCII characters, no
   spaces) or none, and then the hopper makes one (32 random bytes, 64 hex digits). `add` no longer takes
   `secretEnv`, from the UI or anywhere: no route names a variable for a subscription.
-- **Encrypted at rest** under the token key ("Sealed in the database"): the subscription id is the
+- **Encrypted at rest** under the master key ("Sealed in the database"): the subscription id is the
   context. Stored in `webhooks.secret_sealed` with `secret_changed_at` (tenant migration 19). Never in
   clear, never logged (an audit line names the subscription and how it changed: typed in, made by the
   hopper, replaced, rotated), never in an event, never answered.
@@ -8376,13 +8413,13 @@ authenticated encryption bound to the value's place, and a key id for rotation.
   X: replace to store it in hopper". Storing a secret (replace or rotate) clears `secret_env`: it is no
   longer read, and the variable can be removed from the runtime. Nothing is imported from the runtime on
   its own (M2 not taken): the operator decides when each moves.
-- **The key.** The token key of issue #441, not a second one: one runtime value to keep, which the
+- **The key.** The master key of issue #441, not a second one: one runtime value to keep, which the
   compose install and `install.sh` already make. Its derivations are separated by context, so the
   connected account's tokens and the webhook secrets never share a key. Rotation, missing and wrong keys:
   "Sealed in the database".
 - **Messages.** `secretProblem` (on `GET /api/webhooks`), a test event's `detail` and a delivery's
   `lastError` say: a runtime variable not set (`WEBHOOK_SECRET_X is not set`), no secret set (`replace
-  or rotate it`), or the stored secret cannot be opened (no key: `HOPPER_TOKEN_KEY is not set`; another
+  or rotate it`), or the stored secret cannot be opened (no key: `HOPPER_MASTER_KEY is not set`; another
   key: the key id it was sealed under; altered or moved).
 - **One key for every user.** Each user's secrets are in their own schema; the per-user secret prefix is
   no longer needed for a stored secret (it stays for a subscription from before).
@@ -9524,13 +9561,13 @@ second one refused, no reminders while it runs, a direct answer told to the pare
 The Jev page said "Jev is off until HOPPER_USER_<ID>_TYPESAFE_API_KEY is set", and nobody could turn Jev on from the
 UI. The owner's rule: the hopper keeps its own secrets, entered in the UI and kept in its database, never read from a
 variable or a mounted file. The owner's direction on the issue: keep the key in the vault, in a **system scope** that no
-job, worker or sandbox can mint, ask for or read, enforced through OpenFGA; the vault's sealer and token key, not a
+job, worker or sandbox can mint, ask for or read, enforced through OpenFGA; the vault's sealer and master key, not a
 table or column of its own. Moving the hopper's other secrets into the system scope is issue #658, not this one.
 
 - **The system scope** (`src/domain/vault.ts` `SYSTEM_SECRETS`, `src/vault/system.ts`). A **system secret** is a row of
   `vault_secrets` named `system/<name>` (now only `system/typesafe-api-key`), a name no vault secret can take (the
-  name rule has no `/`). It is sealed by the hopper's sealer under `HOPPER_TOKEN_KEY`, bound to `vault:<id>/value`, as
-  a vault secret is — under the token key even when the vault's own secrets are under a KMS's data key or in a vault
+  name rule has no `/`). It is sealed by the hopper's sealer under `HOPPER_MASTER_KEY`, bound to `vault:<id>/value`, as
+  a vault secret is — under the master key even when the vault's own secrets are under a KMS's data key or in a vault
   container, so only the hopper opens one, in its own process, when it uses it. It is none of the vault's own
   secrets: `GET /api/vault` lists none, `remove` there does not find one, a template that names one is refused (400),
   the rating and a box's scope leave one out, the vault's reseal skips one (the system scope reseals its own), and a
@@ -9554,7 +9591,7 @@ table or column of its own. Moving the hopper's other secrets into the system sc
   key. A failed pick's error (`minor_decision.picked`) masks the key too.
 - **The view** (`TypesafeKeyView`, `typesafeKey` in `GET /api/minor-decisions`): `set`, the key's last 4 characters
   (`last4`, read from the key at each view), `setAt` and `setBy`; `environment.variable` while the runtime still
-  gives the variable; `problem` when no key can be kept or opened (no `HOPPER_TOKEN_KEY`). Never the key.
+  gives the variable; `problem` when no key can be kept or opened (no `HOPPER_MASTER_KEY`). Never the key.
 - **The edit** (`POST /ui/api/typesafe-key`, `{ action: 'set', value }` or `{ action: 'remove' }`; least role
   operator, then Access; not cached): answers the view. The Jev page (Settings → Decider) has the field right
   under "Jev is off until a TypeSafe API key is set": a password field the browser does not fill in, Save or Replace,
@@ -9568,7 +9605,7 @@ table or column of its own. Moving the hopper's other secrets into the system sc
   While the variable is still set, the Jev page says so.
 
 **Residual risk, stated.** The last 4 characters of the key are shown, as the issue asks. Whoever holds the database
-and the token key holds the key, as for every sealed secret.
+and the master key holds the key, as for every sealed secret.
 
 Tests: `test/integration/typesafe-key.test.ts` (the real daemon and the real Jev with a fake `typesafe_sdk`: save turns
 Jev on without a restart; no answer, event, log line or row carries the key; a bad key is not kept and its error is
@@ -9978,12 +10015,12 @@ value, to any role; both are `cache-control: no-store`. The page's value field i
 fill in or remember.
 
 **Kept** in the user schema's `vault_secrets` (tenant migration 28, a table only: the build before runs on it): the
-metadata as JSON in `body`, the value in `sealed`, sealed by the sealer ("Sealed in the database") under the token key,
+metadata as JSON in `body`, the value in `sealed`, sealed by the sealer ("Sealed in the database") under the master key,
 bound to `vault:<id>/value`. The id, not the name or the user, so a fold of one user into another keeps it, and a value
 copied to another row does not open. `sealed` is read only by the vault service, never into a secret's metadata. A
-database dump holds no value; a copy of the hopper's container or image holds none either (the token key is in the
-runtime's `secrets` volume). A key rotation seals every vault secret again at start, as it does the webhook secrets
-(`resealAll`, logged as a count). No key: nothing is stored (503 naming `HOPPER_TOKEN_KEY`) and the page says why.
+database dump holds no value; a copy of the hopper's container or image holds none either (the master key is given at
+launch, issue #659). A key rotation seals every vault secret again at start, as it does the webhook secrets
+(`resealAll`, logged as a count). No key: nothing is stored (503 naming `HOPPER_MASTER_KEY`) and the page says why.
 
 **Never carried**: an event (`vault.secret_set` — `name`, `by`, `replaced` — and `vault.secret_removed` — `name`, `by`),
 a log line, an error text or a webhook delivery (deliveries are events). No job prompt is given one: nothing in this
@@ -10008,7 +10045,7 @@ Owner constraint (issue #558): a key service (a cloud KMS, or a local one) is al
 the vault needs nothing outside the hopper to start, and a user hosting everything themselves has a vault that works.
 So the vault reaches its key through one small seam, the **key provider** — the `Sealer` interface of
 `src/secrets/sealer.ts` (`seal(value, context)`, `open(sealed, context)`, `current(sealed)`, `keyId`) — and
-`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's token key, used
+`src/vault/service.ts` knows nothing else of keys. The local default is the sealer under the runtime's master key, used
 when no KMS is named. Since issue #586 a **KMS** can stand behind it, optional ("The KMS: an optional key provider" below); nothing
 in the vault, the store or the routes changed for it, and a value it cannot open is `SecretUnreadable` as before.
 `test/vault/key-seam.test.ts` keeps the vault working behind any key provider.
@@ -10255,7 +10292,7 @@ the KMS is always optional. So the KMS is a second key provider, chosen by one r
   reads it). At each start the KMS opens it (`Decrypt`). The vault's sealer is then the usual one (`src/secrets/sealer.ts`)
   under the data key: each value still gets its own key from a salt, AES-256-GCM, bound to `vault:<id>/value`. The data
   key's id is its fingerprint, so a sealed value says which key it needs.
-- **Turning it on.** The token keys stay as previous keys, so a vault secret sealed before opens, and is sealed again
+- **Turning it on.** The master keys stay as previous keys, so a vault secret sealed before opens, and is sealed again
   under the data key when the vault opens (`resealAll`). Two starts at once: the first to keep its data key wins
   (`INSERT … ON CONFLICT DO NOTHING`), the other opens that one.
 - **Fails closed.** A KMS that gives no data key (down, refused, a changed wrapped key) leaves the vault with no sealer
@@ -10300,14 +10337,15 @@ asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopp
   are no longer one transaction.
 - **Not running, or the wrong key**: the view carries the problem ("not reachable", "refused the hopper"), an edit
   answers 503, an ask is refused and recorded (`vault.refused`). Nothing else in the hopper waits on the vault.
-- **Its key provider** is chosen in the vault container: the token key (mounted read-only from the `secrets` volume), or
-  the KMS's data key with `HOPPER_KMS_URL`. The hopper's token key still seals what the hopper owns itself (webhook
+- **Its key provider** is chosen in the vault container: the master key (`HOPPER_MASTER_KEY` from `.env`, the hopper's own,
+  checked against the database's fingerprint, issue #659), or
+  the KMS's data key with `HOPPER_KMS_URL`. The hopper's master key still seals what the hopper owns itself (webhook
   signing secrets, the GitHub connection's tokens).
 - **Migrations stay the hopper's.** The vault server opens the store at its first request, after the hopper has
   migrated it.
 
-Tests: `test/integration/vault-container.test.ts` (the hopper with no token key, the vault server with it: set, sealed
-under the vault's key, events in the hopper's log; a wrong key; no vault running and the hopper works),
+Tests: `test/integration/vault-container.test.ts` (the hopper and the vault server with one master key: set, sealed
+under it, events in the hopper's log; a vault server with another master key seals nothing; a wrong preshared key; no vault running and the hopper works),
 `test/integration/vault-delivery.test.ts` (a box's job gets a secret through the vault container),
 `test/scripts/compose.test.ts` (the profiles).
 
@@ -10408,7 +10446,7 @@ Vault and in `GET /api/vault`, and no sealed value: tenant migration 31 lets `va
 before reads an empty value as one it cannot open, and refuses to deliver it. Set with `POST /ui/api/vault`
 `set-in-backend` (`name`, `scope?`, `backend`, `reference`): refused for a backend the plugins config does not name, one
 that cannot run, or a reference its `check` refuses. Setting a value again (`set`) keeps it in the hopper once more;
-`set-in-backend` over a secret kept in the hopper drops its sealed value. Such a secret needs no token key. A person
+`set-in-backend` over a secret kept in the hopper drops its sealed value. Such a secret needs no master key. A person
 adding a secret on the Vault page chooses where it is kept: this hopper (a value), or a backend (a reference).
 
 **The backend's own token** comes from the runtime, as every credential for an outside service does ("Secrets"): the
@@ -10765,8 +10803,8 @@ it at once, as before. Connect in Sources is the person's own act and replaces a
 on that evening is still unknown; this is what finds it the next time.
 
 **The start check says which key is missing.** At start each connection the runtime cannot open logs `start check:`
-with what is missing: `HOPPER_TOKEN_KEY` (the runtime gives none), or the key it was sealed under (neither
-`HOPPER_TOKEN_KEY` nor `HOPPER_TOKEN_KEY_PREVIOUS` opens it). It never asks for a new sign-in: that would mint another
+with what is missing: `HOPPER_MASTER_KEY` (the runtime gives none), or the key it was sealed under (neither
+`HOPPER_MASTER_KEY` nor `HOPPER_MASTER_KEY_PREVIOUS` opens it). It never asks for a new sign-in: that would mint another
 grant toward GitHub's ten.
 
 Tests: `test/connected-accounts/connection-health.test.ts` (renewed and failed renewals told, no token; a 401 on a

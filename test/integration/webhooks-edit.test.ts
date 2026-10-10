@@ -2,7 +2,7 @@
 // database and nothing else — POST /ui/api/webhooks adds, changes or removes one row, and the answer
 // shows it. No config record holds them.
 // Issue #451: a subscription's signing secret is the hopper's own. It is typed in or made by the hopper,
-// kept in the database sealed under the runtime's HOPPER_TOKEN_KEY (src/secrets/sealer.ts), and write-only:
+// kept in the database sealed under the runtime's HOPPER_MASTER_KEY (src/secrets/sealer.ts), and write-only:
 // no answer, log line or event carries it, except the one answer that shows a secret the hopper made.
 // Replace and Rotate apply from the next delivery. A subscription from before keeps reading the runtime
 // variable it names until a secret is stored for it.

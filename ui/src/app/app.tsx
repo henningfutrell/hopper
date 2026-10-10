@@ -25,6 +25,7 @@ import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
 import { Header } from './header';
 import { Landing } from './landing';
+import { MasterKeyNotice } from './master-key';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
@@ -54,6 +55,7 @@ function Shell() {
       <div className="flex">
         <Sidebar view={view} />
         <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
+          <MasterKeyNotice />
           <UpdateNotice />
           {loadError && (
             <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">

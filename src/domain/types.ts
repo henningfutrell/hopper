@@ -509,3 +509,4 @@ export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, t
 export { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from './connected-accounts.ts';
 export * from './vault.ts';
 export * from './minting.ts';
+export * from './master-key.ts';

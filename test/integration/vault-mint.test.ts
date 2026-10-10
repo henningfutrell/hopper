@@ -112,7 +112,7 @@ const fakeSts = () => fakeServer(() => ({
   body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>ASIAMINTED</AccessKeyId><SecretAccessKey>minted-secret</SecretAccessKey><SessionToken>minted-session</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${ACCOUNT}:assumed-role/diag/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
 }));
 
-/** `container`: the vault in a container of its own (issue #586), holding the token key; the hopper holds none. */
+/** `container`: the vault in a container of its own (issue #586), holding the master key; the hopper holds none. */
 async function boot(o: { container?: boolean } = {}): Promise<{ a: TestApp; session: string; kube: Awaited<ReturnType<typeof fakeKube>>; sts: Awaited<ReturnType<typeof fakeSts>> }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
@@ -120,9 +120,9 @@ async function boot(o: { container?: boolean } = {}): Promise<{ a: TestApp; sess
   process.env.FAKE_HERDR_RUNNING = '1';
   const kube = await fakeKube();
   const sts = await fakeSts();
-  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_TOKEN_KEY: KEY }) : undefined;
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: KEY }) : undefined;
   if (vault) cleanups.push(() => { void vault.stop(); });
-  const keys = vault ? { secrets: { HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_TOKEN_KEY: KEY } };
+  const keys = vault ? { secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_MASTER_KEY: KEY } };
   t = await startTestApp({
     dbPath: db.dbPath, ...keys,
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },

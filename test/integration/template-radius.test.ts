@@ -41,7 +41,7 @@ afterEach(async () => {
 async function boot(): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, plugins: { machines: lanes(1) }, seams: { authorizationServer: createFakeAuthorizationServer() } });
+  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(1) }, seams: { authorizationServer: createFakeAuthorizationServer() } });
   apps.push(a);
   return { a, token: await a.login() };
 }

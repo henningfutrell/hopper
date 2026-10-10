@@ -61,7 +61,7 @@ async function boot(vaultBackends: unknown[]): Promise<{ a: TestApp; session: st
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_TOKEN_KEY: KEY, VAULT_TOKEN: vault.token },
+    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY, VAULT_TOKEN: vault.token },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] }, vaultBackends },
   });
   const session = await t.login();

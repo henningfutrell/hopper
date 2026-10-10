@@ -14,7 +14,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
 | Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. A leftover `HOPPER_SECRET_KEY` line: delete it. |
-| Secrets the hopper owns, and the token key | kept in the database, encrypted under the **token key** `HOPPER_TOKEN_KEY` (also `_FILE`; 32 bytes, `openssl rand -hex 32`): each webhook's signing secret (typed in or made in Settings → Webhooks, write-only), the connected account's tokens, and each user's TypeSafe API key for Jev (pasted on the Jev page, Settings → Decider, write-only; a `TYPESAFE_API_KEY` still in the environment is imported once at start, then not read: remove it). The compose install makes the key in its secrets volume; `install.sh` writes one into `daemon.env`. Keep it with the database's backups but never in them: a database restored without it asks for every webhook secret again and to connect GitHub again. Without it no webhook secret is stored, and the tokens are kept in clear (said at start). A key that is not 32 bytes stops the daemon. Rotate it: "Rotating the token key" below. |
+| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): each webhook's signing secret, the connected account's tokens, the vault secrets. Given at launch as a variable, never from a file or a volume: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
@@ -54,17 +54,46 @@ in Settings → Webhooks says "secret from runtime variable X". To move it into 
 secret** with the value the receiver already has (nothing changes for the receiver), or **Rotate secret**
 and give the receiver the new one. From then on the variable is not read: delete it from the runtime.
 
-### Rotating the token key
+### The master key
 
-1. Make a new key: `openssl rand -hex 32`.
-2. Give it as `HOPPER_TOKEN_KEY`, and the old one as `HOPPER_TOKEN_KEY_PREVIOUS` (one per line; also
-   `_FILE`). In compose: put the new key in the secrets volume's `token_key` file and set
-   `HOPPER_TOKEN_KEY_PREVIOUS` in `.env`.
+Every secret the hopper keeps is sealed under one key, the **master key**. The database keeps only its
+fingerprint (an HMAC of a fixed label under the key), never the key. The key comes from the launch, as the
+variable `HOPPER_MASTER_KEY`. It is never read from a file or a volume: a container is ephemeral, and a key
+kept beside it is lost with it.
+
+**Keep the master key in a password manager.** Without it, a new container on the same database opens none
+of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
+
+- **First start.** With no key and a database that keeps no secret, the hopper makes a key. It shows the key
+  once in the start log (`SAVE THIS NOW`) and once in the UI, to the hopper's admin (**Show the key (once)**).
+  The banner stays until the admin clicks **I saved it**. Then give the key at each launch:
+  - compose: add `HOPPER_MASTER_KEY=<the 64 hex digits>` to `.env`, then
+    `podman compose up -d --force-recreate --no-deps hopper`;
+  - host install: add `HOPPER_MASTER_KEY=<the 64 hex digits>` to `~/.config/hopper/daemon.env`, then
+    `systemctl --user restart hopper`;
+  - any other runtime: set the variable `HOPPER_MASTER_KEY` in the container's or service's environment.
+- **A wrong key.** The hopper does not start: `the master key does not match this database`. Nothing in the
+  database changes. Give the right key.
+- **No key, while the database keeps secrets.** The hopper starts **limited**. The log (`LIMITED`) and a
+  banner name the missing key by its fingerprint. Nothing is deleted. Nothing that needs a secret works: no
+  secret is stored or opened, and no new GitHub token is kept. Do not connect GitHub again: give the key and
+  restart.
+- **Moving from the old token key.** An install from before kept its key in the compose secrets volume
+  (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, the hopper reads
+  that key, checks it against the secrets it keeps, and shows it once to be saved. Give it as
+  `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
+  `HOPPER_TOKEN_KEY` line, or the `token_key` file. The compose file makes no `token_key` any more.
+
+### Rotating the master key
+
+1. Make a new key: `openssl rand -hex 32`. Save it in your password manager.
+2. Give it as `HOPPER_MASTER_KEY`, and the old one as `HOPPER_MASTER_KEY_PREVIOUS` (one per line). In
+   compose: both in `.env`.
 3. Restart the hopper. Each user's webhook secrets are sealed again under the new key; the log says how
-   many (`webhook signing secret(s) sealed again under the current HOPPER_TOKEN_KEY`).
-4. Remove `HOPPER_TOKEN_KEY_PREVIOUS` and restart again.
+   many (`webhook signing secret(s) sealed again under the current HOPPER_MASTER_KEY`).
+4. Remove `HOPPER_MASTER_KEY_PREVIOUS` and restart again.
 
-The connected account's tokens open under `HOPPER_TOKEN_KEY_PREVIOUS` too, and are sealed again under the
+The connected account's tokens open under `HOPPER_MASTER_KEY_PREVIOUS` too, and are sealed again under the
 new key within a minute of the restart (log: `tokens of <account> sealed at rest`): no new GitHub sign-in.
 Keep the key with the database: a hopper on the database with neither key reads the connection as
 *cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
@@ -97,10 +126,21 @@ podman compose up -d
 Then open `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 There is no bootstrap login: a new hopper creates no user, no password and no login code (issue #238).
 
+**Save the master key now.** The first start makes the master key and shows it once: in
+`podman compose logs hopper` (`SAVE THIS NOW`) and in the UI banner, to the admin. Put it in your password
+manager. Then add it to `.env` beside `compose.yaml` and recreate the hopper:
+
+```sh
+echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env
+podman compose up -d --force-recreate --no-deps hopper
+```
+
+Without it, a new container on the same database is limited ("The master key" above). No volume holds it.
+
 | service | |
 |---|---|
-| `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
-| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. |
+| `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. It holds no master key. |
+| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. It sets the password again at each start, so a lost `secrets` volume makes a new password and the database keeps working. |
 | `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
 | `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
 | `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
@@ -152,6 +192,9 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
     never reaches `dev`'s head by pulling, so the notice says "this container runs the `stable` image; the
     selected channel is `dev`: switch the image tag". **Switch channels** by changing `HOPPER_IMAGE` and running
     the commands below; pick the same channel in Settings → Version.
+  - **Before you update, check that `.env` holds `HOPPER_MASTER_KEY`.** The new container gets the key only from
+    there. An install from before keeps it in the secrets volume's `token_key`: the hopper reads that one until
+    `HOPPER_MASTER_KEY` is set, and shows it once to be saved ("The master key" above).
   - **Pull and recreate the hopper's container alone**, in the folder that holds `compose.yaml`. Postgres and
     every volume stay as they are:
 
@@ -236,7 +279,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
 
 - **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once). A plain
-  `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the token key.
+  `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the master key.
 - **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper starts
   and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
   Vault, a vault backend ("Vault backends" below); the other two are here.
@@ -265,9 +308,9 @@ recreates `postgres` once.
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
 - When the vault container is not running, the hopper still works. Settings → Vault says the vault is not reachable,
   a change answers 503, and a box's ask is refused.
-- Its key: the token key, or the KMS's data key when `HOPPER_KMS_URL` is set. `HOPPER_TOKEN_KEY_PREVIOUS` in `.env`
-  reaches it too (key rotation, "Rotating the token key").
-- **Elsewhere** (not compose): run `node src/vault/main.ts` with `HOPPER_DATABASE_URL`, `HOPPER_TOKEN_KEY` and
+- Its key: the master key, or the KMS's data key when `HOPPER_KMS_URL` is set. `HOPPER_MASTER_KEY_PREVIOUS` in `.env`
+  reaches it too (key rotation, "Rotating the master key").
+- **Elsewhere** (not compose): run `node src/vault/main.ts` with `HOPPER_DATABASE_URL`, `HOPPER_MASTER_KEY` and
   `HOPPER_VAULT_KEY` (each also `_FILE`), and optionally `HOPPER_KMS_URL`; `HOPPER_VAULT_PORT` moves its port (4791).
   Give the hopper `HOPPER_VAULT_URL` and the same `HOPPER_VAULT_KEY`. Keep the port off every network but the hopper's.
 

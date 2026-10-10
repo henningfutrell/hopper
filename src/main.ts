@@ -19,6 +19,8 @@ import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from '
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
+import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
+import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -49,6 +51,8 @@ export interface App {
   access: Access;
   /** The sandbox boxes the hopper starts and removes (issue #603). */
   sandboxes: Sandboxes;
+  /** The master key's status (issue #659): its source, the one reveal, a person's word that they saved it. */
+  masterKey: MasterKeyStatus;
   /** Every user, oldest first. */
   users(): User[];
   /** A running user's parts (store, engine, sources, plugins) — for tests; throws for a user with none. */
@@ -107,6 +111,21 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
   if (!instance.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
+  // The master key (issue #659): from the launch, checked against the database's fingerprint before anything opens a
+  // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
+  let masterKey: MasterKey;
+  try {
+    masterKey = resolveMasterKey({
+      env, kept: () => instance.keptSecrets(),
+      record: { fingerprint: () => instance.settings.masterKeyFingerprint(), setFingerprint: (fp) => instance.settings.setMasterKeyFingerprint(fp) },
+    });
+  } catch (e) {
+    instance.close();
+    throw e;
+  }
+  const masterKeyStatus = createMasterKeyStatus(masterKey, instance.settings);
+  logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
+  const keyed = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
   // Before anything starts: the sign-in config with what the environment sets (no bootstrap login, issue
   // #238); an invalid one stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
@@ -169,7 +188,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl, access, minter,
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -250,7 +269,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     return user;
   };
   const server = createServer({
-    instance, clock, version: VERSION, pluginStore, updater, access, sandboxes,
+    instance, clock, version: VERSION, pluginStore, updater, access, sandboxes, masterKey: masterKeyStatus,
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -293,6 +312,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     updater,
     access,
     sandboxes,
+    masterKey: masterKeyStatus,
     users: () => instance.users.list(),
     user(id) {
       const rt = runtimes.get(id);

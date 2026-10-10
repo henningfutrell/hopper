@@ -1,6 +1,6 @@
 // The daemon keeps GitHub's grants tidy (issue #514) without GitHub's credential revocation API, a leak
 // report that emails the owner and killed a fresh grant (issue #597): Stop working through GitHub forgets
-// the grant, and only deletes it at GitHub when the runtime gives the app's client secret. A connection the runtime cannot open (another HOPPER_TOKEN_KEY) is no ended connection: its
+// the grant, and only deletes it at GitHub when the runtime gives the app's client secret. A connection the runtime cannot open (another HOPPER_MASTER_KEY) is no ended connection: its
 // source says to give the key back, and nothing marks it expired, so no screen asks to connect again.
 // The daemon, store and HTTP edge are real; GitHub is a fake on loopback (test/support/fake-forges.ts).
 //
@@ -69,7 +69,7 @@ describe('grant hygiene in the running hopper (#514)', () => {
 
   it('a connection sealed under another key pauses its source with what to do, and is not expired', async () => {
     const github = await forge();
-    const app = await start(github, { HOPPER_TOKEN_KEY: randomBytes(32).toString('hex') });
+    const app = await start(github, { HOPPER_MASTER_KEY: randomBytes(32).toString('hex') });
     const pair = github.mint('octo-user');
     const other = createTokenBox(randomBytes(32).toString('hex'));
     app.user().store.connectedAccounts.put({
@@ -77,8 +77,8 @@ describe('grant hygiene in the running hopper (#514)', () => {
       accessToken: other.seal(pair.accessToken), refreshToken: other.seal(pair.refreshToken), expiresAt: '2099-01-01T00:00:00.000Z',
     });
     await app.user().sources.syncNow('github-account').catch(() => undefined);
-    expect(await account(app)).toMatchObject({ state: 'unreadable', account: 'octo-user', error: expect.stringMatching(/HOPPER_TOKEN_KEY_PREVIOUS/) });
-    await waitFor(async () => /HOPPER_TOKEN_KEY_PREVIOUS/.test(String((await sourceOf(app))?.detail.paused)), { what: 'the source to say what to do' });
+    expect(await account(app)).toMatchObject({ state: 'unreadable', account: 'octo-user', error: expect.stringMatching(/HOPPER_MASTER_KEY_PREVIOUS/) });
+    await waitFor(async () => /HOPPER_MASTER_KEY_PREVIOUS/.test(String((await sourceOf(app))?.detail.paused)), { what: 'the source to say what to do' });
     const source = await sourceOf(app);
     expect(source?.detail.expired).toBeUndefined();
     expect(String(source?.detail.paused)).not.toMatch(/Connect GitHub/);

@@ -16,7 +16,7 @@
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
 // reaches stays listed, to be cleared. Each installation says what GitHub granted the app there, and a link adds the app to
 // another account or organization — quiet, under the installations, never a nudge to install it again (issue #352).
-// A connection whose tokens the hopper cannot open (another token key) says to give the key back, and offers
+// A connection whose tokens the hopper cannot open (another master key) says to give the key back, and offers
 // only to forget it: connecting again would mint another GitHub grant toward GitHub's ten (issue #514). A connection
 // GitHub gave no refresh token says so while it works, with when it ends, and offers to connect again (issue #518).
 // The connection's health (issue #647): when and how it was made, its last and next renewal, its last error; one GitHub

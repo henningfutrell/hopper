@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -20,6 +20,7 @@ import { usageGraphViewBody } from '../usage-history.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { registerMachineJoinRoutes } from './machine-join.ts';
+import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
@@ -56,6 +57,8 @@ export interface UiRouteOptions {
   artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
   sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
+  /** The master key's status (issue #659): the one reveal, and a person's word that they saved it. */
+  masterKey: Parameters<typeof registerInstanceRoutes>[1]['masterKey'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -131,12 +134,6 @@ export const machinesEditBody = z.union([
 export const machineHostKeyBody = z.strictObject({ ssh: z.string().min(1) });
 
 export const machineDefaultsBody = z.strictObject({ lanes: machineLanes, executors: machineExecutors, version: z.string().min(1) });
-// Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
-export const updateBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('check') }),
-  z.strictObject({ action: z.literal('apply') }),
-  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
-]);
 // The queue gate (issue #159): the user order (distinct waiting jobs, first to last) and the gate itself.
 export const queueOrderBody = z.strictObject({
   jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
@@ -338,19 +335,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
-  // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
-  app.post('/ui/api/update', instance, async (req) => {
-    const body = parseWith(updateBody, req.body);
-    if (body.action === 'check') return o.updater.check();
-    if (body.action === 'settings') {
-      const { action: _, ...patch } = body;
-      return o.updater.settings(patch);
-    }
-    const r = o.updater.apply();
-    if (!r.ok) throw new HttpError(409, r.error);
-    return r.status;
-  });
+  // Self-update and the master key (issues #44, #659): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

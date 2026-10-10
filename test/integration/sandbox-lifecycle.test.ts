@@ -42,7 +42,7 @@ async function boot(engine: FakeSandboxEngine | undefined, dbPath?: string): Pro
     cleanups.push(db.cleanup);
     path = db.dbPath;
   }
-  t = await startTestApp({ dbPath: path, secrets: { HOPPER_TOKEN_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: engine ? { sandboxEngine: engine } : {} });
+  t = await startTestApp({ dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: engine ? { sandboxEngine: engine } : {} });
   return { a: t, session: await t.login(), dbPath: path };
 }
 
