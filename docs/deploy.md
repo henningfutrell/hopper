@@ -14,7 +14,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
 | Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. A leftover `HOPPER_SECRET_KEY` line: delete it. |
-| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): each webhook's signing secret, the connected account's tokens, the vault secrets. Given at launch as a variable, never from a file or a volume: "The master key" below. |
+| Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, never from a file or a volume: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
 | Config | the plugins, rules and sign-in configs and the webhook subscriptions, all in the database, all edited in the UI (Settings → Plugins, Settings → Question gates, Settings → Sign-in, Settings → Webhooks); no config file. The first boot writes the built-in plugins config. |
@@ -89,12 +89,12 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
 1. Make a new key: `openssl rand -hex 32`. Save it in your password manager.
 2. Give it as `HOPPER_MASTER_KEY`, and the old one as `HOPPER_MASTER_KEY_PREVIOUS` (one per line). In
    compose: both in `.env`.
-3. Restart the hopper. Each user's webhook secrets are sealed again under the new key; the log says how
-   many (`webhook signing secret(s) sealed again under the current HOPPER_MASTER_KEY`).
+3. Restart the hopper. Every secret the hopper keeps for itself is sealed again under the new key; the log says how
+   many (`system secret(s) sealed again under the current HOPPER_MASTER_KEY`, and the same for the sign-in realms').
 4. Remove `HOPPER_MASTER_KEY_PREVIOUS` and restart again.
 
-The connected account's tokens open under `HOPPER_MASTER_KEY_PREVIOUS` too, and are sealed again under the
-new key within a minute of the restart (log: `tokens of <account> sealed at rest`): no new GitHub sign-in.
+The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
+start (`start check: system secret <name> cannot be opened: …`) and on Settings → Vault.
 Keep the key with the database: a hopper on the database with neither key reads the connection as
 *cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
 "One grant per connection").
@@ -631,6 +631,12 @@ change one step at a time, and check each step's hopper starts and runs a job be
 the start on a store whose schema version is above its own, naming both versions (issue #527): run that newer
 release again, or restore a backup of the database from before it. Builds from before that check run on such a
 store without a word, which is why the rule above holds.
+
+**The hopper's own secrets moved into the vault.** The first start of a build with the vault's system scope moves the
+GitHub connection's tokens, the webhook signing secrets and the sign-in realms' secrets out of their old places, once,
+and removes the old copies (the owner's direction: one place for them). A build from before it, run on that store again,
+finds none of them: connect GitHub again, replace each webhook's secret, and set each realm's secret again — a realm
+that is on and needs one stops that build at start. Builds since the schema check above refuse such a store anyway.
 
 What each push publishes: `.github/workflows/image.yml` builds the image tag of the branch's name
 (`stable` also moves `latest`); `.github/workflows/pages.yml` publishes the Pages site, its `install.sh` and

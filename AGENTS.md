@@ -82,15 +82,20 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Secrets"). A credential the hopper is *given* for an outside service comes from the runtime: the variable
   `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`), named by a command-bearing
   option. A secret the hopper *owns* — one made by or for the hopper (a webhook signing secret), or one
-  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs; a **system secret**, issue #657, the hopper's own use for one user — their TypeSafe API key —, in the vault's system scope, which no job may read) — is kept in the database, **sealed** under
-  the runtime's token key `HOPPER_TOKEN_KEY` (`src/secrets/sealer.ts`: a key per value from the token key
-  and a salt, AES-256-GCM, bound to its place, a key id for rotation; the connected account's tokens by the
-  token box of issue #441, which keeps them in clear while the runtime gives no key), never logged, never
+  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs) — is kept in the database, **sealed** under
+  the master key `HOPPER_MASTER_KEY` (`src/secrets/sealer.ts`: a key per value from the master key
+  and a salt, AES-256-GCM, bound to its place, a key id for rotation), never logged, never
   in an event, and never answered by any route but, once, a secret the hopper made in the answer that made
   it. A value that cannot be opened is said so, never read as no secret. A token or code it mints is only
-  hashed. Kept in the database in clear for now, by owner direction (issue #216): a realm's own secrets
-  (`clientSecret`, `bindPassword`), set in the UI or from the `HOPPER_SIGN_IN_*` environment, never answered
-  back by any route. Kept in that user's schema, never answered by any route but its public half: the
+  hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
+  "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret and each
+  user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
+  from the `HOPPER_SIGN_IN_*` environment) in the instance's vault — rows named `system/<name>`, sealed, written only
+  through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
+  value, shown with its audit trail on Settings → Vault, and never given to a job, a machine or a box: OpenFGA
+  (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. None is kept in clear: without
+  the master key (limited, issue #659) none is kept or opened, and a realm's secret given meanwhile stays in the `sign-in`
+  record until the next start with the key moves it. The master key itself stays outside every vault (given at launch). Kept in that user's schema, never answered by any route but its public half: the
   **hopper's ssh key** (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`), minted
   when the runtime mounts none and written to the work dir for ssh at each start; and the hopper's **link
   key** for each user (issue #308), the private half of the key a machine's client token is derived from.

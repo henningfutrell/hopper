@@ -1,7 +1,7 @@
 // A UI edit of the webhook subscriptions (design.md "Webhook subscriptions in the UI", issue #18): add,
 // edit or remove one, and replace or rotate its signing secret. The store's table is the only place they
 // are kept (issue #78): each edit checks the subscription and writes its row. The signing secret is the
-// hopper's own (issue #451): typed in or made here, kept sealed (src/webhooks/secrets.ts), and never
+// hopper's own (issue #451): typed in or made here, kept in the vault's system scope (issue #658, src/webhooks/secrets.ts), and never
 // answered back — except one the hopper made, in the result of the edit that made it, to copy to the
 // receiver once. Each change of a secret is logged by name and how, never with the value.
 import { z } from 'zod';
@@ -14,7 +14,8 @@ export type WebhooksEditRefusal = { ok: false; code: 'invalid' | 'not_found' | '
 export type WebhooksEditResult = { ok: true; generatedSecret?: string } | WebhooksEditRefusal;
 
 export interface WebhooksEditor {
-  edit(e: WebhooksEdit): WebhooksEditResult;
+  /** `by`: who edits, named in the vault's events. */
+  edit(e: WebhooksEdit, by?: string): WebhooksEditResult;
 }
 
 const refuse = (code: WebhooksEditRefusal['code'], error: string): WebhooksEditRefusal => ({ ok: false, code, error });
@@ -54,13 +55,13 @@ export function createWebhooksEditor(o: {
   }
 
   /** Stores `value` as `id`'s secret: the result, the made one shown. */
-  function keep(id: string, name: string, s: { value: string; made: boolean }, how: string): WebhooksEditResult {
-    if (!o.secrets.store(id, s.value)) return refuse('unavailable', o.secrets.unavailable() ?? `no webhook "${name}"`);
+  function keep(id: string, name: string, s: { value: string; made: boolean }, how: string, by: string): WebhooksEditResult {
+    if (!o.secrets.store(id, s.value, by, how === 'rotated')) return refuse('unavailable', o.secrets.unavailable() ?? `no webhook "${name}"`);
     o.logger.info(`hopper: webhook "${name}": signing secret ${how}`);
     return s.made ? { ok: true, generatedSecret: s.value } : { ok: true };
   }
 
-  function edit(e: WebhooksEdit): WebhooksEditResult {
+  function edit(e: WebhooksEdit, by = 'a person'): WebhooksEditResult {
     const current = webhooks.list().find((s) => s.name === e.name);
     if (e.action === 'add') {
       const sub = { name: e.name, url: e.url, events: e.events, active: e.active ?? true };
@@ -72,20 +73,21 @@ export function createWebhooksEditor(o: {
       if (unavailable) return refuse('unavailable', unavailable);
       const row = webhooks.add(sub);
       if (!row) return refuse('conflict', `webhook "${e.name}" already exists`);
-      const kept = keep(row.id, row.name, secret, secret.made ? 'made by the hopper' : 'typed in');
+      const kept = keep(row.id, row.name, secret, secret.made ? 'made by the hopper' : 'typed in', by);
       if (!kept.ok) webhooks.delete(row.id);
       return kept;
     }
     if (!current) return refuse('not_found', `no webhook "${e.name}"`);
     if (e.action === 'remove') {
-      // The row holds the sealed secret: it goes with it.
+      // Its signing secret in the vault goes with it.
       webhooks.delete(current.id);
+      o.secrets.forget(current.id, by);
       return { ok: true };
     }
     if (e.action === 'replace' || e.action === 'rotate') {
       const secret = secretOf(e.action === 'replace' ? e.secret : undefined);
       if ('ok' in secret) return secret;
-      return keep(current.id, current.name, secret, e.action === 'replace' ? 'replaced' : 'rotated');
+      return keep(current.id, current.name, secret, e.action === 'replace' ? 'replaced' : 'rotated', by);
     }
     const patch = { url: e.url, events: e.events, active: e.active };
     const why = problem(edited, { url: patch.url ?? current.url, events: patch.events ?? current.events, active: patch.active ?? current.active });

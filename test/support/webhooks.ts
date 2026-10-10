@@ -37,6 +37,17 @@ export const storedRows = (a: TestApp): Record<string, unknown>[] => {
   }
 };
 export const rowOf = (a: TestApp, name: string) => storedRows(a).find((r) => r.name === name)!;
+/** The vault row a subscription's signing secret is kept in (issue #658): its id and its sealed value; undefined: none. */
+export const secretRowOf = (a: TestApp, name: string): { id: string; sealed: string } | undefined => {
+  const sub = rowOf(a, name);
+  const db = openDb(ownerSchemaUrlFor(a.dbPath));
+  try {
+    const r = db.get('SELECT id, sealed FROM vault_secrets WHERE name = ?', `system/webhook.${String(sub.id)}.signing-secret`);
+    return r ? { id: String(r.id), sealed: String(r.sealed) } : undefined;
+  } finally {
+    db.close();
+  }
+};
 /** The subscriptions as the store holds them, without ids and timestamps. */
 export const stored = (a: TestApp) => a.user().store.webhooks.list().map(({ name, url, events, active }) => ({ name, url, events, active }));
 export const list = async (a: TestApp) => (await a.api('GET', '/api/webhooks')).body;

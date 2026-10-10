@@ -190,6 +190,12 @@ const MIGRATIONS: readonly Migration[] = [
   // 32: a join code may name the sandbox box the hopper launched with it (issue #603). A column only: the build before
   // runs on it.
   'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS container TEXT;',
+  // 33: the instance's vault (issue #658): the hopper's own secrets for the whole hopper — its sign-in realms' secrets —
+  // as system secrets, sealed. A table only: the build before never reads it, and finds the realms' secrets gone from
+  // the sign-in record once a start of this build has moved them.
+  `
+  CREATE TABLE IF NOT EXISTS vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT, body TEXT NOT NULL);
+  `,
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */

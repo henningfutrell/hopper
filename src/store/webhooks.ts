@@ -2,7 +2,7 @@ import type { WebhookRepository } from '../domain/ports.ts';
 import type { WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { applyPatch, parse, type StoreContext } from './context.ts';
 
-// The sealed secret (issue #451) is never read into a subscription: only sealedSecret() answers it.
+// The signing secret is a system secret in the user's vault (issue #658); a row's copy from before is read only to move it.
 const toSub = (r: Record<string, unknown>): WebhookSubscription => ({
   id: r.id as string, name: r.name as string, url: r.url as string, events: parse(r.events),
   ...(r.secret_env ? { secretEnv: r.secret_env as string } : {}),
@@ -41,13 +41,13 @@ export function createWebhookRepository(c: StoreContext): WebhookRepository {
       c.db.run('UPDATE webhooks SET url = ?, events = ?, active = ? WHERE id = ?', next.url, JSON.stringify(next.events), next.active ? 1 : 0, id);
       return toSub(c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id)!);
     },
-    setSecret(id, sealed, changedAt) {
-      // Stored in the hopper from now on: the runtime variable of a subscription from before is no longer read.
-      const set = c.db.run("UPDATE webhooks SET secret_sealed = ?, secret_changed_at = ?, secret_env = '' WHERE id = ?",
-        sealed, changedAt ?? c.clock.now().toISOString(), id).changes > 0;
+    secretKept(id, changedAt) {
+      // Kept in the vault from now on (issue #658): the runtime variable of a subscription from before is no longer read.
+      const set = c.db.run("UPDATE webhooks SET secret_sealed = NULL, secret_changed_at = ?, secret_env = '' WHERE id = ?",
+        changedAt ?? c.clock.now().toISOString(), id).changes > 0;
       return set ? toSub(c.db.get(`SELECT ${COLUMNS} FROM webhooks WHERE id = ?`, id)!) : undefined;
     },
-    sealedSecret(id) {
+    legacySecret(id) {
       const r = c.db.get('SELECT secret_sealed FROM webhooks WHERE id = ?', id);
       return (r?.secret_sealed as string | null | undefined) ?? undefined;
     },
