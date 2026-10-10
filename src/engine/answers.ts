@@ -5,6 +5,7 @@
 import type { Job, Question } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
+import { recordUnpark } from './park.ts';
 import { forksOnAnswered } from './phase-shifts.ts';
 import { correctionBrief } from '../questions/auto-answer.ts';
 
@@ -27,7 +28,10 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
     console.error(`question ${q.id}: job ${q.jobId} is ${job?.status ?? 'missing'} (question ${job?.questionId ?? 'none'}); ignored`);
     return false;
   };
-  /** A parked job (issue #501) keeps the answer to its question until it is re-queued; it stays parked. */
+  /**
+   * A parked job (issue #501) keeps the answer to its question until it is re-queued; it stays parked. One auto-park
+   * parked (issue #650) is re-queued by the answer: its claim resumes its agent session.
+   */
   const parkedOn = (q: Question): boolean => {
     const job = store.jobs.get(q.jobId);
     return job?.status === 'parked' && job.questionId === q.id;
@@ -38,7 +42,8 @@ export function createAnswerHandlers(c: EngineContext, cleanup: Cleanup): Answer
       const forks = forksOnAnswered(c, q);
       const answer = forks ? `${q.answer ?? ''}\n\n${forks}` : q.answer ?? '';
       if (parkedOn(q)) {
-        store.jobs.update(q.jobId, { pendingAnswer: answer });
+        const job = store.jobs.update(q.jobId, { pendingAnswer: answer });
+        if (job.parked?.auto) recordUnpark(c, job.id);
         return;
       }
       if (!waitingOn(q)) return;

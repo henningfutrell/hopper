@@ -11,6 +11,13 @@
     },
     "machineId": {
       "type": "string"
+    },
+    "auto": {
+      "type": "boolean",
+      "const": true
+    },
+    "why": {
+      "type": "string"
     }
   },
   "required": [

@@ -850,17 +850,21 @@ Version 1 (`docs/schemas/job.cleaned_up.v1.json`). A deferred cleanup went throu
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #650: `auto`, its question waited on a person past the park timeout; `why` says so), parked a running job or one on a question (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. A parked job never runs, and its question never expires, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
 | `from` | `running` \| `waiting_answer` | yes |
 | `machineId` | string | no |
+| `auto` | boolean | no |
+| `why` | string | no |
 
 ```json
 {
-  "from": "running",
-  "machineId": "laptop"
+  "from": "waiting_answer",
+  "machineId": "laptop",
+  "auto": true,
+  "why": "Parked automatically: the question waited 30 min."
 }
 ```
 
@@ -2228,6 +2232,30 @@ Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin change
   "to": {
     "enabled": true,
     "threshold": "medium"
+  },
+  "by": "admin"
+}
+```
+
+## `auto_park.settings_changed`
+
+Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed the auto-park settings (issue #650): how many minutes a question waits on a person before its job parks by itself (`minutes`), and the same for a high-priority job (`highPriorityMinutes`); 0 turns it off. `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "minutes": 30,
+    "highPriorityMinutes": 30
+  },
+  "to": {
+    "minutes": 30,
+    "highPriorityMinutes": 10
   },
   "by": "admin"
 }

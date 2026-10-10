@@ -130,12 +130,12 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     timers.set(id, t);
   }
 
-  /** Inside a tx. Moves the question to the human stage and announces it. */
-  function toHuman(q: Question, reason: string) {
+  /** Inside a tx. Moves the question to the human stage and announces it. `kept`: a risk rule or the guard sent it (issue #650). */
+  function toHuman(q: Question, reason: string, kept?: Question['keptBy']) {
     const now = clock.now();
     const updated = store.questions.update(q.id, {
       tier: HUMAN, escalatedToHumanAt: now.toISOString(), lastNotifiedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + o.humanTimeoutMs).toISOString(), notifyCount: 1,
+      expiresAt: new Date(now.getTime() + o.humanTimeoutMs).toISOString(), notifyCount: 1, ...(kept ? { keptBy: kept } : {}),
     });
     const data = escalationData(updated, HUMAN, reason);
     emit(updated, 'question.escalated', data);
@@ -232,7 +232,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       // or, below the threshold, for the next level.
       const { riskRules, hold } = answerHold({ store, q, answer, level: level.name, top: number >= of, confidence, gated: o.minorDecisions?.gated });
       store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, ...(hold ? {} : { outcome: 'accepted' as const }) });
-      if (hold) return hold.to === 'next' ? hold.why : void toHuman(q, hold.why);
+      if (hold) return hold.to === 'next' ? hold.why : void toHuman(q, hold.why, hold.kept);
       const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
       emit(updated, 'question.answered', { by: level.name, answer, auto: true, ...(confidence ? { confidence } : {}) });
       o.onAnswered(updated);

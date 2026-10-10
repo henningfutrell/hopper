@@ -73,6 +73,8 @@ export interface Question extends QuestionPhaseFields {
   answeredBy?: string;
   /** A person corrected a level's auto-answer (issue #632): `answer` is the correction now, and this keeps what it replaced. */
   corrected?: QuestionCorrection;
+  /** A risk rule or the consequential guard sent it to a person (issue #650): its job never parks by itself. */
+  keptBy?: 'risk' | 'guard';
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string; lastNotifiedAt?: string;
   notifyCount: number;

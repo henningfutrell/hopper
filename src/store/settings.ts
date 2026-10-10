@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { AutoAnswerSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, YoloModeSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -166,6 +166,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setAutoAnswer(settings) {
       write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold }));
+    },
+    getAutoPark() {
+      const text = read('autoPark');
+      return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings;
+    },
+    setAutoPark(settings) {
+      write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes }));
     },
     getYoloMode() {
       const text = read('yoloMode');

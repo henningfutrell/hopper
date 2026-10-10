@@ -8,6 +8,7 @@ import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { pullRequestsView, yoloModeView } from './ui/yolo-mode.ts';
+import { autoParkView } from './ui/auto-park.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
   if (!s) return undefined;
@@ -69,6 +70,8 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/phase-shifts', async (req) => { const t = o.tenant(req); return t.engine.phaseShifts.view(t.levelNames()); });
   // Yolo mode (issue #579): whether jobs may merge their own pull requests, and the job repositories to set it per repository.
   app.get('/api/yolo-mode', async (req) => yoloModeView(o.tenant(req)));
+  // Auto-park (issue #650): how long a question waits on a person before its job parks by itself.
+  app.get('/api/auto-park', async (req) => autoParkView(o.tenant(req)));
   // The Pull requests list (issue #637): the waiting pull requests, per repository, their state and yolo mode; where merging waits.
   app.get('/api/pull-requests', async (req) => pullRequestsView(o.tenant(req)));
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));

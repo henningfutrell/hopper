@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { SourceHost } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type EventType, type Job, type ReviewKind } from '../domain/types.ts';
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
+import { autoPark } from './auto-park.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
 import { createCommands, type Commands } from './commands.ts';
@@ -86,6 +87,7 @@ export function createEngine(o: EngineOptions): Engine {
   const { store } = o;
   let stopping = false;
   let timer: NodeJS.Timeout | undefined;
+  let autoParking = false;
   let sweepTimer: NodeJS.Timeout | undefined;
   let discoverTimer: NodeJS.Timeout | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -160,6 +162,11 @@ export function createEngine(o: EngineOptions): Engine {
         o.logins.sweep();
         o.questions.sweep();
         for (const k of REVIEW_KINDS) o.reviews[k].sweep();
+        // Auto-park (issue #650): one pass at a time; a pass still ending panes skips this tick.
+        if (!autoParking) {
+          autoParking = true;
+          void autoPark(c).catch((e: unknown) => console.error('hopper: auto-park failed', e)).finally(() => { autoParking = false; });
+        }
         c.trigger('tick');
       }, o.tickMs);
       classifier.sweep();

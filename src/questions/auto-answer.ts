@@ -16,7 +16,12 @@ import { riskRules as riskRulesOf } from './risk.ts';
 const HUMAN = 'human';
 
 /** Why a level's answer does not go into the job: to a person, or (below the threshold, not the top level) to the next level. */
-export interface Hold { to: 'human' | 'next'; why: string }
+export interface Hold {
+  to: 'human' | 'next';
+  why: string;
+  /** A risk rule or the consequential guard holds it (issue #650): its job never parks by itself. */
+  kept?: 'risk' | 'guard';
+}
 
 export const autoAnswerSettings = (store: Pick<UserStore, 'settings'>): AutoAnswerSettings => store.settings.getAutoAnswer() ?? DEFAULT_AUTO_ANSWER_SETTINGS;
 
@@ -28,7 +33,7 @@ export function answerHold(o: {
   store: UserStore; q: Question; answer: string; level: string; top: boolean; confidence: Confidence | undefined; gated?: (machineId: string) => boolean;
 }): { riskRules: string[]; hold?: Hold } {
   const riskRules = riskRulesOf(`${o.q.text}\n${o.answer}`);
-  if (riskRules.length > 0) return { riskRules, hold: { to: 'human', why: `risk rules: ${riskRules.join(', ')}` } };
+  if (riskRules.length > 0) return { riskRules, hold: { to: 'human', why: `risk rules: ${riskRules.join(', ')}`, kept: 'risk' } };
   const hold = autoAnswerHold(o);
   return hold ? { riskRules, hold } : { riskRules };
 }
@@ -38,7 +43,7 @@ function autoAnswerHold(o: Parameters<typeof answerHold>[0]): Hold | undefined {
   const job = store.jobs.get(q.jobId);
   const machine = job?.resumeOn ?? job?.spec.machineId ?? q.raisedBy?.machineId;
   const consequential = consequentialOf([q.text, o.answer], machine !== undefined && o.gated?.(machine) ? { gatedMachine: machine } : {});
-  if (consequential.length > 0) return { to: 'human', why: `consequential: ${consequential.join(', ')}; a person answers` };
+  if (consequential.length > 0) return { to: 'human', why: `consequential: ${consequential.join(', ')}; a person answers`, kept: 'guard' };
   if (jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high) return { to: 'human', why: 'high priority: a person answers' };
   const settings = autoAnswerSettings(store);
   if (!settings.enabled) return { to: 'human', why: `auto-answer is off: ${o.level}'s answer is a recommendation` };

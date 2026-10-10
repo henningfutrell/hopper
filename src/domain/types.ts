@@ -145,9 +145,10 @@ export interface Job extends JobPhaseFields {
   /**
    * Set when the job was parked (issue #501): its pane and agent ended, its work tree and agent session kept,
    * `from` the status it was parked from. Kept through the re-queue until the resumed run records an outcome:
-   * that claim reopens the session instead of typing into a pane.
+   * that claim reopens the session instead of typing into a pane. `auto` (issue #650): auto-park parked it, `why` says
+   * so, and the answer to its question re-queues it with no pick up.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer' };
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string };
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
@@ -463,6 +464,7 @@ export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
 export * from './auto-answer.ts';
+export * from './auto-park.ts';
 export * from './access.ts';
 export * from './artifacts.ts';
 

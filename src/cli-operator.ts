@@ -1,7 +1,8 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
 // accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
 // question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
-// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637).
+// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
+// the auto-park timeouts (issue #650).
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -13,7 +14,7 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -37,6 +38,9 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
   hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
   hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
+  hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
+  hopper auto-park set [--minutes <n>] [--high-priority-minutes <n>]
+                                                     change them; 0 turns auto-park off, for jobs that are not high priority or for high-priority jobs
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 /** A refusal: the message, exit 2. */
@@ -175,7 +179,29 @@ function backfillCall(args: string[]): Call {
   return { role: 'operator', path: '/ui/api/backfill/done-check', body: async () => ({}) };
 }
 
+const AUTO_PARK_SET = 'auto-park set [--minutes <n>] [--high-priority-minutes <n>]';
+const AUTO_PARK_USAGE = `auto-park | hopper ${AUTO_PARK_SET}`;
+
+function minutesOf(flag: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (raw.trim() === '' || !Number.isFinite(n)) throw new OperatorRefusal(`--${flag} must be a number of minutes; not ${raw}`);
+  return n;
+}
+
+function autoParkCall(args: string[]): Call {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: 'string' }, 'high-priority-minutes': { type: 'string' } } });
+  const [verb, ...extra] = positionals;
+  const minutes = minutesOf('minutes', values.minutes);
+  const highPriorityMinutes = minutesOf('high-priority-minutes', values['high-priority-minutes']);
+  if (verb === undefined && minutes === undefined && highPriorityMinutes === undefined) return { role: 'viewer', path: '/api/auto-park' };
+  if (verb !== 'set' || extra.length > 0) throw usage(AUTO_PARK_USAGE);
+  if (minutes === undefined && highPriorityMinutes === undefined) throw usage(AUTO_PARK_SET);
+  return { role: 'admin', path: '/ui/api/auto-park', body: async () => ({ ...(minutes === undefined ? {} : { minutes }), ...(highPriorityMinutes === undefined ? {} : { highPriorityMinutes }) }) };
+}
+
 function callOf(command: string, args: string[]): Call {
+  if (command === 'auto-park') return autoParkCall(args);
   if (command === 'prs') return prsCall(args);
   if (command === 'yolo') return yoloCall(args);
   if (command === 'backfill') return backfillCall(args);
@@ -214,7 +240,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(
