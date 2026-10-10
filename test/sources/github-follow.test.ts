@@ -102,7 +102,7 @@ describe('following the pull request', () => {
   it('still open: no label changes; what is seen of it is kept once (issue #637), then nothing while it stays the same', async () => {
     const { gh, source, job, pr } = await ended();
     const seen = await source.follow!(job);
-    expect(seen).toEqual({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: false, conflicting: false, checks: 'none', openedAt: pr.createdAt } } });
+    expect(seen).toEqual({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: false, conflicting: false, checks: 'none', openedAt: pr.createdAt, pushedAt: pr.createdAt, base: 'dev' } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(await source.follow!({ ...job, sourceState: { ...job.sourceState, source: seen!.state } })).toBeUndefined();
     expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
@@ -142,5 +142,79 @@ describe('following the pull request', () => {
     gh.calls.length = 0;
     expect(await source.follow!(jobForIssue(1, { status: 'finished', sourceState: { source: {} } }))).toBeUndefined();
     expect(gh.calls).toEqual([]);
+  });
+});
+
+describe('yolo mode and a pull request with no checks (issue #677)', () => {
+  // The source's clock is 2026-10-02T10:00; the grace window for checks to start is two minutes.
+  const LONG_AGO = '2026-10-02T09:50:00.000Z';
+  const JUST_NOW = '2026-10-02T09:59:30.000Z';
+
+  async function ended(pr: { createdAt: string; headCommittedAt?: string; checks?: 'passing' | 'pending' | 'failing'; part?: boolean }, yolo = true) {
+    const s = setup({}, { yoloMode: () => yolo });
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const opened = pr.part ? s.gh.openPartPullRequest(REPO, 1, pr) : s.gh.openPullRequest(REPO, 1, pr);
+    const base = jobForIssue(1, { status: 'finished', createdAt: '2026-10-02T09:00:00.000Z', ...(pr.part ? { partlyDone: opened.url } : {}) });
+    const state = await s.source.report({ kind: 'finished', job: base });
+    return { ...s, pr: opened, job: { ...base, sourceState: { source: state } } };
+  }
+
+  it('no checks, and none started within the grace window: ready, the hopper merges it', async () => {
+    const { gh, source, job, pr } = await ended({ createdAt: LONG_AGO });
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', pullRequest: pr.url, byHopper: true });
+    expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
+  });
+
+  it('no checks yet, pushed inside the grace window: it waits, so checks that start late are not missed', async () => {
+    const { gh, source, job, pr } = await ended({ createdAt: LONG_AGO, headCommittedAt: JUST_NOW });
+    const seen = await source.follow!(job);
+    expect(seen).toMatchObject({ outcome: 'open', state: { seen: { checks: 'none', pushedAt: JUST_NOW, openedAt: pr.createdAt } } });
+    expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+  });
+
+  it('checks that run still hold the merge: pending or failing waits', async () => {
+    for (const checks of ['pending', 'failing'] as const) {
+      const { gh, source, job } = await ended({ createdAt: LONG_AGO, checks });
+      expect(await source.follow!(job)).toMatchObject({ outcome: 'open', state: { seen: { checks } } });
+      expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+    }
+  });
+
+  it('yolo off: no checks never merges', async () => {
+    const { gh, source, job } = await ended({ createdAt: LONG_AGO }, false);
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'open' });
+    expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+  });
+
+  it('the seen pull request carries its base branch, for "conflicts with <base>"', async () => {
+    const { source, job } = await ended({ createdAt: LONG_AGO, checks: 'pending' });
+    expect(await source.follow!(job)).toMatchObject({ state: { seen: { base: 'dev' } } });
+  });
+});
+
+describe('a pull request the report could not name (issue #677)', () => {
+  it('is found on the next sync and named, with what is seen of it: the card never stays "not checked yet"', async () => {
+    const { gh, source } = withIssue();
+    // At the report, the only pull request is a draft: none is named.
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
+    const base = jobForIssue(1, { status: 'finished' });
+    const state = await source.report({ kind: 'finished', job: base });
+    expect(state).toEqual({ follow: 'open' });
+    const up = await source.follow!({ ...base, sourceState: { source: state } });
+    expect(up).toMatchObject({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: true } } });
+  });
+
+  it('a pull request that ships part of the issue is named as a part', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER, conflicting: true });
+    const base = jobForIssue(1, { status: 'finished' });
+    const up = await source.follow!({ ...base, sourceState: { source: { follow: 'open' } } });
+    expect(up).toMatchObject({ outcome: 'open', pullRequest: pr.url, part: true, state: { pullRequest: pr.url, part: true, seen: { conflicting: true } } });
+  });
+
+  it('none found: nothing changes', async () => {
+    const { source } = withIssue();
+    expect(await source.follow!(jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open' } } }))).toBeUndefined();
   });
 });
