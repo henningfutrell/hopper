@@ -45,7 +45,7 @@ const read = async (a: TestApp, session: string): Promise<ArtifactsView> =>
 function put(a: TestApp): void {
   a.user().store.artifacts.add({
     id: 'chart-1', userId: a.user().user.id, jobId: 'job-1', title: 'chart', name: 'chart.txt', type: 'text/plain', kind: 'text',
-    size: 6, sha256: 'x', createdAt: new Date().toISOString(),
+    size: 6, sha256: 'x', createdAt: new Date().toISOString(), revision: 1, updatedAt: new Date().toISOString(), revisedBy: 'job job-1', pinned: false,
   }, Buffer.from('chart\n'));
 }
 
