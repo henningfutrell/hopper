@@ -21,6 +21,7 @@ import type { ClientTransport } from '../executors/client.ts';
 import { createHerdrCliClient } from '../executors/herdr/index.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
+import { isAddressLine, addressCommand, readAddress } from './hopper-address.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -39,6 +40,10 @@ export interface MachineProbe {
   resources?: ResourceReading;
   /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
   workTreeProblem?: string;
+  /** An ssh target: the hopper's address it reaches (issue #698). Absent: not asked, or none reached. */
+  hopperUrl?: string;
+  /** An ssh target: why its jobs cannot reach the hopper (issue #698). Absent: one is reached, or not asked. */
+  addressProblem?: string;
 }
 
 interface AttachedOptions {
@@ -77,6 +82,9 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let resources: ResourceReading | undefined;
   // What the last probe found wrong with its work tree (issue #361); each probe says afresh.
   let workTreeProblem: string | undefined;
+  // Where its jobs reach the hopper, or why they cannot (issue #698); each probe says afresh.
+  let hopperUrl: string | undefined;
+  let addressProblem: string | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -95,10 +103,12 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     o.probe().then(
       (p) => {
         online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
+        hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined;
+        const noJob = [workTreeProblem, addressProblem].filter((x) => x !== undefined).join('; ');
         say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`
-          : workTreeProblem ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${workTreeProblem}` : `hopper: attached machine ${name} online (${reached()})`);
+          : noJob ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${noJob}` : `hopper: attached machine ${name} online (${reached()})`);
       },
-      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -114,7 +124,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
         const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
         return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
       }
-      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
+      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem } : {}) }];
     },
   };
 }
@@ -136,12 +146,18 @@ export async function probeHerdrOverSsh(o: { target: string; session: string; co
  * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says, and
  * its CPU, memory and swap (issue #560), when it has /proc.
  */
-export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string }): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; workTreeProblem?: string }> {
+export function probeSsh(o: {
+  target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;
+  /** The hopper's addresses (issue #698): which one the machine reaches is asked in the same call. Absent: not asked. */
+  hopperUrls?: readonly string[];
+}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
   const workTree = o.workTree ?? DEFAULT_WORK_TREE;
   // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
   const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
-  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
     + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
+  // Each address asked takes at most 3 s more.
+  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * (o.hopperUrls?.length ?? 0);
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
@@ -150,7 +166,7 @@ export function probeSsh(o: { target: string; controlDir: string; sshBin?: strin
     } catch (e) {
       return reject(e instanceof Error ? e : new Error(String(e)));
     }
-    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (!e) {
         const lines = stdout.trim().split('\n');
@@ -158,14 +174,14 @@ export function probeSsh(o: { target: string; controlDir: string; sshBin?: strin
         if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
         const disk = readDf(stdout);
         const resources = readResources(stdout);
-        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}) };
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
         const refused = resolveWorkTree(workTree, home);
         if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
         if (lines.at(-1) === WORK_TREE_OK) return resolve(found);
-        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ')).join(' ').trim() || 'no answer';
+        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isAddressLine(l)).join(' ').trim() || 'no answer';
         return resolve({ ...found, workTreeProblem: `its work tree ${workTree} cannot be made: ${said}` });
       }
-      if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
+      if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${timeoutMs} ms`));
       reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
     });
   });

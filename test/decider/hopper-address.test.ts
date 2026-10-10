@@ -8,19 +8,19 @@ const UNREACHED = 'the hopper cannot be reached from it: http://hopper:4790 (no 
 
 describe('machines whose jobs cannot reach the hopper', () => {
   it('a job goes to a machine that reaches the hopper', () => {
-    const machines = [machine({ id: 'box', maxLanes: 4, reachProblem: UNREACHED }), machine({ id: 'host', maxLanes: 1 })];
+    const machines = [machine({ id: 'box', maxLanes: 4, addressProblem: UNREACHED }), machine({ id: 'host', maxLanes: 1 })];
     const d = decide(inputs({ machines, waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([expect.objectContaining({ jobId: 'a', machineId: 'host' })]);
   });
 
   it('only such machines: the job is held with the reason, never failed', () => {
-    const d = decide(inputs({ machines: [machine({ id: 'box', reachProblem: UNREACHED })], waiting: [job('a')] }), 'd1');
+    const d = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED })], waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
     expect(d.hold).toEqual([{ jobId: 'a', reason: `no machine running executor test reaches the hopper: box: ${UNREACHED}` }]);
   });
 
   it('a job pinned to such a machine is held with the reason', () => {
-    const machines = [machine({ id: 'box', reachProblem: UNREACHED }), machine({ id: 'host' })];
+    const machines = [machine({ id: 'box', addressProblem: UNREACHED }), machine({ id: 'host' })];
     const d = decide(inputs({ machines, waiting: [job('a', { machineId: 'box' })] }), 'd1');
     expect(d.start).toEqual([]);
     expect(d.hold).toEqual([{ jobId: 'a', reason: `pinned machine box: ${UNREACHED}` }]);

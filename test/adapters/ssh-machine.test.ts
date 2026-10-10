@@ -5,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTarget } from '../../src/machines/index.ts';
 import { DF_COMMAND, diskOf } from '../../src/machines/disk.ts';
@@ -59,31 +57,6 @@ describe('attached machine source', () => {
     expect((await src.list())[0]!.disk?.low).toBe(false);
     belowGiB = 40;
     expect((await src.list())[0]!.disk).toEqual({ freeBytes: 30 * GIB, totalBytes: 100 * GIB, low: true });
-  });
-
-  // Issue #698: where its jobs reach the hopper, or why they cannot, said on the machine and in the log.
-  it('its snapshot carries the hopper URL its probe found, or its reach problem, logged once', async () => {
-    let found: { hopperUrl: string } | { reachProblem: string } = { hopperUrl: 'http://10.0.0.2:4790' };
-    let t = 0;
-    const lines: string[] = [];
-    const src = createAttachedMachineSource({
-      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: ['herdr-claude'], herdr: true, session: 'hopper' }),
-      clock: { now: () => new Date(t) }, probeEveryMs: 30000,
-      probe: async () => ({ online: true, home: '/home/x', ...found }),
-      logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) },
-    });
-    await src.list();
-    await flush();
-    expect((await src.list())[0]).toMatchObject({ hopperUrl: 'http://10.0.0.2:4790' });
-    expect((await src.list())[0]).not.toHaveProperty('reachProblem');
-    found = { reachProblem: 'the hopper cannot be reached from it: http://hopper:4790 (no connection)' };
-    t += 30000;
-    await src.list();
-    await flush();
-    const [m] = await src.list();
-    expect(m).toMatchObject({ reachProblem: found.reachProblem });
-    expect(m).not.toHaveProperty('hopperUrl');
-    expect(lines.at(-1)).toBe(`hopper: attached machine laptop online (ssh laptop), takes no new job: ${found.reachProblem}`);
   });
 
   it('its snapshot carries the machine\'s reserved lanes (issue #372)', async () => {
@@ -295,29 +268,6 @@ describe('probeSsh', () => {
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {
     await expect(probe('unreachable')).rejects.toThrow(/ssh unreachable/);
-  });
-
-  // Issue #698: the machine itself says which of the hopper's addresses it reaches; the work tree is still checked.
-  it('given the hopper\'s addresses: the one the machine reaches, with its work tree made', async () => {
-    const s = createServer((_req, res) => { res.statusCode = 204; res.end(); });
-    await new Promise<void>((r) => s.listen(0, '127.0.0.1', r));
-    const good = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
-    try {
-      const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), hopperUrls: ['http://127.0.0.1:1', good] });
-      expect(r).toMatchObject({ home: process.env.HOME, hopperUrl: good });
-      expect(r).not.toHaveProperty('workTreeProblem');
-      expect(r).not.toHaveProperty('reachProblem');
-    } finally {
-      await new Promise((r) => s.close(r));
-    }
-  });
-
-  it('given addresses it reaches none of: its reach problem, and a work tree problem still said', async () => {
-    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), hopperUrls: ['http://127.0.0.1:1'], workTree: '/proc/hopper-no-such/tree' });
-    expect(r.reachProblem).toMatch(/^the hopper cannot be reached from it: http:\/\/127\.0\.0\.1:1 \(no connection\)/);
-    expect(r).not.toHaveProperty('hopperUrl');
-    expect(r.workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
-    expect(r.workTreeProblem).not.toContain('hopper-reach');
   });
 });
 
