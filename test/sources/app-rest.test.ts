@@ -92,6 +92,25 @@ describe('App adapter: issues and comments', () => {
     expect(await h.api.referencingPullRequests('owner/a', 2)).toEqual([]);
   });
 
+  it('pullRequest reads a pull request by its number over GraphQL, with when its head commit was made; an issue or nothing is undefined (issue #618)', async () => {
+    const open = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false, mergeable: 'MERGEABLE', headCommittedAt: '2026-10-03T08:00:00Z' };
+    const merged = {
+      url: 'https://github.com/owner/a/pull/10', createdAt: '2026-10-02T10:40:00Z', isDraft: false, state: 'MERGED' as const, body: 'Closes #2', repo: 'owner/a',
+      mergedAt: '2026-10-03T09:00:00Z', headCommittedAt: '2026-10-03T08:30:00Z',
+    };
+    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [
+      issue(1, { openPullRequests: [open] }), issue(2, { mentionedBy: [merged] }),
+    ] }] }] });
+    expect(await h.api.pullRequest('owner/a', 9)).toEqual({
+      url: open.url, createdAt: open.createdAt, isDraft: false, conflicting: false, state: 'open', headCommittedAt: open.headCommittedAt,
+    });
+    expect(await h.api.pullRequest('owner/a', 10)).toEqual({
+      url: merged.url, createdAt: merged.createdAt, isDraft: false, conflicting: false, state: 'merged', mergedAt: merged.mergedAt, headCommittedAt: merged.headCommittedAt,
+    });
+    expect(await h.api.pullRequest('owner/a', 1)).toBeUndefined();
+    expect(await h.api.pullRequest('owner/a', 77)).toBeUndefined();
+  });
+
   it('lists every comment oldest first across pages', async () => {
     const comments = [1, 2, 3, 4, 5].map((n) => ({ author: 'owner', body: `c${n}` }));
     h = await startApp({ pageSize: 2, installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, { comments })] }] }] });

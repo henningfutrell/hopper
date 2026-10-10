@@ -5,7 +5,7 @@
 // all (issue #350). A merge is never needed (issue #579).
 import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
-import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
+import { REPO, jobForIssue, setup, type FakeGitHub } from './fixtures/github-support.ts';
 
 const URL1 = `https://github.com/${REPO}/issues/1`;
 const BEFORE = '2026-10-01T09:00:00.000Z';
@@ -17,8 +17,11 @@ function withIssue(over: Record<string, unknown> = {}, labels: string[] = ['hopp
   return { ...s, job: jobForIssue(1) };
 }
 
+const notDone = (url: string) =>
+  `no pull request opened by this job, ready for review, closes ${url}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`;
+
 describe('done is a pull request (issue #579)', () => {
-  const NOT_DONE = `no pull request opened by this job, ready for review, closes ${URL1}`;
+  const NOT_DONE = notDone(URL1);
 
   it('the job\'s own open pull request, not a draft, closing the issue on merge is done: no merge is needed', async () => {
     const { gh, source, job } = withIssue();
@@ -56,6 +59,75 @@ describe('done is a pull request (issue #579)', () => {
   });
 });
 
+describe('a job that updates an existing pull request (issue #618)', () => {
+  const URL2 = `https://github.com/${REPO}/issues/2`;
+  /** Issue 1's pull request, opened before the job; issue 2 asks to bring it up to date, naming it by `name`. */
+  function maintenance(name: (pr: { url: string; number: number }) => string, pr: { isDraft?: boolean } = {}) {
+    const s = setup();
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const older = s.gh.openPullRequest(REPO, 1, { createdAt: BEFORE, ...pr });
+    const number = Number(older.url.split('/').at(-1));
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'], body: `Bring ${name({ url: older.url, number })} up to date with dev and fix its conflicts.` });
+    return { ...s, older, job: jobForIssue(2) };
+  }
+
+  it.each([
+    ['by its number', (pr: { number: number }) => `#${pr.number}`],
+    ['by its URL', (pr: { url: string }) => pr.url],
+  ])('the pull request the issue names %s, pushed to by the job and free of merge conflicts, is done: no new pull request is needed', async (_n, name) => {
+    const { gh, source, older, job } = maintenance(name);
+    gh.pushToPullRequest(older.url, AFTER);
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it('a draft the issue names is done too once updated: the job keeps the pull request as it found it', async () => {
+    const { gh, source, older, job } = maintenance((pr) => `#${pr.number}`, { isDraft: true });
+    gh.pushToPullRequest(older.url, AFTER);
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it('merged by the job after it updated it (yolo mode) is done', async () => {
+    const { gh, source, older, job } = maintenance((pr) => `#${pr.number}`);
+    gh.pushToPullRequest(older.url, AFTER);
+    gh.mergePullRequest(older.url, AFTER);
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it.each([
+    ['not pushed to since the job began', (gh: FakeGitHub, url: string) => void gh.pushToPullRequest(url, BEFORE)],
+    ['still with merge conflicts', (gh: FakeGitHub, url: string) => gh.pushToPullRequest(url, AFTER, { conflicting: true })],
+    ['closed without a merge', (gh: FakeGitHub, url: string) => { gh.pushToPullRequest(url, AFTER); gh.closePullRequest(url); }],
+  ])('the pull request the issue names, %s, is not done', async (_n, act) => {
+    const { gh, source, older, job } = maintenance((pr) => `#${pr.number}`);
+    act(gh, older.url);
+    expect(await source.notComplete!(job)).toBe(notDone(URL2));
+  });
+
+  it('a number that names an issue, not a pull request, is not done', async () => {
+    const s = setup();
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'], body: 'Bring #1 up to date.' });
+    expect(await s.source.notComplete!(jobForIssue(2))).toBe(notDone(URL2));
+  });
+
+  it('an older pull request that closes the issue — a run again goes on with it — pushed to by the job, ready and free of merge conflicts, is done', async () => {
+    const { gh, source, job } = withIssue();
+    const older = gh.openPullRequest(REPO, 1, { createdAt: BEFORE });
+    gh.pushToPullRequest(older.url, AFTER);
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it.each([
+    ['not pushed to since the job began', { createdAt: BEFORE }, BEFORE],
+    ['a draft', { createdAt: BEFORE, isDraft: true }, AFTER],
+  ] as const)('an older pull request that closes the issue, %s, is not done', async (_n, pr, pushedAt) => {
+    const { gh, source, job } = withIssue();
+    const older = gh.openPullRequest(REPO, 1, pr);
+    if (pushedAt !== BEFORE) gh.pushToPullRequest(older.url, pushedAt);
+    expect(await source.notComplete!(job)).toBe(notDone(URL1));
+  });
+});
+
 describe('closed as complete (issue #350)', () => {
   it('the issue closed as completed after the job was created, with no pull request, is complete', async () => {
     const { gh, source, job } = withIssue();
@@ -66,13 +138,13 @@ describe('closed as complete (issue #350)', () => {
   it('closed as not planned is not complete', async () => {
     const { gh, source, job } = withIssue();
     gh.closeIssue(REPO, 1, 'owner', { at: AFTER, reason: 'not_planned' });
-    expect(await source.notComplete!(job)).toBe(`no pull request opened by this job, ready for review, closes ${URL1}`);
+    expect(await source.notComplete!(job)).toBe(notDone(URL1));
   });
 
   it('closed as completed before the job was created is not the job\'s', async () => {
     const { gh, source, job } = withIssue();
     gh.closeIssue(REPO, 1, 'owner', { at: BEFORE });
-    expect(await source.notComplete!(job)).toBe(`no pull request opened by this job, ready for review, closes ${URL1}`);
+    expect(await source.notComplete!(job)).toBe(notDone(URL1));
   });
 
   it('closedAsComplete: a failed job whose issue was closed as complete after it was created; an open issue, one closed as not planned, or by an older pull request, is not', async () => {

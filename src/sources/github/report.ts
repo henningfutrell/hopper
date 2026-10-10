@@ -21,7 +21,7 @@ import type { HandoffResolution, Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
-import { isOwnPullRequest } from './completion.ts';
+import { isOwnPullRequest, isUpdatedBy } from './completion.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import type { GitHubIssue } from './api.ts';
 
@@ -73,7 +73,8 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
     await settle(ctx, repo, number, [LABEL_DONE], also);
     return state;
   }
-  const own = (await ctx.api.openClosingPullRequests(repo, number)).filter((pr) => !pr.isDraft && isOwnPullRequest(pr, job))
+  // Its own, or an older one it updated (issue #618): a run again goes on with that one.
+  const own = (await ctx.api.openClosingPullRequests(repo, number)).filter((pr) => !pr.isDraft && (isOwnPullRequest(pr, job) || isUpdatedBy(pr, job)))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   await settle(ctx, repo, number, [LABEL_PR_READY], also);
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };

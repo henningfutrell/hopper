@@ -58,6 +58,14 @@ describe('the end of a done job on its issue', () => {
     expect(state).toEqual({ pullRequest: pr.url, follow: 'open' });
   });
 
+  it('an older pull request that closes the issue, updated by the job (issue #618), is the one kept to follow', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: BEFORE });
+    gh.pushToPullRequest(pr.url, AFTER);
+    const state = await source.report({ kind: 'finished', job: jobForIssue(1, { status: 'finished' }) });
+    expect(state).toEqual({ pullRequest: pr.url, follow: 'open' });
+  });
+
   it('a part: hopper:partly-done, the part\'s pull request kept to follow', async () => {
     const { gh, source } = withIssue();
     const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER });
