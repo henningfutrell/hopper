@@ -12,7 +12,7 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closesText, hasCards, waitingLine, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
+import { CHECKS_TEXT, MERGEABLE_TEXT, closesText, hasCards, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
 import type { PullRequestCard, PullRequestsView } from '@/model/wire';
 import { act } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -34,7 +34,7 @@ function Card({ c }: { c: PullRequestCard }) {
       <div className="flex flex-wrap items-center gap-2">
         {c.pullRequest
           ? <GhLink url={c.pullRequest.url} className="font-medium text-foreground">#{c.pullRequest.number}<ExternalLink className="size-3 opacity-60" /></GhLink>
-          : <span className="text-muted-foreground">pull request not named yet</span>}
+          : <span className="text-muted-foreground">pull request not found yet</span>}
         <GhLink url={c.issue.url} className="text-xs">{closesText(c)}</GhLink>
         <span data-slot="pr-state"><StatusBadge status={c.state} tone={STATE_TONE[c.state]} /></span>
         <span data-slot="pr-yolo"><YoloBadge on={c.yolo} /></span>
@@ -44,7 +44,7 @@ function Card({ c }: { c: PullRequestCard }) {
         <span data-slot="pr-checks" className={CHECKS_TONE[c.checks]}>{CHECKS_TEXT[c.checks]}</span>
         <span data-slot="pr-mergeable" className={c.mergeable === 'conflicts' ? 'text-bad' : ''}>{MERGEABLE_TEXT[c.mergeable]}</span>
         {age && <span title={age}>{c.openedAt ? 'opened' : 'done'} {ago(age, now)}</span>}
-        {c.waits && <span data-slot="pr-waits">waits: {c.waits}</span>}
+        {c.waits && <span data-slot="pr-waits" className={c.waits === 'ready' ? 'text-ok' : ''}>{waitsText(c)}</span>}
       </div>
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
     </li>

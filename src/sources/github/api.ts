@@ -54,6 +54,8 @@ export interface NumberedPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
   /** When it was merged; absent unless merged. */
   mergedAt?: string;
+  /** The branch it merges into (issue #677); absent: GitHub did not say. */
+  base?: string;
 }
 
 /** An open pull request of a repository, with its branch (issue #637). */
