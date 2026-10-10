@@ -158,6 +158,7 @@
         "artifact.share_revoked",
         "artifact.removed",
         "artifact.settings_changed",
+        "artifact.posted",
         "tldr.written",
         "tldr.settings_changed",
         "item.snapshot_recorded",

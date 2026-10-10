@@ -8,6 +8,7 @@ const when = (iso: string): string => new Date(iso).toLocaleString([], { dateSty
 /** What the hopper keeps the secret for, in words. */
 export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): string {
   if (s.kind === 'typesafe') return 'TypeSafe API key (Jev)';
+  if (s.kind === 'artifact') return 'Artifact content URL signing key';
   if (s.kind === 'connected-account') return s.name.endsWith('.refresh-token') ? 'GitHub connection: refresh token' : 'GitHub connection: access token';
   if (s.kind === 'webhook') return 'Webhook signing secret';
   const [, realm, setting] = s.name.split('.');
@@ -17,6 +18,7 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
 /** Where it is changed: each one keeps its own page. */
 export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   if (s.kind === 'typesafe') return 'Settings → Decider';
+  if (s.kind === 'artifact') return 'Made by the hopper on the first artifact link';
   if (s.kind === 'connected-account') return 'Sources: renewed by the hopper';
   if (s.kind === 'webhook') return 'Settings → Webhooks';
   return 'Settings → Sign-in';

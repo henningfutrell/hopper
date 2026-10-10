@@ -19,8 +19,11 @@ export const VAULT_REFERENCE_MAX = 500;
  * vault secret can take —, sealed as any other; but it is none of the vault's own secrets: not listed, in no template,
  * never given to a job or minted from. Only the hopper opens one, in its own process.
  */
+/** The TypeSafe API key (issue #657), the key a user's artifact content URLs are signed under (issue #673), the GitHub
+ * connection's tokens, each webhook's signing secret and each sign-in realm's secret (issue #658). */
 export type SystemSecretName =
   | 'typesafe-api-key'
+  | 'artifact-content-key'
   | `connected-account.${'github'}.${'access-token' | 'refresh-token'}`
   | `webhook.${string}.signing-secret`
   | `sign-in.${string}.${string}`;
@@ -33,9 +36,10 @@ export const isSystemSecret = (name: string): boolean => name.startsWith(SYSTEM_
 export const systemSecretName = (row: string): SystemSecretName => row.slice(SYSTEM_PREFIX.length) as SystemSecretName;
 
 /** The kinds of system secret, by what the hopper keeps them for. */
-export type SystemSecretKind = 'typesafe' | 'connected-account' | 'webhook' | 'sign-in';
+export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in';
 export const systemSecretKind = (name: string): SystemSecretKind =>
-  name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in' : 'typesafe';
+  name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in'
+    : name === 'artifact-content-key' ? 'artifact' : 'typesafe';
 
 /** A system secret as Settings → Vault shows it (issue #658): never its value. */
 export interface SystemSecretView {

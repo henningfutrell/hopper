@@ -50,7 +50,7 @@ import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index
 import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
-import type { UserArtifacts } from '../artifacts/index.ts';
+import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
@@ -88,6 +88,8 @@ export interface UserRuntimeOptions {
   pluginsConfigIntervalMs: number;
   /** The UI link to one question (notifications carry it). */
   answerUrl(questionId: string): string;
+  /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
+  artifactLinkBase(linkBase: string): string;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
@@ -171,7 +173,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
   // hopper's own (issue #657), kept in the vault's system scope.
   // The hopper's own secrets are in the vault's system scope (issue #658): the old copies moved in at this start.
-  const { system } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
+  const { system, keys } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
   const { jev, typesafeKey, secret } = userTypesafeKey({
     user, store, env: o.env, runtime: userSecrets(o.env, user), system,
     ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
@@ -354,12 +356,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
-  const history = createHistoryRecorders({
-    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
-  });
-  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger });
+  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy,

@@ -6,7 +6,7 @@ const URL1 = `https://github.com/${REPO}/issues/1`;
 
 const DONE = 'done: once the change is ready for review — the repo\'s own checks pass, the change is pushed, and a pull request this job opens with "Closes #1" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #1" in its body in place of "Closes #1", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged. When the issue asks to update an existing pull request (rebase it, bring it up to date, fix its conflicts), push to the branch of that pull request and open no new one: the job is done when that pull request has no merge conflicts with its base';
 const DONE_NO_MERGE = `${DONE}. Do not merge it: a person reviews and merges it`;
-const DONE_YOLO = `${DONE}. Yolo mode is on for this repo: the hopper merges the pull request once a required check passed on it. Do not merge it yourself`;
+const DONE_YOLO = `${DONE}. Yolo mode is on for this repo: the hopper merges the pull request once its checks pass, or, when the repo has no checks, a short time after the last push. Do not merge it yourself`;
 
 describe('GitHub source: done is a pull request; yolo mode adds the merge (issue #579)', () => {
   const doneLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('done'));

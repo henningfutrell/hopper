@@ -31,6 +31,8 @@ export interface FakeIssue {
   state?: 'open' | 'closed';
   /** Why it was closed (issue #652: a job closes its own issue as completed). */
   stateReason?: string;
+  /** The comments posted on it, as GitHub's REST answers them (issue #673). */
+  comments?: Record<string, unknown>[];
 }
 
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
@@ -318,10 +320,12 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
         return { status: 200, body: restIssue(issue) };
       }
-      if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: [] };
+      if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: issue.comments ?? [] };
       if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
         const id = ++n;
-        return { status: 201, body: { id, body: r.body.body, user: { login }, created_at: '2026-10-09T00:00:00Z', html_url: `${base}/${repo}/issues/${issue.number}#issuecomment-${id}` } };
+        const comment = { id, body: r.body.body, user: { login }, created_at: '2026-10-09T00:00:00Z', html_url: `${base}/${repo}/issues/${issue.number}#issuecomment-${id}` };
+        (issue.comments ??= []).push(comment);
+        return { status: 201, body: comment };
       }
       if (r.method === 'POST' && im[2] === 'labels') {
         for (const l of (r.body.labels as string[] | undefined) ?? []) if (!issue.labels.includes(l)) issue.labels.push(l);

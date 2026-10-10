@@ -133,11 +133,16 @@ export interface ArtifactSettings {
   /** How long a public link works when its maker says nothing, and the most it may, in hours. */
   linkHours: number;
   linkHoursMax: number;
+  /**
+   * Where a link a job reports points (issue #673): an origin the hopper answers to (`http://192.0.2.10:4790`), or
+   * empty — the public URL, else an IP or `.local` LAN name.
+   */
+  linkBase: string;
 }
 
 const MB = 1024 * 1024;
 export const DEFAULT_ARTIFACT_SETTINGS: ArtifactSettings = {
-  maxBytes: 10 * MB, userBytes: 500 * MB, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 24 * 7,
+  maxBytes: 10 * MB, userBytes: 500 * MB, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 24 * 7, linkBase: '',
 };
 /** The most any setting may allow: what the HTTP edge reads into memory at once is bounded by it. */
 export const ARTIFACT_MAX_BYTES = 100 * MB;

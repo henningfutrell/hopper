@@ -36,7 +36,7 @@ const ALL: Record<EventType, true> = {
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
-  'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true,
+  'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
 };

@@ -2,6 +2,7 @@
 // sign-in config → plugin store → one user runtime per user (src/users/: the plugins config, plugin host, engine,
 // sources, questions, webhooks, notifiers) → updater → server. Adapters are built by their plugins,
 // through each user's host (integration tests call startApp, with doubles at the seams).
+import { artifactBase } from './artifacts/links.ts';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
@@ -152,6 +153,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
   let port = config.port;
   const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
+  // Where a notification's artifact link points (issue #673): the user's link base, else the hopper's own default.
+  const artifactLinkBase = (linkBase: string): string => artifactBase({ linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
   // The client release this hopper loads onto its client targets: the client files of the install it runs from (issue #70).
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
@@ -193,7 +196,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter, instanceSecrets: secrets.system,
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {

@@ -6,6 +6,7 @@
 // reach the job (issue #387; the app bot's never). The job never writes to its issue, and its prompt says nothing about
 // commenting: silence about issues is the instruction.
 
+import { isArtifactDeliverable } from './completion.ts';
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
@@ -50,14 +51,23 @@ export function contextComments(comments: GitHubComment[], assignee: string | un
  * What done means to the job (issues #171, #187, #579): always its pull request, ready for review — or, for an issue that
  * asks to update an existing pull request, that one, updated and free of merge conflicts (issue #618). JobSource.notComplete
  * holds the job to the part GitHub can show (completion.ts); the rest — checks, push — is the job's to do. With yolo
- * mode on for the repo the hopper merges it once a check passed (issue #652: the job holds no token to merge with); the
+ * mode on for the repo the hopper merges it once its checks passed, or it has none (issue #677; issue #652: the job holds no
+ * token to merge with); the
  * merge is never needed for done.
  */
 export function doneLine(n: number, yoloMode: boolean): string {
   const done = `done: once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #${n}" in its body in place of "Closes #${n}", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged. When the issue asks to update an existing pull request (rebase it, bring it up to date, fix its conflicts), push to the branch of that pull request and open no new one: the job is done when that pull request has no merge conflicts with its base`;
   return yoloMode
-    ? `${done}. Yolo mode is on for this repo: the hopper merges the pull request once a required check passed on it. Do not merge it yourself`
+    ? `${done}. Yolo mode is on for this repo: the hopper merges the pull request once its checks pass, or, when the repo has no checks, a short time after the last push. Do not merge it yourself`
     : `${done}. Do not merge it: a person reviews and merges it`;
+}
+
+/**
+ * What done means for an issue whose deliverable is an artifact (issue #673): the artifact, linked to the issue, and its
+ * link on the issue — `share ID --owner` posts it. No pull request; one still counts (completion.ts).
+ */
+export function artifactDoneLine(): string {
+  return 'done: this issue\'s deliverable is an artifact, not a code change. Make it, put it with sh "$HOPPER_ARTIFACT" put FILE (load the artifacts skill for the help), then run sh "$HOPPER_ARTIFACT" share ID --owner: that posts its link on this issue. The job is done when an artifact it put is linked to this issue and a comment on the issue names it. No pull request is needed; when the issue also needs a code change, open one as for any issue';
 }
 
 /** What a comment line reads of a comment. */
@@ -95,7 +105,7 @@ export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean)
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
-    doneLine(issue.number, yoloMode),
+    isArtifactDeliverable(issue) ? artifactDoneLine() : doneLine(issue.number, yoloMode),
   ].join('\n');
 }
 

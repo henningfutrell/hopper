@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
+| `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key") | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -77,7 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
-| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call | engine, executors, store |
+| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it | engine, executors, store |
 
 ## The decider
 
@@ -1822,6 +1822,12 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
    merged, at any time, or open with no merge conflicts. The job need not have pushed: one already current has nothing to push.
+4. The issue's **deliverable is an artifact** (issue #673: `isArtifactDeliverable`, a line of its body that says
+   `Deliverable: artifact`, any case): the job made at least one artifact linked to the issue (its `issue` is the job's
+   issue URL; `JobSourceContext.jobArtifacts`), and a comment on the issue names one — its link or its id. `share ID
+   --owner` posts that comment ("Artifacts": share with the owner). A pull request still counts too. The job's `done` line
+   says so (`artifactDoneLine`). The line sits in the issue's text, which anyone who may edit the issue can change: the
+   most it can do is end a job done with an artifact and no pull request, the same reach as asking for no code change.
 
 **A merge is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). A miss names
 what was looked at (issue #637): `not complete: the issue <url> is open, and no pull request in <repo> that closes or
@@ -1850,14 +1856,14 @@ reviewing it is a merge nothing else stops where a repository has no branch prot
 branch runs what it triggers there (here: the `dev` image is published from it) — the UI says so beside the switch.
 Not *Yolo*, the herdr-claude executor's choice that Claude runs with every permission ("Yolo" above). Since issue #637
 yolo mode also has the **hopper** merge: following a PR waiting job's pull request (below), it merges one that is ready —
-not a draft, no merge conflicts, a check passed on it (issue #652: one with no checks waits, `no checks`) — with a merge commit (`GitHubApi.merge`, `PUT
+not a draft, no merge conflicts, its checks passed, or it has none and none started within two minutes of its last push (issue #677, "No checks means ready" below) — with a merge commit (`GitHubApi.merge`, `PUT
 /pulls/{n}/merge`, through the job's source's own connection). One definition of done; the merge is an extra step after
 it.
 
 | yolo mode | the job's prompt says |
 |-----------|-----------------------|
 | off (default) | `done:` checks pass, pushed, a pull request with `Closes #N` open, not a draft, no merge conflicts; an issue that needs no code change: closed as completed. Do not merge it: a person reviews and merges it |
-| on for the repo | the same, then: the hopper merges the pull request once a required check passed on it. Do not merge it yourself (issue #652: the job holds no token to merge with; before it, the job merged) |
+| on for the repo | the same, then: the hopper merges the pull request once its checks pass, or, when the repo has no checks, a short time after the last push. Do not merge it yourself (issue #652: the job holds no token to merge with; before it, the job merged) |
 
 Both say, before the yolo part: an issue that asks to update an existing pull request is done by pushing to its branch,
 no new pull request, once it has no merge conflicts with its base (issue #618).
@@ -1908,8 +1914,8 @@ name is followed only to its merge. `GET /api/pull-requests` (`PullRequestsView`
 prs` give the same: per job repository (and any other a card is in), its yolo mode and its cards, oldest first — the
 issue, the pull request, `state` (`open`, `closed`), `checks` (`passing`, `pending`, `failing`, `none`, `unknown` until
 seen), `mergeable` (`mergeable`, `conflicts`, `unknown`), `draft`, `openedAt`, `yolo`, and for an open one why its merge
-`waits`: the first of `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `merge
-refused` (`mergeError` says what GitHub said). At the top, `yolo: { on, total }` over those repositories, and `waiting`:
+`waits`: the first of `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `checks
+not started`, `merge refused` (`mergeError` says what GitHub said), `ready` (issue #677); `base`, the branch it merges into. At the top, `yolo: { on, total }` over those repositories, and `waiting`:
 per repository and reason, how many, the most first. All of it is what the last sync saw (`seen`), never asked of GitHub
 at read time. Only the newest job of an item counts. Each repository's yolo switch is `POST /ui/api/yolo-mode` with
 `repos`; `hopper yolo <owner/repo> on|off|default`.
@@ -2426,7 +2432,9 @@ question reaches the owner (questions never go onto the issue), and when intake 
 - Events: `question.escalated_to_human` (issue #481: once per question that reaches the human; never a level
   hop or a re-notification, so never `question.escalated`, which other consumers keep); `source.stalled`
   (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
-  `account`, `reason`). Never `job.finished` or `job.failed`.
+  `account`, `reason`); `artifact.created` (issue #673: body adds `artifactId`, `title`, `type`, `size`, `issueUrl` and
+  `url`, the artifact's stable URL under the user's link base — `NotifierEvents.artifactUrl`). Never `job.finished` or
+  `job.failed`.
   A Grok Bot routine reached through a **Webhook subscription** instead subscribes to
   `question.escalated_to_human` only, by name, for the same one post per question.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
@@ -9567,7 +9575,7 @@ job, worker or sandbox can mint, ask for or read, enforced through OpenFGA; the 
 table or column of its own. Moving the hopper's other secrets into the system scope is issue #658, not this one.
 
 - **The system scope** (`src/domain/vault.ts` `SYSTEM_SECRETS`, `src/vault/system.ts`). A **system secret** is a row of
-  `vault_secrets` named `system/<name>` (now only `system/typesafe-api-key`), a name no vault secret can take (the
+  `vault_secrets` named `system/<name>` (`system/typesafe-api-key`; since issue #673 `system/artifact-content-key`), a name no vault secret can take (the
   name rule has no `/`). It is sealed by the hopper's sealer under `HOPPER_MASTER_KEY`, bound to `vault:<id>/value`, as
   a vault secret is — under the master key even when the vault's own secrets are under a KMS's data key or in a vault
   container, so only the hopper opens one, in its own process, when it uses it. It is none of the vault's own
@@ -10025,8 +10033,8 @@ the **untrusted issue text** block — `UNTRUSTED_LINE`, then `<<<hopper-untrust
 hopper's `[hopper issue context]` follows: repo, labels and author, priority, the `done:` line. Caps as before: the body
 64 000 characters, the comments 16 000, the oldest dropped first.
 
-**Yolo mode's merge** needs a check that passed: `checks` `passing`. A pull request with none waits (`no checks` in the
-Pull requests list, after `checks pending`); the repository's required checks are GitHub's to enforce. The job is told
+**Yolo mode's merge** needed a check that passed: `checks` `passing`; a pull request with none waited. Issue #677 changed
+this: no checks, settled, is ready ("No checks means ready"). The job is told
 the hopper merges it and not to merge it itself.
 
 **Residual risk, said plainly.** On a machine where a job runs as a person's own account (this machine, an ssh target),
@@ -10747,7 +10755,7 @@ byte by byte (`od`); the file is the body, `application/octet-stream`, read whol
 | `put FILE [--title] [--type]` | `POST /job/artifacts` | 201 `put: <id> <title> <type> <n> bytes` and `url: <stable URL>` |
 | `list [--all] [--markdown]` | `GET /job/artifacts` | the job's (all: the user's); markdown links only through the public URL |
 | `get ID [--out FILE]` | `GET /job/artifacts/:id[?content=1]` | its details and shares, or its content |
-| `share ID --user NAME \| --public [--hours N] \| --revoke SHARE` | `POST /job/artifacts/:id/share` | the share; a public link said once |
+| `share ID --owner \| --user NAME \| --public [--hours N] \| --revoke SHARE` | `POST /job/artifacts/:id/share` | the share; a public link said once; with the owner, the comment posted (issue #673) |
 | `rm ID` | `POST /job/artifacts/:id/rm` | removed, with its shares |
 
 Agent-native: `--json` sends `Accept: application/json` and every answer is one JSON line with `ok`; exit 0 done, 1 a
@@ -10766,16 +10774,26 @@ SHA-256, when. Kinds by media type (`src/domain/artifacts.ts`): `html`, `svg`, `
 `artifact.created` says how many were `masked`. What is kept is what a person shares.
 
 **Hosting.** The **stable URL** is `<hopper>/#artifacts/<id>`: the UI's Artifacts view, which opens the artifact for
-whoever may see it. Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
+whoever may see it. **Which `<hopper>`** (issue #673; the first real artifact's link named the first LAN name, a container's
+bare name no LAN client resolved): a person's read builds it from the Host they asked on (`ArtifactEdge.baseOf`; the
+Host guard already let it in), so a link opens where they are; a link a job reports (`put`, `list`, `get`, a public
+link), and a notification's, use the user's **link base** (Settings → Artifacts: an origin the hopper answers to, checked
+against them when it is saved, else refused with the list), else the public URL, else the first LAN name that is an
+IPv4 address or ends in `.local`, else the first LAN name, else loopback (`ArtifactEdge.base`). A link on GitHub is
+still only ever the public URL's (below). Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
 `x-hopper-session`, so the read that checked the viewer signs a **content URL** (`/artifact-content/<name>?v=<token>`,
-`src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under a key of the
-running process — a restart ends every one, and the next read signs a new one; the UI reads again every half hour and on
-every artifact event. The route checks the signature and, for a viewer who is not the owner, Access again, at each load.
+`src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under the owner's
+**content URL key** — the owner named in the token picks the key that checks it. The key is a system secret
+(`system/artifact-content-key`, "The TypeSafe API key in the vault's system scope"), sealed under the master key, made on
+the first read that signs a URL (`src/users/artifact-key.ts`, issue #673): a restart opens it again, so a URL a viewer
+holds works until its own expiry. With no master key, or a stored key that cannot be opened, the key lives only in the
+process (the log says so once, and a stored key is left as it is): a restart then ends every URL, and the next read
+signs a new one. The UI reads again every half hour and on every artifact event. The route checks the signature and, for a viewer who is not the owner, Access again, at each load.
 The token rides in the query because Fastify caps a path parameter at 100 characters.
 
 | kind | served as | policy (`Content-Security-Policy`) |
 |------|-----------|------------------------------------|
-| html, svg | `text/html`; svg its type | `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts inline or from `https:`; `frame-ancestors 'self'` |
+| html, svg | `text/html`; svg its type | `sandbox allow-scripts allow-popups allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts only `'unsafe-inline' data: blob:` (issue #673); `frame-ancestors 'self'` |
 | image | its type | `sandbox; default-src 'none'` (no script, nothing fetched) |
 | csv, markdown, json, text | `text/plain` | the same; the UI renders the preview |
 | pdf | `application/pdf` | `frame-ancestors 'self'` (a sandbox stops the browser's PDF viewer) |
@@ -10797,6 +10815,26 @@ artifact is kept, and the put answers a `warning`, which `artifact.created` carr
 line shows it after the title) and its job stream. A warning, not a no: a page may draw through an element the check
 does not know.
 
+**It loads nothing from outside** (issue #673). The first real artifact showed the gap: with `https:` in its script,
+style, image and font sources a page could load from any address, and send out what it read through the URL of an
+image request — its own signed content URL included, a credential for an hour. So each of those four is
+`'unsafe-inline' data: blob:` only, and no `'unsafe-eval'`: a page carries everything it needs. A popup it opens stays
+in the sandbox (no `allow-popups-to-escape-sandbox`). The `artifacts` skill tells a job so. A separate origin for
+`/artifact-content/` was looked at and not built: it needs a second host name or port that the Host guard, the LAN
+names and any reverse proxy must all serve, and the sandbox's opaque origin already keeps the page from the hopper's
+storage and session; it is the step to take if a browser's sandbox is ever found to leak.
+
+**Share with the owner** (issue #673). The owner is the user whose job made the artifact, and sees it already: a share
+with them — `share ID --owner`, or `--user` with their name, or the UI's share with their name — makes nothing and
+succeeds (`ShareMade` `{ owner: true }`; it was refused before, "the artifact is yours already"). What a job means by it is
+"show this to the person", so the job's route shows it: it posts the artifact's link on the job's issue as the job's own
+comment, through the GitHub proxy (`GitHubProxy.handle` with the job's own token: the proxy's policy, limits and
+`github_proxy.*` events apply; the job's request, as when it runs `hopper-gh`), and appends `artifact.posted` (the
+comment's URL, or why it was not posted) on the job's timeline and stream, which the job card's event list shows. The
+comment (`shownComment`) follows the publishing rule: a link only through the public URL, else the artifact's id and
+"Open it in the hopper's Artifacts view" — never a LAN or loopback address, which a link base may be. A comment that
+cannot be posted is a no (exit 1) with why; a job with no issue is told so.
+
 **Sharing and Access.** By default only the owner sees an artifact. A **share** is with another user of the hopper (by
 name) or a **public link** (`/artifact-link/<owner>.<random>`, 32 random bytes; only its SHA-256 is kept, and the link is
 answered once). A share is live until revoked, a link until it expires: the user's default hours, at most their most
@@ -10810,7 +10848,7 @@ links on: off in Settings → Artifacts, every one stops at once. Revoking a sha
 the next load.
 
 **Events.** `artifact.created` (on the job's timeline), `artifact.shared`, `artifact.share_revoked`, `artifact.removed`
-(`removed` by a person or a job, or `retention`), `artifact.settings_changed`. The first four also go on the job's
+(`removed` by a person or a job, or `retention`), `artifact.posted` (issue #673), `artifact.settings_changed`. All but the last also go on the job's
 **job stream** (issue #613) while the job is at work, phase `progress` (`src/artifacts/stream.ts`, registered as
 `artifact` in `src/users/job-stream.ts`), so a waiting agent hears at once; the UI hears the domain events on its SSE.
 
@@ -10822,6 +10860,12 @@ job, question, proposal, research report and failure cards, through `JobTitle` �
 research report embeds an artifact by putting its URL in its text: the review card previews each one it links.
 Settings → Artifacts (admin): the most one artifact and all of the user's may hold, the retention, public links on or
 off, and their default and most hours.
+
+**Notify and the CLI** (issue #673). A new artifact reaches the person through their notifier: the Grok Bot routine posts
+`artifact.created` with the artifact's link ("Grok Bot routine webhook"). The operator CLI (`src/cli-operator.ts`, issue
+#623: JSON out) has `hopper artifact list`, `get <id>`, `share <id> --with <name> | --public [--hours <n>]`, `revoke <id>
+<share>` and `rm <id>`, each the UI's own read or `POST /ui/api/artifacts/…`; `--with`, since `--user` names the user the
+CLI acts as.
 
 **GitHub.** A link to an artifact on GitHub is a link to the hopper, which the publishing rule allows only through the
 public URL: `list --markdown` gives links only when the hopper has one, else the titles, said to be on the hopper.
@@ -10835,7 +10879,7 @@ public URL: `list --markdown` gives links only when the hopper has one, else the
 | `src/artifacts/` | one user's artifacts — put, share, revoke, remove, the limits, the masking, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); `hopper-artifact` and the skill's text (`script.ts`); the job stream types and the events put on it (`stream.ts`). Its rows through the `ArtifactRepository` port; its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 
 Settled without asking, each one place to change: content in Postgres, not a volume (no config file, nothing on the
-machine); a content URL's key lives only in the process; a public link is on by default and expires in a day, at most a
+machine); a content URL's key is a system secret of its owner's, kept across restarts (issue #673); a public link is on by default and expires in a day, at most a
 week; views are not recorded in Access's decisions (they would drown the mint decisions); a job lists its own artifacts
 unless `--all`, and may get, share or remove any of its user's (the same person's work); SVG is neutralised by the
 policy rather than rewritten.
@@ -11102,3 +11146,37 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   before this one runs on the migrated store and ignores both fields: it would start a held job, with the snapshot's
   text, the approved one, never the edited text.
 
+## No checks means ready (issue #677, 2026-10-10)
+
+Issue #652 had yolo mode merge only a pull request with a check that passed. A repository with no checks then never
+merged anything: its pull requests waited in the Pull requests list with `no checks`, and yolo mode did nothing there.
+
+**The rule** (`src/domain/pull-requests.ts` `readyToMerge`, `noChecksSettled`, `NO_CHECKS_GRACE_MS`). Ready for the
+hopper's merge: not a draft, no merge conflicts, and its checks passed — or it has none, and none started within the
+grace window, two minutes after its last push (`pushedAt`: the later of when it was opened and its head commit). The
+window keeps a check that starts late from being missed: a check that starts holds the merge until it passes, as
+before. A repository's required checks are GitHub's: a merge without them is refused, and the refusal is kept on the
+card (`merge refused`), as any refused merge. Yolo mode off: nothing changes, a person merges.
+
+**Card states.** The follow keeps `pushedAt` and `base` (`baseRefName`) on what it saw (`PullRequestSeen`); the list,
+given the time now, says why each card waits: `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks
+failing`, `yolo off`, `checks pending`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
+(`ui/src/model/pull-requests.ts` `waitsText`): `waiting for a person to merge`, `waiting for checks`, `waiting for checks
+to start`, `conflicts with <base>`, `ready, merging`, and so on.
+
+**A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
+newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
+else one on a branch named for the issue. Found, it is named in the job's source state and followed as any other, so a
+card never stays `not checked yet` or without its pull request for more than one sync.
+
+**Persisted state.** `pushedAt` and `base` are new, optional fields in a job's source state. A build before this one
+ignores them; a `seen` without `pushedAt` counts as pushed long ago.
+
+**Not built in this part** (carried in issue #677): spotting repositories with no checks and recommending a job that adds
+them (`hopper repo checks`); Merge now and Close PR on each card, with `hopper pr merge` and `hopper pr close`; closing the
+linked issue after a merge when the pull request has no closing keyword.
+
+Tests: `test/sources/pull-request-list.test.ts` (each card state, the grace window), `test/sources/github-follow.test.ts`
+(no checks merges after the window, waits inside it; a pull request the report missed is found and named, a part as a
+part), `test/integration/pull-requests.test.ts` (the real daemon: waits for checks to start, a late check holds it, an old
+one with no checks merges), `test/ui/pull-requests-view.test.ts` (the plain words).
