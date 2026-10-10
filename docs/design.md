@@ -10427,3 +10427,62 @@ chart and get a URL, recorded with its job, issue and hash, on the timeline and 
 sandbox; a share with another user that works and stops after a revoke; a public link without a session, its most
 hours, public links off and on, revoked; the size limit, a PNG byte for byte, a GitHub token masked, list and markdown,
 rm, a token that is no job's, a bad call; the retention sweep), `test/ui/artifacts.test.ts` (the UI's model).
+
+## A connection's health (issue #647, 2026-10-10)
+
+On one evening a GitHub connection stopped for 45 minutes and the owner was not told. A sign-in replaced the stored
+grant; GitHub then refused the new token; the renewer read GitHub's `incorrect_client_credentials` as a setup problem
+and tried again about 52 times without saying "reconnect needed". A second sign-in fixed the connection, but jobs
+already running kept the dead token until the next renewal, 7 hours later. #597 removed the revoke and the wrong
+reading. This change closes the gaps that remained.
+
+**Every new token reaches running jobs at once.** The connected accounts call `onToken` after every new token they
+keep — a renewal, a connect from Sources, a sign-in (taken at once or from a held grant) — and the user runtime runs
+`engine.renewCredentials` on it: each job at work with a **credentials dir** has its files (`gh/hosts.yml`) rewritten
+through its machine's own connection, as after a renewal (#441). A job whose files cannot be rewritten gets a progress
+line and `Job.credentialsWarning` (the job card shows it, `CredentialsFlag`); a later rewrite clears it.
+
+**GitHub refusing the connection reads "reconnect needed".** The connection ends (`state: 'expired'`,
+`connected_account.expired`, the header's "GitHub: reconnect needed") when GitHub refuses the refresh token
+(`bad_refresh_token`), when it answers `incorrect_client_credentials` to a renewal sent with no client secret (#597),
+and now also when GitHub answers 401 to a token the renewer renewed less than `FRESH_REFUSED_MS` (5 min) before: a
+second renewal would not help. A source or proxy call that gets a 401 on the token it was just given reports it to
+the renewer the same way. The header banner follows the source's status, pushed at the end, so it shows within the
+renewer's minute.
+
+**Renewals are recorded.** `connected_account.renewed { provider, account, expiresAt? }` for each renewal kept, and
+`connected_account.renewal_failed { provider, account, code }` for each failed try: GitHub's OAuth error, else
+`http_<status>`, `renewal_blocked` or `no_answer`. Never a token. The stored account keeps `renewedAt` and
+`connectedBy` (`sources` or `sign-in`); the status adds them, `grantedBy`, `nextRenewalAt` (an hour before expiry, or
+the retry of a failed renewal) and `lastError` (`{ at, error }`, kept after later renewals succeed, cleared by a new
+grant). Sources shows them under the account (`ConnectionHealth`).
+
+**A 401 skips the backoff at most once a minute** (`SKIP_BACKOFF_EVERY_MS`, per account). Before, every 401 asked
+GitHub again during a failed renewal's backoff; a busy source made the backoff void.
+
+**A sign-in never quietly replaces a healthy connection** (`src/connected-accounts/held.ts`). A GitHub sign-in made
+while the connection is connected, readable, not ended and with no failed renewal waiting is checked at GitHub and then
+**held** in memory, one per provider: the status shows `held { account, at }`, Sources asks Use this sign-in
+(`take-held`: it replaces the connection, and running jobs get its token) or Keep this connection (`drop-held`: its
+token is deleted at GitHub, best effort). Nobody acting within `HELD_MS` (15 min) drops it. A restart drops it
+without deleting it; it then expires at GitHub on its own. A sign-in over a connection that is not healthy replaces
+it at once, as before. Connect in Sources is the person's own act and replaces at once.
+
+**Why a UI session is unknown is logged.** A request whose session token names no live session logs why: `expired:
+<reason>` (it expired on this request), `ended: <reason>` (it ended earlier in this process: logout, connection-ended,
+…), or `not found` (before this process started, a database reset, another hopper's). The cause of the session loss
+on that evening is still unknown; this is what finds it the next time.
+
+**The start check says which key is missing.** At start each connection the runtime cannot open logs `start check:`
+with what is missing: `HOPPER_TOKEN_KEY` (the runtime gives none), or the key it was sealed under (neither
+`HOPPER_TOKEN_KEY` nor `HOPPER_TOKEN_KEY_PREVIOUS` opens it). It never asks for a new sign-in: that would mint another
+grant toward GitHub's ten.
+
+Tests: `test/connected-accounts/connection-health.test.ts` (renewed and failed renewals told, no token; a 401 on a
+fresh token ends it; the backoff skipped once a minute; the status facts; a held sign-in taken, dropped, refused; a
+sign-in over an ended connection replaces it and hands the token on; the start check), `test/integration/
+connected-account-renewal.test.ts` (connecting again and a held sign-in taken reach a running job's `hosts.yml` within
+10 s; one `connected_account.renewed` event with no token; `connected_account.renewal_failed` with its code; a job
+whose files cannot be rewritten gets a progress line and a warning, cleared by the next rewrite),
+`test/http/ui-sessions.test.ts` (why a session is unknown), `test/ui/sources-view.test.ts`,
+`test/ui/credentials-warning.test.ts`.

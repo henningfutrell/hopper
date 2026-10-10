@@ -931,6 +931,42 @@ Version 1 (`docs/schemas/connected_account.expired.v1.json`). The sign-in of the
 }
 ```
 
+## `connected_account.renewed`
+
+Version 1 (`docs/schemas/connected_account.renewed.v1.json`). The renewer kept a new token for the user's connected account (issue #647): when the new one expires (`expiresAt`; absent: it does not). Never a token. Running jobs are handed the new token on their machines at once.
+
+| field | type | required |
+|---|---|---|
+| `provider` | `github` | yes |
+| `account` | string | yes |
+| `expiresAt` | string | no |
+
+```json
+{
+  "provider": "github",
+  "account": "octocat",
+  "expiresAt": "2026-10-09T18:00:00.000Z"
+}
+```
+
+## `connected_account.renewal_failed`
+
+Version 1 (`docs/schemas/connected_account.renewal_failed.v1.json`). A renewal of the user's connected account failed (issue #647): GitHub's OAuth error (`code`: `bad_refresh_token`, `incorrect_client_credentials`, …), `http_<status>` when GitHub answered with no OAuth error, `renewal_blocked` when this hopper cannot renew it as it is set up, `no_answer` when GitHub did not answer. Never a token. Recorded at each failed try; `connected_account.expired` follows when the failure ends the connection.
+
+| field | type | required |
+|---|---|---|
+| `provider` | `github` | yes |
+| `account` | string | yes |
+| `code` | string | yes |
+
+```json
+{
+  "provider": "github",
+  "account": "octocat",
+  "code": "http_502"
+}
+```
+
 ## `ui_session.ended`
 
 Version 1 (`docs/schemas/ui_session.ended.v1.json`). A UI session of the user's ended (issue #439), with the realm it signed in with and why (`reason`): `expired-idle` (no request for the idle timeout), `expired-absolute` (its maximum passed), `refresh-refused` (a gateway realm's session whose forwarded token no longer checks out), `provider-unreachable` (that token's issuer stayed out of reach past the grace period), `realm-changed` (the sign-in config changed: its realm gone or off, or no rule grants it a role), `connection-ended` (signed in with GitHub, and the user's GitHub connection ended: `connected_account.expired`; issue #513) or `logout`. The session lengths are Settings → Sign-in's.

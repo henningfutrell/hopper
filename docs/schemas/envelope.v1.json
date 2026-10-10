@@ -69,6 +69,8 @@
         "job.continued",
         "source.stalled",
         "connected_account.expired",
+        "connected_account.renewed",
+        "connected_account.renewal_failed",
         "ui_session.ended",
         "source.claim_released",
         "source.intake_migrated",

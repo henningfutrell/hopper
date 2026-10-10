@@ -149,9 +149,10 @@ export const usageLimitsBody = z.strictObject({ soft: limitFraction, hard: limit
 export const historyRetentionBody = z.strictObject({ days: z.number().int().min(1, 'keep at least 1 day').max(MAX_HISTORY_RETENTION_DAYS) });
 export { usageGraphViewBody };
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
-// Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
+// Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect; take or drop a
+// sign-in's held grant (issue #647).
 export const connectedAccountsBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
+  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect', 'take-held', 'drop-held']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
   // Issue #321: the job repositories, the whole list.
   z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
 ]);
@@ -358,7 +359,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { connectedAccounts } = o.tenant(req);
     if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
     if (body.action === 'connect') return connectedAccounts.connect(body.provider);
-    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : connectedAccounts.disconnect(body.provider);
+    if (body.action === 'take-held') return connectedAccounts.takeHeld(body.provider).catch((e: Error) => { throw new HttpError(409, e.message); });
+    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : body.action === 'drop-held' ? connectedAccounts.dropHeld(body.provider) : connectedAccounts.disconnect(body.provider);
   });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links

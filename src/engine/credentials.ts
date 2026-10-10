@@ -61,9 +61,10 @@ export async function placeCredentials(
 }
 
 /**
- * After a renewal (issue #441): every job at work whose credential files are kept on its machine has
- * them rewritten with the token as it is now. A machine that cannot be reached now is logged; the job
- * keeps the files it has until the next renewal reaches it.
+ * After every new token — a renewal (issue #441), a connect or a sign-in (issue #647): every job at work whose
+ * credential files are kept on its machine has them rewritten with the token as it is now. A job whose files cannot be
+ * rewritten gets a progress line and a warning (`credentialsWarning`, on its card), and keeps the files it has until the
+ * next new token reaches it; a later rewrite clears the warning.
  */
 export async function renewCredentials(c: Pick<EngineContext, 'credentials' | 'store' | 'executors' | 'machines'>, log: (line: string) => void): Promise<void> {
   const jobs = c.store.jobs.list({ status: AT_WORK }).filter((j) => j.credentialsDir !== undefined);
@@ -85,8 +86,13 @@ export async function renewCredentials(c: Pick<EngineContext, 'credentials' | 's
       if (!shell) throw new Error('its machine is not attached, or its executor reaches it no more');
       const creds = await c.credentials(j);
       if (creds) await keep(shell, j, j.credentialsDir!, creds);
+      if (j.credentialsWarning !== undefined) c.store.jobs.update(j.id, { credentialsWarning: undefined });
     } catch (e) {
-      log(`hopper: job ${j.id}: its renewed token could not be kept on its machine: ${(e as Error).message}`);
+      const why = (e as Error).message;
+      log(`hopper: job ${j.id}: its connection's new token could not be kept on its machine: ${why}`);
+      const line = `its credential files could not be rewritten with the connection's new token: ${why}`;
+      c.store.jobs.update(j.id, { credentialsWarning: why, progressMessage: line });
+      c.store.events.append({ type: 'job.progressed', jobId: j.id, ...(j.laneId ? { laneId: j.laneId } : {}), data: { progress: j.progress ?? 0, message: line } });
     }
   }));
 }

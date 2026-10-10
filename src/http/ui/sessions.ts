@@ -9,7 +9,9 @@
 // while the token the gateway forwards still checks out for the same person: the gateway stays the authority.
 // An issuer out of reach does not end it until GATEWAY_GRACE_MS after the last good check. A session signed in
 // with GitHub ends when its user's GitHub connection does (issue #513): that connection is what they signed in
-// for. Every end is reported to `ended` with its reason.
+// for. Every end is reported to `ended` with its reason. A request whose token names no live session says why
+// (issue #647): it expired just now, it ended earlier (with its reason, while this process remembers it), or no stored
+// session has it.
 import { createHash } from 'node:crypto';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, UiSessionRepository, UiSessionRow } from '../../domain/ports.ts';
@@ -79,15 +81,19 @@ export function createUiSessions(o: {
   ended?: (s: EndedSession) => void;
   /** Whether the user's GitHub connection ended (issue #513): their sessions signed in with GitHub end with it. */
   connectionEnded?: (userId: string) => boolean;
-  /** A request carried a token no stored session has (ended earlier, a database reset, another hopper's): once per token. */
-  unknown?: () => void;
+  /** A request carried a token that names no live session, and why (issue #647): once per token. */
+  unknown?: (why: string) => void;
 }): UiSessions {
   const now = (): number => o.clock.now().getTime();
   const lengths = (): SessionLengths => o.signIn.config().sessions;
   const renewEvery = (): number => Math.min(RENEW_EVERY_MS, lengths().idleHours * HOUR / 10);
   const isGateway = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'gateway');
   const isGitHub = (realm: string): boolean => o.signIn.config().realms.some((r) => r.name === realm && r.type === 'github');
+  /** Why recent sessions ended, by token hash (bounded): a later request with the token says so. */
+  const endedWhy = new Map<string, SessionEndReason>();
   const end = (r: UiSessionRow, reason: SessionEndReason): void => {
+    if (endedWhy.size >= 1000) endedWhy.clear();
+    endedWhy.set(r.tokenHash, reason);
     o.repo.drop(r.tokenHash);
     o.ended?.({ userId: r.userId, identity: r.identity, reason });
   };
@@ -100,12 +106,14 @@ export function createUiSessions(o: {
     return r;
   };
   const unknownSeen = new Set<string>();
-  const unknownToken = (hash: string): void => {
+  const unknownToken = (hash: string, why: string): void => {
     if (unknownSeen.has(hash)) return;
     if (unknownSeen.size >= 1000) unknownSeen.clear();
     unknownSeen.add(hash);
-    o.unknown?.();
+    o.unknown?.(why);
   };
+  const EXPIRED: readonly SessionEndReason[] = ['expired-idle', 'expired-absolute'];
+  const whyGone = (reason: SessionEndReason): string => `${EXPIRED.includes(reason) ? 'expired' : 'ended'}: ${reason}`;
   let sweptAt = -Infinity;
   /** End every stored session that has expired, a request naming it or not; at most once per renewal interval. */
   const sweep = (): void => {
@@ -136,10 +144,16 @@ export function createUiSessions(o: {
     },
     async renew(token, headers) {
       if (!token) return;
-      const stored = o.repo.get(hashOf(token));
-      if (!stored) { unknownToken(hashOf(token)); return; }
+      const hash = hashOf(token);
+      const stored = o.repo.get(hash);
+      if (!stored) {
+        const reason = endedWhy.get(hash);
+        unknownToken(hash, reason ? whyGone(reason) : 'not found: it ended before this hopper started, the database was reset, or it is another hopper\'s');
+        return;
+      }
       const r = live(stored);
-      if (!r || now() - Date.parse(r.lastSeenAt) < renewEvery()) return;
+      if (!r) { unknownToken(hash, whyGone(endedWhy.get(hash)!)); return; }
+      if (now() - Date.parse(r.lastSeenAt) < renewEvery()) return;
       const at = o.clock.now().toISOString();
       if (!isGateway(r.identity.realm)) { o.repo.touch(r.tokenHash, at); return; }
       const check = await o.signIn.checkGateway(headers);

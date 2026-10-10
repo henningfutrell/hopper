@@ -78,6 +78,8 @@ export function createProxyApi(o: { apiUrl: string; token(): Promise<string>; re
       try {
         return await call(req, renewed, r);
       } catch (err) {
+        // GitHub refusing the token it just renewed is GitHub refusing the connection (issue #647): the renewer ends it.
+        if (statusOf(err) === 401) await o.renew(renewed).catch(() => undefined);
         throw errorOf(err, r);
       }
     },

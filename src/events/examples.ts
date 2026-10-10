@@ -56,6 +56,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.reassigned': { assignee: 'octocat' },
   'source.stalled': { source: 'github-account', kind: 'github-account', error: 'GitHub is down', since: '2026-10-07T20:14:00.000Z' },
   'connected_account.expired': { provider: 'github', account: 'octocat', reason: 'GitHub refused the refresh token (bad_refresh_token)' },
+  'connected_account.renewed': { provider: 'github', account: 'octocat', expiresAt: '2026-10-09T18:00:00.000Z' },
+  'connected_account.renewal_failed': { provider: 'github', account: 'octocat', code: 'http_502' },
   'ui_session.ended': { reason: 'expired-idle', realm: 'corp' },
   'source.claim_released': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/7', by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' },
   'source.intake_migrated': { source: 'github-account', changes: [{ key: 'https://github.com/octocat/hello/issues/7', change: 'not assigned to you: assign it to you to take it' }] },

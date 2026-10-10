@@ -6,7 +6,7 @@ import { Confirm } from '@/components/confirm';
 import { heldAtGate } from '@/model/blast-radius';
 import { goalOf } from '@/model/job';
 import { Button } from '@/components/ui/button';
-import { JobTitle, Since, UnassignedFlag } from '@/components/job';
+import { CredentialsFlag, JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -181,6 +181,7 @@ export function WaitingPanel() {
               <span className="ml-auto">for <Since iso={job.updatedAt} /></span>
             </div>
             <UnassignedFlag job={job} />
+            <CredentialsFlag job={job} />
           </div>
         ))}
       </>}
@@ -197,6 +198,7 @@ export function WaitingPanel() {
               <span className="ml-auto">for <Since iso={job.startedAt ?? job.updatedAt} /></span>
             </div>
             <UnassignedFlag job={job} />
+            <CredentialsFlag job={job} />
           </div>
         ))}
       </>}

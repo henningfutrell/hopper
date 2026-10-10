@@ -30,8 +30,12 @@ export interface AtRest {
 export function createAtRest(store: Pick<UserStore, 'connectedAccounts'>, box: TokenBox | undefined): AtRest {
   const open = (value: string): string => {
     if (!isSealed(value)) return value;
-    if (!box) throw new Error(`the stored token is sealed and the runtime gives no ${TOKEN_KEY_VARIABLE}`);
-    return box.open(value);
+    if (!box) throw new Error(`the stored token is sealed and ${TOKEN_KEY_VARIABLE} is missing: the runtime gives none`);
+    try {
+      return box.open(value);
+    } catch {
+      throw new Error(`the key it was sealed under is missing: neither ${TOKEN_KEY_VARIABLE} nor ${PREVIOUS_KEYS_VARIABLE} opens the stored token (or it was altered)`);
+    }
   };
   return {
     read(provider) {

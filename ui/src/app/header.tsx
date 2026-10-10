@@ -44,7 +44,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
         <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
           {ended && !signedInWithGitHub && (
             <a data-connection-ended href="#sources" title={ended}
-              className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub sign-in expired: connect again</a>
+              className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub: reconnect needed</a>
           )}
           {logins.n > 0 && (
             <a data-logins-pending href="#logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}

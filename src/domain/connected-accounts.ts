@@ -48,6 +48,21 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
      * only connecting again (or signing in with GitHub again) gets one that renews.
      */
     unrenewable?: string;
+    /** How GitHub granted it (issue #647): the browser's web flow or the device flow. */
+    grantedBy?: 'device' | 'web';
+    /** How the person made it (issue #647): connected from Sources, or signed in with GitHub. */
+    connectedBy?: 'sources' | 'sign-in';
+    /** When its token was last renewed (issue #647); absent: not since it was connected. */
+    renewedAt?: string;
+    /** When the renewer renews it next (issue #647): an hour before its expiry, or the retry of a failed renewal. */
+    nextRenewalAt?: string;
+    /** The last renewal that failed (issue #647), kept after later renewals succeed: when, and why. */
+    lastError?: { at: string; error: string };
+    /**
+     * A **held grant** (issue #647): a GitHub sign-in made while this connection was healthy, kept apart until the person
+     * takes it (it replaces this connection) or drops it. A sign-in never quietly replaces a working connection.
+     */
+    held?: { account: string; at: string };
   }
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */

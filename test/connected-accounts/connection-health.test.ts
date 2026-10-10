@@ -25,7 +25,6 @@ import { fixedClock, useTempStore } from '../store/helpers.ts';
 
 const EIGHT_HOURS_S = 8 * 3600;
 const T0 = '2026-10-09T10:00:00.000Z';
-const MINUTE = 60_000;
 const temp = useTempStore();
 const cleanups: (() => unknown)[] = [];
 

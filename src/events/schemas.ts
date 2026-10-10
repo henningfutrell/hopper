@@ -197,6 +197,8 @@ export const EVENT_SCHEMAS = {
   // Intake stopped (issue #358): a job source in error past the stall threshold, and a connected account whose sign-in ended.
   'source.stalled': strict({ source: z.string(), kind: z.string(), error: z.string(), since: z.iso.datetime() }),
   'connected_account.expired': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), reason: z.string() }),
+  'connected_account.renewed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), expiresAt: z.string().optional() }),
+  'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), code: z.string() }),
   // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
   'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
   // Intake (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user from Sources.

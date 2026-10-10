@@ -118,6 +118,8 @@ describe('grant hygiene under the ten-token limit (#514)', () => {
 
     const signIn = github.mint('octo-user');
     await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
+    // Held while the connection is healthy (issue #647), then taken.
+    await service.takeHeld('github');
     expect(github.revoked).toEqual([]);
     expect(s.connectedAccounts.get('github')!.accessToken).toBe(signIn.accessToken);
     expect(github.tokens.has(signIn.accessToken)).toBe(true);
