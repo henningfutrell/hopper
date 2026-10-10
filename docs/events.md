@@ -729,11 +729,13 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry.
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
 | `by` | `user` \| `assessor` | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
 
 ```json
 {
@@ -1178,7 +1180,7 @@ Version 1 (`docs/schemas/failure.grouped.v1.json`). A failed job was grouped int
 
 ## `failure.resolved`
 
-Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it.
+Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it. A person's resolution (issue #623) says who (`person`, and the way, `via` `ui` or `cli`) and keeps their `note`, if any.
 
 | field | type | required |
 |---|---|---|
@@ -1186,6 +1188,9 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
 | `title` | string | yes |
 | `by` | `user` \| `check` | yes |
 | `released` | integer | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
+| `note` | string | no |
 
 ```json
 {
@@ -1193,6 +1198,28 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
   "title": "Disk full on desk",
   "by": "check",
   "released": 2
+}
+```
+
+## `failure.released`
+
+Version 1 (`docs/schemas/failure.released.v1.json`). A person released a problem's held jobs (issue #623): `released` of them run again now through the normal queue, each with its own `job.rerun` by the assessor. The problem stays open. `person`: who; `via`: the way, `ui` or `cli`.
+
+| field | type | required |
+|---|---|---|
+| `problemId` | string | yes |
+| `title` | string | yes |
+| `released` | integer | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` | yes |
+
+```json
+{
+  "problemId": "p1",
+  "title": "Disk full on desk",
+  "released": 2,
+  "person": "operator CLI",
+  "via": "cli"
 }
 ```
 
@@ -1226,7 +1253,7 @@ Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off t
 
 ## `handoff.closed`
 
-Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone).
+Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516): `end` `run_again` (its item ran again, from Needs a person, the Queue, the failure's Retry or its source; `nextJobId` the new job), `continued` (a person resolved it with Continue and its job goes on in its own agent session; `nextJobId` that same job, issue #551), `done_by_hand` (a person did the work themselves; its job ends finished), `wont_do` (a person decided it is not to be done, or no real failure; its locked entry dismissed), `cleared` (closed by the build before #551: a person acknowledged it, its locked entry dismissed), `finished` (its job ended finished: its issue closed as complete); or, found stale by the sweep or at start (issue #529), `superseded` (a newer job of its item exists; `nextJobId` it), `item_closed` (its item is closed at its source) or `job_gone` (its job is gone). A person's resolution names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
@@ -1234,6 +1261,8 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
 | `end` | `run_again` \| `continued` \| `done_by_hand` \| `wont_do` \| `cleared` \| `finished` \| `superseded` \| `item_closed` \| `job_gone` | yes |
 | `nextJobId` | string | no |
 | `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
 
 ```json
 {

@@ -23,6 +23,27 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 
 `hopper` is the operator CLI (`hopper config …`, `hopper users`, `hopper user add`, `hopper user transfer`); it needs `HOPPER_DATABASE_URL` (or `_FILE`) and nothing else. `hopper help` lists its commands; `node src/main.ts --help` lists every daemon setting with its default.
 
+### Unblock the queue from the host
+
+The Failures actions need no UI sign-in: the operator CLI does them on the running hopper (issue #623). In the
+compose install, run each in the container: `podman compose exec hopper hopper <command>`. Each prints JSON.
+
+1. See what holds jobs: `hopper problem list` (each problem's `held` jobs), `hopper handoff list` (Needs a
+   person), `hopper failure list`.
+2. Let a problem's held jobs run now: `hopper problem release <id>`. The problem stays open.
+3. Resolve a problem that is gone or was false: `hopper problem resolve <id> --note "<what you found>"`. Its held
+   jobs run again, and new jobs are no longer held for it.
+4. Resolve a hand-off, as its card in Needs a person does:
+   - `hopper handoff done-by-hand <id> --note "<what you did>" --link <pull request URL>`: its job ends finished;
+   - `hopper handoff continue <id> --note "<what to do next>"`: the job goes on, told the note;
+   - `hopper handoff fixed <id> --note "<what you fixed>"`: a new job of its item runs, told the note;
+   - `hopper handoff wont-do <id> --note "<why>"`: no more work on it.
+   Its issue gets the same comment and end label as from the UI.
+5. Run a failure's job again: `hopper failure retry <id>`.
+
+Each event names who acted: `person` `operator CLI` and `via` `cli`. `--user <id>` names the user when there are
+several; `--url` names the hopper when it is not on this machine's port.
+
 Once it runs, the API reference is at `/docs/` (Scalar; the OpenAPI document at `/docs/openapi.json`), on every address the UI answers on. A first-time walkthrough is `README.md`.
 
 ### Webhook secrets from before

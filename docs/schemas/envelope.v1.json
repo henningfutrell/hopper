@@ -81,6 +81,7 @@
         "job.assessed",
         "failure.grouped",
         "failure.resolved",
+        "failure.released",
         "handoff.opened",
         "handoff.closed",
         "usage.limits_changed",

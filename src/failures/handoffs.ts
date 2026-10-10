@@ -13,7 +13,7 @@
 // `job.queued` closed it for (a store from the build before), its job finished or gone, its item closed at its source.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
-  jobPriorityTag, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
+  jobPriorityTag, type ActingPerson, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
   type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job,
 } from '../domain/types.ts';
 import { handoffBrief } from './brief.ts';
@@ -30,7 +30,7 @@ export interface HandoffsOptions {
   clock: Clock;
   settings(): FailureSettings;
   /** Run an ended job's item again: the sync loop's Run again; `brief` what the new job is told after its prompt. */
-  rerun(jobId: string, by: RerunBy, brief?: string): Promise<RerunResult>;
+  rerun(jobId: string, by: RerunBy, brief?: string, acting?: ActingPerson): Promise<RerunResult>;
   /** Continue a failed job in its own agent session (issue #551): the sync loop's. */
   continueJob(jobId: string, brief: string, handoffId: string): Promise<RerunResult>;
   /** Whether the job's own agent session can resume: its executor parks, and it recorded one. */
@@ -61,14 +61,17 @@ export interface Handoffs {
   itemClosed(id: string): void;
   /** Follow the job events that open or close a hand-off. */
   onEvent(e: DomainEvent): void;
-  /** A person resolves an open hand-off (issue #551), `by` the person the UI session signed in. */
-  resolve(id: string, input: HandoffResolve, by: string): Promise<HandoffAction<{ handoff: HandoffView; job?: Job }>>;
+  /** A person resolves an open hand-off (issue #551), `by` the person the UI session signed in, and the way (issue #623). */
+  resolve(id: string, input: HandoffResolve, by: ActingPerson): Promise<HandoffAction<{ handoff: HandoffView; job?: Job }>>;
   /** The hand-off as the Failures view shows it. */
   view(h: Handoff): HandoffView;
   prune(before: string): void;
 }
 
 const CATCH_UP = 1000;
+
+/** Who resolved it, as the events name them (issue #623); none for a resolution made before. */
+const actingOf = (r: HandoffResolution | undefined): ActingPerson | undefined => (r?.via ? { person: r.by, via: r.via } : undefined);
 /** The outcomes a newer job of the item supersedes (issue #517): nothing ran it again yet. */
 const SUPERSEDABLE: FailureOutcome[] = ['surfaced', 'not_retried', 'held'];
 
@@ -103,9 +106,10 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
 
   function close(h: Handoff, end: HandoffEnd, nextJobId?: string, resolution?: HandoffResolution): Handoff {
     const closed = store.handoffs.update(h.id, { status: 'closed', closedAt: nowIso(), end, ...(nextJobId ? { nextJobId } : {}), ...(resolution ? { resolution } : {}) });
+    const acting = actingOf(resolution);
     store.events.append({
       type: 'handoff.closed', jobId: h.jobId,
-      data: { handoffId: h.id, end, ...(nextJobId ? { nextJobId } : {}), ...(resolution ? { resolution: resolution.action } : {}) },
+      data: { handoffId: h.id, end, ...(nextJobId ? { nextJobId } : {}), ...(resolution ? { resolution: resolution.action } : {}), ...acting },
     });
     return closed;
   }
@@ -162,7 +166,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
   async function runAgainWith(h: Handoff, brief: string, resolution: HandoffResolution, note: string): Promise<HandoffAction<{ handoff: Handoff; job?: Job }>> {
     resolving.add(h.id);
     try {
-      const result = await o.rerun(h.jobId, 'user', brief);
+      const result = await o.rerun(h.jobId, 'user', brief, actingOf(resolution));
       if (!result.ok) return { ok: false, reason: result.reason === 'not_found' ? 'not_found' : 'conflict', message: result.message };
       const closed = resolveWith(h.id, 'run_again', resolution, result.job.id, (c) => settleByPerson(c, 'retried', note, result.job.id));
       // Closed meanwhile (its item ran again by another way): the new job stands, the resolution is not kept.
@@ -262,7 +266,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       if (!allowed.ok) return { ok: false, reason: 'conflict', message: `hand-off ${id} cannot be ${RESOLUTION_TEXT[input.action]}: ${allowed.why}` };
       const job = store.jobs.get(h.jobId);
       const resolution: HandoffResolution = {
-        action: input.action, by, at: nowIso(), ...(input.note ? { note: input.note } : {}), ...(input.link ? { link: input.link } : {}),
+        action: input.action, by: by.person, via: by.via, at: nowIso(), ...(input.note ? { note: input.note } : {}), ...(input.link ? { link: input.link } : {}),
         writeBack: job?.source ? 'pending' : 'none',
       };
       const done = (r: HandoffAction<{ handoff: Handoff; job?: Job }>): HandoffAction<{ handoff: HandoffView; job?: Job }> =>

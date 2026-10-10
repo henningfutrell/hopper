@@ -7969,6 +7969,37 @@ was already true of `config set` and of the database itself.
 **Not built.** A mutating API token (see above); cancel, approve, operator-led and dismiss of a locked entry
 from the CLI — no caller yet.
 
+## Failures from the operator CLI (issue #623, 2026-10-10)
+
+A false recurring problem held new jobs, and only a signed-in UI session could release it or close a hand-off.
+An operator or an assistant on the host could not unblock the queue. The Failures actions are now operator CLI
+commands, on the same footing as issue #374's.
+
+- **Commands** (`src/cli-operator.ts`):
+  - `hopper problem list` (the open problems), `release <id>`, `resolve <id> [--note <text>]`;
+  - `hopper handoff list` (the open hand-offs), `continue <id> [--note]`, `fixed <id> [--note]`,
+    `done-by-hand <id> [--note] [--link <url>]`, `wont-do <id> --note <why>`;
+  - `hopper failure list` (the open failures), `retry <id>`.
+  A list is `GET /api/failures`, narrowed; each other command is the UI's own `POST /ui/api/failures/*`. The
+  verbs are the glossary's words: the issue asked for `settle`, `done`, `run-again` and `clear`, but `settle` would
+  be a second word for resolve and `clear` already names the `cleared` end of a hand-off.
+- **One path.** The UI and the CLI call the same route and the same `Failures` method, so the events, the
+  write-back to the source (the one comment and the end label on GitHub) and the runs again are the same.
+- **No new door.** The API keeps one way to mutate: a UI session. The CLI mints one in the database for the call
+  (issue #374), so the operator's credential is the database's. A mutating operator token or an operator socket
+  would be a second door; neither is built.
+- **Who acted** (the **acting person**). Each person's action on Failures keeps who and the way in its event:
+  `person` (the session's identity name; `operator CLI` for the CLI) and `via` (`ui`, or `cli` when the session's
+  realm is `cli`). On `failure.resolved` (with the `note`), the new `failure.released`, `handoff.closed` (and
+  `via` on the hand-off's resolution) and `job.rerun` (a failure's Retry, a hand-off's I fixed it or Continue in a
+  new job). Additive fields: the event versions stay. The check's resolution and the assessor's runs again carry
+  none.
+- **A note on a problem.** `POST /ui/api/failures/problems/:id/resolve` takes an optional `{ note }`, kept in
+  `failure.resolved`; the UI sends none.
+
+**Not built.** A `failure dismiss`: the UI has no such action on a failure record. A failure ends when its job
+runs again, its hand-off is resolved (`handoff wont-do` ends it with no more work), or its job finishes.
+
 Tests: `test/integration/operator-cli.test.ts`.
 
 ## Reserved lanes (issue #372, 2026-10-07)

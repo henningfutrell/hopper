@@ -228,7 +228,7 @@ const refreshQuestionsSoon = debounced(refreshQuestions);
 const refreshLoginsSoon = debounced(refreshLogins);
 const refreshFailuresSoon = debounced(refreshFailures);
 /** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
-const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'handoff.opened', 'handoff.closed', 'job.rerun', 'job.failed', 'job.dismissed']);
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'job.rerun', 'job.failed', 'job.dismissed']);
 
 export async function checkSession() {
   try {

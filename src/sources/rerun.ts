@@ -5,7 +5,7 @@
 
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
-import type { Job } from '../domain/types.ts';
+import type { ActingPerson, Job } from '../domain/types.ts';
 
 export interface RerunContext {
   host: SourceHost;
@@ -60,8 +60,8 @@ export function createRerun(c: RerunContext) {
   }
 
   return {
-    rerun(jobId: string, by: RerunBy = 'user', brief?: string): Promise<RerunResult> {
-      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by, brief) }));
+    rerun(jobId: string, by: RerunBy = 'user', brief?: string, acting?: ActingPerson): Promise<RerunResult> {
+      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, { name: source.name, kind: source.kind }, by, brief, acting) }));
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, handoffId: string): Promise<RerunResult> {

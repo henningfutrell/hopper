@@ -15,6 +15,8 @@
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
 //   hopper job|queue|question … [--user <id>] [--url <hopper URL>]
 //                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
+//   hopper problem|handoff|failure … [--user <id>] [--url <hopper URL>]
+//                                                     the Failures actions on the running daemon (issue #623, cli-operator.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -59,12 +61,14 @@ usage:
 ${OPERATOR_USAGE}
   hopper help                                        this text
 
-The job, queue and question commands act on the running daemon, through its own checks and events, as the UI
-does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
+The job, queue, question, problem, handoff and failure commands act on the running daemon, through its own checks
+and events, as the UI does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
+No sign-in is needed: the CLI holds the database's credentials. Each prints the daemon's answer as JSON; the events
+say the operator CLI acted (via cli).
 
 records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config, ssh-key and the job, queue and question commands names the user (default: the one user, while there is one).
+--user <id> on config, ssh-key and the commands on the running daemon names the user (default: the one user, while there is one).
 
 Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.

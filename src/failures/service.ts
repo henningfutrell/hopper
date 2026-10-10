@@ -13,7 +13,7 @@
 // is active and it is sure.
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
+  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
@@ -56,14 +56,14 @@ export interface Failures {
   blocks(): ProblemBlock[];
   settings(): FailureSettings;
   setSettings(patch: Partial<FailureSettings>): FailureSettings;
-  /** A person resolves a problem: its held jobs run again, new jobs are no longer held for it. */
-  resolve(problemId: string): FailureAction<Problem>;
+  /** A person resolves a problem, with a note if any: its held jobs run again, new jobs are no longer held for it. */
+  resolve(problemId: string, by: ActingPerson, note?: string): FailureAction<Problem>;
   /** A person releases a problem's held jobs now: they run again through the normal queue. */
-  release(problemId: string): FailureAction<Problem>;
+  release(problemId: string, by: ActingPerson): FailureAction<Problem>;
   /** A person runs a surfaced failure's job again. */
-  retry(recordId: string): Promise<FailureAction<Job>>;
-  /** A person resolves a hand-off (issue #551), `by` the person signed in: the hand-off and the job that follows, if any. */
-  resolveHandoff(handoffId: string, input: HandoffResolve, by: string): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
+  retry(recordId: string, by: ActingPerson): Promise<FailureAction<Job>>;
+  /** A person resolves a hand-off (issue #551), `by` the person signed in and the way: the hand-off and the job that follows, if any. */
+  resolveHandoff(handoffId: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
   nameCause(cause: NamedCause): KnownCause;
   forgetCause(signature: string): boolean;
 }
@@ -279,7 +279,8 @@ export function createFailures(o: FailuresOptions): Failures {
     return held.length;
   }
 
-  function resolveAs(problemId: string, by: 'user' | 'check'): FailureAction<Problem> {
+  /** `acting`, `note`: a person's (issue #623); none for the check's. */
+  function resolveAs(problemId: string, by: 'user' | 'check', acting?: ActingPerson, note?: string): FailureAction<Problem> {
     const done = store.tx((): FailureAction<Problem> => {
       const p = store.problems.get(problemId);
       if (!p) return { ok: false, reason: 'not_found', message: `problem ${problemId} not found` };
@@ -287,7 +288,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const at = now().toISOString();
       const resolved = store.problems.update(p.id, { status: 'resolved', resolvedAt: at, resolvedBy: by, updatedAt: at });
       const released = releaseHeld(p.id);
-      store.events.append({ type: 'failure.resolved', data: { problemId: p.id, title: p.title, by, released } });
+      store.events.append({ type: 'failure.resolved', data: { problemId: p.id, title: p.title, by, released, ...acting, ...(note ? { note } : {}) } });
       return { ok: true, value: resolved };
     });
     if (done.ok) { o.trigger('failure.resolved'); void sweep(); }
@@ -330,18 +331,20 @@ export function createFailures(o: FailuresOptions): Failures {
       o.trigger('failure.settings');
       return next;
     },
-    resolve: (problemId) => resolveAs(problemId, 'user'),
-    release(problemId) {
+    resolve: (problemId, by, note) => resolveAs(problemId, 'user', by, note),
+    release(problemId, by) {
       const done = store.tx((): FailureAction<Problem> => {
         const p = store.problems.get(problemId);
         if (!p) return { ok: false, reason: 'not_found', message: `problem ${problemId} not found` };
-        if (releaseHeld(p.id) === 0) return { ok: false, reason: 'conflict', message: `problem ${problemId} holds no job` };
+        const released = releaseHeld(p.id);
+        if (released === 0) return { ok: false, reason: 'conflict', message: `problem ${problemId} holds no job` };
+        store.events.append({ type: 'failure.released', data: { problemId: p.id, title: p.title, released, ...by } });
         return { ok: true, value: p };
       });
       if (done.ok) void sweep();
       return done;
     },
-    retry: (recordId) => rerunRecord(recordId, 'user', 'run again by a person'),
+    retry: (recordId, by) => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, 'user', 'run again by a person', by),
     resolveHandoff: (handoffId, input, by) => handoffs.resolve(handoffId, input, by),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);

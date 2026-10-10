@@ -506,7 +506,7 @@ authentication".
 |---|---|
 | UI, `/` | the board, questions, machines, usage, plugins, routing, webhooks, events, decisions |
 | API reference, `/docs/` | every route, with parameters and bodies; try them from the page. The book icon in the UI's top bar opens it |
-| `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun`, `hopper queue order\|gate`, `hopper question answer\|close\|dismiss` |
+| `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun`, `hopper queue order\|gate`, `hopper question answer\|close\|dismiss`; and the Failures actions with no UI sign-in — `hopper problem list\|release\|resolve`, `hopper handoff list\|continue\|fixed\|done-by-hand\|wont-do`, `hopper failure list\|retry` ([design](docs/design.md#failures-from-the-operator-cli-issue-623-2026-10-10)) |
 | `node src/main.ts --help` | the daemon's settings, with defaults |
 
 Settings holds the rest: the job rules every job's prompt carries, the plugins, the routing, the
