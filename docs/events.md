@@ -1516,7 +1516,7 @@ Version 2 (`docs/schemas/proposal.escalated.v2.json`). A proposal entered a stag
 
 ## `proposal.escalated_to_human`
 
-Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version. `tldr` (issue #569): for a long one, its TL;DR when written, else the agent's own summary.
+Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version. `tldr` (issue #569): its TL;DR part, the agent's headline (issue #651), or for a proposal written before paths, its summary.
 
 | field | type | required |
 |---|---|---|
@@ -3026,11 +3026,11 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
 
 ## `tldr.written`
 
-Version 1 (`docs/schemas/tldr.written.v1.json`). A cheap model (Claude Haiku) wrote the TL;DR of a long card (issue #569): `kind` (`question`, `proposal`, `research`, `handoff`) and its `id`, the `text` — one or two plain sentences, no Markdown or HTML — and the `model` that wrote it. Written once per text: again only when the card's text changes (a review item's next version). The card leads with it; a notification sent before it shows the agent's own summary.
+Version 1 (`docs/schemas/tldr.written.v1.json`). A cheap model (Claude Haiku) wrote the TL;DR of a long card (issue #569): `kind` (`question`, `research`, `handoff`; a proposal has its own TL;DR part, issue #651) and its `id`, the `text` — one or two plain sentences, no Markdown or HTML — and the `model` that wrote it. Written once per text: again only when the card's text changes (a research report's next round). The card leads with it; a notification sent before it shows the agent's own summary.
 
 | field | type | required |
 |---|---|---|
-| `kind` | `question` \| `proposal` \| `research` \| `handoff` | yes |
+| `kind` | `question` \| `research` \| `handoff` | yes |
 | `id` | string | yes |
 | `text` | string | yes |
 | `model` | string | no |

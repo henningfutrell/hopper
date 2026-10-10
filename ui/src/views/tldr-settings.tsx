@@ -1,5 +1,6 @@
 // The TL;DR (issue #569), in Settings, an admin's: whether a cheap model (Claude Haiku) writes one or two plain
-// sentences on top of every long question, proposal, research report and hand-off, and notifications lead with them.
+// sentences on top of every long question, research report and hand-off, and notifications lead with them. A proposal
+// leads with its own TL;DR part (issue #651).
 // Saved to the daemon at once and read on every sweep and read, without a restart.
 import { TextQuote } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -26,8 +27,8 @@ function Form({ view, onSaved }: { view: TldrSettingsView; onSaved: (v: TldrSett
   return (
     <div data-slot="tldr-settings" className="space-y-3 text-sm">
       <p className="text-muted-foreground">
-        A cheap model (Claude Haiku) writes one or two plain sentences for every long question, proposal, research report
-        and hand-off: what is asked and what you decide. The card shows them first, and the agent's text behind Show all.
+        A cheap model (Claude Haiku) writes one or two plain sentences for every long question, research report and
+        hand-off: what is asked and what you decide. A proposal starts with its own TL;DR, written by the agent. The card shows them first, and the agent's text behind Show all.
         Notifications lead with them. Without the model, a card shows the agent's own summary.
       </p>
       <label className="flex items-center gap-2">

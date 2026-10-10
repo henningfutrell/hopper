@@ -1,10 +1,14 @@
 // The TL;DR (issue #569, design.md "TL;DR"): one or two plain sentences a cheap model (Claude Haiku) writes for a long
-// card — a question, a proposal, a research report, a hand-off —, on top of the card, the agent's Markdown behind Show
-// all. Written once, stored with the card, written again when its text changes; never in the way of the card. Pure.
+// card — a question, a research report, a hand-off —, on top of the card, the agent's Markdown behind Show all. Written
+// once, stored with the card, written again when its text changes; never in the way of the card. A proposal has its own
+// TL;DR, the agent's first part (issue #651): the model writes none for it. Pure.
+import type { ReviewKind } from './review.ts';
 
-/** The cards that get one. */
-export const TLDR_KINDS = ['question', 'proposal', 'research', 'handoff'] as const;
+/** The cards the model writes one for. */
+export const TLDR_KINDS = ['question', 'research', 'handoff'] as const;
 export type TldrKind = typeof TLDR_KINDS[number];
+/** Every card with agent text a notification carries: a proposal too, which leads with its own TL;DR part. */
+export type CardKind = 'question' | ReviewKind | 'handoff';
 
 /** A card's TL;DR as stored with it. */
 export interface Tldr {

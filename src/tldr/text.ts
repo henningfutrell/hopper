@@ -5,7 +5,7 @@
 // The long-text rule and the summary rule are the UI's too (`ui/src/model/card-text.ts`, which folds the card): the UI
 // may not import `src/` at run time, so each side keeps its own copy of these few lines. Change both together.
 import { createHash } from 'node:crypto';
-import { TLDR_MAX, type Handoff, type Question, type ReviewItem, type Tldr, type TldrKind, type TldrSettings } from '../domain/types.ts';
+import { REVIEW_SECTIONS, TLDR_MAX, type CardKind, type Handoff, type Question, type ReviewItem, type Tldr, type TldrKind, type TldrSettings } from '../domain/types.ts';
 
 /** A text up to this many characters and lines shows whole on its card: it needs no TL;DR. */
 const SHORT_CHARS = 600;
@@ -20,7 +20,7 @@ export function isLong(text: string): boolean {
 }
 
 /** The text a card's TL;DR is written from: a question's text, a review item's newest version, a hand-off's summary and reasons. */
-export function sourceOf(kind: TldrKind, card: Question | ReviewItem | Handoff): string {
+export function sourceOf(kind: CardKind, card: Question | ReviewItem | Handoff): string {
   if (kind === 'question') return (card as Question).text;
   if (kind === 'handoff') {
     const h = card as Handoff;
@@ -33,12 +33,11 @@ export function sourceOf(kind: TldrKind, card: Question | ReviewItem | Handoff):
 export const hashOf = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 const NOUN: Readonly<Record<TldrKind, string>> = {
-  question: 'question an agent asks a person', proposal: 'proposal an agent wrote', research: 'research report an agent wrote',
+  question: 'question an agent asks a person', research: 'research report an agent wrote',
   handoff: 'diagnosis of a failed job',
 };
 const ASK: Readonly<Record<TldrKind, string>> = {
   question: 'Say what the agent asks and what the person must decide, then the options in a few words each.',
-  proposal: 'Say what the agent proposes and what the person must decide.',
   research: 'Say what the agent found and what the person must decide.',
   handoff: 'Say what went wrong and what the person must decide.',
 };
@@ -99,8 +98,20 @@ export function agentSummary(text: string): string {
   return plainText(para.join('\n'));
 }
 
+/**
+ * The agent's own summary of a card: a review item's first part (a proposal's TL;DR part, issue #651; a report's
+ * Question) when it has one, else the first paragraph of its text that is not a heading — as plain text.
+ */
+export function summaryOf(kind: CardKind, card: Question | ReviewItem | Handoff): string {
+  if (kind === 'proposal' || kind === 'research') {
+    const first = (card as ReviewItem).versions.at(-1)?.sections[REVIEW_SECTIONS[kind].parts[0]!.id];
+    if (first) return plainText(first);
+  }
+  return agentSummary(sourceOf(kind, card));
+}
+
 /** The card's stored TL;DR, while the setting is on and it was written from the card's text as it is now. */
-export function shownTldr(kind: TldrKind, card: Question | ReviewItem | Handoff, settings: TldrSettings): Tldr | undefined {
+export function shownTldr(kind: CardKind, card: Question | ReviewItem | Handoff, settings: TldrSettings): Tldr | undefined {
   const t = card.tldr;
   return settings.enabled && t && t.of === hashOf(sourceOf(kind, card)) ? t : undefined;
 }
@@ -109,15 +120,13 @@ export function shownTldr(kind: TldrKind, card: Question | ReviewItem | Handoff,
  * What a notification about the card leads with: its TL;DR, else the agent's own summary — the TL;DR is never waited
  * for. Nothing for a short text (it is whole already) or with the setting off.
  */
-export function tldrOrSummary(kind: TldrKind, card: Question | ReviewItem | Handoff, settings: TldrSettings): string | undefined {
-  if (!settings.enabled) return undefined;
-  const source = sourceOf(kind, card);
-  if (!isLong(source)) return undefined;
-  return shownTldr(kind, card, settings)?.text ?? (agentSummary(source) || undefined);
+export function tldrOrSummary(kind: CardKind, card: Question | ReviewItem | Handoff, settings: TldrSettings): string | undefined {
+  if (!settings.enabled || !isLong(sourceOf(kind, card))) return undefined;
+  return shownTldr(kind, card, settings)?.text ?? (summaryOf(kind, card) || undefined);
 }
 
 /** The card with its TL;DR only while it is shown: a stale one, or one with the setting off, is left out. */
-export function withShownTldr<T extends Question | ReviewItem | Handoff>(kind: TldrKind, card: T, settings: TldrSettings): T {
+export function withShownTldr<T extends Question | ReviewItem | Handoff>(kind: CardKind, card: T, settings: TldrSettings): T {
   if (!card.tldr || shownTldr(kind, card, settings)) return card;
   const { tldr: _hidden, ...rest } = card;
   return rest as T;

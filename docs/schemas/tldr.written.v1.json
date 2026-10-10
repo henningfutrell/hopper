@@ -6,7 +6,6 @@
       "type": "string",
       "enum": [
         "question",
-        "proposal",
         "research",
         "handoff"
       ]

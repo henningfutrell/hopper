@@ -8762,7 +8762,7 @@ after it, smaller, each with what it leads to; the assessment summary, the known
 behind **Details**. A viewer sees the recommendation without buttons. The buttons read Done, Continue, Run again,
 Won't do; the actions (`done_by_hand`, `continue`, `fixed`, `wont_do`) and the API are unchanged.
 
-Not built: a model's one-line summary of a complex cause (issue #569's TL;DR), which #621 left optional.
+A model's short summary of a long assessment is the hand-off's TL;DR (issue #569, "TL;DR"), under what happened.
 
 Not done here, carried: Park, ask a question, or send to another machine or model as resolutions; a model-written
 diagnosis of the failure on the card (issue #550).
@@ -10833,39 +10833,43 @@ footer verbatim), `test/plugins/grokbot-payload.test.ts`.
 ## TL;DR (issue #569, 2026-10-10)
 
 Owner requirement: agents are long-winded, so every long card — a question, a proposal, a research report, a Needs a
-person hand-off — leads with a **TL;DR**: one or two plain sentences a cheap model writes, what is asked or proposed and
-what the person must decide (for a question, its options in a few words each). The agent's Markdown is behind Show all.
+person hand-off — leads with a **TL;DR**: one or two plain sentences, what is asked or proposed and what the person must
+decide (for a question, its options in a few words each). The agent's Markdown is behind Show all.
 
 - **Which cards** (`src/tldr/text.ts`). A card whose text is long by the card's own rule (more than 600 characters or
-  8 lines, "Agent text as Markdown"): a question's text, a review item's newest version, a hand-off's summary and
-  reasons. A short card is whole already and gets none. The UI keeps its copy of the long-text and summary rules
+  8 lines, "Agent text as Markdown"): a question's text, a research report's newest round, a hand-off's summary and
+  reasons. A short card is whole already and gets none. **A proposal is not one of them:** since issue #651 its agent
+  writes a `TL;DR:` part first, the pre-check asks for it, and the proposal card shows it on top ("Proposals as paths");
+  a second TL;DR from a model would say the same thing twice. Its notifications carry that part. The UI keeps its copy of the long-text and summary rules
   (`ui/src/model/card-text.ts`): it may not import `src/` at run time.
 - **The model** (`src/tldr/haiku.ts`). Claude Haiku (the `haiku` alias) through the `claude` CLI in print mode, locked
   down as an escalation level's run is (no tools, MCP, settings or session; the answer bound to a JSON Schema; the prompt
   on stdin), with the user's CLI config dirs, in the user's work dir; 60 s at most. Jev (issue #550) is not asked: it
   picks one of a decision's options and writes no text. Tests put a double at the seam (`UserSeams.tldrWriter`); the
-  test app's default fails, so no test starts `claude`.
+  test app's default fails, so no test starts `claude`. Checked once against the real CLI (`claude-haiku-4-5`): a long
+  question with an injected instruction gave a plain two-sentence TL;DR with its options, the instruction ignored.
 - **The prompt.** One or two plain sentences, at most 300 characters, in Simplified Technical English (one clause, as
   the protocol lines name it, issue #571), plain text only. The agent's text is fenced as data — it may hold whatever an
   issue's author wrote — and the model is told it is not instructions; a closing fence marker inside it is broken.
 - **Plain text, whatever the model says** (`plainText`). Control characters, HTML tags, `<` and `>`, Markdown marks
   are taken out; an image or a link is its words; one line, cut at a word. The UI shows it as text (React escapes it),
   never as HTML; a receiver that renders Markdown finds none in it.
-- **Written once, stored with the card** (`src/tldr/service.ts`). A sweep, every tick, over the open questions, review
-  items and hand-offs asks the model, one card at a time, for each long card whose stored TL;DR (`tldr: { text, of,
+- **Written once, stored with the card** (`src/tldr/service.ts`). A sweep, every tick, over the open questions, research
+  reports and hand-offs asks the model, one card at a time, for each long card whose stored TL;DR (`tldr: { text, of,
   model?, at }` in its body; no migration) was not written from its text as it is now — `of` is the SHA-256 of that
-  text. So a review item's next version gets a new one, and nothing is written again on a render or a restart. A text
+  text. So a research report's next round gets a new one, and nothing is written again on a render or a restart. A text
   the model failed on is not asked again for the same text (in memory: a restart tries once more). A card is never
   waited on; a text that changed while the model wrote is left for the next sweep. Each one written is
   `tldr.written { kind, id, text, model? }` on the card's job.
-- **Shown while it matches** (`withShownTldr`). The question, review item and hand-off routes answer a card's `tldr`
+- **Shown while it matches** (`withShownTldr`). The question, research and hand-off routes answer a card's `tldr`
   only while it was written from the card's text as it is now and the setting is on.
 - **The card** (`CardText`, `TldrLine`). A long text with a TL;DR shows the TL;DR, marked TL;DR, and Show all opens the
-  whole text below it; without one, the summary as before. A review item's newest version: the TL;DR alone, every part
-  behind Show all. A hand-off: the TL;DR under what happened.
+  whole text below it; without one, the summary as before. A research report's newest round: the TL;DR alone, every
+  part behind Show all. A hand-off: the TL;DR under what happened.
 - **Notifications and webhooks lead with it.** The human-stage events — `question.escalated` with target `human`,
   `question.escalated_to_human`, `proposal.escalated_to_human`, `research.escalated_to_human` — carry `tldr` for a long
-  card: its TL;DR when written, else the agent's own summary (its first paragraph that is not a heading, as plain text).
+  card: its TL;DR when written, else the agent's own summary (`summaryOf`: a review item's first part — a proposal's
+  TL;DR part, a report's Question —, else the first paragraph that is not a heading; as plain text).
   The Grok Bot routine's question body has `tldr` first, after the sender and the job. A card that reaches a person
   before the model answers carries the agent's summary: the notification never waits.
 - **The setting** (`tldr`, a user setting: `GET /api/tldr`, `POST /ui/api/tldr { enabled }`, admin,
@@ -10873,8 +10877,8 @@ what the person must decide (for a question, its options in a few words each). T
   events carry none; turned on again, the open cards get theirs at once. Read on every sweep and read, so no restart.
 
 Tests: `test/tldr/text.test.ts` (the rules), `test/integration/tldr.test.ts` (written once, stored and shown; a short
-question; the answer made plain; the model failing and the agent's summary in the event; a proposal's next version;
-the setting), `test/plugins/grokbot-payload.test.ts` (the body leads with it), `test/ui/markdown-cards.test.ts` (the
+question; the answer made plain; the model failing and the agent's summary in the event; a research report's next
+round; a proposal led by its own TL;DR part, no model asked; the setting), `test/plugins/grokbot-payload.test.ts` (the body leads with it), `test/ui/markdown-cards.test.ts` (the
 card, HTML in the TL;DR as text, the setting).
 ## A job's own wait (issue #483, 2026-10-10)
 

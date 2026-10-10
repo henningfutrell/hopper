@@ -1,10 +1,10 @@
-// The TL;DR writer (issue #569, design.md "TL;DR"): a sweep over the open cards — questions, proposals, research
-// reports, hand-offs — asks the model for the TL;DR of each long one that has none for its text as it is now, one at a
+// The TL;DR writer (issue #569, design.md "TL;DR"): a sweep over the open cards — questions, research reports,
+// hand-offs; a proposal has its own TL;DR part (issue #651) — asks the model for the TL;DR of each long one that has none for its text as it is now, one at a
 // time, and stores it with the card (`tldr.written`). A card is never waited on: the TL;DR comes when it comes, and a
 // card without one shows the agent's own summary. A text the model failed on is not asked again for the same text.
 // With the setting off, nothing is asked.
 import type { Clock, UserStore } from '../domain/ports.ts';
-import { DEFAULT_TLDR, REVIEW_KINDS, REVIEW_OPEN_STATUSES, type Handoff, type Question, type ReviewItem, type TldrKind, type TldrSettings, type TldrWriter } from '../domain/types.ts';
+import { DEFAULT_TLDR, REVIEW_OPEN_STATUSES, type CardKind, type Handoff, type Question, type ReviewItem, type TldrKind, type TldrSettings, type TldrWriter } from '../domain/types.ts';
 import { hashOf, isLong, tldrOrSummary, plainText, sourceOf, tldrPrompt } from './text.ts';
 
 export interface TldrsOptions {
@@ -25,14 +25,14 @@ export interface Tldrs {
   /** One pass now (tests, and the setting turned on). */
   sweep(): Promise<void>;
   /** What a notification of the card leads with now: its TL;DR, else the agent's own summary; undefined: none. */
-  tldrOrSummary(kind: TldrKind, card: Question | ReviewItem | Handoff): string | undefined;
+  tldrOrSummary(kind: CardKind, card: Question | ReviewItem | Handoff): string | undefined;
 }
 
 /** The TL;DR setting now: absent, on. */
 export const tldrSettings = (store: Pick<UserStore, 'settings'>): TldrSettings => store.settings.getTldr() ?? DEFAULT_TLDR;
 
 /** An escalation event's `tldr` (issue #569): what a notification of the card leads with now; none for a short text or with the setting off. */
-export function tldrData(store: Pick<UserStore, 'settings'>, kind: TldrKind, card: Question | ReviewItem | Handoff): { tldr?: string } {
+export function tldrData(store: Pick<UserStore, 'settings'>, kind: CardKind, card: Question | ReviewItem | Handoff): { tldr?: string } {
   const tldr = tldrOrSummary(kind, card, tldrSettings(store));
   return tldr ? { tldr } : {};
 }
@@ -51,15 +51,15 @@ export function createTldrs(o: TldrsOptions): Tldrs {
 
   const openCards = (): Card[] => [
     ...store.questions.list({ status: ['open'], order: 'oldest-first' }).map((card) => ({ kind: 'question' as const, card })),
-    ...REVIEW_KINDS.flatMap((kind) => store.reviews[kind].list({ status: [...REVIEW_OPEN_STATUSES], order: 'oldest-first' }).map((card) => ({ kind, card }))),
+    ...store.reviews.research.list({ status: [...REVIEW_OPEN_STATUSES], order: 'oldest-first' }).map((card) => ({ kind: 'research' as const, card })),
     ...store.handoffs.list({ status: 'open' }).map((card) => ({ kind: 'handoff' as const, card })),
   ];
   const reread = (c: Card): Question | ReviewItem | Handoff | undefined =>
-    c.kind === 'question' ? store.questions.get(c.card.id) : c.kind === 'handoff' ? store.handoffs.get(c.card.id) : store.reviews[c.kind].get(c.card.id);
+    c.kind === 'question' ? store.questions.get(c.card.id) : c.kind === 'handoff' ? store.handoffs.get(c.card.id) : store.reviews.research.get(c.card.id);
   const save = (c: Card, tldr: NonNullable<Question['tldr']>) => {
     if (c.kind === 'question') store.questions.update(c.card.id, { tldr });
     else if (c.kind === 'handoff') store.handoffs.update(c.card.id, { tldr });
-    else store.reviews[c.kind].update(c.card.id, { tldr });
+    else store.reviews.research.update(c.card.id, { tldr });
   };
 
   async function write(c: Card, source: string, of: string): Promise<void> {
