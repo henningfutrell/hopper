@@ -28,6 +28,8 @@ export interface FakeGitHub extends GitHubApi {
   openPartPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
+  /** Mark an open draft pull request ready for review (issue #626). */
+  markReady(url: string): void;
   /** Merge an open pull request (at `at`, default now): one that closes its issue closes it. */
   mergePullRequest(url: string, at?: string): void;
   /** Close an open pull request without a merge. */
@@ -241,6 +243,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       closers.set(p.issue, { url, createdAt: p.createdAt, mergedAt });
     },
     closePullRequest(url) { pull(url).state = 'closed'; },
+    markReady(url) { pull(url).isDraft = false; },
     pushToPullRequest(url, at, o = {}) {
       const p = pull(url);
       p.headCommittedAt = at;

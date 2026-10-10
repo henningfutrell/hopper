@@ -113,6 +113,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true, question: 'open' },
   'job.pull_request_merged': { pullRequest: 'https://github.com/owner/repo/pull/12', part: false },
   'job.pull_request_closed': { pullRequest: 'https://github.com/owner/repo/pull/13', part: true },
+  'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high' }, to: { enabled: true, threshold: 'medium' }, by: 'admin' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },

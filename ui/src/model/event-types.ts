@@ -34,7 +34,7 @@ const ALL: Record<EventType, true> = {
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
   'vault.secret_set': true, 'vault.secret_removed': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true,
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true,
-  'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true,
+  'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

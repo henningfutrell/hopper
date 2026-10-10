@@ -1802,6 +1802,16 @@ state: the job updates it, it does not take it over. The report follows an older
 own; one the issue names is not followed, since its merge closes another issue. The job closes its issue as completed
 once the updated pull request is merged.
 
+**A pull request left in conflict or as a draft** (issue #626) is not done, but the next step is fixed, so no person
+is asked. When a done job is neither complete nor partly done, the runner asks its source for the job's own open pull
+request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the issue or ships part of
+it): with merge conflicts, `rebase` it onto its base branch (conflicts come first: a draft with them is rebased); a draft
+free of them, `mark_ready` it for review. The job then goes on in its own session (`Executor.resume`, in the same pane
+and work tree) told that step's **finish brief** (`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model
+call, recorded as `job.finish_briefed`. Its next end is judged again. At most `MAX_FINISH_BRIEFS` (2) per run; after them,
+or with no such pull request, an executor that cannot resume, or any other state, the job fails `not complete:` and is
+handed to a person as before.
+
 **Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
 repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
 settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
