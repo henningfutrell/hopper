@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Deprecated (issue #708): the sandbox module (src/sandbox/) owns the life of every sandbox box the hopper starts,
+# through the container runtime API. This script stays only until nothing uses it; a follow-up deletes it.
 # Agent boxes (design.md "Agent boxes", issues #295 and #307): one container per agent CLI — claude,
 # codex, cursor, omp, opencode — on this machine's docker, each an ssh target with its own herdr session,
 # attached to the hopper and running its agent's jobs, and a terminal you can open there. One command,

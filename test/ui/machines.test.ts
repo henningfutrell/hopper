@@ -285,7 +285,7 @@ describe('the Add machine line (issue #308)', () => {
   });
 
   it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join, flags });
+    const line = joinLine({ kind: 'box', agent: 'claude', runtime: 'podman' }, { origin: 'http://localhost:4790', code, join, flags });
     expect(line.startsWith('podman run -d --name hopper-sandbox-claude ')).toBe(true);
     // Named by the client's own setting: Docker refuses a host name on the host network.
     expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-claude');
@@ -300,11 +300,11 @@ describe('the Add machine line (issue #308)', () => {
     expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
     // Nothing of the computer is mounted into it.
     expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
-    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join, flags })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+    expect(joinLine({ kind: 'box', agent: 'claude', runtime: 'docker' }, { origin: 'x', code, join, flags })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp:rw,nosuid,nodev .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
   it('a sandbox box from a template (issue #558): named after the template, its image the template\'s', () => {
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join, flags });
+    const line = joinLine({ kind: 'box', agent: 'claude', runtime: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join, flags });
     expect(line).toContain('--name hopper-sandbox-kube ');
     expect(line).toContain('-v hopper-sandbox-kube-home:/home/agent');
     expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-kube ');

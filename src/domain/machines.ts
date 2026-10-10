@@ -2,6 +2,7 @@
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { MachineSnapshot } from './types.ts';
+import type { RuntimeKind, SandboxRecord } from './sandboxes.ts';
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
@@ -147,8 +148,20 @@ export interface MachinesConfig {
 /** A sandbox box the hopper could not stop or remove (issue #603): shown on Machines until it goes. */
 export interface CleanupProblem { container: string; reason: string; at: string }
 
-/** GET /api/sandboxes (issue #603): whether the hopper can start a sandbox box now, why not, and the user's cleanup problems. */
-export interface SandboxesView { launch: { available: boolean; problem?: string }; problems: CleanupProblem[] }
+/** A sandbox box as GET /api/sandboxes shows it: its record (issue #708), but whose it is. */
+export type SandboxBox = Omit<SandboxRecord, 'userId'>;
+
+/**
+ * GET /api/sandboxes (issues #603, #708): whether the hopper can start a sandbox box now, why not, and through which
+ * container runtime; the sandbox flags of the line Add machine shows (`src/sandbox/flags.ts`, the boxes' own builder);
+ * the user's boxes, from their records; and the user's cleanup problems.
+ */
+export interface SandboxesView {
+  launch: { available: boolean; problem?: string; runtime?: RuntimeKind };
+  line: string;
+  boxes: SandboxBox[];
+  problems: CleanupProblem[];
+}
 
 export type MachineEditOutcome =
   | { ok: true; config: MachinesConfig }

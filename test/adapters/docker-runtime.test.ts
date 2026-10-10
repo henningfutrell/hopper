@@ -54,13 +54,13 @@ describe('the Docker container runtime', () => {
 
   it('inspect and list read Docker\'s names without the leading slash', async () => {
     api = await startFakeRuntimeApi([
-      on('GET', `${API}/containers/d0cker/json`, { status: 200, body: { Id: 'd0cker', Name: `/${spec.name}`, Config: { Labels: spec.labels }, State: { Status: 'exited' } } }),
-      on('GET', `${API}/containers/json`, { status: 200, body: [{ Id: 'd0cker', Names: [`/${spec.name}`], Labels: spec.labels, State: 'running' }] }),
+      on('GET', `${API}/containers/d0cker/json`, { status: 200, body: { Id: 'd0cker', Name: `/${spec.name}`, Config: { Image: spec.image, Labels: spec.labels }, State: { Status: 'exited' } } }),
+      on('GET', `${API}/containers/json`, { status: 200, body: [{ Id: 'd0cker', Names: [`/${spec.name}`], Image: spec.image, Labels: spec.labels, State: 'running' }] }),
     ]);
     const rt = createDockerRuntime(api.socket);
-    expect(await rt.inspect('d0cker')).toEqual({ id: 'd0cker', name: spec.name, labels: spec.labels, state: 'exited' });
+    expect(await rt.inspect('d0cker')).toEqual({ id: 'd0cker', name: spec.name, image: spec.image, labels: spec.labels, state: 'exited' });
     expect(await rt.inspect('gone')).toBeUndefined();
-    expect(await rt.list({ 'io.hopper.box': 'i-1' })).toEqual([{ id: 'd0cker', name: spec.name, labels: spec.labels, state: 'running' }]);
+    expect(await rt.list({ 'io.hopper.box': 'i-1' })).toEqual([{ id: 'd0cker', name: spec.name, image: spec.image, labels: spec.labels, state: 'running' }]);
     expect(JSON.parse(api.seen[2]!.query.get('filters')!)).toEqual({ label: ['io.hopper.box=i-1'] });
   });
 

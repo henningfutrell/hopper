@@ -278,8 +278,8 @@ export function reservedText(m: Pick<MachineSnapshot, 'maxLanes' | 'reservedLane
 export const BOX_AGENTS = ['claude'] as const;
 export type BoxAgent = (typeof BOX_AGENTS)[number];
 
-/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker. */
-export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; engine: 'podman' | 'docker'; template?: { name: string; image: string } };
+/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker (the line's container runtime). */
+export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; runtime: 'podman' | 'docker'; template?: { name: string; image: string } };
 
 /** Where a box reaches the hopper from, and the image it runs. */
 export interface BoxPlace { boxUrl: string; boxNetwork: string; boxImage: string }
@@ -303,17 +303,18 @@ export const boxSignInLine = (container: string, agent: BoxAgent): string => `po
 
 /**
  * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper
- * serves, from the URL this page is open at. A box is a locked-down container: every capability dropped,
- * no new privileges, a read-only root, its own home volume, nothing of the computer mounted.
+ * serves, from the URL this page is open at. A box is a locked-down container: `flags` are the sandbox flags
+ * and limits the hopper builds for the boxes it starts too (GET /api/sandboxes `line`, issue #708) — every
+ * capability dropped, no new privileges, a read-only root —, its own home volume, nothing of the computer mounted.
  */
-export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
+export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace; flags: string }): string {
   if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
   // A box of a template (issue #558) is named after it and runs its image.
   const box = `hopper-sandbox-${choice.template?.name ?? choice.agent}`;
   const image = choice.template?.image ?? `${o.join.boxImage}:box-${choice.agent}`;
   return [
-    `${choice.engine} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
-    '--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp',
+    `${choice.runtime} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
+    o.flags,
     `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${image}`,
   ].join(' ');
 }

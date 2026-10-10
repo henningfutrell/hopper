@@ -88,16 +88,16 @@ describe('the Podman container runtime', () => {
 
   it('inspect, list, start, stop and remove use the container id; gone is no error', async () => {
     api = await startFakeRuntimeApi([
-      on('GET', `${API}/containers/c0ffee/json`, { status: 200, body: { Id: 'c0ffee', Name: spec.name, Config: { Labels: spec.labels }, State: { Status: 'running' } } }),
-      on('GET', `${API}/containers/json`, { status: 200, body: [{ Id: 'c0ffee', Names: [spec.name], Labels: spec.labels, State: 'running' }] }),
+      on('GET', `${API}/containers/c0ffee/json`, { status: 200, body: { Id: 'c0ffee', Name: spec.name, ImageName: spec.image, Config: { Labels: spec.labels }, State: { Status: 'running' } } }),
+      on('GET', `${API}/containers/json`, { status: 200, body: [{ Id: 'c0ffee', Names: [spec.name], Image: spec.image, Labels: spec.labels, State: 'running' }] }),
       on('POST', `${API}/containers/c0ffee/start`, { status: 204 }),
       on('POST', `${API}/containers/c0ffee/stop`, { status: 304 }),
       on('DELETE', `${API}/containers/c0ffee`, { status: 200, body: [] }),
     ]);
     const rt = createPodmanRuntime(api.socket);
-    expect(await rt.inspect('c0ffee')).toEqual({ id: 'c0ffee', name: spec.name, labels: spec.labels, state: 'running' });
+    expect(await rt.inspect('c0ffee')).toEqual({ id: 'c0ffee', name: spec.name, image: spec.image, labels: spec.labels, state: 'running' });
     expect(await rt.inspect('gone')).toBeUndefined();
-    expect(await rt.list({ 'io.hopper.box': 'i-1' })).toEqual([{ id: 'c0ffee', name: spec.name, labels: spec.labels, state: 'running' }]);
+    expect(await rt.list({ 'io.hopper.box': 'i-1' })).toEqual([{ id: 'c0ffee', name: spec.name, image: spec.image, labels: spec.labels, state: 'running' }]);
     const listed = api.seen.find((r) => r.path === `${API}/containers/json`)!;
     expect(listed.query.get('all')).toBe('true');
     expect(JSON.parse(listed.query.get('filters')!)).toEqual({ label: ['io.hopper.box=i-1'] });

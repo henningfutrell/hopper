@@ -9,6 +9,7 @@ export type RuntimeKind = (typeof RUNTIME_KINDS)[number];
 export interface ContainerInfo {
   id: string;
   name: string;
+  image: string;
   labels: Record<string, string>;
   /** The runtime's own word: `created`, `running`, `exited`, … */
   state: string;
@@ -44,8 +45,8 @@ export interface ContainerRuntime {
   problem(): Promise<string | undefined>;
   /** Pull the image when it is not there yet; answers what the hopper reads of it. */
   pull(image: string): Promise<ImageInfo>;
-  /** Make the volume; one that exists already is kept as it is. */
-  createVolume(name: string, labels: Record<string, string>): Promise<void>;
+  /** Make the volume; one that exists already is kept as it is. True: it made a new one. */
+  createVolume(name: string, labels: Record<string, string>): Promise<boolean>;
   /** Remove the volume; one already gone is no error. */
   removeVolume(name: string): Promise<void>;
   /** Create the container; answers its id. */
@@ -75,6 +76,18 @@ export interface TemplateLimits {
   keepHome?: boolean;
 }
 
+/** Why a template's limits cannot be saved: a default not more than 0, or more than its max. Undefined: they can. */
+export function limitsProblem(l: TemplateLimits): string | undefined {
+  const ranges: [string, { default?: number; max?: number } | undefined][] = [['cpus', l.cpus], ['memoryMb', l.memoryMb], ['ttlMinutes', l.ttlMinutes]];
+  for (const [name, r] of ranges) {
+    if (!r) continue;
+    if (r.default !== undefined && !(r.default > 0)) return `${name}: the default must be more than 0`;
+    if (r.max !== undefined && !(r.max > 0)) return `${name}: the max must be more than 0`;
+    if (r.default !== undefined && r.max !== undefined && r.default > r.max) return `${name}: the default ${r.default} is more than the max ${r.max}`;
+  }
+  return undefined;
+}
+
 /** What a launch names (issue #708): each is optional; the template's defaults fill the rest. */
 export interface LaunchParams {
   /** Which of the template's approved secrets the box may ask for; absent: all of them. */
@@ -89,7 +102,9 @@ export interface LaunchParams {
 /** The parameters a launch ran with once the template's defaults filled them in: what the sandbox record keeps. */
 export interface ResolvedParams {
   secrets: string[];
+  /** 0: no limit (a box taken on from before the records). */
   cpus: number;
+  /** 0: no limit (a box taken on from before the records). */
   memoryMb: number;
   /** Absent: no time limit. */
   ttlMinutes?: number;

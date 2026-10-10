@@ -23,7 +23,7 @@ export interface FakeContainerRuntime extends ContainerRuntime {
 export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeContainerRuntime {
   let n = 0;
   const byId = (id: string): FakeContainer | undefined => [...e.boxes.values()].find((c) => c.id === id || c.spec.name === id);
-  const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, labels: { ...c.spec.labels }, state: c.state });
+  const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, image: c.spec.image, labels: { ...c.spec.labels }, state: c.state });
   const e: FakeContainerRuntime = {
     kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(),
     put(spec) {
@@ -34,7 +34,7 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
     },
     async problem() { return e.down; },
     async pull(image) { return { user: e.imageUsers.get(image) ?? 'agent' }; },
-    async createVolume(name) { e.volumes.add(name); },
+    async createVolume(name) { const made = !e.volumes.has(name); e.volumes.add(name); return made; },
     async removeVolume(name) { e.volumes.delete(name); },
     async create(spec) {
       if (e.createFails) throw new Error(e.createFails);
