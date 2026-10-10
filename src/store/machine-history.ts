@@ -78,6 +78,31 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
       return out;
     },
 
+    // Lane load (issue #688): per machine and lanes in use, how many samples, how many at or above each resource
+    // pressure, and the average CPU busy and memory used.
+    laneLoad(q) {
+      const num = (v: unknown): number | undefined => (v === null || v === undefined ? undefined : Number(v));
+      const rows = c.db.all(`
+        SELECT machine_id, lanes_busy, count(*) AS samples,
+          count(*) FILTER (WHERE ${SHARE.cpu} >= ?) AS cpu_p,
+          count(*) FILTER (WHERE ${SHARE.memory} >= ?) AS mem_p,
+          count(*) FILTER (WHERE ${SHARE.disk} >= ?) AS disk_p,
+          avg(cpu_busy) AS cpu_avg, avg(mem_total - mem_available) AS mem_used, max(mem_total) AS mem_total
+        FROM machine_samples WHERE at >= ?::timestamptz AND at < ?::timestamptz
+        GROUP BY machine_id, lanes_busy ORDER BY machine_id, lanes_busy`,
+      q.pressure.cpu, q.pressure.memory, q.pressure.disk, q.from.toISOString(), q.to.toISOString());
+      return rows.map((r) => {
+        const cpuAvg = num(r.cpu_avg), memUsedAvgBytes = num(r.mem_used), memTotalBytes = num(r.mem_total);
+        return {
+          machineId: String(r.machine_id), lanesBusy: Number(r.lanes_busy), samples: Number(r.samples),
+          pressured: { cpu: Number(r.cpu_p), memory: Number(r.mem_p), disk: Number(r.disk_p) },
+          ...(cpuAvg !== undefined ? { cpuAvg } : {}),
+          ...(memUsedAvgBytes !== undefined ? { memUsedAvgBytes } : {}),
+          ...(memTotalBytes !== undefined ? { memTotalBytes } : {}),
+        };
+      });
+    },
+
     prune(before) {
       return c.db.run('DELETE FROM machine_samples WHERE at < ?::timestamptz', before.toISOString()).changes;
     },

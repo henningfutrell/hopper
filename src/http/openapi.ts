@@ -32,6 +32,7 @@ import { decisionBody, decisionNote, reviewSettingsBody } from './ui/reviews.ts'
 import { phaseShiftSettingsBody, shiftBody } from './ui/phase-shifts.ts';
 import { autoAnswerBody } from './ui/auto-answer.ts';
 import { autoParkBody } from './ui/auto-park.ts';
+import { LANE_TUNING_OPERATIONS } from './ui/lane-tuning.ts';
 import { tldrBody } from './ui/tldr.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { accessEditBody } from './ui/access.ts';
@@ -148,6 +149,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/blast-radius/discover', tag: 'Machines and usage', summary: 'Discover a machine now', description: 'Runs the discovery on `machineId`, or on every online machine, through its own connection, and answers when it is done. Discovery only reads: identities, configuration, IAM policy simulation, `kubectl auth can-i`.', role: 'operator', body: discoverBody, returns: '`BlastRadiusView`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/gate-pass', tag: 'Jobs', summary: 'Let a job held at the blast-radius gate through', description: 'The job may then run on a gated machine (`gatePass`, `job.gate_passed`). 409: the job is not held at the gate.', role: 'admin', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/usage/limits', tag: 'Machines and usage', summary: 'Set the usage limits', description: 'The soft limit, past which a machine\'s lane cap scales down, and the hard limit, at which it starts nothing: fractions from 0 to 1, soft below hard. Stored for the user: they win over `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT` from now on, and the next Decision uses them.', role: 'admin', body: usageLimitsBody, returns: '`{ limits: UsageLimits }`' },
+  ...LANE_TUNING_OPERATIONS,
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
   { method: 'post', path: '/ui/api/plugin-store', tag: 'Plugins and routing', summary: 'Set the plugin store; install, update or remove a plugin from it', description: 'Only the instance admin (issue #240). Read the plugin store again, set the plugin store (the default plugin store, none, or a git repository; issue #445) and read it, install a plugin its catalogue lists into the plugin dir (again: an update to the store\'s head), or remove a store install that the plugins config does not name.', role: 'admin', body: pluginStoreBody, returns: 'the new `PluginStoreReport`', errors: [404, 409] },

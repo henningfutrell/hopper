@@ -110,4 +110,5 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/routing', async (req) => o.tenant(req).plugins.routing());
 
   app.get('/api/usage', async (req) => o.tenant(req).engine.getUsageReport());
+  app.get('/api/lanes/plan', async (req) => o.tenant(req).engine.laneTuning.plan());
 }

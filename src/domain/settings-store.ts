@@ -3,7 +3,7 @@
 
 import type { IntakeMigration } from './intake.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
 } from './types.ts';
 
@@ -30,6 +30,9 @@ export interface UserSettingsRepository {
   /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
   getUsageLimits(): UsageLimitPair | undefined;
   setUsageLimits(limits: UsageLimitPair): void;
+  /** Each machine's lane tuning settings (issue #688); a machine absent: never saved, the defaults apply. */
+  getLaneTuning(): LaneTuningSettings;
+  setLaneTuning(settings: LaneTuningSettings): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;

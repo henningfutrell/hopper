@@ -22,6 +22,7 @@ import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
+import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -29,6 +30,7 @@ export type { MachineView, QueueView } from './queries.ts';
 export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.ts';
 export type { BlastRadius, BlastRadiusSettingsPatch } from './blast-radius.ts';
 export type { PhaseShifts, PhaseShiftSettingsPatch, ShiftRequest, ShiftResult } from './phase-shifts.ts';
+export type { LaneTuningPatch, LaneTuningService } from './lane-tuning.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -72,6 +74,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly priorityLanes: PriorityLanes;
   /** Each machine's discovery and blast radius, the gate and the actor machines (issue #542). */
   readonly blastRadius: BlastRadius;
+  /** Lane tuning (issue #688): every machine's lane recommendation, recorded in shadow, and each machine's settings. */
+  readonly laneTuning: LaneTuningService;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -122,6 +126,7 @@ export function createEngine(o: EngineOptions): Engine {
     sourceHost: createSourceHost(c, commands),
     priorityLanes,
     blastRadius,
+    laneTuning: createLaneTuning(c),
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),

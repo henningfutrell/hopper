@@ -12,7 +12,7 @@ import type {
   Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User,
   UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem,
 } from './types.ts';
-import type { ConnectedAccountProvider, MachineSample, ResourceSeries } from './types.ts';
+import type { ConnectedAccountProvider, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
 
 export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 export type { VaultRepository } from './vault.ts';
@@ -232,6 +232,8 @@ export interface MachineHistoryRepository {
   record(samples: readonly MachineSample[]): number;
   /** The resource graph's lines over [from, to), ordered by machine and resource. */
   series(q: MachineHistoryQuery): ResourceSeries[];
+  /** Lane load over [from, to): per machine and lanes in use, ordered by machine and lanes in use (issue #688). */
+  laneLoad(q: { from: Date; to: Date; pressure: ResourcePressure }): LaneLoad[];
   /** Delete the samples older than `before`; how many. */
   prune(before: Date): number;
 }

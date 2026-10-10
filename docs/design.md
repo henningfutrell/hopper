@@ -37,7 +37,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/domain/` | types (`types.ts`, re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `machines.ts` attached machines and their edit; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `source-item.ts` a source item and the source as the host takes it), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`) | anything else in `src/` |
-| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock | everything but `domain/` |
+| `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, issue #688) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
@@ -11285,3 +11285,74 @@ Tests: `test/sources/pull-request-list.test.ts` (each card state, the grace wind
 (no checks merges after the window, waits inside it; a pull request the report missed is found and named, a part as a
 part), `test/integration/pull-requests.test.ts` (the real daemon: waits for checks to start, a late check holds it, an old
 one with no checks merges), `test/ui/pull-requests-view.test.ts` (the plain words).
+
+## Lane tuning (issue #688, 2026-10-10)
+
+Owner request: the hopper records machine resources over time (issue #560) and plan usage over time (issue #385), but
+each machine's lane count is fixed, and the usage limits scale every machine's lanes the same way. Combine the two
+histories so that the hopper sets lanes per machine. This first part is **shadow**: the hopper shows and records a
+**lane recommendation** per machine, next to its configured lanes, and the decider keeps the configured lanes.
+
+**Lane load** (`MachineHistoryRepository.laneLoad`, `src/store/machine-history.ts`). In SQL, over the machine samples of
+the last 7 days (`LANE_TUNING_WINDOW_DAYS`): per machine and lanes in use, how many samples, how many at or above each
+**resource pressure** (`RESOURCE_PRESSURE`: CPU busy 95%, memory used 90%, disk used 95%), the average CPU busy and the
+average memory used. No new table: `machine_samples` already keeps the lanes in use of each sample.
+
+**Lane headroom** (`laneHeadroom`, `src/decider/lane-tuning.ts`, pure). Only lane counts with 10 samples or more (ten
+minutes) count. A lane count shows pressure when more than 5% of its samples do; the headroom is one less than the
+first such count of 1 or more, and the reason names the resource with the most pressured samples. With no pressure,
+it is the most lanes seen, plus what each lane's measured cost leaves room for: the cost is the difference in average
+memory used and CPU busy between the fewest and the most lanes seen, per lane; the room is to 85% memory and 90% CPU
+(`LANE_TARGET`); at most 2 more (`MAX_LANE_STEP`), so the hopper learns a step at a time. A lane whose cost reads as
+nothing leaves room for the 2. With one lane count only, no cost is known, and the headroom is that count.
+
+**Lane recommendation** (`recommendLanes`). Usage is the machine's own used fraction, as the decider reads it (its
+least limited executor, `laneEffect`, `src/decider/usage.ts`, so a week window in its burn window does not count), against
+the usage limits the decider uses (`policyOf`).
+Below the soft limit by more than 10% (`free`), the recommendation is the headroom. Within 10% of the soft limit
+(`near`), past it (`soft`) or at the hard limit (`hard`), it is never more than the configured lanes: the decider's
+lane cap already scales the lanes down from there, so the recommendation adds none, and high-priority work keeps its
+lanes (issue #535). Then it is kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
+(not enough history): the configured lanes, confidence 0. **Confidence** is the samples the headroom stands on per hour
+(60 samples: 1).
+
+**Settings** (`laneTuning` in the user's settings, `LaneTuningSettings`: per machine id, `{ autoTune, minLanes,
+maxLanes }`; a machine absent has the defaults: on, 1, 8). In the database, edited on Machines (admin) and by the CLI.
+`POST /ui/api/lanes/tuning { machineId, autoTune?, minLanes?, maxLanes? }`: a field left out keeps its value; bounds
+are whole numbers from 0 to 64 (`MAX_TUNED_LANES`), the least at most the most (else 400); an unknown machine is 404.
+Each change is one `lanes.tuning_changed { machineId, from, to, by }`. The answer is the plan.
+
+**The plan** (`GET /api/lanes/plan`, `LaneTuningPlan`: `at`, `mode: 'shadow'`, `windowDays`, and per machine its
+`LaneRecommendation` — `configured`, `lanes`, `headroom`, `reason`, `confidence`, `usedFrac`, `usage`, `tuning`). One
+code path (`engine.laneTuning.plan`, `src/engine/lane-tuning.ts`): the Machines view and `hopper lanes plan` (JSON)
+read the same route, as issue #623 asks. `hopper lanes tune <machine> [--auto on|off] [--min <n>] [--max <n>]` makes
+the UI's POST (`src/cli-operator-lanes.ts`).
+
+**Shadow record.** After each resource record that kept new samples (every minute, `createHistoryRecorders`'
+`afterMachineRecord`), the plan is computed again, and for each tuned online machine with a known headroom whose
+recommended or configured lanes changed since its last record, one `lanes.recommended { machineId, lanes, configured,
+headroom, reason, confidence, usage, mode: 'shadow' }`. A change in the reason alone records nothing, so the log is not
+a minute-by-minute copy. The last recorded per machine is read from the event log once, so a restart records no
+duplicate.
+
+**UI.** Machines has a *Lane tuning* panel under the machine cards (`ui/src/views/lane-tuning.tsx`): per machine the
+recommended lanes against the configured lanes (`Recommends 4 lanes; configured 2: 2 more`), the reason, the
+confidence, and for an admin auto-tune and the bounds, saved per machine; read again on `machine.recorded`.
+
+**Not built yet** (left for the next parts of issue #688):
+- **Active mode**: apply the recommendation within the bounds, at each Decision, with each change in the history with
+  its reason and an owner's undo; a `mode` setting per machine (shadow or active).
+- **Per-job cost profile**: per finished job, the CPU, memory and disk peaks and averages on its machine during its run,
+  net of the machine's baseline, its duration and the plan usage it burned, grouped by repository, job kind and
+  template; and placement that uses a job's expected cost.
+- **Slow progress** in the headroom: stalls, timeouts, OOM kills and the failure rate per lane count.
+- **The Decider** (issue #550) as a decision point for the lane count and the job's machine, with these rules as its
+  fallback, and lane reliability (issue #535) among its inputs.
+- **The graph** on Machines that overlays resources, running lanes and usage over time.
+
+Tests: `test/decider/lane-tuning.test.ts` (headroom: none without history, pressure and its resource, a few pressured
+samples, the room past the most seen, one lane count; the recommendation: free, near, soft, hard, bounds, off, offline,
+no history), `test/integration/lane-tuning.test.ts` (the real daemon: the plan from samples, near the soft limit,
+settings and refusals, the shadow record once per change after a resource record, `hopper lanes plan` and `tune`),
+`test/ui/lane-tuning.test.ts` (the model), `test/ui/lane-tuning-view.test.ts` (the panel: the line, Save sends what
+changed, crossing bounds refused, a viewer reads only).
