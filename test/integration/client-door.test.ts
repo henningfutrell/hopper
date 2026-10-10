@@ -5,10 +5,11 @@
 //
 // Feature: a job on an attached machine reaches the hopper with no name resolved
 //   Scenario: a job on a client target is given its client's door, and its tools work through it
-//     Given a client target joined at the hopper's URL
+//     Given a hopper whose LAN name is its bare container name `hopper`, which this machine does not resolve
+//     And a client target joined at the hopper's URL
 //     When a job runs there
 //     Then the job's HOPPER_URL is the client's door, on loopback, not the hopper's URL
-//     And the machine reached the hopper at that URL before the job ran
+//     And the machine reached the hopper at that URL before the job ran (the real check: curl, through the door)
 //     And `hopper-skill` lists the catalog through the door
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -21,6 +22,7 @@ import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
 import type { Executor, MachineShell } from '../../src/domain/ports.ts';
 import type { DiscoveryFacts } from '../../src/domain/types.ts';
+import { localShell } from '../../src/executors/machine-shell.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
@@ -50,7 +52,7 @@ const temp = (prefix: string): string => {
   return dir;
 };
 
-/** An executor whose jobs hold their lane, keeping the variables they were given; the machine's reach check recorded. */
+/** An executor whose jobs hold their lane, keeping the variables they were given; the machine's reach check, run here, recorded. */
 function holder() {
   const held = new Map<string, { env: Record<string, string>; end(): void }>();
   const asked: string[] = [];
@@ -59,7 +61,11 @@ function holder() {
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
     async keepCredential() {},
     async discover() { return NOTHING; },
-    async reach(url) { asked.push(url); return undefined; },
+    async reach(url) {
+      const problem = await localShell().reach(url);
+      asked.push(problem ? `${url}: ${problem}` : url);
+      return problem;
+    },
   };
   const executor: Executor = {
     name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
@@ -92,7 +98,7 @@ describe('a job on a client target reaches the hopper through its client door (i
     process.env.FAKE_HERDR_RUNNING = '1';
     const h = holder();
     const a = await startTestApp({
-      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
+      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, env: { HOPPER_LAN_NAMES: 'hopper', HOPPER_LAN_PEERS: '192.0.2.0/24' },
       plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['holder'] } },
       seams: { executors: [h.executor], authorizationServer: createFakeAuthorizationServer() },
     });
@@ -109,6 +115,7 @@ describe('a job on a client target reaches the hopper through its client door (i
     expect((await a.job(job.id)).laneId).toBe('fleet/lane-1');
     expect(env.HOPPER_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(env.HOPPER_URL).not.toBe(a.url);
+    expect(env.HOPPER_URL).not.toContain('hopper:');
     expect(h.asked).toEqual([env.HOPPER_URL]);
 
     const token = proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job.id);
