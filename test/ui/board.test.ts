@@ -20,6 +20,7 @@ describe('jobBoard', () => {
     expect(b.waitingAnswer.map((j) => j.status)).toEqual(['waiting_answer']);
     expect(b.operatorLed.map((j) => j.status)).toEqual(['operator_led']);
     expect(b.parked.map((j) => j.status)).toEqual(['parked']);
+    expect(b.waitingOn.map((j) => j.status)).toEqual(['waiting_on']);
     expect(b.running.map((j) => j.status).sort()).toEqual(['claimed', 'running']);
     expect(b.ended.map((j) => j.status).sort()).toEqual(['cancelled', 'failed', 'finished', 'rejected']);
     expect(Object.values(b).flat()).toHaveLength(STATUSES.length);
@@ -43,7 +44,7 @@ describe('kpis', () => {
     const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
     expect(k).toEqual({
       running: b.running.length, waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
-      waitingAnswer: b.waitingAnswer.length, parked: b.parked.length,
+      waitingAnswer: b.waitingAnswer.length, parked: b.parked.length, waitingOn: b.waitingOn.length,
       finished: b.ended.filter((j) => j.status === 'finished').length, failed: b.ended.filter((j) => j.status === 'failed').length,
       cancelled: b.ended.filter((j) => j.status === 'cancelled').length,
       lanesBusy: 2, lanesOpen: 3, lanesMax: 4,

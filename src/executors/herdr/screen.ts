@@ -11,7 +11,7 @@ export { SCRATCH_DIR } from '../../job-rules/index.ts';
  * What the hopper types into a job whose turn ended without a marker (issue #163): that turn was a
  * status note, so nothing answers it and no question opens. One line: it is its own turn anchor.
  */
-export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
+export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you are blocked on something only a person or the outside world can do, end your message with a line containing only HOPPER_WAITING, then a line for: <what you wait for>. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
 
 /**
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
@@ -27,11 +27,15 @@ export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 
 /** A review kind's marker reads as that kind (issues #537, #543): `proposal`, `research`. */
-export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth';
+export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth' | 'wait';
 
 /** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
 export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval'] as const;
 export type AuthFields = Partial<Record<typeof AUTH_FIELDS[number], string>>;
+
+/** The fields a job names its own wait with, after HOPPER_WAITING (issue #483): `for` is needed, `until` is not. */
+const WAIT_FIELDS = ['for', 'until'] as const;
+export interface WaitFields { for: string; until?: string }
 
 export interface TurnView {
   /** The last marker after the anchor, or null. */
@@ -40,6 +44,8 @@ export interface TurnView {
   failedReason?: string;
   /** For `auth`: the login's fields, as the job wrote them. */
   auth?: AuthFields;
+  /** For `wait`: what it waits for, and how it will know (issue #483). */
+  wait?: WaitFields;
   /** The assistant message holding the last marker (marker removed), else the last message. */
   assistantText: string;
   /** Last non-empty, non-marker output line after the anchor, gutter stripped. Drives progress. */
@@ -81,16 +87,18 @@ function markerOf(line: string): Marker | null {
   const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === s);
   if (review) return review;
   if (s === 'HOPPER_AUTH_PENDING') return 'auth';
+  if (s === 'HOPPER_WAITING') return 'wait';
   if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;
 }
 
-/** One field line of a login: `tool: gh`, `- URL: https://…` (a list mark, emphasis and the name's case aside). */
-function authField(line: string): [typeof AUTH_FIELDS[number], string] | undefined {
+/** One field line after a marker, of one of `names`: `tool: gh`, `- URL: https://…` (a list mark, emphasis and the name's case aside). */
+function fieldOf<K extends string>(line: string, names: readonly K[]): [K, string] | undefined {
   const m = /^[-*•\s]*`?([A-Za-z_]+)`?\s*:\s*`?(.*?)`?\s*$/.exec(normaliseMarkerLine(line));
-  const key = m?.[1]!.toLowerCase() as typeof AUTH_FIELDS[number] | undefined;
-  return key && AUTH_FIELDS.includes(key) && m![2] ? [key, m![2]] : undefined;
+  const key = m?.[1]!.toLowerCase() as K | undefined;
+  return key && names.includes(key) && m![2] ? [key, m![2]] : undefined;
 }
+const authField = (line: string) => fieldOf(line, AUTH_FIELDS);
 
 /**
  * The login after an auth marker at `index` (issue #476): its fields, when nothing but them follows it. A turn
@@ -105,6 +113,13 @@ function authAt(lines: string[], index: number): AuthFields | undefined {
     fields[f[0]] = f[1];
   }
   return fields;
+}
+
+/** The wait in the lines after a wait marker (issue #483): its `for:` line and an `until:` line, when present. None without `for:`. */
+export function waitFields(after: string[]): WaitFields | undefined {
+  const fields: Partial<WaitFields> = {};
+  for (const f of after.filter((x) => stripGutter(x) !== '').map((l) => fieldOf(l, WAIT_FIELDS))) { if (!f) break; fields[f[0]] = f[1]; }
+  return fields.for ? { for: fields.for, ...(fields.until ? { until: fields.until } : {}) } : undefined;
 }
 
 /** True if `line` sits in a user echo block: a ❯ line and its continuation, no assistant line between. */
@@ -233,13 +248,21 @@ function failedReason(lines: string[], index: number): string {
   return next ?? '';
 }
 
-export function readTurn(text: string, anchor: string): TurnView {
+/**
+ * The turn after `anchor`. `markersAfter`: markers in its first that many lines are left out — a wait already taken
+ * (issue #483), which the job went on from by itself.
+ */
+export function readTurn(text: string, anchor: string, markersAfter = 0): TurnView {
   const all = text.split('\n');
   const at = anchorLine(all, anchor);
   const lines = turnLines(all, at);
   let markerIndex = -1;
-  lines.forEach((l, i) => { if (markerOf(l)) markerIndex = i; });
-  const marker = markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null;
+  lines.forEach((l, i) => { if (i >= markersAfter && markerOf(l)) markerIndex = i; });
+  const found = markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null;
+  const wait = found === 'wait' ? waitFields(lines.slice(markerIndex + 1)) : undefined;
+  // A wait that names nothing it waits for is no wait: the turn is a status note.
+  const marker = found === 'wait' && !wait ? null : found;
+  if (!marker) markerIndex = -1;
   const auth = marker === 'auth' ? authAt(lines, markerIndex) : undefined;
   // A login's lines carry its code: never activity, never the agent's words (issue #476).
   const authLines = new Set<number>();
@@ -257,6 +280,7 @@ export function readTurn(text: string, anchor: string): TurnView {
   };
   if (view.lastMarker === 'failed') view.failedReason = failedReason(lines, markerIndex);
   if (view.lastMarker === 'auth') view.auth = auth;
+  if (view.lastMarker === 'wait') view.wait = wait;
   return view;
 }
 

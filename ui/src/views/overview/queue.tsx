@@ -1,7 +1,7 @@
-// Waiting (queue order), the jobs on a question, the operator-led jobs, the parked jobs and the locked entries below it, and Ended (the last 24 hours, newest first).
+// Waiting (queue order), the jobs on a question, the operator-led jobs, the parked jobs, the jobs on their own wait and the locked entries below it, and Ended (the last 24 hours, newest first).
 // Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
 import { AssessmentLine } from '@/components/assessment';
-import { Archive, Check, DoorOpen, Hourglass, Lock, RotateCcw, SquareX, X } from 'lucide-react';
+import { Archive, Check, DoorOpen, Hourglass, Lock, Play, RotateCcw, SquareX, X } from 'lucide-react';
 import { Confirm } from '@/components/confirm';
 import { heldAtGate } from '@/model/blast-radius';
 import { goalOf } from '@/model/job';
@@ -135,6 +135,46 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
   </>;
 }
 
+/** End a job's own wait (issue #483): what it waited for has happened; it is queued again and told so in its pane. */
+function EndWaitButton({ job }: { job: Job }) {
+  const operate = useCanOperate();
+  if (!operate) return null;
+  return (
+    <Button size="xs" variant="outline" title="End the wait: what it waits for has happened. It goes on in its pane, told so."
+      onClick={() => act(`/ui/api/jobs/${job.id}/end-wait`, {}, 'Wait ended')}><Play />End the wait</Button>
+  );
+}
+
+/**
+ * The jobs on their own wait (issue #483): each said what it waits for, which only a person or the outside world can do. No
+ * question, no lane; its pane stays on its machine. It goes on by itself when its own check sees it happen, or a person ends
+ * the wait. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ */
+export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
+  const { waitingOn } = useJobBoard();
+  const machines = useHopper((s) => s.machines);
+  if (waitingOn.length === 0) return null;
+  return <>
+    {heading && <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+      On its own wait<span className="num font-normal text-muted-foreground/70">{waitingOn.length}</span>
+    </div>}
+    {waitingOn.map((job) => (
+      <div key={job.id} data-job-group="waitingOn" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
+        <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><EndWaitButton job={job} /><CancelButton job={job} /></div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />
+          {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
+          <span className="ml-auto">for <Since iso={job.wait?.since ?? job.updatedAt} /></span>
+        </div>
+        {job.wait && <div className="text-xs">waits for <span data-slot="waits-for" className="font-medium text-foreground/90">{job.wait.for}</span></div>}
+        {job.wait?.until && <div className="text-xs text-muted-foreground">knows by <span data-slot="wait-until">{job.wait.until}</span></div>}
+        <UnassignedFlag job={job} />
+        <CredentialsFlag job={job} />
+      </div>
+    ))}
+  </>;
+}
+
 export function WaitingPanel() {
   const board = useJobBoard();
   const latest = useHopper((s) => s.decisions[0]);
@@ -205,6 +245,7 @@ export function WaitingPanel() {
         ))}
       </>}
       <ParkedRows />
+      <WaitingOnRows />
       <LockedRows />
     </Panel>
   );

@@ -23,7 +23,7 @@ const JOBS_SWEPT = 2000;
 const KEPT_EVENTS = 1000;
 
 /** A job whose processes may run: anything else of its own on a machine is a leftover. */
-const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'operator_led']);
+const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'waiting_on', 'operator_led']);
 
 /** One reap the sweep asks of a machine. */
 export interface SweepReap { jobId: string; scratch?: string }

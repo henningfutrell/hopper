@@ -109,7 +109,7 @@ const totalsOf = (h: InstanceUsageHistory) => totalsAsSeries(h.totals);
 /** The users' work as an admin reads it: totals across every user, nobody's share. */
 function Totals({ totals: t }: { totals: InstanceTotals }) {
   const items: [string, number][] = [
-    ['waiting', t.jobs.queued + t.jobs.held + t.jobs.claimed], ['running', t.jobs.running], ['waiting for an answer', t.jobs.waiting_answer], ['operator-led', t.jobs.operator_led],
+    ['waiting', t.jobs.queued + t.jobs.held + t.jobs.claimed], ['running', t.jobs.running], ['waiting for an answer', t.jobs.waiting_answer], ['on their own wait', t.jobs.waiting_on ?? 0], ['operator-led', t.jobs.operator_led],
     ['open questions', t.questions.open], ['lanes busy', t.lanes.busy], ['lanes open', t.lanes.total],
     ['finished, last 24 h', t.endedLastDay.finished], ['failed, last 24 h', t.endedLastDay.failed],
     ['cancelled, last 24 h', t.endedLastDay.cancelled], ['rejected, last 24 h', t.endedLastDay.rejected],

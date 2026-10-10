@@ -218,7 +218,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const recorded = recordOutcome(c, started, claim.laneId, outcome, entry.cancelReason, machine);
     if (recorded.kind === 'question') c.questions.handle(recorded.questionId);
     else if (recorded.kind === 'report') c.reviews[recorded.review].handle(recorded.itemId);
-    else await cleanup(job.id);
+    // Its own wait (issue #483) keeps its pane: nothing to clean up.
+    else if (recorded.kind !== 'wait') await cleanup(job.id);
   }
 
   function launch(claim: Claim, how: Launch): void {

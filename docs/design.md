@@ -871,6 +871,7 @@ If your question needs research or a proposal before it can be answered, say so 
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
 When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Goal:, Approach:, Alternatives considered:, Risks:, Effort:, Context: (what you read and relied on) —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. It is reviewed; you are told whether it was accepted, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
+When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
 ```
@@ -903,6 +904,7 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | last marker `HOPPER_AUTH_PENDING`, nothing after it but its field lines (`tool:`, `url:`, `code:`, `expires_in:`; also `kind:`, `expires_at:`, `interval:`) | a **login** ("Logins", issue #476): no question, no nudge. Reported to the logins; the job stays running and waits, as on background work, until Claude goes on by itself (the login then `completed`), the user acts on it, it expires, or `timeoutMs`. A login the logins cannot take (no code, no URL) is said back to the job, three times at most, then the job fails. Field lines are never progress; output after them means the job went on, and the marker no longer counts |
+| last marker `HOPPER_WAITING`, then a `for:` line (and an `until:` line) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000), and no background work in the footer | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again. Further status notes in a row wait 1, 5, 15 and 30 minutes idle before their nudge (`NUDGE_GAPS_MS`, `nudge.ts`, issue #491); the one after that gets none: progress `waiting: N status notes in a row without a marker; no more nudges until claude works again`, and the watch goes on until Claude works again by itself (a background notification, a person in its pane), which begins a new row, or `timeoutMs`. Before each nudge, the check before a nudge (issue #627): work over at the source ends the job done; a person awaited means no nudge |
 | idle/done with no marker, and the footer under the input box names background work (`backgroundWork`, `screen.ts`: `· 1 shell ·`, `background task`, `monitor`, `agent`) | no status note, no nudge (issue #491): Claude Code wakes the job when that work ends. Progress once: `waiting on background work (1 shell): no nudge while it runs`. When the footer no longer names it and Claude stays idle, the status note timer starts |
@@ -8773,7 +8775,7 @@ moves the badge: the Failures entry carries it.
 A person takes a running job, or one on a question, out of its lane for an open-ended time — days or weeks —
 and re-queues it later on the same machine, where it resumes its agent session. Distinct from a job on a
 question (`waiting_answer` keeps its waiting pane and Claude in it) and from a job's own wait for something
-(issue #483, not built): parking is a person shelving a job, and holds nothing live.
+(issue #483, "A job's own wait"): parking is a person shelving a job, and holds nothing live.
 
 - **Park.** `POST /ui/api/jobs/:id/park` (least role `operator`, the same as cancel). Accepted for a `running`
   job or a `waiting_answer` one whose executor has `park` (`parkingExecutors` of `GET /api/health`), with or
@@ -10615,3 +10617,45 @@ new-tab links, refused link schemes, inline lines; the summary and the long-text
 (a long question folded and opened, its HTML and script shown as text; a short one whole; a long proposal's Goal first
 and the rest behind Show all; reviewer notes), `test/job-rules/markdown-format.test.ts`, `test/herdr/screen.test.ts` (the
 footer verbatim), `test/plugins/grokbot-payload.test.ts`.
+
+## A job's own wait (issue #483, 2026-10-10)
+
+A job blocked on something only a person or the outside world can do (write access to be granted, a review, a release)
+had no way to say so. The protocol had three end markers: a question, done and failed. A message with none was a status
+note, nudged again and again; so a job that waited sent status notes, opened a question only to park itself (a wait on a
+person's question list as if it needed an answer), or ended failed though it was not.
+
+- **The marker.** A protocol line (`WAIT_LINE`, `src/job-rules/index.ts`): end the message with a line `HOPPER_WAITING`, then
+  `for: <what you wait for>` and, if it can, `until: <how it will know>`. To be woken, the job first starts a command in the
+  background that ends when the thing happens (a poll), and names it in `until:`. Never a question only to wait. The status
+  note nudge names the marker too. A `HOPPER_WAITING` without a `for:` line is no wait: a status note.
+- **Read.** herdr-claude: `readTurn` (`screen.ts`) reads the marker and its fields (`waitFields`); the monitor returns the
+  outcome `{ kind: 'wait', wait: { for, until? } }` at once, with no nudge, and saves the turn with `parkedSeq` and
+  `markersAfter` (the turn's output lines then). A print-mode agent: the marker, then its fields to the end of the answer
+  (`outcomeOf`); its session id is saved, as on a question.
+- **Recorded** (`src/engine/outcome.ts`): status `waiting_on`, `wait: { for, until?, since }` on the job, its lane freed,
+  `resumeOn` its lane's machine, `job.waiting { for, until? }`. No question opens and none is counted; nothing is cleaned up:
+  its pane and agent stay. It is not in the decider's inputs (it is neither queued nor running), and holds no lane.
+- **It goes on by itself** (`src/engine/pane-answers.ts`). On every tick the engine probes each `waiting_on` job's pane, as a
+  job on a question's (`answeredInPane`): Claude past the wait — working again, text typed in the pane, or new output past
+  `markersAfter` (a short turn may be over by the time it is looked at) — ends it. The job runs again on a lane of its machine
+  (one more over the cap when none is idle), `wait` cleared, `job.reattached { reason: 'the wait ended in the pane' }`, and the
+  runner watches the turn with the wait already taken left out. Its own background poll ending is what wakes Claude: the
+  hopper runs no check of its own.
+- **A person ends it.** `POST /ui/api/jobs/:id/end-wait { note? }` (least role `operator`; 409 unless `waiting_on`): queued
+  again with `waitEndedNote` pending, which pins it to `resumeOn` as an answer does; its claim types it into the pane (`[hopper] A
+  person ended your wait: what you waited for (<for>) has happened. The person's note: <note> Check it, then go on with the
+  job.`). `job.wait_ended { by: 'person', note? }`. A print-mode job resumes its session with it.
+- **Cancel** works as for any job: the pane closes through the normal reap.
+- **Live job.** A `waiting_on` job's processes still run on its machine (its background poll): it is in every "at work" list —
+  credentials renewed, the GitHub proxy, skills, the vault, the job stream, artifacts, Access, the sweep and the rename guard
+  keep it as live — and in `jobsOnMachine`.
+- **UI.** The Overview's Waiting panel lists the jobs on their own wait in their own group ("On its own wait"), and the Queue
+  view in its own panel (`WaitingOnRows`, `ui/src/views/overview/queue.tsx`): what it waits for, how it will know, its machine,
+  since when; **End the wait** (operators) and Cancel. It is no question: not in Questions, its badge or Attention. The Waiting
+  card counts it in its line. The lane timeline ends a span at `job.waiting`.
+- **Not built.** Parking a job on its own wait; a check the hopper runs itself (the job's own background poll covers it); a
+  note field for End the wait in the UI (the route takes one).
+- **Persisted state.** No schema change: the status and `wait` are in the job's JSON. A build before this one, on a store
+  holding a `waiting_on` job, shows it in no group and never runs it; its pane stays until it is cancelled.
+

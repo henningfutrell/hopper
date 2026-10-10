@@ -4,7 +4,7 @@ import type { Clock, PaneAnswer } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
 import { lastLineOf } from './panes.ts';
-import { typedAfterQuestion } from './screen.ts';
+import { readTurn, typedAfterQuestion } from './screen.ts';
 import type { PaneState, TurnAnchor } from './start.ts';
 
 /**
@@ -28,9 +28,14 @@ export async function readPaneAnswer(herdr: HerdrClient, s: PaneState & { turn: 
   }
   const recent = await herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
   const typed = typedAfterQuestion(recent, s.turn.anchor);
-  // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner.
-  if (agent.status !== 'working' && typed === undefined) return null;
-  const turn: TurnAnchor = { seq: stopped, anchor: typed ? lastLineOf(typed) : s.turn.anchor, blockedAtSend: false };
+  // A seq move alone may be herdr's own idle/done flip; working, or a typed echo, is the owner. Past its own wait (issue
+  // #483), new output is Claude gone on by itself, though its turn may be over by the time it is looked at.
+  const wentOn = typed === undefined && s.turn.markersAfter !== undefined && readTurn(recent, s.turn.anchor).outputLines > s.turn.markersAfter;
+  if (agent.status !== 'working' && typed === undefined && !wentOn) return null;
+  // Claude went on by itself in the same turn (issue #483): the wait it took stays left out.
+  const turn: TurnAnchor = typed
+    ? { seq: stopped, anchor: lastLineOf(typed), blockedAtSend: false }
+    : { seq: stopped, anchor: s.turn.anchor, blockedAtSend: false, ...(s.turn.markersAfter !== undefined ? { markersAfter: s.turn.markersAfter } : {}) };
   const { parkedSeq: _drop, lapsesAt, ...rest } = s;
   // Nothing typed, and the dialog's countdown has run out: Claude Code denied it by itself, nobody answered (issue #376).
   const lapsed = typed === undefined && lapsesAt !== undefined && clock.now().getTime() >= Date.parse(lapsesAt) - LAPSE_SLACK_MS;

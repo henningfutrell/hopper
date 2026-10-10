@@ -6,7 +6,7 @@ import type { Job } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 
 /** The statuses a job is given vault secrets or minted credentials in: it holds its pane. Ended, failed or parked: nothing. */
-export const AT_WORK: readonly string[] = ['running', 'waiting_answer'];
+export const AT_WORK: readonly string[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** An attached machine as the vault knows it (issue #558): a client target's name, its machine key, its template. */
 export interface ClientTarget { name: string; key: string; template?: string }

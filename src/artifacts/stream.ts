@@ -11,7 +11,7 @@ export const ARTIFACT_STREAM_TYPES = {
 } as const;
 
 const STREAMED = Object.keys(ARTIFACT_STREAM_TYPES) as EventType[];
-const AT_WORK: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer'];
+const AT_WORK: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer', 'waiting_on'];
 
 /** Puts each artifact event of a job at work on its stream; the unsubscribe. */
 export function streamArtifactEvents(o: {

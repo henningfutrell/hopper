@@ -50,6 +50,8 @@ export interface Queue {
   operatorLed: Job[];
   /** Parked jobs (issue #501): on no lane, until picked up. */
   parked: Job[];
+  /** Jobs on their own wait (issue #483): on no lane, their pane kept, until it ends. Absent from an older daemon. */
+  waitingOn?: Job[];
   /** The locked entries (issue #355): failed jobs kept in the queue until run again or dismissed, highest priority first. */
   locked: Job[];
   /** Jobs ended in the last 24 hours, newest end first. */

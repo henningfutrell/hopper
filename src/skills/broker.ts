@@ -14,7 +14,7 @@ import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts'
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
-const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
+const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** One user's side: their jobs, the check of a token, their event log, and what a box of theirs may be given. */
 export interface SkillUser {

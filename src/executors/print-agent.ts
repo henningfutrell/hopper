@@ -13,7 +13,7 @@ import { scopeUnitOf } from '../client/server.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
-import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
+import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter, waitFields } from './herdr/screen.ts';
 import { jobScratchOf, jobTmpOf, linkTmpCommand, scratchDirOf } from './herdr/start.ts';
 import { localShell, sshShell } from './machine-shell.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
@@ -63,6 +63,10 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
   const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === last);
   if (review) return { kind: 'report', review, report: { text: before, recentOutput: tail(text.trim()) } };
+  // Its own wait (issue #483): the marker, then its fields to the end. A person ends it; the answer resumes the session.
+  const at = lines.findLastIndex((l) => normaliseMarkerLine(l) === 'HOPPER_WAITING');
+  const wait = at >= 0 ? waitFields(lines.slice(at + 1)) : undefined;
+  if (wait) return { kind: 'wait', wait };
   return { statusNote: text.trim() };
 }
 
@@ -142,7 +146,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
         if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
         return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
       }
-      if (out.kind === 'question' || out.kind === 'report') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
+      if (out.kind === 'question' || out.kind === 'report' || out.kind === 'wait') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
       return out;
     } catch (e) {
       return { kind: 'failed', error: `${label} on ${where}: ${(e as Error).message}` };

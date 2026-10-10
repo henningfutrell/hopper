@@ -67,6 +67,8 @@
         "job.parked",
         "job.unparked",
         "job.continued",
+        "job.waiting",
+        "job.wait_ended",
         "source.stalled",
         "connected_account.expired",
         "connected_account.renewed",

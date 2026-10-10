@@ -19,7 +19,7 @@ import { parseProxyToken } from '../github-proxy/token.ts';
 import type { ArtifactEdge } from './artifacts.ts';
 import type { TenantParts, Tenants } from './tenants.ts';
 
-const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
+const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
 const ID = /^[A-Za-z0-9-]{1,100}$/;
 

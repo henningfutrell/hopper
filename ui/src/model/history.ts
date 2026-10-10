@@ -23,7 +23,7 @@ export function throughput(ended: Job[], now: number, bucketMs: number, buckets:
   return out;
 }
 
-export type SpanOutcome = 'running' | 'operator-led' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question' | 'parked';
+export type SpanOutcome = 'running' | 'operator-led' | 'finished' | 'failed' | 'cancelled' | 'requeued' | 'question' | 'parked' | 'waiting';
 /** The lane timeline's row for jobs claimed as operator-led (issue #318): worked by hand, on no lane. */
 export const OPERATOR_LED_ROW = 'operator-led';
 
@@ -31,12 +31,14 @@ export interface LaneSpan { laneId: string; jobId: string; start: number; end: n
 
 const ENDS: Partial<Record<DomainEvent['type'], SpanOutcome>> = {
   'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'cancelled', 'job.requeued': 'requeued', 'question.asked': 'question', 'job.parked': 'parked',
+  // Its own wait (issue #483): it leaves its lane.
+  'job.waiting': 'waiting',
 };
 
 /** How a span ends when the job store says its job no longer runs. */
 const LEFT: Record<JobStatus, SpanOutcome> = {
   finished: 'finished', failed: 'failed', cancelled: 'cancelled', rejected: 'cancelled', waiting_answer: 'question', queued: 'requeued', held: 'requeued',
-  claimed: 'running', running: 'running', operator_led: 'operator-led', parked: 'parked',
+  claimed: 'running', running: 'running', operator_led: 'operator-led', parked: 'parked', waiting_on: 'waiting',
 };
 
 /** Whether the job store says the job still works: on a lane, or by hand. */

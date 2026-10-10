@@ -10,7 +10,7 @@ import type { Job, JobStatus, MachineSnapshot } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 
 /** The jobs whose processes may be at work on their machine now: a queued job's files of an earlier run may be reaped. */
-const AT_WORK: JobStatus[] = ['running', 'waiting_answer'];
+const AT_WORK: JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** The job's credentials dir under its scratch dir. */
 export const credentialsDirOf = (scratch: string): string => `${scratch}/credentials`;

@@ -21,6 +21,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.parked': { from: 'waiting_answer', machineId: 'laptop', auto: true, why: 'Parked automatically: the question waited 30 min.' },
   'job.unparked': { to: 'queued' },
   'job.continued': { handoffId: 'h1' },
+  'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push' },
+  'job.wait_ended': { by: 'person', note: 'Write access is granted.' },
   'job.reattached': { reason: 'daemon restart' },
   'job.reprioritized': { from: 50, to: 80, reason: 'project:Priority=P1' },
   'job.respecified': { from: { executor: 'herdr-claude', cwd: '~/code/app' }, to: { executor: 'herdr-claude', model: 'claude-opus-5-5', cwd: '~/code/app-win', machineId: 'win-native', rule: 'windows' } },

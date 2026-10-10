@@ -24,6 +24,7 @@ export type JobStatus =
   | 'waiting_answer' // paused on a question; holds no lane; its pane stays open
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
   | 'parked' // taken out of its lane by a person (issue #501): no lane, no pane, no agent; its work tree and agent session kept until re-queued
+  | 'waiting_on' // its own wait (issue #483): it waits on something it named; holds no lane; its pane stays open; no question
   | 'finished' | 'failed' | 'cancelled'
   | 'rejected'; // turned away at the queue gate: kept, never run
 
@@ -33,6 +34,12 @@ export type JobStatus =
  * is made when missing.
  */
 export const JOBS_DIR = '~/hopper-jobs';
+
+/**
+ * A job's own wait (issue #483): what it waits for, which only a person or the outside world can do (access granted, a
+ * review); `until`, how it will know it happened (a check it runs in the background, an event), as it wrote it.
+ */
+export interface JobWait { for: string; until?: string; since: string }
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];
 
@@ -155,6 +162,8 @@ export interface Job extends JobPhaseFields {
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
   continued?: { at: string } & ContinuedBy;
+  /** Set while the job waits on something it named (issue #483, status `waiting_on`): what, how it will know, since when. */
+  wait?: JobWait;
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
   fromConfig?: SpecFromConfig;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */

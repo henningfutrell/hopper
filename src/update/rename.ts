@@ -116,7 +116,7 @@ export function paneJobs(active: Job[]): string[] {
     .map((j) => `job ${j.id} (${j.status})`);
 }
 
-export const PANE_JOB_STATUSES = ['claimed', 'running', 'waiting_answer'] as const;
+export const PANE_JOB_STATUSES = ['claimed', 'running', 'waiting_answer', 'waiting_on'] as const;
 
 export type Systemctl = (args: string[]) => Promise<void>;
 export const systemctl: Systemctl = async (args) => { await exec('systemctl', ['--user', ...args]); };
