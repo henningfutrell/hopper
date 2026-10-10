@@ -333,7 +333,7 @@ describe('handled questions', () => {
     expect(rows[0]!.textContent).not.toContain('merge\n');
     await click(rows[0]!.querySelector('button') as HTMLElement);
     await vi.waitFor(() => expect(rows[0]!.textContent).toContain('by human'));
-    expect(rows[0]!.querySelector('pre')?.textContent).toContain('Rebase or merge?');
+    expect(rows[0]!.querySelector('[data-slot="question-text"]')?.textContent).toContain('Rebase or merge?');
     expect(list.textContent).not.toContain(question.text);
   });
 });

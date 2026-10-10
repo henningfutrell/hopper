@@ -42,3 +42,10 @@ describe('Grok Bot routine: the question body says whether its job is high prior
     expect(at(moved)).toMatchObject({ priority: 50, high: null });
   });
 });
+
+describe('Grok Bot routine: the question body carries the Markdown source (issue #569)', () => {
+  it('the question as the agent wrote it, unchanged, and says it is Markdown', () => {
+    const text = '## Branch\n\nWhich branch do I rebase onto?\n\n1. `dev`\n2. `main`\n\n<b>not HTML</b>';
+    expect(payload(question({ text }))).toMatchObject({ question: text, questionFormat: 'markdown' });
+  });
+});
