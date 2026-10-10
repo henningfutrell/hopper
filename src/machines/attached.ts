@@ -45,6 +45,8 @@ interface AttachedOptions {
   clock?: Clock;
   probeEveryMs?: number;
   logger?: Logger;
+  /** Why a box of this template takes no new job now (issue #602), or undefined when the template is approved. Read at every list(). */
+  templateWait?: (template: string) => string | undefined;
 }
 
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
@@ -106,7 +108,12 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       const m = o.machine();
       const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
-      if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
+      if ('client' in m) {
+        const name = m.client.template;
+        // Fails closed: with no way to read the template's approval, its box takes no job.
+        const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
+        return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
+      }
       return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
     },
   };

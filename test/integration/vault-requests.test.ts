@@ -17,7 +17,8 @@
 //   Scenario: the user gives another kind of credential than the one asked for; the job is told what it is
 //   Scenario: the user declines: the job is told why
 //   Scenario: without the job's words for what it takes, a no that says how to ask
-//   Scenario: a template never approved still waits for a person after the credential is given
+//   Scenario: a template whose approval was revoked while a job ran still waits for a person after the credential is given
+//     (a box of a template not approved takes no new job, issue #602)
 //   Scenario: a machine of no template: the hopper asks nobody
 //   Scenario: a Kubernetes link Access allows, with no token in the template: the user is asked, with how to make one
 import { execFile, spawn } from 'node:child_process';
@@ -75,8 +76,8 @@ const temp = (prefix: string): string => {
 
 type Edit = (body: Record<string, unknown>) => Promise<{ status: number; body: VaultView }>;
 
-/** A hopper with the template web — approved unless said — whose scope is empty: no credential anywhere. */
-async function boot(approved = true): Promise<{ a: TestApp; session: string; edit: Edit }> {
+/** A hopper with the template web, approved, whose scope is empty: no credential anywhere. */
+async function boot(): Promise<{ a: TestApp; session: string; edit: Edit }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
@@ -93,7 +94,7 @@ async function boot(approved = true): Promise<{ a: TestApp; session: string; edi
     return { status: r.status, body: r.body };
   };
   await edit({ action: 'save-template', name: 'web', image: 'localhost/box-web:1', secrets: [] });
-  if (approved) await edit({ action: 'approve-template', name: 'web' });
+  await edit({ action: 'approve-template', name: 'web' });
   return { a, session, edit };
 }
 
@@ -253,10 +254,11 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     expect(((await a.api('GET', '/api/vault')).body as VaultView).requests).toEqual([]);
   });
 
-  it('a template never approved: the credential given still waits for a person; approved, the job gets it', async () => {
-    const { a, session, edit } = await boot(false);
+  it('a template whose approval was revoked: the credential given still waits for a person; approved again, the job gets it', async () => {
+    const { a, session, edit } = await boot();
     await joinMachine(a, session, 'hopper-sandbox-web', 'web');
     const job = await runningJob(a, 'hopper-sandbox-web');
+    expect((await edit({ action: 'revoke-template', name: 'web' })).status).toBe(200);
     const creds = credentialsOf(a, job);
     expect((await skill(a, creds, [SERVICE, ...ASK])).code).toBe(3);
     const r = await requestFor(a, SERVICE);

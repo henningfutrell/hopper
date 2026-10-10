@@ -276,6 +276,7 @@ export const EVENT_SCHEMAS = {
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
+  'vault.revoked': strict({ template: z.string(), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),

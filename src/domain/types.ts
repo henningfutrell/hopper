@@ -256,6 +256,11 @@ export interface MachineSnapshot {
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
   resources?: ResourceReading;
+  /**
+   * A sandbox box (issue #558): the template its join line named, and why it takes no new job while that template is
+   * not approved (issue #602): not saved, never approved, approval revoked, or its image changed since. Absent `waiting`: approved.
+   */
+  template?: { name: string; waiting?: string };
   /** How the sweep treats it (issue #410): how often, and how old an ended job's scratch dir gets there. Absent fields: the defaults. */
   sweep?: { everyMinutes?: number; scratchMaxAgeHours?: number };
 }

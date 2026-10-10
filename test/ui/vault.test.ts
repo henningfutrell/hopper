@@ -48,8 +48,8 @@ describe('a name', () => {
 describe('a template on the page', () => {
   const radius = { level: 'low' as const, reasons: [], profiles: [] };
   const base = { name: 'kube', image: 'img', secrets: ['A', 'B'], profiles: [], savedBy: 'Ada', savedAt: '2026-10-09T10:00:00Z', radius };
-  it('never approved: its boxes get nothing', () => {
-    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true, profiles: [] }, gives: [] })).toMatch(/not approved yet/);
+  it('never approved: its boxes take no job and get nothing', () => {
+    expect(approvalText({ ...base, pending: { secrets: ['A', 'B'], image: true, profiles: [] }, gives: [] })).toBe('not approved yet: its boxes take no job and get nothing from the vault');
   });
   it('approved as it is', () => {
     expect(approvalText({ ...base, approval: { image: 'img', secrets: ['A', 'B'], by: 'Ada', at: '' }, pending: { secrets: [], image: false, profiles: [] }, gives: ['A', 'B'] })).toBe('approved');

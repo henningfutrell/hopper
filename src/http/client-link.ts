@@ -29,7 +29,7 @@ import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
-import { holdsTemplate } from '../vault/service.ts';
+import { holdsTemplate } from '../vault/vault.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;
