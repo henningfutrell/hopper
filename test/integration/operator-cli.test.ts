@@ -126,6 +126,21 @@ describe('operator actions from the CLI (issue #374)', () => {
     expect((await hopper(a, ['question', 'answer', 'nope'])).err).toMatch(/usage: hopper question answer <id> <text>/);
   });
 
+  it('auto-park (issue #650): shows the timeouts and changes them, as JSON; a bad value is refused', async () => {
+    const a = await boot();
+    const shown = await hopper(a, ['auto-park', '--json']);
+    expect(shown.code).toBe(0);
+    expect(JSON.parse(shown.out)).toEqual({ minutes: 30, highPriorityMinutes: 30 });
+    const set = await hopper(a, ['auto-park', 'set', '--minutes', '0', '--high-priority-minutes', '15']);
+    expect(set.code).toBe(0);
+    expect(JSON.parse(set.out)).toEqual({ minutes: 0, highPriorityMinutes: 15 });
+    expect((await a.api('GET', '/api/auto-park')).body).toEqual({ minutes: 0, highPriorityMinutes: 15 });
+    expect((await a.events('types=auto_park.settings_changed')).at(-1)?.data).toMatchObject({ by: 'operator CLI', to: { minutes: 0, highPriorityMinutes: 15 } });
+    expect((await hopper(a, ['auto-park', 'set'])).err).toMatch(/usage: hopper auto-park set/);
+    expect((await hopper(a, ['auto-park', 'set', '--minutes', 'soon'])).err).toMatch(/--minutes must be a number of minutes/);
+    expect((await hopper(a, ['auto-park', 'set', '--minutes', '-1'])).code).toBe(2);
+  });
+
   it('no daemon at the URL: says so, exit 1, and leaves no session behind', async () => {
     const a = await boot();
     const before = sessionsIn(a);
