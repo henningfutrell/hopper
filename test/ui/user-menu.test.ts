@@ -31,7 +31,8 @@ async function render(user: Record<string, unknown> = ADMIN) {
   }));
   const { useHopper } = (await import(store)) as Store;
   useHopper.setState({ authed: true, conn: 'live', signIn: offer, user, update: UPDATE, health: { ok: true, version: '0.1.0', router: 'gate', fallback: false, executors: [], uptimeS: 1 } });
-  const { Header } = (await import('../../ui/src/app/header.tsx')) as { Header: () => El };
+  const header = '../../ui/src/app/header.tsx';
+  const { Header } = (await import(header)) as { Header: () => El };
   const tooltip = '../../ui/src/components/ui/tooltip.tsx';
   const { TooltipProvider } = (await import(tooltip)) as { TooltipProvider: (p: { children?: unknown }) => El };
   await act(async () => {
@@ -73,7 +74,7 @@ describe('the top bar on a phone (issue #666)', () => {
     await render();
     const header = document.querySelector('header')!;
     const controls = [...header.querySelectorAll<HTMLElement>('button, a')].filter((c) => !hiddenOnPhone(c));
-    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Version and updates: beta', 'User menu: Bea Lind, admin']);
+    expect(controls.map((c) => c.getAttribute('aria-label'))).toEqual(['Version and updates: beta channel', 'User menu: Bea Lind, admin']);
     expect(header.querySelector('img')).not.toBeNull();
     expect(hiddenOnPhone(header.querySelector('[data-slot="badge-channel"]'))).toBe(false);
     expect(hiddenOnPhone(header.querySelector('[data-slot="connection"]'))).toBe(false);
@@ -97,8 +98,8 @@ describe('the user menu (issue #666)', () => {
     const labels = items().map((i) => i.textContent?.trim());
     expect(labels[0]).toMatch(/^(Light|Dark) theme$/);
     expect(labels.slice(1)).toEqual(['Log in another device', 'Sign out']);
-    const separator = menu()!.querySelector('[role="separator"]:last-of-type');
-    expect(separator?.nextElementSibling).toBe(item(/Sign out/));
+    const separators = [...menu()!.querySelectorAll('[role="separator"]')];
+    expect(separators.at(-1)?.nextElementSibling).toBe(item(/Sign out/));
     for (const i of items()) expect(i.className).toMatch(/(^|\s)min-h-11(\s|$)/);
   });
 
@@ -141,9 +142,11 @@ describe('the user menu (issue #666)', () => {
   it('the theme item switches the theme and keeps the menu open', async () => {
     await render();
     await openMenu();
-    const before = document.documentElement.classList.contains('dark');
+    const before = item(/theme/)!.textContent?.trim();
     await select(item(/theme/)!);
-    expect(document.documentElement.classList.contains('dark')).toBe(!before);
+    const dark = document.documentElement.classList.contains('dark');
+    expect(before).toBe(dark ? 'Dark theme' : 'Light theme');
+    expect(item(/theme/)!.textContent?.trim()).toBe(dark ? 'Light theme' : 'Dark theme');
     expect(menu()).not.toBeNull();
   });
 });
