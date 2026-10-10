@@ -14,6 +14,7 @@
 //   Scenario: the same check for a job on a box of a template that is not approved is denied
 //   Scenario: a job that ends loses its tuples, and its check is denied
 //   Scenario: a machine that leaves loses its tuple, and its check is denied
+//   Scenario: a template is removed only when no box of it is attached; its approval tuples go with it (issue #604)
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -187,5 +188,20 @@ describe('requesters in Access (issue #581)', () => {
     const left = await a.app.access.decideMint(request);
     expect(left.allowed).toBe(false);
     expect(left.reason).toMatch(/machine kbox is no box of a template/);
+  });
+
+  it('removes a template only when no box of it is attached, and its approval tuples go with it (issue #604)', async () => {
+    const { a, session, server } = await boot();
+    await joinBox(a, session, 'kbox', 'kube');
+    const user = a.user().user.id;
+    const refused = await a.ui<{ error: string }>('/ui/api/vault', { action: 'remove-template', name: 'kube' }, { token: session });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/kbox/);
+    expect(held(server)).toEqual(expect.arrayContaining([`machine:${user}/kbox instance_of template:kube`, 'template:kube approved_for operation_profile:read/cluster/prod']));
+
+    const version = (await a.api('GET', '/api/machines/config')).body.version as string;
+    expect((await a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'kbox', version }, { token: session })).status).toBe(200);
+    expect((await a.ui('/ui/api/vault', { action: 'remove-template', name: 'kube' }, { token: session })).status).toBe(200);
+    await waitFor(() => !held(server).some((k) => k.includes('template:kube')), { timeoutMs: 10000, what: 'the template\'s tuples gone' });
   });
 });
