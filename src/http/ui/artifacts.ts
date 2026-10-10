@@ -28,9 +28,23 @@ export const artifactSettingsBody = z.strictObject({
   publicLinks: z.boolean().optional(),
   linkHours: z.number().int().min(1).max(ARTIFACT_LIMITS.linkHours).optional(),
   linkHoursMax: z.number().int().min(1).max(ARTIFACT_LIMITS.linkHours).optional(),
+  /** An origin the hopper answers to, or empty for the default (issue #673). */
+  linkBase: z.string().trim().max(300).optional(),
 }).refine((b) => Object.keys(b).length > 0, { message: 'name a setting' });
 
 const refused = (r: Refusal): never => { throw new HttpError(r.status, r.no); };
+
+/** A link base as kept: empty, or one of the origins the hopper answers to (else a link would be refused, 421). */
+function linkBaseOf(raw: string, origins: string[]): string {
+  if (raw === '') return '';
+  let u: URL | undefined;
+  try { u = new URL(raw); } catch { u = undefined; }
+  if (!u || (u.pathname !== '/' && u.pathname !== '') || u.search !== '' || u.hash !== '' || u.username !== '' || u.password !== '') {
+    throw new HttpError(400, `a link base is an origin only — scheme, host and port, no path: not ${raw}`);
+  }
+  if (!origins.includes(u.origin)) throw new HttpError(400, `the hopper does not answer at ${u.origin}: give one of ${origins.join(', ')}, or leave it empty`);
+  return u.origin;
+}
 
 export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts; tenants: Tenants; edge: ArtifactEdge }): void {
   const by = (req: FastifyRequest): string => {
@@ -41,7 +55,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
   const viewOf = (req: FastifyRequest, t: TenantParts, id: string) => {
     const a = t.artifacts.get(id);
     if (!a) throw new HttpError(404, `no artifact ${id}`);
-    return o.edge.view(t, a, userIdOf(req)!);
+    return o.edge.view(t, a, userIdOf(req)!, o.edge.baseOf(req));
   };
 
   app.post('/ui/api/artifacts/settings', o.admin, async (req) => {
@@ -51,6 +65,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
     const next: ArtifactSettings = { ...t.artifacts.settings(), ...patch };
     if (next.linkHours > next.linkHoursMax) throw new HttpError(400, `a link's default hours (${next.linkHours}) may not pass its most (${next.linkHoursMax})`);
     if (next.maxBytes > next.userBytes) throw new HttpError(400, 'one artifact may not be larger than all of a user\'s together');
+    if (patch.linkBase !== undefined) next.linkBase = linkBaseOf(patch.linkBase, o.edge.origins());
     return { settings: t.artifacts.setSettings(next, who) };
   });
 
@@ -69,7 +84,7 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
     }
     if (isRefusal(made)) return refused(made);
     // The link is said once, here: only its hash is kept.
-    return { artifact: viewOf(req, t, id), share: made.share, ...(made.token ? { link: `${o.edge.base()}${LINK_PATH}/${made.token}` } : {}) };
+    return { artifact: viewOf(req, t, id), share: made.share, ...(made.token ? { link: `${o.edge.baseOf(req)}${LINK_PATH}/${made.token}` } : {}) };
   });
 
   app.post('/ui/api/artifacts/:id/shares/:share/revoke', o.operator, async (req) => {

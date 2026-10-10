@@ -166,7 +166,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'artifact.removed': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', reason: 'retention' },
   'artifact.settings_changed': {
     from: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 168 },
-    to: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: false, linkHours: 24, linkHoursMax: 168 }, by: 'github:octocat',
+    to: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: false, linkHours: 24, linkHoursMax: 168, linkBase: 'http://192.0.2.10:4790' }, by: 'github:octocat',
   },
   'item.snapshot_recorded': { key: 'https://github.com/octo-org/hello/issues/7', hash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb', reason: 'intake' },
   'item.changed_since_snapshot': {

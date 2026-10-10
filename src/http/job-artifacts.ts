@@ -53,7 +53,8 @@ const line = (a: Artifact, url: string): string => `${a.id}  ${a.title}  ${a.typ
 const shareLine = (s: ArtifactShare): string => `${s.id}  ${s.kind === 'user' ? `user ${s.userName ?? s.userId}` : `public link until ${s.expiresAt}`}${s.revokedAt ? `  revoked ${s.revokedAt}` : ''}`;
 
 export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; edge: ArtifactEdge }): void {
-  const brief = (a: Artifact) => ({ ...a, url: o.edge.url(a.id) });
+  const brief = (t: TenantParts, a: Artifact) => ({ ...a, url: o.edge.url(o.edge.base(t), a.id) });
+  const urlOf = (t: TenantParts, id: string): string => o.edge.url(o.edge.base(t), id);
   void app.register(async (scope) => {
     // The file, whole: the user's limit is checked after; nothing larger than any limit may allow is read.
     scope.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: ARTIFACT_MAX_BYTES + 1 }, (_req, body, done) => { done(null, body); });
@@ -68,8 +69,8 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       const type = q(req, 'type');
       const r = who.t.artifacts.put(who.job, { name, content: req.body, ...(title ? { title } : {}), ...(type ? { type } : {}) });
       if (isRefusal(r)) return no(req, reply, r);
-      const url = o.edge.url(r.id);
-      return answer(req, reply, 201, { artifact: brief(r) }, `put: ${r.id}  ${r.title}  ${r.type}  ${r.size} bytes\nurl: ${url}\n`);
+      const url = urlOf(who.t, r.id);
+      return answer(req, reply, 201, { artifact: brief(who.t, r) }, `put: ${r.id}  ${r.title}  ${r.type}  ${r.size} bytes\nurl: ${url}\n`);
     });
 
     scope.get(ARTIFACT_PATH, async (req, reply) => {
@@ -82,7 +83,7 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
         const md = list.map((a) => (pub ? `- [${a.title.replaceAll(/[[\]]/g, '')}](${pub}/#artifacts/${a.id})` : `- ${a.title} (an artifact on the hopper)`)).join('\n');
         return answer(req, reply, 200, { markdown: md }, md || '(no artifacts)');
       }
-      return answer(req, reply, 200, { artifacts: list.map(brief) }, list.length ? list.map((a) => line(a, o.edge.url(a.id))).join('\n') : '(no artifacts)');
+      return answer(req, reply, 200, { artifacts: list.map((a) => brief(who.t, a)) }, list.length ? list.map((a) => line(a, urlOf(who.t, a.id))).join('\n') : '(no artifacts)');
     });
 
     scope.get<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id`, async (req, reply) => {
@@ -92,7 +93,7 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       if (!a) return no(req, reply, { status: 404, text: `there is no artifact ${req.params.id}` });
       if (q(req, 'content')) return reply.type('application/octet-stream').send(who.t.artifacts.content(a.id));
       const shares = who.t.store.artifacts.shares(a.id);
-      return answer(req, reply, 200, { artifact: { ...brief(a), shares } }, `${line(a, o.edge.url(a.id))}\n${shares.map(shareLine).join('\n')}`);
+      return answer(req, reply, 200, { artifact: { ...brief(who.t, a), shares } }, `${line(a, urlOf(who.t, a.id))}\n${shares.map(shareLine).join('\n')}`);
     });
 
     scope.post<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id/share`, async (req, reply) => {
@@ -118,8 +119,8 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
         return no(req, reply, { status: 400, text: 'say who: --user NAME, --public [--hours N], or --revoke SHARE' });
       }
       if (isRefusal(made)) return no(req, reply, made);
-      const link = made.token ? `${o.edge.base()}${LINK_PATH}/${made.token}` : undefined;
-      return answer(req, reply, 201, { share: made.share, ...(link ? { link } : {}) }, `shared: ${shareLine(made.share)}${link ? `\nlink: ${link}` : `\nurl: ${o.edge.url(id)}`}`);
+      const link = made.token ? `${o.edge.base(who.t)}${LINK_PATH}/${made.token}` : undefined;
+      return answer(req, reply, 201, { share: made.share, ...(link ? { link } : {}) }, `shared: ${shareLine(made.share)}${link ? `\nlink: ${link}` : `\nurl: ${urlOf(who.t, id)}`}`);
     });
 
     scope.post<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id/rm`, async (req, reply) => {

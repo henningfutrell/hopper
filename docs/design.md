@@ -10686,7 +10686,13 @@ SHA-256, when. Kinds by media type (`src/domain/artifacts.ts`): `html`, `svg`, `
 `artifact.created` says how many were `masked`. What is kept is what a person shares.
 
 **Hosting.** The **stable URL** is `<hopper>/#artifacts/<id>`: the UI's Artifacts view, which opens the artifact for
-whoever may see it. Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
+whoever may see it. **Which `<hopper>`** (issue #673; the first real artifact's link named the first LAN name, a container's
+bare name no LAN client resolved): a person's read builds it from the Host they asked on (`ArtifactEdge.baseOf`; the
+Host guard already let it in), so a link opens where they are; a link a job reports (`put`, `list`, `get`, a public
+link), and a notification's, use the user's **link base** (Settings → Artifacts: an origin the hopper answers to, checked
+against them when it is saved, else refused with the list), else the public URL, else the first LAN name that is an
+IPv4 address or ends in `.local`, else the first LAN name, else loopback (`ArtifactEdge.base`). A link on GitHub is
+still only ever the public URL's (below). Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
 `x-hopper-session`, so the read that checked the viewer signs a **content URL** (`/artifact-content/<name>?v=<token>`,
 `src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under the owner's
 **content URL key** — the owner named in the token picks the key that checks it. The key is a system secret

@@ -2990,7 +2990,7 @@ Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, wi
 
 ## `artifact.settings_changed`
 
-Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.
+Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, whether public links work and for how long, and the link base (issue #673).
 
 | field | type | required |
 |---|---|---|
@@ -3014,7 +3014,8 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
     "retentionDays": 30,
     "publicLinks": false,
     "linkHours": 24,
-    "linkHoursMax": 168
+    "linkHoursMax": 168,
+    "linkBase": "http://192.0.2.10:4790"
   },
   "by": "github:octocat"
 }
