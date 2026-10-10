@@ -403,11 +403,14 @@ first ask. Its keys are in the `kms` volume.
 
 ## Sandbox boxes the hopper starts
 
-Optional (issue #603). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox boxes
-itself. Without it, Add machine → *A sandbox box* shows a line that you run.
+Optional (issues #603, #708). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox
+boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
+flags and default limits as the boxes the hopper starts: one builder makes both.
 
-**Requirement: rootless Podman.** The hopper refuses a rootful Podman socket (root on the computer) and has no Docker
-path for this.
+**Requirement: a rootless runtime.** Podman is the default whenever it is reachable. Rootless Docker works too, through
+the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its socket, used when no Podman socket is
+given or Podman is not reached, or always with `HOPPER_SANDBOX_RUNTIME=docker`. The hopper refuses a rootful socket of
+either (root on the computer), and an image that runs as root.
 
 Turn it on, in the directory of `compose.yaml`:
 
@@ -427,9 +430,10 @@ What the hopper then does:
 
 | When | The hopper |
 |---|---|
-| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the box line's sandbox flags, its home the volume `<name>-home`, and a join code minted for it. The box joins as that machine. A template's box runs only once its image is approved (Settings → Vault). |
-| A person removes that machine | stops the container and removes it, with its volume, within about 20 seconds. `/tmp` in the box is a tmpfs: it goes with the container. |
-| The hopper starts | finds the boxes it started (label `io.hopper.box` = its instance id) and removes each one that no machine names and no live join code waits for. A box another hopper started is left alone. |
+| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (a template's defaults, or 4 CPUs and 8 GiB for a box of no template), its home the volume `<name>-home`, and a join code minted for it. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
+| A person removes that machine | stops the container and removes it within about 20 seconds, and its record. Its home volume stays, so a box of that name later keeps its sign-in, unless the template's limits say `keepHome: false`. `/tmp` in the box is a tmpfs: it goes with the container. |
+| A box's time limit passes (a template's `ttlMinutes`, or the launch's) | stops the container and removes it, and its record. The home volume stays, as above. A box of no template has no time limit unless the launch names one. |
+| The hopper starts | reads its sandbox records and the boxes it started (label `io.hopper.box` = its instance id). A box of its own with no record that a machine names (one started before the records) is taken on as a record; one that no machine names and no live join code waits for is removed, its home volume kept. A box another hopper started is left alone. |
 | It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
 
 The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
@@ -438,8 +442,9 @@ hopper as `http://<first HOPPER_LAN_NAMES name>:<port>` on that network, or `htt
 
 **Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
 The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
-nothing of the computer mounted — from the published box image or an approved template's image, and a request to it
-can name only an agent or a template, never an image, a mount or a flag. An admin UI session can start and remove
+the image's own non-root user, CPU and memory limits, nothing of the computer mounted — from the published box image
+or an approved template's image, and a request to it can name only an agent or a template and parameters within the
+template's limits, never an image, a mount or a flag. An admin UI session can start and remove
 boxes, as it can add and remove any machine.
 
 Turn it off: remove `compose.override.yaml` and run `podman compose up -d`. The boxes it started keep

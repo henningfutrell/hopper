@@ -72,6 +72,10 @@ export interface Config {
   kms?: { url: string; key: string };
   /** The rootless Podman API socket the hopper starts sandbox boxes through (issue #603); unset: it starts none. */
   podmanSocket?: string;
+  /** The rootless Docker Engine API socket (issue #708): used when Podman is not given or not reached, or chosen. */
+  dockerSocket?: string;
+  /** The container runtime chosen (issue #708); unset: Podman whenever it is reachable (src/sandbox/runtime.ts). */
+  sandboxRuntime?: 'podman' | 'docker';
   /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
   sandboxNetwork?: string;
 }
@@ -131,6 +135,8 @@ const schema = z.object({
   HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
   HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
   HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
+  HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
+  HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker']).optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -180,7 +186,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
-  HOPPER_SANDBOX_NETWORK: 'the Podman network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
+  HOPPER_SANDBOX_RUNTIME: 'podman or docker: the container runtime the hopper starts sandbox boxes through. Unset: Podman whenever it is reachable, else Docker',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -312,6 +320,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
     ...(e.HOPPER_PODMAN_SOCKET ? { podmanSocket: e.HOPPER_PODMAN_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
+    ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
+    ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

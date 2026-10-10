@@ -9,6 +9,7 @@ import { createConfigRecords } from './config.ts';
 import { createJoinCodeRepository, createLoginCodeRepository } from './login-codes.ts';
 import { migrateInstance } from './migrations.ts';
 import { keptSecrets } from './kept-secrets.ts';
+import { createSandboxRepository } from './sandboxes.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
@@ -43,6 +44,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     uiSessions: createUiSessionRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
     joinCodes: createJoinCodeRepository(ctx),
+    sandboxes: createSandboxRepository(ctx),
     config,
     signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),

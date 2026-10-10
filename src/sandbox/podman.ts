@@ -1,0 +1,96 @@
+// The Podman container runtime (issues #603, #708): rootless Podman, through its own (libpod) REST API on its socket.
+// The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
+// src/sandbox/flags.ts's: the sandbox flags are never a request's.
+import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import { libpodCreateBody, STOP_S } from './flags.ts';
+import { CALL_MS, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
+
+const API = '/v5.0.0/libpod';
+const PULL_MS = 15 * 60_000;
+
+interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Record<string, string> | null; State?: string }
+interface Inspected { Id?: string; Name?: string; ImageName?: string; Config?: { Image?: string; Labels?: Record<string, string> | null }; State?: { Status?: string } }
+
+const enc = encodeURIComponent;
+
+export function createPodmanRuntime(socket: string): ContainerRuntime {
+  const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => socketCall(socket, method, API + path, body, timeoutMs);
+  const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
+
+  return {
+    kind: 'podman',
+
+    async problem() {
+      let a: Answer;
+      try {
+        a = await call('GET', '/info');
+      } catch (e) {
+        return `cannot reach podman at ${socket}: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      if (!ok(a)) return `podman at ${socket} answered ${a.status}: is it the Podman API socket?`;
+      const info = JSON.parse(a.text) as { host?: { security?: { rootless?: boolean } } };
+      // Rootful Podman is root on the computer: the hopper never launches through it.
+      if (info.host?.security?.rootless !== true) return `podman at ${socket} is not rootless: the hopper launches sandbox boxes only through a rootless runtime`;
+      return undefined;
+    },
+
+    async pull(image) {
+      const exists = await call('GET', `/images/${enc(image)}/exists`);
+      if (exists.status === 404) {
+        const pulled = await call('POST', `/images/pull?reference=${enc(image)}&quiet=true`, undefined, PULL_MS);
+        const failed = streamError(pulled.text);
+        if (!ok(pulled) || failed) throw new Error(`podman could not pull ${image}: ${failed ?? pulled.text.trim()}`);
+      } else if (!ok(exists)) throw refusal(`look up the image ${image}`, exists);
+      const read = await call('GET', `/images/${enc(image)}/json`);
+      if (!ok(read)) throw refusal(`read the image ${image}`, read);
+      return { user: (JSON.parse(read.text) as { Config?: { User?: string } }).Config?.User ?? '' };
+    },
+
+    async createVolume(name, labels) {
+      const a = await call('POST', '/volumes/create', { Name: name, Label: labels });
+      if (a.status === 409) return false;
+      if (!ok(a)) throw refusal(`make the volume ${name}`, a);
+      return true;
+    },
+
+    async removeVolume(name) {
+      const a = await call('DELETE', `/volumes/${enc(name)}?force=true`);
+      if (!ok(a) && a.status !== 404) throw refusal(`remove the volume ${name}`, a);
+    },
+
+    async create(spec) {
+      const a = await call('POST', '/containers/create', libpodCreateBody(spec));
+      if (!ok(a)) throw refusal(`create the box ${spec.name}`, a);
+      return String((JSON.parse(a.text) as { Id: string }).Id);
+    },
+
+    async start(id) {
+      const a = await call('POST', `/containers/${enc(id)}/start`);
+      if (!ok(a) && a.status !== 304) throw refusal(`start the box ${id}`, a);
+    },
+
+    async inspect(id) {
+      const a = await call('GET', `/containers/${enc(id)}/json`);
+      if (a.status === 404) return undefined;
+      if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
+      const c = JSON.parse(a.text) as Inspected;
+      return { id: c.Id ?? id, name: (c.Name ?? '').replace(/^\//, ''), image: c.ImageName ?? c.Config?.Image ?? '', labels: c.Config?.Labels ?? {}, state: c.State?.Status ?? '' };
+    },
+
+    async stop(id) {
+      const a = await call('POST', `/containers/${enc(id)}/stop?timeout=${STOP_S}`, undefined, CALL_MS + STOP_S * 1000);
+      if (!ok(a) && a.status !== 304 && a.status !== 404) throw refusal(`stop the box ${id}`, a);
+    },
+
+    async remove(id) {
+      const a = await call('DELETE', `/containers/${enc(id)}?force=true&timeout=${STOP_S}`, undefined, CALL_MS + STOP_S * 1000);
+      if (!ok(a) && a.status !== 404) throw refusal(`remove the box ${id}`, a);
+    },
+
+    async list(labels) {
+      const a = await call('GET', `/containers/json?all=true${labelFilter(labels)}`);
+      if (!ok(a)) throw refusal('list containers', a);
+      return (JSON.parse(a.text) as Listed[]).map((c): ContainerInfo => ({ id: c.Id ?? '', name: c.Names?.[0] ?? '', image: c.Image ?? '', labels: c.Labels ?? {}, state: c.State ?? '' }));
+    },
+  };
+}

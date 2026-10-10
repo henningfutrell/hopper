@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Deprecated (issue #708): the sandbox module (src/sandbox/) owns the life of every sandbox box the hopper starts,
+# through the container runtime API. This script stays only until nothing uses it; a follow-up deletes it.
 # The docker socket the hopper uses (issue #59, design.md "Target authentication"). Docker's own
 # socket has no authentication: whoever can open it is root on this machine, and the root daemon's
 # socket opens to the whole docker group. So the hopper never uses it (its unit makes it

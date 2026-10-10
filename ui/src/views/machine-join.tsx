@@ -28,7 +28,7 @@ function Choice({ on, label, hint, onPick, disabled }: { on: boolean; label: str
 
 export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesConfig; onDone: () => void; onSsh: () => void }) {
   const [kind, setKind] = useState<JoinChoice['kind']>('computer');
-  const [engine, setEngine] = useState<'podman' | 'docker'>('podman');
+  const [runtime, setRuntime] = useState<'podman' | 'docker'>('podman');
   const [agent, setAgent] = useState<BoxAgent>(BOX_AGENTS[0]);
   const [minted, setMinted] = useState<Minted | null>(null);
   // A sandbox box may be one of a template (issue #558): its line names the template and runs its image.
@@ -37,14 +37,16 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
   // Whether the hopper starts a box itself (issue #603), and why not.
   const [launch, setLaunch] = useState<SandboxesView['launch'] | null>(null);
-  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => setLaunch(v.launch), () => setLaunch(null)); }, []);
+  // The sandbox flags of the line: the hopper's own builder (issue #708). Until they are read, no box line is shown.
+  const [flags, setFlags] = useState<string | null>(null);
+  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => { setLaunch(v.launch); setFlags(v.line); }, () => setLaunch(null)); }, []);
   const [started, setStarted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
   // The machines there were when the line was shown: the first new one online is the one that joined.
   const before = useRef<Set<string> | null>(null);
-  const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, engine, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
-  const line = minted ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)) }) : null;
+  const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, runtime, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
+  const line = minted && (choice.kind === 'computer' || flags !== null) ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)), flags: flags ?? '' }) : null;
 
   useEffect(() => {
     if (!before.current) return;
@@ -93,8 +95,8 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">agent</span>
           {BOX_AGENTS.map((a) => <Button key={a} type="button" size="sm" variant={agent === a ? 'default' : 'outline'} className="min-h-9" onClick={() => setAgent(a)}>{a}</Button>)}
-          {!hopperStarts && <span className="ml-2 text-muted-foreground">engine</span>}
-          {!hopperStarts && (['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={engine === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setEngine(e)}>{e}</Button>)}
+          {!hopperStarts && <span className="ml-2 text-muted-foreground">runtime</span>}
+          {!hopperStarts && (['podman', 'docker'] as const).map((e) => <Button key={e} type="button" size="sm" variant={runtime === e ? 'default' : 'outline'} className="min-h-9" onClick={() => setRuntime(e)}>{e}</Button>)}
         </div>
       )}
       {kind === 'box' && templates.length > 0 && (
@@ -146,7 +148,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           </div>
           <span className="text-muted-foreground">
             The code in it works once, until {time(minted.expiresAt)}. The machine shows here, online, when it joins.
-            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{engine} exec -it hopper-sandbox-{template?.name ?? agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
+            {kind === 'box' && <> Then sign its agent in once: <code className="font-mono">{runtime} exec -it hopper-sandbox-{template?.name ?? agent} {agent}</code> — the sign-in stays in the box&apos;s home volume.</>}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Waiting for it to join…</span>

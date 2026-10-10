@@ -66,7 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandboxes/` | sandbox boxes the hopper starts (issue #603, "Sandbox boxes the hopper launches"): the launch, the keeping in step with the machines and the cleanup problems (`service.ts`); rootless Podman at the `SandboxEngine` port (`podman.ts`, its libpod API over node:http). The machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors |
+| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`) — and the one place a runtime is selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697), the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -4311,7 +4311,7 @@ Owner direction, from a live test: a person had to start a sandbox box by hand, 
 container running. The hopper now starts, stops and removes sandbox boxes itself, through rootless Podman. This is
 #310's option B, which that research put off; the owner asked for it.
 
-**The sandbox engine** (`SandboxEngine`, `src/domain/ports.ts`; `src/sandboxes/podman.ts`). Rootless Podman at the
+**The sandbox engine** (since issue #708 the container runtime, below; `src/sandbox/podman.ts`). Rootless Podman at the
 API socket `HOPPER_PODMAN_SOCKET` names — its libpod REST API over node:http, six calls: `info`, list containers
 (by label), image exists and pull, volume create, container create and start, container and volume delete. Written
 here, not taken from a library: dockerode speaks the Docker API, which has no rootless answer and other volume
@@ -4331,7 +4331,7 @@ A box that does not start is removed again, its volume too; the answer is 502 wi
 box does; `POST /client/join` gives the client target the code's `container` option. Nothing a request carries
 reaches the create body but an agent from a fixed list or a template's name.
 
-**Keeping in step** (`src/sandboxes/service.ts`, every 10 s and at start, after the runtimes). The hopper lists the
+**Keeping in step** (since issue #708 from the sandbox records, below; every 10 s and at start, after the runtimes). The hopper lists the
 boxes with its own instance label — another hopper's are not its — and keeps each one a client target of its user
 names (`UserRuntime.sandboxBoxes`) or a live join code waits for (`JoinCodeRepository.waiting`). Any other is removed
 — stopped (10 s, then killed) and deleted with its volumes — once it is found so twice in a row: a join's config write
@@ -4354,7 +4354,68 @@ the user. What the hopper itself starts is fixed in code, and an admin UI sessio
 add and remove machines. A box the hopper did not start (one run from the line) is not the hopper's: it is never
 removed by it.
 
-**Verification.** `test/integration/sandbox-lifecycle.test.ts` (the real daemon, the engine double): a started box
+### The sandbox module (issue #708, 2026-10-10)
+
+Owner direction, priority high: one owner for the sandbox lifecycle, Podman by default, parameterized templates. Before
+it, containers were driven four ways (the libpod API, the docker CLI behind `docker-proxy.sh`, `agent-boxes.sh`, the
+Podman/Docker toggle of the line), ownership was inferred from labels, lifecycle was create and remove, and remove
+deleted the home volume.
+
+- **One module, `src/sandbox/`.** Everything that creates, inspects, stops or removes a box the hopper starts goes
+  through it: `POST /ui/api/machines/sandbox` and the reconcile loop. `scripts/agent-boxes.sh`, `container-target.sh`
+  and `docker-proxy.sh` are deprecated (a header says so); a follow-up deletes them once nothing uses them.
+- **One runtime interface**, `ContainerRuntime` (`src/domain/sandboxes.ts`): `problem`, `pull` (answers the image's
+  user), `createVolume` (answers whether it made one), `removeVolume`, `create` (answers the id), `start`, `inspect`,
+  `stop`, `remove` (its volumes stay), `list` by label. Adapters: **Podman** (primary; libpod `/v5.0.0`) and **Docker**
+  (the Engine API `/v1.41` over its socket, never the CLI: the hopper's image has none). Both refuse a rootful daemon.
+  `selectRuntime` (`runtime.ts`), once at start: `HOPPER_SANDBOX_RUNTIME` wins; else Podman whenever it is reachable,
+  then Docker; neither reached, the one given first, so Add machine says why. The **remote** adapter (an attached
+  machine's client runs the calls on its own Podman) is not built yet: part 2.
+- **The sandbox flags are built once** (`flags.ts`): every capability dropped, `no-new-privileges`, a read-only root,
+  `/tmp` a tmpfs (`rw,nosuid,nodev`), the home volume at `/home/agent`, restart `unless-stopped`, the CPU and memory
+  limits of the launch, and the image's own user — a launch refuses an image whose user is unset, `root` or uid 0.
+  The libpod body, the Docker body, and the `run` flags of the line Add machine shows (`GET /api/sandboxes` `line`,
+  with a box's default limits) all come from it; the UI imports nothing of `src/`, so it reads the flags from the API.
+- **A template is a base skeleton plus per-launch parameters.** `Template.limits` (`TemplateLimits`): `cpus` and
+  `memoryMb` as `{default, max}`, `ttlMinutes` as `{default?, max?}`, `keepHome`. Absent: the hopper's defaults — 4
+  CPUs (max 8), 8192 MiB (max 16384), no time limit, the home kept. Saved with `save-template` (`limits`, checked:
+  each default within its max); not part of the approval, since limits narrow what a box may use and give it nothing.
+  A launch names `params` (`LaunchParams`: `secrets` — a subset of what the template gives —, `cpus`, `memoryMb`,
+  `ttlMinutes`, `profile` — one of its operation profiles); the template's defaults fill the rest (`resolveParams`,
+  pure). A parameter outside what the template allows is refused (400) with what it allows, never clamped; a template
+  not approved is still 409 (#602).
+- **The sandbox record** (instance migration 34, `sandboxes`: id, unique name, user, the record as JSON): its user,
+  name, agent, template and version (`savedAt`), image, the resolved parameters, runtime, machine (`local`), container
+  id, volume, `keepHome`, state, created, expires, and the address it dials. Written before the container is made, so
+  a container of the hopper's never exists without one but while a launch makes it; a launch that fails removes what it
+  made — the container, a volume it made new (never a kept home), the record.
+- **Reconcile works from the records** (every 10 s and at start, after the runtimes; `reconcile.ts`). Past its time
+  limit: stopped and removed at once. Its container gone: the record goes. A machine names it: `ready` — its client
+  reported back over the address in the record, which proves it. A live join code waits for it: still `starting`.
+  Else idle: removed once it is found so twice in a row. A user whose machines cannot be read keeps every box. A
+  container with the hopper's label and no record — a box from before the records — is taken on as a record when a
+  machine names it (limits unknown: `0`, no limit), else removed the same way. Removing stops the box (10 s, then
+  killed), removes it, and keeps its home volume unless the record says `keepHome: false`: it may hold an agent's sign-in.
+- **The address** is the join URL the launch wrote into the record and the box's join line: `http://127.0.0.1:<port>`
+  beside a hopper on the host, `http://<first LAN name, else hopper>:<port>` on the compose network. It is proven when
+  the box joins (state `ready`), not inspected beforehand: inspecting the hopper's own address on its compose network,
+  and #695's proven addresses for a remote box, are part 2.
+- **Not built yet (part 2):** the remote runtime over the client link (#704's Windows clients); the launch's `secrets`
+  and `profile` narrowing what the vault and Access give the box (kept on the record now, not enforced past the
+  template's own scope); the inspected address; the template limits and the launch parameters in the UI (the API takes
+  them; Add machine launches with the template's defaults).
+
+**Verification.** `test/integration/sandbox-lifecycle.test.ts` (the real daemon, the runtime double): records, `ready`
+on join, defaults and parameters within the max recorded, over-max and outside secrets refused with nothing started,
+removing the machine or the time limit passing removes the box and its record and keeps the home volume (a template's
+`keepHome: false` removes it), a box from before the records is taken on or removed, a root image refused, and the
+line's flags the builder's. `test/adapters/podman-runtime.test.ts`, `docker-runtime.test.ts`: each adapter's request
+shapes against an API double on a unix socket (`test/support/fake-runtime-api.ts`). `test/sandbox/params.test.ts`,
+`runtime-select.test.ts`, `test/store/sandboxes.test.ts`. `test/adapters/podman-sandbox.test.ts` against real rootless
+Podman (`HOPPER_TEST_PODMAN_SOCKET`): through the route, the box's own client joins the test hopper, the flags and
+limits in `inspect`, then removal leaves no container and no record, and the home volume.
+
+**Verification (issue #603).** `test/integration/sandbox-lifecycle.test.ts` (the real daemon, the engine double): a started box
 joins as the machine that names it; a template's box only once approved; removing the machine removes the box and its
 volume; a box not joined yet is kept; at start an orphan of its own goes and another hopper's stays; a failed remove is
 shown with its reason until it goes; a box that does not start leaves nothing; no socket, or a rootful one, starts

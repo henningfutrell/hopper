@@ -39,7 +39,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
-import type { Sandboxes } from '../sandboxes/service.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { masterKeyRoutes, type MasterKeyStatus } from './master-key.ts';

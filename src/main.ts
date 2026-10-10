@@ -11,7 +11,7 @@ import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
-import type { AuthorizationServer, InstanceStore, Restarter, SandboxEngine, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { AuthorizationServer, ContainerRuntime, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
@@ -34,8 +34,8 @@ import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
-import { createPodmanEngine } from './sandboxes/podman.ts';
-import { createSandboxes, type Sandboxes } from './sandboxes/service.ts';
+import { selectRuntime } from './sandbox/runtime.ts';
+import { createSandboxes, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -81,8 +81,8 @@ export interface AppSeams extends UserSeams {
   uiDir?: string;
   /** OpenFGA (issue #559); default the server HOPPER_OPENFGA_URL names, else none. */
   authorizationServer?: AuthorizationServer;
-  /** The sandbox engine (issue #603); default rootless Podman at HOPPER_PODMAN_SOCKET, else none. */
-  sandboxEngine?: SandboxEngine;
+  /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. */
+  containerRuntime?: ContainerRuntime;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
 }
@@ -103,7 +103,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, sandboxEngine: _box, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -257,11 +257,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
   });
-  // The sandbox boxes the hopper starts (issue #603): through rootless Podman, beside the hopper — on the compose
-  // network, reaching it by its LAN name, or on the host network, reaching it on loopback.
+  // The sandbox boxes the hopper starts (issues #603, #708): through the container runtime selected once here (Podman
+  // whenever it is reachable), beside the hopper — on the compose network, reaching it by its LAN name, or on the host
+  // network, reaching it on loopback.
   const sandboxes = createSandboxes({
-    engine: seams.sandboxEngine ?? (config.podmanSocket ? createPodmanEngine(config.podmanSocket) : undefined),
-    instanceId: instance.settings.instanceId(),
+    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
+    repo: instance.sandboxes, instanceId: instance.settings.instanceId(),
     network: config.sandboxNetwork ?? (config.localMachine ? 'host' : 'hopper_default'),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
@@ -271,7 +272,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       const rt = runtimes.get(userId);
       return rt ? sandboxBoxesOf(rt.host) : undefined;
     },
-    waiting: () => new Set(instance.joinCodes.waiting(clock.now().toISOString())),
+    waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
     clock, logger,
   });
   const addUser = async (name: string): Promise<User> => {
