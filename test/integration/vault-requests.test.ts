@@ -122,7 +122,7 @@ function credentialsOf(a: TestApp, job: string): string {
 }
 
 type Run = { code: number; stdout: string; stderr: string };
-const env = (a: TestApp, creds: string): NodeJS.ProcessEnv => ({ PATH: process.env.PATH, HOPPER_URL: a.url, HOPPER_TOKEN_FILE: join(creds, 'token'), HOPPER_SKILL_POLL: '0.1' });
+const env = (a: TestApp, creds: string): NodeJS.ProcessEnv => ({ PATH: process.env.PATH, HOPPER_URL: a.url, HOPPER_TOKEN_FILE: join(creds, 'token') });
 
 function run(file: string, args: string[], e: NodeJS.ProcessEnv): Promise<Run> {
   return new Promise((resolve) => {
@@ -166,7 +166,7 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     expect((await skill(a, creds, [])).stdout).toContain('A credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>"');
     const asked = await skill(a, creds, [SERVICE, ...ASK, '--why', 'deploy the web service']);
     expect(asked.code).toBe(3);
-    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for an API token for example-api \(they may give another kind\)\. Run the same command again/);
+    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for an API token for example-api \(they may give another kind\)\. Add --wait to have the hopper tell you when it is ready\.\n$/);
     const r = await requestFor(a, SERVICE);
     expect(r).toMatchObject({ known: false, template: 'web', secret: SERVICE, kinds: [{ id: 'asked', title: 'an API token' }], asked: [{ job, machine: 'hopper-sandbox-web', why: 'deploy the web service' }] });
     expect((await a.events()).filter((e) => e.type === 'vault.credential_asked')).toEqual([

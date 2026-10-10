@@ -16,6 +16,7 @@ import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobSkillRoutes } from './job-skill.ts';
+import { jobStreamRoutes } from './job-stream.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -125,7 +126,9 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
-  jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
+  const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
+  // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
+  jobStreamRoutes(app, { tenants: o.tenants, subscribed: (userId, jobId) => { void skillWaits.redrive(userId, jobId); } });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
