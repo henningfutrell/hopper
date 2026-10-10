@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: version, version history, question gates, question history, minor decisions, auto-park, job rules, yolo mode, artifacts, routing, plugins, webhooks, vault, users, sign-in, access, permission matrix', async () => {
+  it('one navigation entry holds the configuration: version, version history, question gates, question history, decider, auto-park, job rules, yolo mode, artifacts, routing, plugins, webhooks, vault, users, sign-in, access, permission matrix', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,8 +97,19 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/minor-decisions', '#settings/auto-park', '#settings/job-rules', '#settings/yolo-mode', '#settings/artifacts', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/access', '#settings/permissions']);
+      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/decider', '#settings/auto-park', '#settings/job-rules', '#settings/yolo-mode', '#settings/artifacts', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/access', '#settings/permissions']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
+  });
+
+  it('the Decider section (issue #661): its nav entry says Decider, and the old route moves to it', async () => {
+    await boot();
+    window.location.hash = '#settings/minor-decisions';
+    await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')); });
+    await vi.waitFor(() => expect(window.location.hash).toBe('#settings/decider'));
+    const sections = document.querySelector('[data-slot="settings-nav"]')!;
+    const current = sections.querySelector('a[aria-current="page"]')!;
+    expect(current.getAttribute('href')).toBe('#settings/decider');
+    expect(current.textContent).toBe('Decider');
   });
 });
 

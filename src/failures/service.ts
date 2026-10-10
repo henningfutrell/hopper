@@ -8,7 +8,7 @@
 // handling ended for is handed off to a person (issue #516, `handoffs.ts`) in the same transaction as the record that
 // ended it. Stale data clears itself (issue #529): the sweep, and the start, close the hand-offs nothing waits on any
 // more — a newer job of its item, its job finished or gone — and ask each open hand-off's source whether its item is
-// closed and what its job's work shows (`work-check.ts`, issue #621). A failure no known cause explains, which the rules hand to a person, is a minor decision
+// closed and what its job's work shows (`work-check.ts`, issue #621). A failure no known cause explains, which the rules hand to a person, is a decider call
 // (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
 // is active and it is sure. A timed-out job (issue #630) is assessed from its liveness: its source is asked first whether
 // a pull request of its own is open — at most `PR_LOOKUP_MS`, never holding the assessment —, and Continue, when due,

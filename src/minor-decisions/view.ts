@@ -1,4 +1,4 @@
-// The minor decisions view (issue #550): each decision point's settings and its record over the window, read from
+// The decider calls view (issue #550): each decision point's settings and its record over the window, read from
 // its events — asked, picked, applied, compared with what was decided after, agreed, overridden — and the newest
 // picks with what was decided. A person's override replaces what was compared. Pure.
 import {

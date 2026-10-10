@@ -1,5 +1,5 @@
-// Jev first (issue #550, design.md "Minor decisions"): asked before anything else at every decision point. A point hands it a
-// minor decision — its options, the facts, and what makes it consequential —; per the point's settings (in the
+// Jev first (issue #550, design.md "Decider calls"): asked before anything else at every decision point. A point hands it a
+// decider call — its options, the facts, and what makes it consequential —; per the point's settings (in the
 // database, read on every decision) Jev is not asked (off), asked and only recorded (shadow), or asked and its pick
 // applied when it meets the point's threshold and nothing makes it consequential (active). Every pick is an event on
 // its job. What is decided after a pick that was not applied is compared with it — a question's answer, a
@@ -128,7 +128,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
 
   return {
     decide: (input) => decide(input).catch((e: unknown) => {
-      o.logger.warn(`hopper: a minor decision at ${input.point} failed: ${e instanceof Error ? e.message : String(e)}`);
+      o.logger.warn(`hopper: a decider call at ${input.point} failed: ${e instanceof Error ? e.message : String(e)}`);
       return { asked: false };
     }),
     start() {
@@ -136,7 +136,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
         if (stopped || (e.type !== 'question.answered' && e.type !== 'handoff.closed')) return;
         setImmediate(() => {
           if (stopped) return;
-          try { follow(e); } catch (err) { o.logger.warn(`hopper: comparing a minor decision failed: ${err instanceof Error ? err.message : String(err)}`); }
+          try { follow(e); } catch (err) { o.logger.warn(`hopper: comparing a decider call failed: ${err instanceof Error ? err.message : String(err)}`); }
         });
       });
     },

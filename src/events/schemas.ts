@@ -275,7 +275,7 @@ export const EVENT_SCHEMAS = {
   'machine.actor_mismatch': strict({ machineId: z.string(), expected: radiusLevel, found: radiusLevel }),
   'blast_radius.settings_changed': strict({ from: blastRadiusSettings, to: blastRadiusSettings }),
   'job.gate_passed': strict({ reason: z.string().optional() }),
-  // Minor decisions (issue #550): Jev picked (or failed to), what was decided after it compared with its pick, a
+  // Decider calls (issue #550): Jev picked (or failed to), what was decided after it compared with its pick, a
   // person's override of one, an admin's change to a decision point's settings.
   'minor_decision.picked': strict({
     pickId: z.string(), point: decisionPoint, by: z.literal('jev'), options: z.array(strict({ id: z.string(), label: z.string() })),

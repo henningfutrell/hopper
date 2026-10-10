@@ -1,4 +1,4 @@
-// The minor decisions view (issue #550): each decision point's settings and its figures over the window, from the
+// The decider calls view (issue #550): each decision point's settings and its figures over the window, from the
 // events — picks, applied, compared, agreed, overridden — and the newest picks with what was decided.
 import { describe, expect, it } from 'vitest';
 import type { DomainEvent } from '../../src/domain/types.ts';

@@ -1,4 +1,4 @@
-// A question's listed options (issue #550, design.md "Minor decisions"): the numbered lines a job's question lists —
+// A question's listed options (issue #550, design.md "Decider calls"): the numbered lines a job's question lists —
 // "1. …", "2) …", a dialog's cursor and border aside — are the options of the decision, each by its number. The last
 // run of them counts, numbered from 1 in order, at least two; anything else is no pick. Pure.
 import type { MinorDecisionOption } from '../domain/types.ts';

@@ -1,9 +1,9 @@
-// Minor decisions (issue #550, design.md "Minor decisions"): bounded choices with a known option set and a low blast
+// Decider calls (issue #550, design.md "Decider calls"): bounded choices with a known option set and a low blast
 // radius, which Jev picks first — before an escalation level, a model or a person. Each decision point declares its
 // options; Jev picks one with a confidence. In shadow the pick is only recorded, next to what was decided; active, a
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
-/** Where the hopper makes a minor decision. */
+/** Where the hopper makes a decider call. */
 export const DECISION_POINTS = ['question-answer', 'failure-assessment'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 
@@ -117,14 +117,14 @@ export const MINOR_DECISION_WINDOW_DAYS = 30;
 
 // ---- Ports ------------------------------------------------------------------------------------
 
-/** Jev, asked to pick one option of a minor decision. Never throws: a failure is `{ ok: false }`. */
+/** Jev, asked to pick one option of a decider call. Never throws: a failure is `{ ok: false }`. */
 export interface JevChooser {
   /** Whether Jev can be asked now, and why not: read on every call, so a key set later is used at once. */
   available(): { available: boolean; why?: string };
   pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick>;
 }
 
-/** A minor decision as a decision point hands it to Jev first. */
+/** A decider call as a decision point hands it to Jev first. */
 export interface MinorDecisionInput extends MinorDecisionAsk {
   jobId?: string;
   questionId?: string;

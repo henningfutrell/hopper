@@ -38,7 +38,7 @@ export interface BlastRadius {
   run(): Promise<void>;
   /** Let a job held at the gate through (a person): it may run on a gated machine. */
   letThrough(jobId: string): Job;
-  /** Whether the gate keeps this machine now (issue #550: a minor decision there is consequential). */
+  /** Whether the gate keeps this machine now (issue #550: a decider call there is consequential). */
   gates(machineId: string): boolean;
 }
 

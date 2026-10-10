@@ -9,7 +9,7 @@ import type { JobId, LaneId, MachineId } from './types.ts';
 /** `dismissed`: the owner dropped it; nothing is typed into the job, and a job still waiting on it is cancelled. */
 export type QuestionStatus = 'open' | 'answered' | 'closed' | 'dismissed' | 'expired' | 'lapsed' | 'cancelled';
 
-/** Who made an attempt: the fixed answers (issue #629), an escalation level, Jev (a minor decision, issue #550), the human, or a fork whose accepted result answered the question (issue #548). */
+/** Who made an attempt: the fixed answers (issue #629), an escalation level, Jev (a decider call, issue #550), the human, or a fork whose accepted result answered the question (issue #548). */
 export type AttemptRole = 'fixed' | 'level' | 'jev' | 'human' | 'fork';
 
 /** One entry in a question's trail: an escalation level's reply, or the human's answer. Human attempts carry only the answer. */

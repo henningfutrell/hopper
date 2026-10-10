@@ -1,4 +1,4 @@
-// Minor decisions through Jev first (issue #550), end to end: the real daemon and database, Jev as a double at its
+// Decider calls through Jev first (issue #550), end to end: the real daemon and database, Jev as a double at its
 // seam (`seams.jev`), escalation levels as doubles. A question that lists its options and a failure no rule explains
 // ask Jev first. In shadow (the default) Jev's pick is recorded and compared with what was decided after it; active,
 // a confident pick that nothing makes consequential is applied, and anything else goes on as before. Every pick is an
@@ -79,7 +79,7 @@ describe('a question that lists its options, in shadow (the default)', () => {
     expect(v.recent[0]).toMatchObject({ point: 'question-answer', jobId: job.id, pick: '2', actual: '2', agreed: true, applied: false });
   });
 
-  it('a question without listed options is not a minor decision: Jev is not asked', async () => {
+  it('a question without listed options is not a decider call: Jev is not asked', async () => {
     const jev = fakeJev(() => ({ ok: true, pick: '1', confidence: 1 }));
     const a = await start({ jev, levels: [level('blue').level] });
     const job = await a.pull(ask('Which colour?'));

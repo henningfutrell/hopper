@@ -3,7 +3,7 @@
 // owner. An answer is typed into the job unless a risk rule matches, which sends the question to
 // the owner whatever level answered, or auto-answer holds it (issue #632, ./auto-answer.ts): the consequential
 // guard, a high-priority job, auto-answer off, or a confidence below the threshold. A person may correct an auto-answer. First of all, a question whose answer the facts fix (issue #629) is answered
-// without a model: an allowed permission dialog, or a person's answer reused; the risk rules still run. Then, before the levels, a question that lists its options is a minor decision
+// without a model: an allowed permission dialog, or a person's answer reused; the risk rules still run. Then, before the levels, a question that lists its options is a decider call
 // (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.

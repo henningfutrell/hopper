@@ -1,4 +1,4 @@
-// Jev at its seam (issue #550, design.md "Minor decisions"): one TypeSafe Choice over a decision point's options,
+// Jev at its seam (issue #550, design.md "Decider calls"): one TypeSafe Choice over a decision point's options,
 // through jev_pick.py and the `typesafe_sdk` the gate router's Jev uses, with TYPESAFE_API_KEY from the runtime
 // (read on every call: a key set later is used at once). No key: Jev is off, and nothing is asked. Every failure —
 // no SDK, TypeSafe refusing, a timeout, a pick outside the options — is `{ ok: false }`, never a throw. The script
