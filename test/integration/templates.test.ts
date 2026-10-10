@@ -16,6 +16,9 @@
 //   Scenario: narrowing needs no approval
 //   Scenario: a template naming a secret the vault does not hold is refused
 //   Scenario: a sandbox box joins with a line that names its template, and is an instance of it
+//   Scenario: a template with an attached box is not removed; the answer names the box (issue #604)
+//   Scenario: a join line whose template was removed is refused, and adds no machine
+//   Scenario: a machine is not set to a template that does not exist
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,6 +55,15 @@ async function boot(): Promise<{ a: TestApp; session: string }> {
 
 type Template = { name: string; image: string; secrets: string[]; approval?: { image: string; secrets: string[]; by: string; at: string }; pending: { secrets: string[]; image: boolean }; gives: string[] };
 const edit = (a: TestApp, session: string, body: Record<string, unknown>) => a.ui<{ templates: Template[]; error?: string }>('/ui/api/vault', body, { token: session });
+/** A box joined as an instance of `template` (no client started: the config record is what is checked). */
+async function joinBox(a: TestApp, session: string, name: string, template: string): Promise<void> {
+  const code = (await a.ui<{ code: string }>('/ui/api/machines/join', { template }, { token: session })).body.code;
+  const dir = mkdtempSync(join(tmpdir(), 'hopper-box-'));
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  await joinHopper({ line: `${a.url}#${code}`, name, dir });
+}
+const machineNames = async (a: TestApp): Promise<string[]> =>
+  ((await a.api('GET', '/api/machines/config')).body as { machines: { name: string }[] }).machines.map((m) => m.name);
 const template = async (a: TestApp, name: string): Promise<Template | undefined> =>
   ((await a.api('GET', '/api/vault')).body.templates as Template[]).find((x) => x.name === name);
 
@@ -131,5 +143,43 @@ describe('templates', () => {
     expect(await gives()).toEqual([]);
     await edit(a, session, { action: 'approve-template', name: 'kube' });
     expect(await gives()).toEqual(['KUBE_TOKEN']);
+  });
+
+  it('a template with an attached box is not removed: the answer names the box; once the box leaves, it is removed (issue #604)', async () => {
+    const { a, session } = await boot();
+    await edit(a, session, { action: 'save-template', name: 'kube', image: IMAGE, secrets: ['KUBE_TOKEN'] });
+    await joinBox(a, session, 'hopper-sandbox-kube', 'kube');
+    const refused = await edit(a, session, { action: 'remove-template', name: 'kube' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/hopper-sandbox-kube/);
+    expect(await template(a, 'kube')).toBeDefined();
+    expect((await a.events()).map((e) => e.type)).not.toContain('template.removed');
+
+    const version = (await a.api('GET', '/api/machines/config')).body.version as string;
+    expect((await a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'hopper-sandbox-kube', version }, { token: session })).status).toBe(200);
+    expect((await edit(a, session, { action: 'remove-template', name: 'kube' })).status).toBe(200);
+    expect(await template(a, 'kube')).toBeUndefined();
+  });
+
+  it('a join line whose template was removed is refused, and adds no machine (issue #604)', async () => {
+    const { a, session } = await boot();
+    await edit(a, session, { action: 'save-template', name: 'kube', image: IMAGE, secrets: [] });
+    const code = (await a.ui<{ code: string }>('/ui/api/machines/join', { template: 'kube' }, { token: session })).body.code;
+    expect((await edit(a, session, { action: 'remove-template', name: 'kube' })).status).toBe(200);
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-box-'));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    await expect(joinHopper({ line: `${a.url}#${code}`, name: 'hopper-sandbox-kube', dir })).rejects.toThrow(/no template kube/);
+    expect(await machineNames(a)).not.toContain('hopper-sandbox-kube');
+  });
+
+  it('a machine is not set to a template that does not exist (issue #604)', async () => {
+    const { a, session } = await boot();
+    await edit(a, session, { action: 'save-template', name: 'kube', image: IMAGE, secrets: [] });
+    await joinBox(a, session, 'hopper-sandbox-kube', 'kube');
+    const cfg = (await a.api('GET', '/api/machines/config')).body as { version: string; machines: { name: string; options: Record<string, unknown> }[] };
+    const options = { ...cfg.machines.find((m) => m.name === 'hopper-sandbox-kube')!.options, template: 'gone' };
+    const r = await a.ui<{ error: string }>('/ui/api/plugins', { action: 'options', role: 'machine-source', name: 'hopper-sandbox-kube', options, version: cfg.version }, { token: session });
+    expect(r.status).toBe(404);
+    expect(r.body.error).toMatch(/no template gone/);
   });
 });

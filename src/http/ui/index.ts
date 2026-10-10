@@ -29,6 +29,7 @@ import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerAccessRoutes } from './access.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
+import { knownTemplate, joinTemplate } from './vault.ts';
 
 export interface UiRouteOptions {
   /** The request's user's parts (the session's user). */
@@ -260,7 +261,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   // design.md "UI and mutation": one instance's options (command-bearing ones too, issue #198), the
   // plugin filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
   app.post('/ui/api/plugins', admin, async (req) => {
-    const r = await o.tenant(req).plugins.edit(parseWith(pluginsEditBody, req.body));
+    const r = await o.tenant(req).plugins.edit(knownTemplate(o.tenant(req).vault, parseWith(pluginsEditBody, req.body)));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
   });
@@ -318,9 +319,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const id = userIdOf(req);
     if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
     // A sandbox box of a template (issue #558): the code names it, so the box joins as an instance of it.
-    const { template } = parseWith(machineJoinBody, req.body ?? {});
-    if (template !== undefined && !o.tenant(req).vault.view().templates.some((t) => t.name === template)) throw new HttpError(404, `no template ${template}`);
-    return mintJoinCode(o.instance, o.clock, id, template);
+    return mintJoinCode(o.instance, o.clock, id, joinTemplate(o.tenant(req).vault, parseWith(machineJoinBody, req.body ?? {}).template));
   });
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.

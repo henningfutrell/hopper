@@ -22,7 +22,7 @@ import { createCredentialRequests, type Asker, type CredentialAsk, type Give, ty
 /** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
 export const vaultContext = (id: string): string => `vault:${id}/value`;
 
-export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'unavailable'; error: string };
+export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
 export interface VaultService {
   view(): VaultView;
@@ -37,7 +37,7 @@ export interface VaultService {
    * a new profile waits for a person's approval; a profile dropped has its approval revoked.
    */
   saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[] }, by: string): Promise<VaultResult>;
-  /** Removes a template and revokes every approval access holds for it. */
+  /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
   approveTemplate(name: string, by: string): Promise<VaultResult>;
@@ -45,7 +45,10 @@ export interface VaultService {
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<VaultResult>;
   /** What a machine's boxes may be given now: its template's approved scope; nothing for a machine of no template. */
   scopeOf(machine: string): { template?: string; secrets: string[] };
-  /** Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581). */
+  /**
+   * Each attached machine that joined as a box of a template, and that template: what Access writes as an instance (issue #581).
+   * Only a template the vault holds (issue #604): a box of one that is not there is an instance of nothing.
+   */
   boxes(): { machine: string; template: string }[];
   /**
    * A machine's ask (slice 3), already proven to be the machine's (its link's signature): one secret, for the job whose
@@ -107,6 +110,9 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   templateScopes: () => v.templateScopes(),
 });
 
+/** Whether the vault holds a template of this name: a box joins as, or is set to, only one that is there (issue #604). */
+export const holdsTemplate = (v: Pick<Vault, 'view'>, name: string): boolean => v.view().templates.some((t) => t.name === name);
+
 /** What `GET /api/vault` and each edit answer: the view, with the vault's status as its problem. */
 export async function vaultView(v: Vault): Promise<VaultView> {
   const problem = await v.status();
@@ -127,7 +133,7 @@ export type SetSecret = { name: string; scope?: string } & ({ value: string } | 
 /** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
 const AT_WORK = ['running', 'waiting_answer'];
 
-const fail = (code: 'invalid' | 'not_found' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
+const fail = (code: 'invalid' | 'not_found' | 'conflict' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
 
 export function createVaultService(o: {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>;
@@ -267,6 +273,8 @@ export function createVaultService(o: {
     },
 
     async removeTemplate(name, by) {
+      const attached = (o.targets?.() ?? []).filter((m) => m.template === name).map((m) => m.name);
+      if (attached.length && vault.template(name)) return fail('conflict', `${name} has boxes attached: ${attached.join(', ')}. Remove them in Machines first`);
       const removed = o.store.tx(() => {
         if (!vault.removeTemplate(name)) return false;
         events.append({ type: 'template.removed', data: { template: name, by } });
@@ -300,7 +308,7 @@ export function createVaultService(o: {
     },
 
     scopeOf,
-    boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined ? [{ machine: m.name, template: m.template }] : [])),
+    boxes: () => (o.targets?.() ?? []).flatMap((m) => (m.template !== undefined && vault.template(m.template) ? [{ machine: m.name, template: m.template }] : [])),
 
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
@@ -322,6 +330,7 @@ export function createVaultService(o: {
       if (!job || !AT_WORK.includes(job.status)) return refuse(`the job is not at work (${job?.status ?? 'no such job'}): a vault secret is given only while it runs`);
       if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return refuse(`the job does not run on ${m.name}`);
       if (!m.template) return refuse(`${m.name} is no box of a template: only a box joined with a template's line gets vault secrets`);
+      if (!vault.template(m.template)) return refuse(`${m.name} is a box of ${m.template}, a template that is not there: a person removes the box`);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);

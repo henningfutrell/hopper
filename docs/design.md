@@ -9435,6 +9435,14 @@ migration 29, a table only), the last approval in its body.
   joins as a client target whose `template` option is the template's name; its line runs the template's image under
   the name `hopper-sandbox-<template>`. A computer's line names none. `scopeOf(machine)` answers what a machine's jobs
   may be given: its template's `gives`, else nothing.
+- **Removing a template** (issue #604). `remove-template` is refused (409) while a box of it is attached; the answer
+  names the boxes. A person removes them in Machines first, then the template. So no box points at a template that is
+  not there. The removal revokes the template's access approvals (`Access.revokeProfile`): its `approved_for` tuples go,
+  and its boxes' `instance_of` tuples went when the boxes left. Two more checks keep it so: a join line whose template
+  was removed after the line was made is refused (409, the join adds no machine), and a machine's options are not set to
+  a template the vault does not hold (`POST /ui/api/plugins`, 404). A box record from before this rule, of a template
+  that is not there, is an instance of nothing: `boxes()` leaves it out, so Access writes no tuple for it, and the
+  vault refuses it every secret. Placement is not changed: it is a machine as before, and a person removes it.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
@@ -9449,7 +9457,10 @@ access approvals, and access is the one record of which are approved.
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
-secret the vault does not hold refused; the join line names the template and the box joins as its instance),
+secret the vault does not hold refused; the join line names the template and the box joins as its instance; a template
+with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template),
+`test/integration/access-requesters.test.ts` (the removed template's tuples gone), `test/vault/missing-template.test.ts`
+(a box of a template that is not there is no instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
 
 ### A template's blast radius (issue #584)
