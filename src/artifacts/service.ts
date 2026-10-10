@@ -1,12 +1,14 @@
 // One user's artifacts (issue #624, design.md "Artifacts"): a job puts a file, the hopper keeps it with its job, issue,
 // type, size and hash, under the user's limits; it masks GitHub tokens in a text artifact first (issue #597). Its
 // owner shares it with another user or by an expiring public link, revokes a share, removes it; the retention sweep
-// removes what is older than the user keeps. An HTML artifact with no drawing is kept with a warning (issue #675). Every change is an event of the user's, in the same transaction; the
-// HTTP edge puts the job's on its job stream. Never throws for a person's or a job's mistake: it answers a no with why.
+// removes what is older than the user keeps. An HTML artifact that shows nothing, or one with no summary, is kept with a
+// warning (issue #675). Every change is a revision (issue #675): a put to an artifact, or a restore of an old revision,
+// makes a new latest one and keeps the rest; the sweep removes older revisions past the retention unless pinned. Every
+// change is an event of the user's, in the same transaction; the HTTP edge puts the job's on its job stream. Never throws for a person's or a job's mistake: it answers a no with why.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  ARTIFACT_TITLE_MAX, artifactName, artifactType, kindOf, shareLive, TEXT_KINDS, visualWarning,
-  type Artifact, type ArtifactSettings, type ArtifactShare,
+  ARTIFACT_NOTE_MAX, ARTIFACT_TITLE_MAX, artifactName, artifactSummary, artifactType, kindOf, NO_SUMMARY_WARNING, shareLive, TEXT_KINDS, visualWarning,
+  type Artifact, type ArtifactRevision, type ArtifactSettings, type ArtifactShare,
 } from '../domain/artifacts.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -18,7 +20,17 @@ export const ARTIFACT_SWEEP_MS = 60 * 60 * 1000;
 export type Refusal = { no: string; status: 400 | 403 | 404 | 413 };
 export const isRefusal = (r: unknown): r is Refusal => typeof r === 'object' && r !== null && 'no' in r;
 
-export interface PutRequest { name: string; title?: string; type?: string; content: Buffer }
+/**
+ * A put: a new artifact, or, with `to`, a new revision of that one (issue #675). `summary`: one line that says what it
+ * shows; `note`: what a revision changed.
+ */
+export interface PutRequest { name: string; title?: string; summary?: string; type?: string; to?: string; note?: string; content: Buffer }
+
+/** A revision's note as kept: one line, at most ARTIFACT_NOTE_MAX characters, secrets masked; undefined: none. */
+const artifactNote = (text: string | undefined): string | undefined => {
+  const line = maskGitHubTokens((text ?? '').replace(/\s+/g, ' ').trim()).slice(0, ARTIFACT_NOTE_MAX);
+  return line === '' ? undefined : line;
+};
 /** What a put keeps; `warning`: kept, but not what an artifact is for (issue #675). */
 export type PutDone = Artifact & { warning?: string };
 /** A new share: with a user of the hopper, or a public link for `hours`. */
@@ -33,6 +45,14 @@ export interface UserArtifacts {
   put(job: Job, r: PutRequest): PutDone | Refusal;
   get(id: string): Artifact | undefined;
   content(id: string): Buffer | undefined;
+  /** Every revision, newest first (issue #675). */
+  revisions(id: string): ArtifactRevision[];
+  revision(id: string, n: number): ArtifactRevision | undefined;
+  revisionContent(id: string, n: number): Buffer | undefined;
+  /** Makes revision `n` the latest, as a new revision: nothing is overwritten. */
+  restore(id: string, n: number, by: string): Artifact | Refusal;
+  /** Pins revision `n` (the sweep keeps it), or unpins it. */
+  pin(id: string, n: number, pinned: boolean, by: string): ArtifactRevision | Refusal;
   list(o?: { jobId?: string; limit?: number }): Artifact[];
   share(id: string, r: ShareRequest, by: string): ShareMade | Refusal;
   revoke(id: string, shareId: string, by: string): ArtifactShare | Refusal;
@@ -65,6 +85,16 @@ export function createUserArtifacts(o: {
   const now = () => o.clock.now().toISOString();
   let timer: NodeJS.Timeout | undefined;
   const missing = (id: string): Refusal => ({ no: `there is no artifact ${id}`, status: 404 });
+  /** Whether `bytes` more fit: one artifact's limit, and all of the user's revisions together (issue #675). */
+  const overLimits = (name: string, bytes: number): Refusal | undefined => {
+    const s = repo.settings();
+    if (bytes > s.maxBytes) return { no: `${name} is ${inWords(bytes)}; one artifact may be at most ${inWords(s.maxBytes)} (Settings → Artifacts)`, status: 413 };
+    const used = repo.usedBytes();
+    if (used + bytes > s.userBytes) {
+      return { no: `${name} is ${inWords(bytes)}, and this user's artifacts hold ${inWords(used)} of ${inWords(s.userBytes)} (Settings → Artifacts): remove some first`, status: 413 };
+    }
+    return undefined;
+  };
 
   const a: UserArtifacts = {
     put(job, r) {
@@ -72,6 +102,8 @@ export function createUserArtifacts(o: {
       const type = artifactType(name, r.type);
       if (type === undefined) return { no: `the hopper does not know the type ${r.type}: give html, svg, png, jpeg, gif, webp, pdf, csv, markdown, json, text or file, or leave it out`, status: 400 };
       if (r.content.length === 0) return { no: `${name} is empty: there is nothing to keep`, status: 400 };
+      const before = r.to === undefined ? undefined : repo.get(r.to);
+      if (r.to !== undefined && !before) return missing(r.to);
       const kind = kindOf(type);
       let content = r.content;
       let masked = 0;
@@ -84,28 +116,87 @@ export function createUserArtifacts(o: {
           content = Buffer.from(clean, 'utf8');
         }
       }
-      const s = repo.settings();
-      if (content.length > s.maxBytes) return { no: `${name} is ${inWords(content.length)}; one artifact may be at most ${inWords(s.maxBytes)} (Settings → Artifacts)`, status: 413 };
-      const used = repo.usedBytes();
-      if (used + content.length > s.userBytes) {
-        return { no: `${name} is ${inWords(content.length)}, and this user's artifacts hold ${inWords(used)} of ${inWords(s.userBytes)} (Settings → Artifacts): remove some first`, status: 413 };
+      const full = overLimits(name, content.length);
+      if (full) return full;
+      const title = maskGitHubTokens((r.title ?? '').trim()).slice(0, ARTIFACT_TITLE_MAX) || before?.title || name;
+      const summary = artifactSummary(r.summary === undefined ? undefined : maskGitHubTokens(r.summary)) ?? before?.summary;
+      const note = artifactNote(r.note);
+      const warning = [visualWarning(kind, content), summary === undefined ? NO_SUMMARY_WARNING : undefined].filter((w) => w !== undefined).join('; ') || undefined;
+      const by = `job ${job.id}`;
+      const sha256 = createHash('sha256').update(content).digest('hex');
+      const at = now();
+      // A new revision of an artifact (issue #675): the id, its URL and its shares stay; the latest so far is kept.
+      if (before) {
+        const next: Artifact = {
+          ...before, title, name, type, kind, size: content.length, sha256, revision: before.revision + 1, updatedAt: at, revisedBy: by, pinned: false,
+          ...(summary !== undefined ? { summary } : {}),
+        };
+        if (note !== undefined) next.note = note; else delete next.note;
+        o.store.tx(() => {
+          repo.revise(next, content);
+          o.store.events.append({
+            type: 'artifact.revised', jobId: job.id,
+            data: { artifact: next.id, revision: next.revision, title, name, type, size: next.size, sha256, by, ...(note !== undefined ? { note } : {}), ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}) },
+          });
+        });
+        return warning ? { ...next, warning } : next;
       }
-      const title = maskGitHubTokens((r.title ?? '').trim()).slice(0, ARTIFACT_TITLE_MAX) || name;
-      const warning = visualWarning(kind, content);
       const src = job.source;
       const issue = src?.url ? { url: src.url, ref: src.repo && src.number !== undefined ? `${src.repo}#${src.number}` : src.url } : undefined;
       const artifact: Artifact = {
         id: newId(), userId: o.userId, jobId: job.id, ...(issue ? { issue } : {}), title, name, type, kind,
-        size: content.length, sha256: createHash('sha256').update(content).digest('hex'), createdAt: now(),
+        size: content.length, sha256, createdAt: at, ...(summary !== undefined ? { summary } : {}),
+        revision: 1, updatedAt: at, revisedBy: by, ...(note !== undefined ? { note } : {}), pinned: false,
       };
       o.store.tx(() => {
         repo.add(artifact, content);
         o.store.events.append({
           type: 'artifact.created', jobId: job.id,
-          data: { artifact: artifact.id, title, name, type, size: artifact.size, sha256: artifact.sha256, ...(issue ? { issue: issue.url } : {}), ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}) },
+          data: {
+            artifact: artifact.id, title, name, type, size: artifact.size, sha256, ...(summary !== undefined ? { summary } : {}), ...(issue ? { issue: issue.url } : {}),
+            ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}),
+          },
         });
       });
       return warning ? { ...artifact, warning } : artifact;
+    },
+    revisions: (id) => repo.revisions(id),
+    revision: (id, n) => repo.revision(id, n),
+    revisionContent: (id, n) => repo.revisionContent(id, n),
+    restore(id, n, by) {
+      const art = repo.get(id);
+      if (!art) return missing(id);
+      const old = repo.revision(id, n);
+      const content = old ? repo.revisionContent(id, n) : undefined;
+      if (!old || !content) return { no: `artifact ${id} has no revision ${n}`, status: 404 };
+      const full = overLimits(old.name, content.length);
+      if (full) return full;
+      const note = `restored revision ${n}`;
+      const next: Artifact = {
+        ...art, title: old.title, name: old.name, type: old.type, kind: old.kind, size: old.size, sha256: old.sha256,
+        revision: art.revision + 1, updatedAt: now(), revisedBy: by, note, pinned: false,
+      };
+      if (old.summary !== undefined) next.summary = old.summary; else delete next.summary;
+      o.store.tx(() => {
+        repo.revise(next, content);
+        o.store.events.append({
+          type: 'artifact.revised', jobId: art.jobId,
+          data: { artifact: id, revision: next.revision, title: next.title, name: next.name, type: next.type, size: next.size, sha256: next.sha256, by, note, restoredFrom: n },
+        });
+      });
+      return next;
+    },
+    pin(id, n, pinned, by) {
+      const art = repo.get(id);
+      if (!art) return missing(id);
+      const rev = repo.revision(id, n);
+      if (!rev) return { no: `artifact ${id} has no revision ${n}`, status: 404 };
+      if (rev.pinned === pinned) return { ...rev, pinned };
+      o.store.tx(() => {
+        repo.pinRevision(id, n, pinned);
+        o.store.events.append({ type: 'artifact.revision_pinned', jobId: art.jobId, data: { artifact: id, revision: n, pinned, by } });
+      });
+      return { ...rev, pinned };
     },
     get: (id) => repo.get(id),
     content: (id) => repo.content(id),
@@ -183,6 +274,15 @@ export function createUserArtifacts(o: {
     contentKey: () => o.contentKey(),
     sweep() {
       const before = new Date(o.clock.now().getTime() - repo.settings().retentionDays * 86_400_000).toISOString();
+      // Older revisions first (issue #675): the latest stays, and so does a pinned one.
+      for (const r of repo.oldRevisions(before)) {
+        const art = repo.get(r.artifactId);
+        if (!art) continue;
+        o.store.tx(() => {
+          repo.removeRevision(r.artifactId, r.n);
+          o.store.events.append({ type: 'artifact.revision_removed', jobId: art.jobId, data: { artifact: r.artifactId, revision: r.n, reason: 'retention' } });
+        });
+      }
       const gone: string[] = [];
       for (const id of repo.olderThan(before)) {
         const art = repo.get(id);

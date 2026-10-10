@@ -1,7 +1,7 @@
 // One event as one line: time, type (coloured by what ended or started), and its subject.
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
-import { artifactCreatedDetail } from '@/model/artifacts';
+import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
 import type { DomainEvent, MachineView } from '@/model/wire';
 import { TEXT, type Tone } from '@/components/status';
@@ -21,7 +21,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
-  'artifact.posted': 'ok',
+  'artifact.posted': 'ok', 'artifact.revised': 'ok',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -42,6 +42,9 @@ export function detailOf(e: DomainEvent): string {
   // An artifact shown to its owner (issue #673): where its link was posted, or why not.
   if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
   if (e.type === 'artifact.created') return artifactCreatedDetail(d);
+  if (e.type === 'artifact.revised') return revisedDetail(d);
+  if (e.type === 'artifact.revision_pinned') return `revision ${String(d.revision)} ${d.pinned === true ? 'pinned' : 'unpinned'}`;
+  if (e.type === 'artifact.revision_removed') return `revision ${String(d.revision)} removed by the retention`;
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;

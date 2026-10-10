@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "pinned": {
+      "type": "boolean"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact",
+    "revision",
+    "pinned",
+    "by"
+  ],
+  "additionalProperties": false
+}

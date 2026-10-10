@@ -7,6 +7,7 @@
 // Checks the stylesheet index.html links: at least MIN_BYTES, and a rule for each of UTILITIES.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { ARTIFACT_LIBS } from '../src/artifacts/libs.ts';
 
 const MIN_BYTES = 40_000;
 /** Layout utilities every screen uses (the sign-in page among them); none is ever dropped by a real build. */
@@ -33,6 +34,8 @@ function problems(dist: string): string[] {
     const missing = UTILITIES.filter((u) => !new RegExp(`\\.${u.replace(/[-]/g, '\\-')}(?![\\w-])`).test(css));
     if (missing.length > 0) out.push(`${name} has no rule for ${missing.map((u) => `.${u}`).join(', ')}`);
   }
+  // The libraries artifacts load (issue #675): the daemon refuses to start on a dir with one missing.
+  for (const { file } of ARTIFACT_LIBS) if (!existsSync(join(dist, 'artifact-lib', file))) out.push(`no artifact-lib/${file} (scripts/copy-artifact-libs.ts)`);
   return out;
 }
 

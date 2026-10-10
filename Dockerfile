@@ -11,7 +11,7 @@ RUN npm ci --no-audit --no-fund
 COPY ui ./ui
 COPY site/hopper-logo.svg ./site/hopper-logo.svg
 COPY src ./src
-COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
+COPY scripts/check-ui-bundle.ts scripts/copy-artifact-libs.ts ./scripts/
 RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------

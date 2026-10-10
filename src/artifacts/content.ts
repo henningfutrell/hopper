@@ -9,6 +9,7 @@
 // same sandbox (issue #675). The text kinds get a sandbox with no script at all. Pure but for the key.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { ArtifactKind } from '../domain/artifacts.ts';
+import { ARTIFACT_LIB_PATH } from './libs.ts';
 
 /** How long a signed content URL works. */
 export const CONTENT_URL_SECONDS = 3600;
@@ -19,32 +20,37 @@ export const LINK_PATH = '/artifact-link';
 /** What an HTML or SVG artifact may load, each kind: only what it carries itself (issue #673). */
 const OWN_ONLY = "'unsafe-inline' data: blob:";
 /**
- * An HTML or SVG artifact's policy: its scripts run, in a sandbox of its own origin, and it reaches nothing. It loads
- * nothing from outside either (issue #673): an `<img>` or `<script>` from any https address is a request out, and its URL
- * can carry what the page read — its own signed content URL included. A popup it opens stays in the sandbox.
+ * An HTML or SVG artifact's policy: its scripts run, in a sandbox of its own origin, and it reaches nothing. It loads nothing
+ * from outside either (issue #673): an `<img>` or `<script>` from any https address is a request out, and its URL can
+ * carry what the page read — its own signed content URL included. A popup it opens stays in the sandbox. Its scripts may
+ * also come from the hopper's own `/artifact-lib/` (issue #675): the diagram and chart libraries the hopper bundles,
+ * at `origin` — the address the person opened it at, so the path matches wherever they are. A request there reaches
+ * the hopper only, never outside.
  */
-export const HTML_POLICY = [
-  'sandbox allow-scripts allow-popups allow-downloads',
-  "default-src 'none'",
-  `script-src ${OWN_ONLY}`,
-  `style-src ${OWN_ONLY}`,
-  `img-src ${OWN_ONLY}`,
-  `font-src ${OWN_ONLY}`,
-  'media-src data: blob:',
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-].join('; ');
+export function htmlPolicy(origin: string): string {
+  return [
+    'sandbox allow-scripts allow-popups allow-downloads',
+    "default-src 'none'",
+    `script-src ${OWN_ONLY} ${origin}${ARTIFACT_LIB_PATH}/`,
+    `style-src ${OWN_ONLY}`,
+    `img-src ${OWN_ONLY}`,
+    `font-src ${OWN_ONLY}`,
+    'media-src data: blob:',
+    "connect-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    "frame-ancestors 'self'",
+  ].join('; ');
+}
 /** Every other kind's: a sandbox in which nothing runs and nothing is fetched. */
 export const INERT_POLICY = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; frame-ancestors 'self'";
 
 /** The headers an artifact is served with. Text kinds go as plain text: the UI renders the previews. */
-export function contentHeaders(a: { kind: ArtifactKind; type: string; name: string }, download: boolean): Record<string, string> {
+export function contentHeaders(a: { kind: ArtifactKind; type: string; name: string }, download: boolean, origin: string): Record<string, string> {
   const type = a.kind === 'html' ? 'text/html; charset=utf-8'
     : a.kind === 'csv' || a.kind === 'markdown' || a.kind === 'json' || a.kind === 'text' ? 'text/plain; charset=utf-8'
       : a.kind === 'file' ? 'application/octet-stream' : a.type;
-  const policy = a.kind === 'html' || a.kind === 'svg' ? HTML_POLICY : a.kind === 'pdf' ? "frame-ancestors 'self'" : INERT_POLICY;
+  const policy = a.kind === 'html' || a.kind === 'svg' ? htmlPolicy(origin) : a.kind === 'pdf' ? "frame-ancestors 'self'" : INERT_POLICY;
   const attach = download || a.kind === 'file';
   return {
     'content-type': type,

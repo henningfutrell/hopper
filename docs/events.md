@@ -2907,7 +2907,7 @@ Version 1 (`docs/schemas/skill.refused.v1.json`). A running job asked for a skil
 
 ## `artifact.created`
 
-Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). `warning`: it was kept, but it is not a visual — an HTML page with no `<svg>`, `<canvas>` or `<img>` (issue #675). Also on the job's stream.
+Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). `summary`: one line that says what it shows (issue #675). `warning`: it was kept, but an HTML page shows nothing — no `<svg>`, `<canvas>`, `<img>` or `<script>` —, or it has no summary (issue #675). Also on the job's stream.
 
 | field | type | required |
 |---|---|---|
@@ -2917,6 +2917,7 @@ Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on
 | `type` | string | yes |
 | `size` | integer | yes |
 | `sha256` | string | yes |
+| `summary` | string | no |
 | `issue` | string | no |
 | `masked` | integer | no |
 | `warning` | string | no |
@@ -3087,6 +3088,77 @@ Version 1 (`docs/schemas/tldr.settings_changed.v1.json`). An admin turned the TL
     "enabled": false
   },
   "by": "admin"
+}
+```
+
+## `artifact.revised`
+
+Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new latest revision (issue #675): a job put a file to it (`by` the job), or a person restored an older revision (`restoredFrom`), which is copied, not moved. Its id, its links and its shares stay. `note`: what changed, in one line. The older revisions stay readable.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `revision` | integer | yes |
+| `title` | string | yes |
+| `name` | string | yes |
+| `type` | string | yes |
+| `size` | integer | yes |
+| `sha256` | string | yes |
+| `by` | string | yes |
+| `note` | string | no |
+| `restoredFrom` | integer | no |
+| `masked` | integer | no |
+| `warning` | string | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "revision": 2,
+  "title": "Queue wait by hour",
+  "name": "chart.html",
+  "type": "text/html",
+  "size": 19210,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "by": "job 6f1c2a9e",
+  "note": "adds the hours after six"
+}
+```
+
+## `artifact.revision_pinned`
+
+Version 1 (`docs/schemas/artifact.revision_pinned.v1.json`). A person pinned an artifact's revision, so the retention sweep keeps it and its artifact, or unpinned it (issue #675).
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `revision` | integer | yes |
+| `pinned` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "revision": 1,
+  "pinned": true,
+  "by": "github:octocat"
+}
+```
+
+## `artifact.revision_removed`
+
+Version 1 (`docs/schemas/artifact.revision_removed.v1.json`). The retention sweep removed an older revision of an artifact, not pinned, made longer ago than the user keeps artifacts (issue #675). The latest revision is never removed this way.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `revision` | integer | yes |
+| `reason` | `retention` | yes |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "revision": 1,
+  "reason": "retention"
 }
 ```
 

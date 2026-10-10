@@ -62,3 +62,24 @@ export function artifactCreatedDetail(d: Record<string, unknown>): string {
   const title = typeof d.title === 'string' ? d.title : String(d.name);
   return typeof d.warning === 'string' ? `${title}: warning: ${d.warning}` : title;
 }
+
+/** The UI's link to an artifact (issue #675): it follows the latest revision, or pins revision `n`. */
+export const revisionHash = (id: string, n?: number): string => (n === undefined ? `#artifacts/${id}` : `#artifacts/${id}/${n}`);
+
+/** The revision a hash pins (`#artifacts/<id>/<n>`); undefined: none, the latest. */
+export function revisionOfHash(hash: string): number | undefined {
+  const n = hash.replace(/^#/, '').split('/')[2];
+  return n !== undefined && /^[1-9]\d{0,8}$/.test(n) ? Number(n) : undefined;
+}
+
+/** Who made a revision, short: a job by its id's first part, a person by their name. */
+export function byInWords(by: string): string {
+  if (by.startsWith('job ')) return `job ${by.slice(4, 12)}`;
+  return by.replace(/^[a-z]+:/, '');
+}
+
+/** `artifact.revised` on the timeline (issue #675): its title, its number, and what changed. */
+export function revisedDetail(d: Record<string, unknown>): string {
+  const what = typeof d.restoredFrom === 'number' ? `restored revision ${d.restoredFrom}` : typeof d.note === 'string' ? d.note : '';
+  return `${String(d.title)}: revision ${String(d.revision)}${what ? `, ${what}` : ''}`;
+}

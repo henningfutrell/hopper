@@ -52,14 +52,26 @@ export const kindOf = (type: string): ArtifactKind => ARTIFACT_TYPES[type] ?? 'f
 
 /** An element that draws: what makes an HTML artifact a visual (issue #675). */
 const DRAWING = /<(svg|canvas|img)[\s>/]/i;
+/** A script: a page that draws at run time (issue #675). */
+const SCRIPT = /<script[\s>]/i;
 
 /**
- * Issue #675: an artifact is a visual — a diagram, a chart, a graph. An HTML artifact with no `<svg>`, `<canvas>` or
- * `<img>` is styled text: the hopper keeps it, and the job hears this warning. Undefined: no warning.
+ * Issue #675: an artifact shows the result — a diagram, a chart, an interactive view. An HTML artifact with no `<svg>`,
+ * `<canvas>`, `<img>` or `<script>` is styled text: the hopper keeps it, and the job hears this warning. Undefined: no warning.
  */
 export function visualWarning(kind: ArtifactKind, content: Buffer): string | undefined {
-  if (kind !== 'html' || DRAWING.test(content.toString('utf8'))) return undefined;
-  return 'the artifact has no visual: it has no <svg>, <canvas> or <img>. Draw the diagram or the chart; put prose in the issue comment or the job result';
+  // A page that runs a script draws at run time (issue #675): a bundled library's diagram, a chart, an interactive view.
+  if (kind !== 'html' || DRAWING.test(content.toString('utf8')) || SCRIPT.test(content.toString('utf8'))) return undefined;
+  return 'the artifact has no visual: it has no <svg>, <canvas>, <img> or <script>. Show the result: a diagram, a chart, an interactive view; put prose in the issue comment or the job result';
+}
+
+/** A put with no summary (issue #675): kept, but lists, the job card and share previews have only its title. */
+export const NO_SUMMARY_WARNING = 'the artifact has no summary: give --summary with one line that says what it shows';
+
+/** An artifact's summary as kept: one line, at most ARTIFACT_SUMMARY_MAX characters; undefined: none. */
+export function artifactSummary(text: string | undefined): string | undefined {
+  const line = (text ?? '').replace(/\s+/g, ' ').trim().slice(0, ARTIFACT_SUMMARY_MAX);
+  return line === '' ? undefined : line;
 }
 
 /** A file name the hopper keeps: the base name, no path, no control character, at most 200 characters. */
@@ -70,6 +82,8 @@ export function artifactName(name: string): string {
 }
 
 export const ARTIFACT_TITLE_MAX = 200;
+export const ARTIFACT_SUMMARY_MAX = 300;
+export const ARTIFACT_NOTE_MAX = 300;
 
 /** One artifact, as the database keeps it, without its content. */
 export interface Artifact {
@@ -90,6 +104,40 @@ export interface Artifact {
   /** The SHA-256 of its content, hex. */
   sha256: string;
   createdAt: string;
+  /** One line that says what it shows (issue #675): in lists, on the job card and in share previews. */
+  summary?: string;
+  /** Its latest revision's number (issue #675): 1 when it was put, one more at each change. */
+  revision: number;
+  /** When its latest revision was made, and who made it: a job (`job <id>`) or a person (`github:octocat`). */
+  updatedAt: string;
+  revisedBy: string;
+  /** The latest revision's one-line note: what changed. */
+  note?: string;
+  /** Whether its latest revision is pinned: the retention sweep keeps a pinned revision, and its artifact. */
+  pinned: boolean;
+}
+
+/**
+ * One revision of an artifact (issue #675): every change is one, numbered from 1. The latest is the artifact itself;
+ * older ones stay readable until the retention sweep, unless pinned.
+ */
+export interface ArtifactRevision {
+  artifactId: string;
+  n: number;
+  title: string;
+  summary?: string;
+  name: string;
+  type: string;
+  kind: ArtifactKind;
+  size: number;
+  sha256: string;
+  createdAt: string;
+  /** A job (`job <id>`) or a person. */
+  by: string;
+  note?: string;
+  pinned: boolean;
+  /** Whether it is the artifact's latest revision. */
+  latest: boolean;
 }
 
 /** Who a share lets see an artifact: another user of the hopper, or anybody with the link. */
@@ -148,6 +196,9 @@ export const DEFAULT_ARTIFACT_SETTINGS: ArtifactSettings = {
 export const ARTIFACT_MAX_BYTES = 100 * MB;
 export const ARTIFACT_LIMITS = { maxBytes: ARTIFACT_MAX_BYTES, userBytes: 100 * 1024 * MB, retentionDays: 3650, linkHours: 24 * 365 } as const;
 
+/** A revision as GET /api/artifacts/:id/revisions answers it: where this viewer loads its content. */
+export interface ArtifactRevisionView extends ArtifactRevision { contentUrl: string }
+
 /** One artifact as GET /api/artifacts answers it: where to open it, and, for its owner, its shares. */
 export interface ArtifactView extends Artifact {
   /** The stable URL: the UI's Artifacts view, which opens it for whoever may see it. */
@@ -174,10 +225,21 @@ export interface ArtifactRepository {
   content(id: string): Buffer | undefined;
   /** Newest first; a job's alone when one is named. */
   list(o?: { jobId?: string; limit?: number }): Artifact[];
+  /** A new latest revision (issue #675): the latest so far is kept as an older revision, in the same transaction. */
+  revise(a: Artifact, content: Buffer): void;
+  /** Every revision, newest first: the latest is the artifact. */
+  revisions(id: string): ArtifactRevision[];
+  revision(id: string, n: number): ArtifactRevision | undefined;
+  revisionContent(id: string, n: number): Buffer | undefined;
+  /** Pins or unpins revision `n`; false: no such revision. */
+  pinRevision(id: string, n: number, pinned: boolean): boolean;
+  /** The older revisions, not pinned, made before `iso`: what the sweep removes. */
+  oldRevisions(iso: string): { artifactId: string; n: number }[];
+  removeRevision(id: string, n: number): boolean;
   /** Removes it and its shares; false: no such artifact. */
   remove(id: string): boolean;
   usedBytes(): number;
-  /** The ids of the artifacts made before `iso`. */
+  /** The ids of the artifacts last changed before `iso` that hold no pinned revision. */
   olderThan(iso: string): string[];
   addShare(s: NewArtifactShare): void;
   share(id: string): ArtifactShare | undefined;

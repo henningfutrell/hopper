@@ -15,7 +15,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ARTIFACT_PATH, isRefusal, type Refusal, type ShareMade } from '../artifacts/index.ts';
 import { LINK_PATH } from '../artifacts/content.ts';
-import { ARTIFACT_MAX_BYTES, type Artifact, type ArtifactShare } from '../domain/artifacts.ts';
+import { ARTIFACT_MAX_BYTES, type Artifact, type ArtifactRevision, type ArtifactShare } from '../domain/artifacts.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
 import type { GitHubProxy } from '../github-proxy/index.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
@@ -53,6 +53,8 @@ const no = (req: FastifyRequest, reply: FastifyReply, r: Refusal | { status: num
 };
 
 const line = (a: Artifact, url: string): string => `${a.id}  ${a.title}  ${a.type}  ${a.size} bytes  ${a.createdAt}  ${url}`;
+const revisionLine = (r: ArtifactRevision): string =>
+  `${r.n}${r.latest ? ' (latest)' : ''}  ${r.createdAt}  ${r.by}  ${r.title}  ${r.size} bytes${r.pinned ? '  pinned' : ''}${r.note ? `  — ${r.note}` : ''}`;
 const shareLine = (s: ArtifactShare): string => `${s.id}  ${s.kind === 'user' ? `user ${s.userName ?? s.userId}` : `public link until ${s.expiresAt}`}${s.revokedAt ? `  revoked ${s.revokedAt}` : ''}`;
 
 /**
@@ -105,14 +107,17 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       const name = q(req, 'name');
       if (!name) return no(req, reply, { status: 400, text: 'name the file: put FILE' });
       if (!Buffer.isBuffer(req.body)) return no(req, reply, { status: 400, text: 'send the file as the body, content-type application/octet-stream' });
-      const title = q(req, 'title');
-      const type = q(req, 'type');
-      const r = who.t.artifacts.put(who.job, { name, content: req.body, ...(title ? { title } : {}), ...(type ? { type } : {}) });
+      const [title, summary, type, to, note] = ['title', 'summary', 'type', 'to', 'note'].map((k) => q(req, k));
+      if (to !== undefined && !ID.test(to)) return no(req, reply, { status: 400, text: `${to} is not an artifact id` });
+      const r = who.t.artifacts.put(who.job, {
+        name, content: req.body, ...(title ? { title } : {}), ...(summary ? { summary } : {}), ...(type ? { type } : {}), ...(to ? { to } : {}), ...(note ? { note } : {}),
+      });
       if (isRefusal(r)) return no(req, reply, r);
       const { warning, ...kept } = r;
       const url = urlOf(who.t, kept.id);
+      const rev = kept.revision > 1 ? `  revision ${kept.revision}` : '';
       return answer(req, reply, 201, { artifact: brief(who.t, kept), ...(warning ? { warning } : {}) },
-        `put: ${kept.id}  ${kept.title}  ${kept.type}  ${kept.size} bytes\nurl: ${url}\n${warning ? `warning: ${warning}\n` : ''}`);
+        `put: ${kept.id}${rev}  ${kept.title}  ${kept.type}  ${kept.size} bytes\nurl: ${url}\n${warning ? `warning: ${warning}\n` : ''}`);
     });
 
     scope.get(ARTIFACT_PATH, async (req, reply) => {
@@ -166,6 +171,25 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       if ('owner' in made) return shown(req, reply, who, id, by);
       const link = made.token ? `${o.edge.base(who.t)}${LINK_PATH}/${made.token}` : undefined;
       return answer(req, reply, 201, { share: made.share, ...(link ? { link } : {}) }, `shared: ${shareLine(made.share)}${link ? `\nlink: ${link}` : `\nurl: ${urlOf(who.t, id)}`}`);
+    });
+
+    scope.get<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id/revisions`, async (req, reply) => {
+      const who = askerOf(o.tenants, req.headers.authorization);
+      if ('status' in who) return no(req, reply, who);
+      const a = ID.test(req.params.id) ? who.t.artifacts.get(req.params.id) : undefined;
+      if (!a) return no(req, reply, { status: 404, text: `there is no artifact ${req.params.id}` });
+      const revs = who.t.artifacts.revisions(a.id);
+      return answer(req, reply, 200, { revisions: revs }, revs.map(revisionLine).join('\n'));
+    });
+
+    scope.post<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id/restore`, async (req, reply) => {
+      const who = askerOf(o.tenants, req.headers.authorization);
+      if ('status' in who) return no(req, reply, who);
+      const n = Number(q(req, 'revision'));
+      if (!Number.isInteger(n) || n < 1) return no(req, reply, { status: 400, text: 'name the revision: restore ID N' });
+      const r = who.t.artifacts.restore(req.params.id, n, `job ${who.job.id}`);
+      if (isRefusal(r)) return no(req, reply, r);
+      return answer(req, reply, 200, { artifact: brief(who.t, r) }, `restored: ${r.id}  revision ${n} is revision ${r.revision}, the latest\nurl: ${urlOf(who.t, r.id)}`);
     });
 
     scope.post<{ Params: { id: string } }>(`${ARTIFACT_PATH}/:id/rm`, async (req, reply) => {

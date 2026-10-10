@@ -38,6 +38,7 @@ const ALL: Record<EventType, true> = {
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
+  'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

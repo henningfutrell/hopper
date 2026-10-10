@@ -64,7 +64,7 @@ describe('artifacts (issue #624)', () => {
     });
     expect(out.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
 
-    const text = await artifact(a, job, ['put', 'chart.html'], { cwd: dir });
+    const text = await artifact(a, job, ['put', 'chart.html', '--summary', 'Queue wait by hour'], { cwd: dir });
     expect(text.code).toBe(0);
     expect(text.stdout).toMatch(/^put: [0-9a-f-]{36} {2}chart\.html {2}text\/html {2}\d+ bytes\nurl: http:\/\/127\.0\.0\.1:\d+\/#artifacts\/[0-9a-f-]{36}\n$/);
 
@@ -241,7 +241,7 @@ describe('artifacts are visuals (issue #675)', () => {
 
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="60" height="40" fill="#4a7"/><script>document.querySelector("rect").setAttribute("width","70")</script></svg>\n';
     const drawing = file('flow.xml', svg);
-    const out = JSON.parse((await artifact(a, job, ['put', 'flow.xml', '--type', 'svg', '--json'], { cwd: drawing.dir })).stdout) as { artifact: ArtifactView; warning?: string };
+    const out = JSON.parse((await artifact(a, job, ['put', 'flow.xml', '--type', 'svg', '--summary', 'A flow', '--json'], { cwd: drawing.dir })).stdout) as { artifact: ArtifactView; warning?: string };
     expect(out.artifact).toMatchObject({ type: 'image/svg+xml', kind: 'svg' });
     expect(out.warning).toBeUndefined();
     expect(eventsOf(a, 'artifact.created').find((e) => (e.data as { artifact: string }).artifact === out.artifact.id)!.data).not.toHaveProperty('warning');

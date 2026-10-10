@@ -17,7 +17,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { ArtifactRevisionView, ArtifactView } from '../../src/domain/types.ts';
 import { artifactHarness, eventsOf, readArtifacts as read } from '../support/artifacts.ts';
-import { databaseUrlFor } from '../support/database.ts';
+import { databaseUrlFor, ownerSchemaUrlFor } from '../support/database.ts';
+import { openDb } from '../../src/store/db.ts';
 import type { TestApp } from '../support/app.ts';
 
 const h = artifactHarness();
@@ -67,7 +68,7 @@ describe('artifact revisions (issue #675)', () => {
     expect(await (await fetch(a.url + one.body.contentUrl)).text()).toBe(page(1));
     expect((await api(a, session, `/api/artifacts/${first.id}/revisions/9`)).status).toBe(404);
 
-    expect(eventsOf(a, 'artifact.revised').map((e) => [e.jobId, (e.data as { revision: number }).revision])).toEqual([[job, 2], [job, 3]]);
+    expect(eventsOf(a, 'artifact.revised').map((e) => [e.jobId, (e.data as { revision: number }).revision]).sort()).toEqual([[job, 2], [job, 3]]);
     expect(a.user().jobStream.repo.since(job, 0, 100).map((e) => e.type)).toContain('artifact.revised');
 
     const missing = await h.artifact(a, job, ['put', 'flow.html', '--to', '00000000-0000-4000-8000-000000000000'], { cwd: h.file('flow.html', page(4)).dir });
@@ -82,10 +83,10 @@ describe('artifact revisions (issue #675)', () => {
 
     const restored = await a.ui<{ artifact: ArtifactView }>(`/ui/api/artifacts/${id}/restore`, { revision: 1 }, { token: session });
     expect(restored.status).toBe(200);
-    expect(restored.body.artifact).toMatchObject({ id, revision: 3, note: 'restored revision 1', revisedBy: 'github:admin' });
+    expect(restored.body.artifact).toMatchObject({ id, revision: 3, note: 'restored revision 1', revisedBy: 'login code' });
     const revs = (await api<{ revisions: ArtifactRevisionView[] }>(a, session, `/api/artifacts/${id}/revisions`)).body.revisions;
     expect(revs.map((r) => [r.n, r.sha256 === revs[2]!.sha256])).toEqual([[3, true], [2, false], [1, true]]);
-    expect(eventsOf(a, 'artifact.revised').at(-1)!.data).toMatchObject({ artifact: id, revision: 3, restoredFrom: 1, by: 'github:admin' });
+    expect(eventsOf(a, 'artifact.revised')[0]!.data).toMatchObject({ artifact: id, revision: 3, restoredFrom: 1, by: 'login code' });
     expect((await a.ui(`/ui/api/artifacts/${id}/restore`, { revision: 7 }, { token: session })).status).toBe(404);
 
     // Revisions count toward the quota.
@@ -95,8 +96,9 @@ describe('artifact revisions (issue #675)', () => {
     // The sweep: older revisions past the retention go, unless pinned; the latest stays.
     const pinned = await a.ui(`/ui/api/artifacts/${id}/revisions/2/pin`, { pinned: true }, { token: session });
     expect(pinned.status).toBe(200);
-    expect(eventsOf(a, 'artifact.revision_pinned').at(-1)!.data).toMatchObject({ artifact: id, revision: 2, pinned: true, by: 'github:admin' });
-    a.user().store.db.run('UPDATE artifact_revisions SET created_at = ? WHERE artifact_id = ?', new Date(Date.now() - 40 * 86_400_000).toISOString(), id);
+    expect(eventsOf(a, 'artifact.revision_pinned')[0]!.data).toMatchObject({ artifact: id, revision: 2, pinned: true, by: 'login code' });
+    const db = openDb(ownerSchemaUrlFor(a.dbPath));
+    try { db.run('UPDATE artifact_revisions SET created_at = ? WHERE artifact_id = ?', new Date(Date.now() - 40 * 86_400_000).toISOString(), id); } finally { db.close(); }
     expect(a.user().artifacts.sweep()).toEqual([]);
     const left = (await api<{ revisions: ArtifactRevisionView[] }>(a, session, `/api/artifacts/${id}/revisions`)).body.revisions;
     expect(left.map((r) => [r.n, r.pinned])).toEqual([[3, false], [2, true]]);
