@@ -70,6 +70,9 @@ export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTr
  */
 export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && job.pendingAnswer === undefined;
 
+/** Why such a machine holds a job (issue #711): it is off-network, why, and the command that joins it when one fits. */
+const offNetwork = (m: MachineSnapshot): string => `is off-network: ${m.addressProblem}${m.addressFix ? `. Fix: ${m.addressFix}` : ''}`;
+
 /**
  * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
  * take it, never fails there. A job resuming there returns to the pane it holds.
@@ -101,7 +104,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
     }
     const tree = known.filter((m) => !workTreeHolds(m, job));
     if (tree.every((m) => addressHolds(m, job))) {
-      return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id}: ${m.addressProblem}`).join('; ')}`;
+      return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id} ${offNetwork(m)}`).join('; ')}`;
     }
     const reaching = tree.filter((m) => !addressHolds(m, job));
     if (reaching.every((m) => templateHolds(m, job))) return `${reaching.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
@@ -115,7 +118,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
-  if (addressHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.addressProblem}`;
+  if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;

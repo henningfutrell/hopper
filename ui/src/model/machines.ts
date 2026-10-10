@@ -80,6 +80,15 @@ export function templateText(m: MachineSnapshot): string | null {
   return m.template.waiting ? `${m.template.name}: takes no job, ${m.template.waiting}` : `${m.template.name}, approved: takes jobs`;
 }
 
+/**
+ * A machine off the hopper's network on Machines (issue #711): why its jobs cannot reach the hopper, and the command that
+ * joins it to the hopper's network when one fits; null for a machine whose jobs reach it.
+ */
+export function offNetwork(m: MachineSnapshot): { problem: string; fix?: string } | null {
+  if (m.addressProblem === undefined) return null;
+  return { problem: m.addressProblem, ...(m.addressFix ? { fix: m.addressFix } : {}) };
+}
+
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
 

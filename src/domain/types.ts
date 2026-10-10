@@ -276,6 +276,8 @@ export interface MachineSnapshot {
   hopperUrl?: string;
   /** An ssh target: why its jobs cannot reach the hopper, as its last probe found (issue #698): no new job is routed to it. */
   addressProblem?: string;
+  /** An ssh target with an address problem: the command that joins it to the hopper's network (issue #711). Absent: none fits. */
+  addressFix?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
   /**

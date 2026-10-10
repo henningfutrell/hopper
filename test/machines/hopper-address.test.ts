@@ -5,7 +5,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { execFile } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
-import { hopperAddresses, jobHopperUrl, ADDRESS_PATH, addressCommand, readAddress } from '../../src/machines/hopper-address.ts';
+import { hopperAddresses, jobHopperUrl, ADDRESS_PATH, addressCommand, networkFix, readAddress } from '../../src/machines/hopper-address.ts';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
 
 const servers: Server[] = [];
@@ -85,5 +85,25 @@ describe('the URL a job is given', () => {
   });
   it('a container target: the public URL, else the first LAN name', () => {
     expect(jobHopperUrl({ ...base, docker: 'c' }, undefined, o)).toBe('http://hopper:4790');
+  });
+});
+
+// Issue #711: a machine off the hopper's network is flagged with the command that joins it to the network.
+describe('the fix for a machine off the hopper\'s network', () => {
+  it('an ssh target named by its container name: connect that container to the hopper\'s network', () => {
+    expect(networkFix('agent@hopper-box-claude', 'hopper_default')).toBe('podman network connect hopper_default hopper-box-claude');
+    expect(networkFix('seat-1', 'hopper_default')).toBe('podman network connect hopper_default seat-1');
+  });
+
+  it('a host name or an address is not a container: no network command', () => {
+    expect(networkFix('you@host.containers.internal', 'hopper_default')).toBeUndefined();
+    expect(networkFix('laptop.local', 'hopper_default')).toBeUndefined();
+    expect(networkFix('10.0.0.5', 'hopper_default')).toBeUndefined();
+    expect(networkFix('localhost', 'hopper_default')).toBeUndefined();
+  });
+
+  it('a hopper on the host network, or of no network: no network command', () => {
+    expect(networkFix('agent@hopper-box-claude', 'host')).toBeUndefined();
+    expect(networkFix('agent@hopper-box-claude', undefined)).toBeUndefined();
   });
 });

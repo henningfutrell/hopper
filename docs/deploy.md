@@ -296,6 +296,49 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
 
+### The hopper's network
+
+`compose.yaml` makes its own network, `hopper_default`, on every `up` (issue #711). The name is fixed in the file, so it
+is the same whatever the compose project is called, and it is never a network you make first. Every service is on it:
+the hopper, Postgres, OpenFGA and the optional services. Each sandbox box the hopper starts joins it too
+(`HOPPER_SANDBOX_NETWORK`, default `hopper_default`). On it, `http://hopper:4790` reaches the hopper, with no
+`HOPPER_PUBLIC_URL`.
+
+A container you start yourself, a seat for an ssh target for example, joins it with one command:
+
+```sh
+podman network connect hopper_default <container>
+```
+
+**Off-network machines.** Every 30 s the hopper asks each ssh target which of its addresses the machine reaches. When
+the machine reaches none, the Machines view shows it as **off-network**, with why. When the ssh target names a container,
+it also shows the command above for that container, with a Copy button. The machine takes no new job until it reaches
+the hopper. Its jobs wait with the reason (`… is off-network: … Fix: podman network connect …`); they do not fail. The
+other fix is a link base that the machine reaches: set `HOPPER_PUBLIC_URL` in `.env`, then recreate the hopper.
+
+**Fallback: a seat in another Podman engine** (a rootful Podman, or another user's rootless one). Such a container
+cannot join `hopper_default`. It can reach the hopper through `host.containers.internal`, but only on an address the
+port is published on. The hopper publishes its port on `127.0.0.1` only, which the gateway does not reach. To use the
+fallback:
+
+1. In that engine, find the address `host.containers.internal` names:
+   `podman run --rm docker.io/library/alpine:3 getent hosts host.containers.internal`.
+2. Publish the port on that address too, in a `compose.override.yaml` beside `compose.yaml` (compose adds it to the
+   loopback port; with `compose.sandboxes.yaml` already saved there, add the lines to that file):
+
+   ```yaml
+   services:
+     hopper:
+       ports:
+         - "<that address>:4790:4790"
+   ```
+
+3. Add the name to the hopper's LAN names in `.env`: `HOPPER_LAN_NAMES=hopper,host.containers.internal`. The seat's
+   address must be in `HOPPER_LAN_PEERS` (by default, the private ranges).
+4. `podman compose up -d`. The next probe finds `http://host.containers.internal:4790`, and the seat's jobs use it.
+
+Publish on that address only, never on every interface: the port then stays off the LAN.
+
 ## Access: OpenFGA
 
 Before the vault gives a job a credential, access asks OpenFGA whether the job's template is approved for it

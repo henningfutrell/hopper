@@ -102,6 +102,8 @@ export interface UserRuntimeOptions {
   proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
   /** The hopper's addresses (issue #698): an ssh target's probe asks which one it reaches. Absent: not asked. */
   hopperUrls?(): string[];
+  /** The hopper's network (issue #711): a machine off it is shown the command that joins it. Absent: none. */
+  network?: string;
   /**
    * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
@@ -212,7 +214,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     // A box of a template not approved takes no new job (issue #602): the template's approval, read at every list.
-    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)),
+    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}),
     // A client target that dials in is probed at once, not at the next 30 s.
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
@@ -381,8 +383,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined),
     },
     async start() {
-      if (started) return;
-      started = true;
+      if (started) return; started = true;
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();

@@ -16,13 +16,22 @@ describe('machines whose jobs cannot reach the hopper', () => {
   it('only such machines: the job is held with the reason, never failed', () => {
     const d = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED })], waiting: [job('a')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold).toEqual([{ jobId: 'a', reason: `no machine running executor test reaches the hopper: box: ${UNREACHED}` }]);
+    expect(d.hold).toEqual([{ jobId: 'a', reason: `no machine running executor test reaches the hopper: box is off-network: ${UNREACHED}` }]);
   });
 
   it('a job pinned to such a machine is held with the reason', () => {
     const machines = [machine({ id: 'box', addressProblem: UNREACHED }), machine({ id: 'host' })];
     const d = decide(inputs({ machines, waiting: [job('a', { machineId: 'box' })] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.hold).toEqual([{ jobId: 'a', reason: `pinned machine box: ${UNREACHED}` }]);
+    expect(d.hold).toEqual([{ jobId: 'a', reason: `pinned machine box is off-network: ${UNREACHED}` }]);
+  });
+
+  // Issue #711: the reason carries the command that joins the machine to the hopper's network.
+  it('the reason names the fix when the machine has one', () => {
+    const fix = 'podman network connect hopper_default box';
+    const pinned = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED, addressFix: fix })], waiting: [job('a', { machineId: 'box' })] }), 'd1');
+    expect(pinned.hold).toEqual([{ jobId: 'a', reason: `pinned machine box is off-network: ${UNREACHED}. Fix: ${fix}` }]);
+    const any = decide(inputs({ machines: [machine({ id: 'box', addressProblem: UNREACHED, addressFix: fix })], waiting: [job('a')] }), 'd1');
+    expect(any.hold).toEqual([{ jobId: 'a', reason: `no machine running executor test reaches the hopper: box is off-network: ${UNREACHED}. Fix: ${fix}` }]);
   });
 });
