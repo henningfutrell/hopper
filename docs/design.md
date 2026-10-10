@@ -8917,7 +8917,9 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   itself, so a night of unanswered questions does not keep panes and agents live on the machines. The engine checks
   on each tick (`src/engine/auto-park.ts`): a `waiting_answer` job whose question is open at the human stage, waited
   at least the timeout since `escalatedToHumanAt` (time at the escalation levels, Jev and the fixed answers does not
-  count), is parked on the Park button's path (`recordPark`, then `releaseParked`), with `parked: { auto: true, why }`
+  count), or since `waitRestartedAt` when it began to wait on a person again — its job re-queued from parked with
+  the question still open, or the item of its fork rejected (issue #692: re-queued, it waits the full timeout again,
+  not a second) —, is parked on the Park button's path (`recordPark`, then `releaseParked`), with `parked: { auto: true, why }`
   and `job.parked { auto: true, why }`; `why` reads "Parked automatically: the question waited 30 min." (the timeout
   that applied). The timeout is the user's setting `autoPark` (`GET /api/auto-park`, `POST /ui/api/auto-park`,
   least role `admin`, `auto_park.settings_changed`; Settings → Auto-park; `hopper auto-park [set]`): `minutes` for a
@@ -9798,6 +9800,14 @@ and denies when it cannot); the requester is not live; the model lacks a relatio
 hold. The status (`not-configured`, `connected`, `unreachable` with why) is logged once per change of reason and
 shown in Settings → Access.
 
+**An outage is not a refusal** (issue #696). A check apart from mints (`checkOnce`: a system secret, an artifact, an
+item's new text) that OpenFGA could not answer — not set up, not reached, a change not pushed — is a deny marked
+`unavailable`. A system secret's change then fails `unavailable` (503 `access checks are unavailable: OpenFGA is not
+reachable: <why>`), never `forbidden`, and writes nothing. The UI reads a 403 as signed out only when the session
+guard says so (`session: 'ended'`, no live session); any other 403 or 503 is that change failing, and the session,
+the GitHub connection and every other secret stay. `GET /api/access/status` gives the state and why to any reader:
+the banner over every view, the TypeSafe API key's form (off with the reason) and How to update read it.
+
 **The relationship path.** OpenFGA's check answers only allowed or not. On an allow, the path is the hopper's
 reading of its own live tuples: (for a job, its owner first) the user owns the job → the job runs on the machine → the
 machine is an instance of the template → the template is approved for the profile → the profile grants the operation on
@@ -9920,10 +9930,28 @@ like the connected account's (issue #441), and sets three variables:
 |----------|-------|
 | `HOPPER_TOKEN_FILE` | `<credentials dir>/hopper/token`: the **proxy token** |
 | `HOPPER_GH` | `<credentials dir>/hopper/gh`: **hopper-gh**, run as `sh "$HOPPER_GH" …` |
-| `HOPPER_URL` | the hopper as the machine reaches it (`jobHopperUrl`, `src/github-proxy/reach.ts`, issue #695): a client target, its **client door** on loopback there (a client older than it, the URL it dialled in at); this machine, `http://127.0.0.1:<port>`; an ssh or container target, the user's link base (Settings → Artifacts), else `HOPPER_PUBLIC_URL`, else a LAN name, an address or a `.local` name before a bare one. "The client door and the reach check" below |
+| `HOPPER_URL` | the **hopper address** (`proxyUrl`, `src/main.ts`; `jobHopperUrl`, `src/github-proxy/reach.ts`, issue #695; `src/machines/hopper-address.ts`, issue #698): a client target, its **client door** on loopback there (a client older than it, the URL it dialled in at: the Host of its `GET /client/connect`, or the public URL behind it; `MachineLinks.urlOf`); this machine, `http://127.0.0.1:<port>`; an ssh target, the address its probe found it reaches (issue #698, below); a container target, the user's link base (Settings → Artifacts), else `HOPPER_PUBLIC_URL`, else a LAN name, an address or a `.local` name before a bare one. "The client door and the reach check" below |
 
 A machine that reaches the hopper at none of these, or whose connection keeps no files, gives its jobs no proxy (said in
-the job's progress when files could not be kept). The token is never in an environment variable, a command line or the
+the job's progress when files could not be kept).
+
+**An ssh target's address** (issue #698). An ssh target was once given the first LAN name: in the compose install that was
+the service name, which only the compose network resolves. The job could not reach the hopper, so it had no proxy and no
+git; it fell back to a GitHub device sign-in, and a question about the hopper's address climbed to the owner. Now the
+machine itself is asked. Each probe of an ssh target (every 30 s, in the same ssh call as its home and work tree,
+`probeSsh`) runs `curl` there against `GET /job/address` at each of the hopper's addresses in order — the public URL, then
+each LAN name with the port —, at most 3 s each, until one answers 204 (`src/http/job-address.ts`: no token, behind the
+Host guard, changes and records nothing). The first that does is the machine's `hopperUrl`, its jobs' `HOPPER_URL`. None
+does — no connection, the Host guard refusing it (403: the machine's address is not in `HOPPER_LAN_PEERS`; 421), another
+server, no address at all, or no curl there — and the machine has an **address problem**: it takes no new job, as with a
+work tree problem (`addressHolds`, `src/decider/assign.ts`), the Machines view and the log say why and what to set, and a
+job there is never given an address it was not seen to reach. Taken conservatively: the hopper's addresses are asked, not
+tunnelled. A reverse forward over the ssh connection (`ssh -R`) would need no reachable address, but the hopper's ssh
+connections forward nothing (`HARDENED_SSH_OPTIONS`); opening one is a security change of its own. A container target
+still gets the public URL, else the first LAN name.
+
+**When the hopper cannot be reached anyway** (issue #698): the job rules' GitHub line (`GITHUB_PROXY_LINE`) tells the job
+to end with `HOPPER_FAILED`, saying the machine cannot reach the hopper, and never to sign in to GitHub another way. The token is never in an environment variable, a command line or the
 database: `hopper-gh` sends it to curl on stdin (`-H @-`).
 
 **The proxy token** (`src/github-proxy/token.ts`): `<user id, base64url>.<job id>.<mac>`, the mac an HMAC-SHA256 of the

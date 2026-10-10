@@ -100,6 +100,8 @@ export interface UserRuntimeOptions {
    * GitHub proxy. Absent: none.
    */
   proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
+  /** The hopper's addresses (issue #698): an ssh target's probe asks which one it reaches. Absent: not asked. */
+  hopperUrls?(): string[];
   /**
    * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
@@ -216,8 +218,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
-          // and its work tree is made there (issue #361). One after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}) }).then(async (found) => ({
+          // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
+          // after the other, over the one shared ssh connection.
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: o.hopperUrls() } : {}) }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             ...found,
           })))),

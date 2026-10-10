@@ -95,6 +95,25 @@ describe('auto-park', () => {
     expect((await ofJob(a, job.id)).find((e) => e.type === 'job.unparked')!.data).toEqual({ to: 'queued' });
   });
 
+  it('re-queued with its question still open, it waits the full timeout again before it parks by itself (issue #692)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await setAutoPark(a, token, { minutes: SHORT });
+    const job = await a.pull({}, item);
+    await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    await a.waitForStatus(job.id, 'parked', 5000);
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe('waiting_answer');
+    await waitFor(async () => (await ofJob(a, job.id)).filter((e) => e.type === 'job.parked').length === 2, { what: 'parked again', timeoutMs: 5000 });
+    const events = await ofJob(a, job.id);
+    const unparked = events.find((e) => e.type === 'job.unparked')!;
+    const again = events.filter((e) => e.type === 'job.parked')[1]!;
+    expect(new Date(again.at).getTime() - new Date(unparked.at).getTime()).toBeGreaterThanOrEqual(300);
+  });
+
   it('time at the escalation levels does not count; a question the frontier level answers never parks', async () => {
     // The level takes longer than the timeout, then answers the colour sure of it and sends the size up.
     const frontier = createFakeLevel({

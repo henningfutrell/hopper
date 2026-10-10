@@ -7,6 +7,7 @@ import { jobHopperUrl } from './github-proxy/reach.ts';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
+import { hopperAddresses } from './machines/hopper-address.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
@@ -162,10 +163,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
   // The links of the machines dialled in (issue #308): the instance's, each keyed by user and machine key.
   const links = createMachineLinks();
-  // Where a job reaches the hopper (issues #563, #695): a client target, its client door; this machine, loopback; an ssh
-  // or container target, the user's link base, the public URL, else a LAN name, an address first (src/github-proxy/reach.ts).
+  // Where a job reaches the hopper (issues #563, #695, #698): a client target, its client door (else the URL it dialled in
+  // at); this machine, loopback; an ssh target, the address its probe found it reaches, never a guessed one
+  // (src/machines/hopper-address.ts); a container target, the user's link base, the public URL, else a LAN name, an
+  // address first (src/github-proxy/reach.ts).
+  const hopperUrls = (): string[] => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   const proxyUrl = (m: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined =>
-    jobHopperUrl({ machine: m, dialled, linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
+    m.ssh ? m.hopperUrl : jobHopperUrl({ machine: m, dialled, linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on,
   // and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
   // Made before the runtimes: each user's vault approves profiles in it.
@@ -196,7 +200,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter, instanceSecrets: secrets.system,
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls, access, minter, instanceSecrets: secrets.system,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.

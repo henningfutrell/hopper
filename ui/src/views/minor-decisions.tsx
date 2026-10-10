@@ -5,7 +5,8 @@
 // what was decided, and Override (an operator's): what it should have been, which counts in the agreement rate.
 // The TypeSafe API key Jev asks with (issue #657), right under whether Jev is on: write-only — set or not, its last 4
 // characters, when —, with Replace and Remove (an operator's: the user's own, or an admin's); a new key is checked once
-// against TypeSafe before it is kept.
+// against TypeSafe before it is kept. Saving it needs Access (OpenFGA): while OpenFGA is not running, Save and Remove are
+// off with that reason, and a save refused for it says the other settings are unchanged (issue #696).
 import { KeyRound, Scale } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,7 +15,9 @@ import { FIELD } from '@/components/plugin-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { usePoll } from '@/hooks/use-poll';
+import { AccessFix, useAccessStatus } from '@/app/access';
 import { get, post } from '@/lib/api';
+import { ACCESS_SAVE_FAILED, accessDown, saveError } from '@/model/access-status';
 import { clock } from '@/model/format';
 import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, rate } from '@/model/minor-decisions';
 import type { DecisionPointView, MinorDecisionMode, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView } from '@/model/wire';
@@ -65,34 +68,53 @@ function Point({ p, onSaved }: { p: DecisionPointView; onSaved: () => void }) {
   );
 }
 
-/** The TypeSafe API key: write-only. The value typed is sent once and cleared; it is never shown again. */
-function TypesafeKeyField({ k, onSaved }: { k: TypesafeKeyView; onSaved: () => void }) {
+/** The TypeSafe API key: write-only. The value typed is sent once and cleared; it is never shown again. `accessDown`: why OpenFGA cannot be asked. */
+export function TypesafeKeyField({ k, onSaved, accessDown }: { k: TypesafeKeyView; onSaved: () => void; accessDown?: string }) {
   const canAct = useCanOperate();
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | undefined>();
   const send = async (body: Record<string, unknown>, done: string) => {
     setBusy(true);
+    setFailed(undefined);
     try {
       await post('/ui/api/typesafe-key', body);
       toast.success(done);
       setValue('');
       onSaved();
-    } catch (e) { toast.error((e as Error).message); }
+    } catch (e) {
+      const why = saveError((e as Error).message);
+      setFailed(why);
+      toast.error(why);
+    }
     setBusy(false);
   };
   const note = environmentNote(k);
+  const off = busy || accessDown !== undefined;
   return (
     <div data-typesafe-key={k.set ? 'set' : 'not-set'} className="space-y-2 border-b pb-3">
       <div className="flex items-center gap-2 text-sm font-medium"><KeyRound className="size-4" />TypeSafe API key</div>
       <p className="text-sm" data-key-status>{keyStatus(k)}</p>
       {k.problem && <p className="text-xs text-destructive">{k.problem}</p>}
       {note && <p className="text-xs text-muted-foreground" data-key-note>{note}</p>}
+      {canAct && accessDown !== undefined && (
+        <div data-key-access className="space-y-1">
+          <p className="text-xs text-destructive">Saving the key needs hopper's access service (OpenFGA), which isn't running: {accessDown}</p>
+          <AccessFix />
+        </div>
+      )}
       {canAct && (
         <div className="flex flex-wrap items-center gap-2">
           <Input type="password" autoComplete="off" spellCheck={false} className="h-8 w-80" aria-label="TypeSafe API key" placeholder={k.set ? 'a new key, to replace it' : 'paste the key'}
-            value={value} disabled={busy} onChange={(e) => setValue(e.target.value)} />
-          <Button size="sm" disabled={busy || !value.trim()} onClick={() => void send({ action: 'set', value }, 'TypeSafe API key checked and saved')}>{k.set ? 'Replace' : 'Save'}</Button>
-          {k.set && <Button size="sm" variant="outline" disabled={busy} onClick={() => void send({ action: 'remove' }, 'TypeSafe API key removed')}>Remove</Button>}
+            value={value} disabled={off} onChange={(e) => setValue(e.target.value)} />
+          <Button size="sm" disabled={off || !value.trim()} onClick={() => void send({ action: 'set', value }, 'TypeSafe API key checked and saved')}>{k.set ? 'Replace' : 'Save'}</Button>
+          {k.set && <Button size="sm" variant="outline" disabled={off} onClick={() => void send({ action: 'remove' }, 'TypeSafe API key removed')}>Remove</Button>}
+        </div>
+      )}
+      {failed && (
+        <div data-key-failed className="space-y-1">
+          <p className="text-xs text-destructive">{failed}</p>
+          {failed === ACCESS_SAVE_FAILED && <AccessFix />}
         </div>
       )}
     </div>
@@ -140,6 +162,7 @@ export function MinorDecisions() {
   const load = useCallback(async () => setView(await get<MinorDecisionsView>('/api/minor-decisions')), []);
   usePoll(load, POLL_MS);
   const reload = () => { load().catch(() => {}); };
+  const access = accessDown(useAccessStatus());
   if (!view) return <Panel title="Decider" icon={Scale}><Empty>loading</Empty></Panel>;
   const labelOf = (point: string) => view.points.find((p) => p.point === point)?.label ?? point;
   return (
@@ -154,7 +177,7 @@ export function MinorDecisions() {
           <p data-jev={view.jev.available ? 'on' : 'off'} className="text-sm">
             {view.jev.available ? 'Jev is on.' : `${view.jev.why ?? 'Jev is off'}. Each decision is made as before.`}
           </p>
-          <TypesafeKeyField k={view.typesafeKey} onSaved={reload} />
+          <TypesafeKeyField k={view.typesafeKey} onSaved={reload} {...(access !== undefined ? { accessDown: access } : {})} />
           {view.points.map((p) => <Point key={`${p.point}:${p.mode}:${p.threshold}`} p={p} onSaved={reload} />)}
         </div>
       </Panel>

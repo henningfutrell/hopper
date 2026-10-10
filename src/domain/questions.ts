@@ -102,6 +102,11 @@ export interface Question extends QuestionPhaseFields {
   escalation?: Escalation;
   /** Human tier: when it was first and last notified, and how often. */
   escalatedToHumanAt?: string; lastNotifiedAt?: string;
+  /**
+   * Human tier: when it began to wait on a person again — its job re-queued from parked, or the fork's item rejected
+   * (issue #692). Auto-park counts from it; absent, from `escalatedToHumanAt`.
+   */
+  waitRestartedAt?: string;
   notifyCount: number;
   /** Human tier: when the question expires and the job fails. */
   expiresAt?: string;
