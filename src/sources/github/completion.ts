@@ -123,6 +123,16 @@ export async function issueClosed(api: GitHubApi, job: Job): Promise<boolean> {
 }
 
 /**
+ * Whether a pull request of the job's own is open (issue #630), a timed-out job's liveness: one closing its issue that it
+ * opened, or an older one it pushed to. A draft counts: it shows the job at work. An error throws: not known.
+ */
+export async function ownPullRequestOpen(api: GitHubApi, job: Job): Promise<boolean> {
+  const { repo, number } = job.source ?? {};
+  if (!repo || !number) return false;
+  return (await api.openClosingPullRequests(repo, number)).some((pr) => isOwnPullRequest(pr, job) || isUpdatedBy(pr, job));
+}
+
+/**
  * Whether the job's issue is closed as complete. A permanent error (the issue gone, no access) is not:
  * the failure is reported, and meets the same error there; a transient one throws, to be asked again.
  */

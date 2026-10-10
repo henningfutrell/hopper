@@ -18,12 +18,13 @@ export const failureSettingsBody = z.strictObject({
   maxAttempts: int('maxAttempts'), backoffSec: int('backoffSec'),
   backoffFactor: z.number().min(FAILURE_SETTING_BOUNDS.backoffFactor.min).max(FAILURE_SETTING_BOUNDS.backoffFactor.max).optional(),
   backoffMaxSec: int('backoffMaxSec'), groupThreshold: int('groupThreshold'), groupWindowMin: int('groupWindowMin'), retentionDays: int('retentionDays'),
-  handoffRetentionDays: int('handoffRetentionDays'), handoffNotify: z.boolean().optional(),
-  auto: z.strictObject({ retry: z.boolean().optional(), hold: z.boolean().optional(), redirect: z.boolean().optional() }).optional(),
+  handoffRetentionDays: int('handoffRetentionDays'), handoffNotify: z.boolean().optional(), activeWindowMin: int('activeWindowMin'),
+  auto: z.strictObject({ retry: z.boolean().optional(), hold: z.boolean().optional(), redirect: z.boolean().optional(), continue: z.boolean().optional() }).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), { message: 'name at least one setting' });
 const signature = z.string().regex(/^[0-9a-f]{12}$/, 'signature must be 12 hex digits');
 export const failureCauseBody = z.strictObject({
-  signature, name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).default(''), decision: z.enum(FAILURE_DECISIONS),
+  // Continue is the timed-out cause's alone (issue #630): it needs a timeout's liveness.
+  signature, name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).default(''), decision: z.enum(FAILURE_DECISIONS.filter((d) => d !== 'continue')),
 });
 export const failureForgetBody = z.strictObject({ signature });
 const NOTE_MAX = 4000;

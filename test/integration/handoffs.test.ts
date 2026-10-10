@@ -73,7 +73,7 @@ describe('a failed job is handed off to a person when automatic handling ends', 
   it('automatic retry off: the decision waits on a person, so it is handed off', async () => {
     const a = await boot();
     const token = await a.login();
-    await settings(a, token, { auto: { retry: false, hold: true, redirect: true } });
+    await settings(a, token, { auto: { retry: false, hold: true, redirect: true, continue: true } });
     const job = await a.pull(fail('read ECONNRESET'));
     expect(await handoffOf(a, job.id)).toMatchObject({ reason: 'auto_off', decision: 'retry' });
   });

@@ -18,6 +18,6 @@ export function evidenceOf(job: Job, f: { error: string; attempt: number; sameSi
     ...(job.errorTail ? { tail: job.errorTail } : {}), ...(job.progressMessage ? { lastProgress: job.progressMessage } : {}),
     ...(f.machineId ? { machineId: f.machineId } : {}), ...(model ? { model } : {}),
     ...(job.source?.repo ? { repo: job.source.repo } : {}), ...(job.source ? { source: job.source.source } : {}),
-    ...(f.ranMs !== undefined ? { ranMs: f.ranMs } : {}),
+    ...(f.ranMs !== undefined ? { ranMs: f.ranMs } : {}), ...(job.liveness ? { liveness: job.liveness } : {}),
   };
 }

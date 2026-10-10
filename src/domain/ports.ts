@@ -5,9 +5,8 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson,
-} from './types.ts';
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
@@ -96,8 +95,11 @@ export interface ExecutionQuestion {
 
 export type ExecutionOutcome =
   | { kind: 'finished'; result: unknown; partlyDone?: string }
-  /** `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. */
-  | { kind: 'failed'; error: string; tail?: string }
+  /**
+   * `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. `liveness`: a
+   * timeout's (issue #630), what the job showed of its progress then.
+   */
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
   /**
@@ -181,8 +183,11 @@ export interface Executor {
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
 }
 
-/** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
-export interface Reaped { kept: string[] }
+/**
+ * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
+ * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none.
+ */
+export interface Reaped { kept: string[]; pushed?: string[] }
 
 /** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
 export interface Survey {
@@ -200,8 +205,11 @@ export interface Survey {
  * rejects when the machine cannot be reached or the script did not finish.
  */
 export interface MachineShell {
-  /** Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not pushed. */
-  reap(jobId: string, scratch?: string): Promise<Reaped>;
+  /**
+   * Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not
+   * pushed, or `keep` (a timed-out job's, issue #630: it may go on there). Says what it kept and what was pushed.
+   */
+  reap(jobId: string, scratch?: string, keep?: boolean): Promise<Reaped>;
   /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
   survey(roots: string[]): Promise<Survey>;
   /**
@@ -542,6 +550,11 @@ export interface JobSource extends FollowsPullRequests {
    * again later. Absent: the source cannot tell, and a hand-off waits on a person.
    */
   itemClosed?(job: Job): Promise<boolean>;
+  /**
+   * Whether a pull request of the job's own is open (issue #630): one it opened, or an older one it pushed to — a timed-out
+   * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
+   */
+  pullRequestOpen?(job: Job): Promise<boolean>;
   /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
   credentials?(job: Job): Promise<JobCredentials | undefined>;
   /**
@@ -624,12 +637,12 @@ export interface SourceHost {
    */
   rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
   /**
-   * Its source gave a failed job's item back for a person's Continue (issue #551): the same job is queued again, in
-   * one tx, pinned to the machine it ran on with `brief` pending (`continued`), its end to be reported to its source
-   * again, so its claim resumes its own agent session. job.continued. Refused (not_found, conflict) when it is gone,
-   * no longer failed, or a newer job of its item exists.
+   * Its source gave a failed job's item back for a Continue — a person's on its hand-off (issue #551), or the
+   * assessor's on its record (issue #630): the same job is queued again, in one tx, pinned to the machine it ran on
+   * with `brief` pending (`continued`), its end to be reported to its source again, so its claim resumes its own agent
+   * session. job.continued. Refused (not_found, conflict) when it is gone, no longer failed, or a newer job of its item exists.
    */
-  continueJob(jobId: JobId, brief: string, handoffId: string): RerunResult;
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
 }
 
 /**
@@ -650,7 +663,7 @@ export interface SourceRegistry {
    * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
    * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.
    */
-  continueJob(jobId: JobId, brief: string, handoffId: string): Promise<RerunResult>;
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.

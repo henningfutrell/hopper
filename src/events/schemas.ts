@@ -117,7 +117,8 @@ export const EVENT_SCHEMAS = {
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional() }),
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']) }),
-  'job.continued': strict({ handoffId: z.string() }),
+  // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
+  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
   'job.reattached': strict({ reason: z.string() }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),

@@ -10,16 +10,20 @@
 // more — a newer job of its item, its job finished or gone — and ask each open hand-off's source whether its item is
 // closed (`item-check.ts`). A failure no known cause explains, which the rules hand to a person, is a minor decision
 // (issue #550): Jev picks run it again or a person, after the rules; its pick runs it again only when its decision point
-// is active and it is sure.
+// is active and it is sure. A timed-out job (issue #630) is assessed from its liveness: its source is asked first whether
+// a pull request of its own is open — at most `PR_LOOKUP_MS`, never holding the assessment —, and Continue, when due,
+// resumes its own agent session in its kept work tree, else runs its item again, told to go on.
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_FAILURE_SETTINGS, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
+  failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
   type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS, type RecentFailure } from './assess.ts';
 import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
+import { attemptOf, timeoutInputOf } from './chain.ts';
+import { createTimeouts } from './timeouts.ts';
 import { rerunRecordOf } from './rerun.ts';
 import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
 import { createItemCheck } from './item-check.ts';
@@ -41,6 +45,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   sweepMs: number;
   /** Jev first (issue #550), asked about a failure no known cause explains, and whether the blast-radius gate keeps a machine. Absent: the rules only. */
   minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
+  /** Whether a pull request of the job's own is open, by its source (issue #630); undefined: its source cannot tell. Throws: not known. */
+  pullRequestOpen?(job: Job): Promise<boolean | undefined>;
 }
 
 export type FailureAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
@@ -73,7 +79,9 @@ const PRUNE_EVERY_MS = 3_600_000;
 const SOON_MS = 1000;
 const JUST_FAILED_MS = 60_000;
 const SOURCE_DOWN_MS = 30_000;
-const DONE: Record<PendingRun, FailureOutcome> = { retry: 'retried', redirect: 'redirected', release: 'released' };
+/** A Continue ran its job again too (issue #630): in its own agent session, or as a new job of its item. */
+const DONE: Record<PendingRun, FailureOutcome> = { retry: 'retried', redirect: 'redirected', release: 'released', continue: 'retried' };
+
 const CHECK_OF = new Map(BUILTIN_CAUSES.filter((c) => c.check).map((c) => [c.id, c.check!]));
 export function createFailures(o: FailuresOptions): Failures {
   const { store, clock } = o;
@@ -83,22 +91,14 @@ export function createFailures(o: FailuresOptions): Failures {
   let sweeping: Promise<void> | undefined;
   let prunedAt = 0;
   const now = () => clock.now();
-  const settings = (): FailureSettings => ({ ...DEFAULT_FAILURE_SETTINGS, ...store.settings.getFailureSettings() });
+  // Settings saved before a field existed take its default; `auto` too, field by field (issue #630: `auto.continue`).
+  const settings = (): FailureSettings => failureSettingsOf(store.settings.getFailureSettings());
   const handoffs = createHandoffs({ store, clock, settings, rerun: o.rerun, continueJob: o.continueJob, resumable: o.resumable, dismiss: o.dismiss, logger: o.logger, live: () => !stopped });
+  const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
   const checkItems = createItemCheck({ store, clock, itemClosed: o.itemClosed, closed: (id) => handoffs.itemClosed(id), logger: o.logger, live: () => !stopped });
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
   const assessedRun = (jobId: string): boolean => { const r = store.failures.forJob(jobId); return r !== undefined && !(r.outcome === 'retried' && r.nextJobId === jobId); };
-
-  /** Its run in its chain of retries: 1, plus each earlier job of its item that a retry ran again. */
-  function attemptOf(job: Job): number {
-    let n = 1;
-    for (let prev = job.rerunOf; prev !== undefined; prev = store.jobs.get(prev)?.rerunOf) {
-      if (store.failures.forJob(prev)?.outcome !== 'retried') break;
-      n += 1;
-    }
-    return n;
-  }
 
   /** Other items' failures with this signature in the grouping window, one per item. */
   function recentOf(job: Job, signature: string, s: FailureSettings): RecentFailure[] {
@@ -131,7 +131,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const { normalised, signature } = signatureOf(error);
       const cause = matchCause(error, signature, store.settings.getNamedCauses());
       const machineId = machineOf(job);
-      const attempt = attemptOf(job);
+      const attempt = attemptOf(store, job);
       const ranMs = job.startedAt && job.finishedAt ? Math.max(0, Date.parse(job.finishedAt) - Date.parse(job.startedAt)) : undefined;
       const recent = recentOf(job, signature, s);
       const open = openFor(signature, machineId);
@@ -141,6 +141,7 @@ export function createFailures(o: FailuresOptions): Failures {
         job: { executor: job.spec.executor, pinned: job.spec.machineId !== undefined, ...(machineId ? { machineId } : {}) },
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
+        ...(cause?.id === 'timed-out' ? timeoutInputOf(store, job) : {}),
       });
       let problem: Problem | undefined;
       let opened = false;
@@ -151,7 +152,7 @@ export function createFailures(o: FailuresOptions): Failures {
         problem = store.problems.create({ ...plan, signature, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id] });
         opened = true;
       }
-      const acts = a.auto && (a.decision === 'retry' || a.decision === 'redirect');
+      const acts = a.auto && (a.decision === 'retry' || a.decision === 'redirect' || a.decision === 'continue');
       const pendingAt = a.decision === 'retry' ? new Date(at.getTime() + (a.retryInMs ?? 0)).toISOString() : at.toISOString();
       const record = store.failures.create({
         jobId: job.id, at: at.toISOString(), signature, normalised, cls: a.cls, decision: a.decision, reasons: a.reasons, summary: a.summary, auto: a.auto,
@@ -209,7 +210,7 @@ export function createFailures(o: FailuresOptions): Failures {
 
   /** Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. */
   async function runPending(r: FailureRecord): Promise<void> {
-    const result = await o.rerun(r.jobId, 'assessor');
+    const result = r.pending === 'continue' ? await timeouts.continueOf(r) : await o.rerun(r.jobId, 'assessor');
     if (stopped) return;
     store.tx(() => {
       const cur = store.failures.get(r.id);
@@ -305,7 +306,8 @@ export function createFailures(o: FailuresOptions): Failures {
       handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
-        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => assessJob(id)); }
+        // A timeout's facts first (issue #630), then the assessment.
+        if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => assessJob(id)); }); }
         handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);

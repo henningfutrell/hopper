@@ -30,7 +30,8 @@
         "retry",
         "hold",
         "redirect",
-        "person"
+        "person",
+        "continue"
       ]
     },
     "class": {

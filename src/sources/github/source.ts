@@ -14,7 +14,7 @@ import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/typ
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { closedAsComplete, issueClosed, notComplete, partlyDone, unfinishedPullRequest } from './completion.ts';
+import { closedAsComplete, issueClosed, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest } from './completion.ts';
 import { followPullRequest } from './follow.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
 import type { SourceMode } from './context.ts';
@@ -311,6 +311,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     itemClosed(job) {
       return issueClosed(api, job);
+    },
+    pullRequestOpen(job) {
+      return ownPullRequestOpen(api, job);
     },
   };
 }

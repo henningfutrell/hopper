@@ -78,6 +78,8 @@ export interface TurnWatch {
   onQuestion?: (seq: number, lapsesAt?: string) => void;
   /** The login the job waits on (issue #476), with `untilWorking`: Claude going on completes it. */
   login?: LoginWait;
+  /** Called with the time the turn's output changed, each time it does (issue #630): a timed-out job's liveness. */
+  onOutput?: (at: number) => void;
 }
 
 export function abortReason(signal: AbortSignal): 'cancel' | 'park' | 'shutdown' {
@@ -110,6 +112,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
+  /** The turn's output as last seen: its lines and its last line. */
+  let lastOutput = '';
   let idleSince: number | null = null;
   let waitingSince: number | null = null;
   let worked = w.untilWorking !== true;
@@ -136,6 +140,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         recent = await herdr.read(w.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
       }
       const turn = readTurn(recent, w.anchor);
+      const output = `${turn.outputLines}\n${turn.lastLine}`;
+      if (turn.lastLine && output !== lastOutput) { lastOutput = output; w.onOutput?.(now); }
       if (turn.lastLine && turn.lastLine !== lastLine) {
         lastLine = turn.lastLine;
         // A device code on screen never goes into progress (issue #476).

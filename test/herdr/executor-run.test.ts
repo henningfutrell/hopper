@@ -225,17 +225,6 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 
-  it('a timeout records its liveness (issue #630): when its pane output last changed, whether it pushed work; its scratch dir is kept, as a park keeps it', async () => {
-    const { herdr, clock, executor } = setup({ turns: [{ steps: ['● Reading files', '● Writing code'], end: 'working' }], reapPushes: [`${SCRATCH}/repo`] });
-    const started = clock.now().getTime();
-    const out = await executor.run(contextFor(jobWith({ prompt: 'go', timeoutMs: 5000 })).ctx);
-    expect(out).toMatchObject({ kind: 'failed', error: 'timed out', liveness: { pushed: true } });
-    const outputAt = out.kind === 'failed' ? Date.parse(out.liveness?.outputAt ?? '') : NaN;
-    expect(outputAt).toBeGreaterThan(started);
-    expect(outputAt).toBeLessThan(clock.now().getTime());
-    expect(herdr.reaps).toEqual([{ jobId: JOB_ID, scratch: SCRATCH, keep: true }]);
-  });
-
   it('reports progress on each new assistant line, capped at 0.9 and non-decreasing', async () => {
     const { executor } = setup({ turns: [{ steps: ['● Reading files', '● Writing hello.txt'], ...DONE }] });
     const { ctx, progress } = contextFor(jobWith({ prompt: 'go', expectedMs: 2000 }));

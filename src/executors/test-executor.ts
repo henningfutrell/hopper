@@ -4,16 +4,23 @@
 // `research` (issue #543) comes back with `message` as its research report; resumed, with the next round that quotes
 // what it was told — or, told to write a proposal next (its research accepted), with a proposal. Phase shifts (issue
 // #548): a fork comes back with `message` as the document it was forked for; `ask`, resumed with a switch into research
-// or a proposal, comes back with that document, quoting what it was told, and resumed back to work, it ends done.
+// or a proposal, comes back with that document, quoting what it was told, and resumed back to work, it ends done. `fail`
+// may carry `liveness` (issue #630): it plays a timeout that showed its progress.
 
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
-import { REVIEW_SECTIONS } from '../domain/types.ts';
+import { REVIEW_SECTIONS, type JobLiveness } from '../domain/types.ts';
 
 const OPS = ['sleep', 'echo', 'fail', 'ask', 'fail-after-answer', 'propose', 'research'] as const;
 const MAX_MS = 600000;
 const ABORTED: ExecutionOutcome = { kind: 'failed', error: 'aborted' };
 
-interface TestPayload { op: (typeof OPS)[number]; ms?: number; message?: string }
+/** `liveness` (issue #630), with `fail`: what a timeout showed — its output `outputAgoSec` seconds before the failure, its pushes. */
+interface TestPayload { op: (typeof OPS)[number]; ms?: number; message?: string; liveness?: { outputAgoSec?: number; pushed?: boolean } }
+
+function livenessOf(l: TestPayload['liveness'], now: number): JobLiveness | undefined {
+  if (!l) return undefined;
+  return { ...(l.outputAgoSec !== undefined ? { outputAt: new Date(now - l.outputAgoSec * 1000).toISOString() } : {}), ...(l.pushed !== undefined ? { pushed: l.pushed } : {}) };
+}
 
 /** Resolves true after ms, or false as soon as the signal fires. */
 function wait(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -54,11 +61,14 @@ export function createTestExecutor(): Executor {
       return null;
     },
     async run(ctx) {
-      const { op, ms, message } = ctx.job.spec.payload as unknown as TestPayload;
+      const { op, ms, message, liveness } = ctx.job.spec.payload as unknown as TestPayload;
       if (op === 'sleep') return runSleep(ctx, ms ?? 1000);
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'echo') return { kind: 'finished', result: { echo: message } };
-      if (op === 'fail') return { kind: 'failed', error: message ?? 'failed on purpose' };
+      if (op === 'fail') {
+        const live = livenessOf(liveness, Date.now());
+        return { kind: 'failed', error: message ?? 'failed on purpose', ...(live ? { liveness: live } : {}) };
+      }
       ctx.saveState({ asked: true });
       const fork = ctx.job.forkOf;
       if (fork) return { kind: 'report', review: fork.kind, report: { text: message ?? 'Findings: something', recentOutput: '' } };

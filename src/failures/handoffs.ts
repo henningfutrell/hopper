@@ -14,7 +14,7 @@
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   jobPriorityTag, type ActingPerson, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
-  type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job,
+  type ContinuedBy, type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job,
 } from '../domain/types.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
@@ -32,7 +32,7 @@ export interface HandoffsOptions {
   /** Run an ended job's item again: the sync loop's Run again; `brief` what the new job is told after its prompt. */
   rerun(jobId: string, by: RerunBy, brief?: string, acting?: ActingPerson): Promise<RerunResult>;
   /** Continue a failed job in its own agent session (issue #551): the sync loop's. */
-  continueJob(jobId: string, brief: string, handoffId: string): Promise<RerunResult>;
+  continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /** Whether the job's own agent session can resume: its executor parks, and it recorded one. */
   resumable(job: Job): boolean;
   /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too. Throws when it is not one. */
@@ -275,7 +275,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         const brief = handoffBrief(h, 'continue', input.note, true);
         resolving.add(h.id);
         try {
-          const result = await o.continueJob(h.jobId, brief, h.id);
+          const result = await o.continueJob(h.jobId, brief, { handoffId: h.id });
           if (!result.ok) return { ok: false, reason: result.reason === 'not_found' ? 'not_found' : 'conflict', message: result.message };
           const closed = resolveWith(h.id, 'continued', { ...resolution, resumed: true }, h.jobId, (c) => settleByPerson(c, 'retried', 'continued by a person', h.jobId));
           return done(closed.ok ? { ok: true, value: { handoff: closed.value, job: result.job } } : closed);
