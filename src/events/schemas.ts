@@ -346,7 +346,7 @@ export const EVENT_SCHEMAS = {
   // Artifacts (issue #624): what a job made for a person to see, its shares, and its end. On the job's timeline.
   'artifact.created': strict({
     artifact: z.string(), title: z.string(), name: z.string(), type: z.string(), size: z.number().int().min(1), sha256: z.string(),
-    issue: z.string().optional(), masked: z.number().int().min(1).optional(),
+    issue: z.string().optional(), masked: z.number().int().min(1).optional(), warning: z.string().optional(),
   }),
   'artifact.shared': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), user: z.string().optional(), expiresAt: z.iso.datetime().optional(), by: z.string() }),
   'artifact.share_revoked': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), by: z.string() }),

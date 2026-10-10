@@ -1,7 +1,7 @@
 // Issue #624: the UI's artifacts model — a job's artifacts, the ones a text links to (a proposal or report embeds them),
 // sizes and shares in words, and how each kind is previewed.
 import { describe, expect, it } from 'vitest';
-import { artifactsOfJob, bytesInWords, previewOf, referencedArtifacts, shareInWords } from '../../ui/src/model/artifacts.ts';
+import { artifactCreatedDetail, artifactsOfJob, bytesInWords, previewOf, referencedArtifacts, shareInWords } from '../../ui/src/model/artifacts.ts';
 import type { ArtifactsView, ArtifactView } from '../../ui/src/model/wire.ts';
 
 const ID1 = '0722a67b-8c7c-4315-8582-8794aa7b9dbc';
@@ -36,14 +36,21 @@ describe('artifacts in the UI (issue #624)', () => {
     expect(shareInWords({ ...base, kind: 'user', userName: 'bob', revokedAt: '2026-10-10T09:00:00.000Z' }, now)).toBe('bob, revoked');
   });
 
-  it('previews each kind its own way: HTML in a sandboxed frame, images inline, the text kinds read', () => {
+  it('previews each kind its own way: HTML and SVG in a sandboxed frame, images inline, the text kinds read', () => {
     expect(previewOf('html')).toBe('frame');
-    expect(previewOf('svg')).toBe('image');
+    // Issue #675: an SVG drawing is served in the HTML sandbox, so its inline script runs, framed.
+    expect(previewOf('svg')).toBe('frame');
     expect(previewOf('image')).toBe('image');
     expect(previewOf('pdf')).toBe('pdf');
     expect(previewOf('csv')).toBe('csv');
     expect(previewOf('markdown')).toBe('markdown');
     expect(previewOf('json')).toBe('text');
     expect(previewOf('file')).toBe('none');
+  });
+
+  it('shows an artifact\'s no-visual warning on the timeline (issue #675)', () => {
+    expect(artifactCreatedDetail({ title: 'Queue wait', name: 'chart.html' })).toBe('Queue wait');
+    expect(artifactCreatedDetail({ title: 'Notes', name: 'notes.html', warning: 'the artifact has no visual' }))
+      .toBe('Notes: warning: the artifact has no visual');
   });
 });

@@ -16,13 +16,21 @@ export const ARTIFACT_SCRIPT_FILE = 'hopper/artifact';
 export const ARTIFACT_EXIT = { done: 0, no: 1, badCall: 2, unreachable: 3 } as const;
 
 /** What a job reads when it loads the `artifacts` skill: every command, its options and its exit codes. */
-export const ARTIFACT_HELP = `artifacts: put a file on the hopper for a person to see — a chart, an HTML page, a report, an image, a CSV.
+export const ARTIFACT_HELP = `artifacts: put a visual on the hopper for a person to see — a diagram, a chart, a graph, a map, a table of data drawn.
 
-The hopper keeps it with this job and its issue, and gives a URL. A person sees it on the job's card and in Artifacts.
-HTML opens in a sandbox: its scripts run, but it can reach nothing (no fetch, no hopper session). Make it self-contained;
-scripts and styles from an https: CDN load.
+An artifact is a visual. Use one for a diagram (flow, sequence, state, architecture), a chart or a graph.
+Prose goes in the issue comment or the job result, not in an artifact: a page of styled text is not an artifact.
+Keep the words in an artifact to labels and short captions.
 
-  sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE]   keep FILE; prints its id and URL
+The hopper keeps it with this job and its issue, and gives a URL. A person sees it on the job's card and in Artifacts,
+often on a phone: give the drawing a viewBox and no fixed width, so it scales.
+
+Draw it self-contained: inline SVG, or a <canvas> with an inline script. No external loads: no script, style, font
+or image from another address, and no fetch. HTML and SVG open in a sandbox where only what is in the file works.
+An HTML artifact with no <svg>, <canvas> or <img> is kept, but the put warns that it has no visual, and the warning
+is on the job's timeline.
+
+  sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE]   keep FILE; prints its id and URL, and a warning if any
         TYPE: html, svg, png, jpeg, gif, webp, pdf, csv, markdown, json, text or file (default: from FILE's name)
   sh "$HOPPER_ARTIFACT" list [--all] [--markdown]               this job's artifacts (--all: every job's of this user)
   sh "$HOPPER_ARTIFACT" get ID [--out FILE]                     its details, or its content into FILE
@@ -31,6 +39,30 @@ scripts and styles from an https: CDN load.
   sh "$HOPPER_ARTIFACT" share ID --revoke SHARE                 end a share; its link stops working at once
   sh "$HOPPER_ARTIFACT" rm ID                                   remove it, and every share of it
 Add --json to any command for JSON. Exit 0: done; 1: a no, with why; 2: a bad call; 3: the hopper cannot be reached.
+
+Example: a flow diagram, saved as flow.svg, then: sh "$HOPPER_ARTIFACT" put flow.svg --title "Intake flow"
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 90" font-family="sans-serif" font-size="13">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10z"/></marker></defs>
+    <g fill="#eef3ff" stroke="#3456a0">
+      <rect x="10" y="25" width="110" height="40" rx="6"/><rect x="175" y="25" width="110" height="40" rx="6"/>
+      <rect x="340" y="25" width="110" height="40" rx="6"/></g>
+    <g text-anchor="middle"><text x="65" y="50">Issue</text><text x="230" y="50">Intake</text><text x="395" y="50">Job</text></g>
+    <g stroke="#333" marker-end="url(#a)"><line x1="120" y1="45" x2="175" y2="45"/><line x1="285" y1="45" x2="340" y2="45"/></g>
+    <text x="147" y="18" text-anchor="middle" font-size="11">labelled</text>
+  </svg>
+
+Example: a bar chart, saved as wait.svg, then: sh "$HOPPER_ARTIFACT" put wait.svg --title "Queue wait by hour"
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" font-family="sans-serif" font-size="11">
+    <line x1="40" y1="150" x2="310" y2="150" stroke="#333"/><line x1="40" y1="10" x2="40" y2="150" stroke="#333"/>
+    <g fill="#3a7bd5"><rect x="55" y="90" width="40" height="60"/><rect x="120" y="40" width="40" height="110"/>
+      <rect x="185" y="110" width="40" height="40"/><rect x="250" y="70" width="40" height="80"/></g>
+    <g text-anchor="middle"><text x="75" y="165">08</text><text x="140" y="165">09</text><text x="205" y="165">10</text>
+      <text x="270" y="165">11</text><text x="75" y="85">6 m</text><text x="140" y="35">11 m</text>
+      <text x="205" y="105">4 m</text><text x="270" y="65">8 m</text></g>
+  </svg>
+For a sequence diagram: one vertical line per actor, one arrow per message, top to bottom in time order.
+In HTML, put the same <svg> in the page; a short caption under it is enough.
 
 In a proposal or a research report, put the artifact's URL on a line: the hopper shows the artifact there.
 On GitHub (a pull request body, an issue comment): link an artifact only by a URL list --markdown gives. It gives one

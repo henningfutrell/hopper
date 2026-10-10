@@ -10695,18 +10695,27 @@ The token rides in the query because Fastify caps a path parameter at 100 charac
 
 | kind | served as | policy (`Content-Security-Policy`) |
 |------|-----------|------------------------------------|
-| html | `text/html` | `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts inline or from `https:`; `frame-ancestors 'self'` |
-| svg, image | its type | `sandbox; default-src 'none'` (no script, nothing fetched) |
+| html, svg | `text/html`; svg its type | `sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts inline or from `https:`; `frame-ancestors 'self'` |
+| image | its type | `sandbox; default-src 'none'` (no script, nothing fetched) |
 | csv, markdown, json, text | `text/plain` | the same; the UI renders the preview |
 | pdf | `application/pdf` | `frame-ancestors 'self'` (a sandbox stops the browser's PDF viewer) |
-| file | `application/octet-stream`, a download | the same as svg |
+| file | `application/octet-stream`, a download | the same as image |
 
 Every one: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (a signed URL or a link is a credential
 for a while), `Cache-Control: private, no-store`, `Cross-Origin-Resource-Policy: same-origin`. The sandbox without
 `allow-same-origin` gives the page an opaque origin: it reads none of the hopper's storage, so not the UI session
 (kept in `localStorage`), and a request it could make to the API carries neither the session header nor an allowed
-Origin. The UI frames it with the same sandbox attribute too. SVG is made safe by the policy, not by rewriting it: a
-browser runs no script of an SVG served under `sandbox; default-src 'none'`, and none of one shown as an `<img>`.
+Origin. The UI frames it with the same sandbox attribute too. SVG is made safe by the policy, not by rewriting it: since
+issue #675 an SVG is a drawing a job makes, as an HTML page is, so it gets the HTML policy and the UI frames it the same
+way: its inline script runs, in an opaque origin, and reaches nothing.
+
+**Artifacts are visuals (issue #675).** An artifact is a drawn diagram, a chart, a graph, a map — not a page of styled
+text; prose goes in the issue comment or the job result. The skill help (`ARTIFACT_HELP`, `src/artifacts/script.ts`)
+says so and gives two inline-SVG examples, a flow diagram and a bar chart, with no external load. `visualWarning`
+(`src/domain/artifacts.ts`) checks an HTML artifact for an `<svg>`, `<canvas>` or `<img>` element; with none, the
+artifact is kept, and the put answers a `warning`, which `artifact.created` carries to the job's timeline (the event
+line shows it after the title) and its job stream. A warning, not a no: a page may draw through an element the check
+does not know.
 
 **Sharing and Access.** By default only the owner sees an artifact. A **share** is with another user of the hopper (by
 name) or a **public link** (`/artifact-link/<owner>.<random>`, 32 random bytes; only its SHA-256 is kept, and the link is
@@ -10726,7 +10735,7 @@ the next load.
 `artifact` in `src/users/job-stream.ts`), so a waiting agent hears at once; the UI hears the domain events on its SSE.
 
 **UI.** The Artifacts view (`#artifacts`, `#artifacts/<id>`): the user's own and the ones shared with them, a preview
-by kind (HTML in a sandboxed frame; images; PDF; CSV as a table of its first 50 rows, papaparse; Markdown rendered by
+by kind (HTML and SVG in a sandboxed frame; images; PDF; CSV as a table of its first 50 rows, papaparse; Markdown rendered by
 marked into a frame with an empty sandbox; JSON and text as text), its job and issue, open, download, copy its URL,
 remove, and the shares: share with a user, make a public link (shown once), revoke. Every card that names a job — the
 job, question, proposal, research report and failure cards, through `JobTitle` — links its artifacts. A proposal or a
