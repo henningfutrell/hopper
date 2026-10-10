@@ -238,3 +238,23 @@ describe('a pull request the job left in conflict or as a draft (issue #626)', (
     expect(ready).not.toBe(rebase);
   });
 });
+
+describe('pullRequestOpen (issue #630): a liveness fact of a timed-out job', () => {
+  it.each([
+    ['its own open pull request', { createdAt: AFTER }, true],
+    ['its own draft: it is at work', { createdAt: AFTER, isDraft: true }, true],
+    ['an older one it pushed to', { createdAt: BEFORE, headCommittedAt: AFTER }, true],
+    ['an older one it did not touch', { createdAt: BEFORE }, false],
+  ] as const)('%s → %s', async (_n, pr, open) => {
+    const { gh, source, job } = withIssue();
+    gh.openPullRequest(REPO, 1, pr);
+    expect(await source.pullRequestOpen!(job)).toBe(open);
+  });
+
+  it('no pull request is false; an error asking GitHub throws', async () => {
+    const { gh, source, job } = withIssue();
+    expect(await source.pullRequestOpen!(job)).toBe(false);
+    gh.failNext('openClosingPullRequests', new GitHubApiError('gh: timeout', false));
+    await expect(source.pullRequestOpen!(job)).rejects.toThrow('gh: timeout');
+  });
+});
