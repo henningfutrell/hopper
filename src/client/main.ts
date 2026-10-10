@@ -9,6 +9,7 @@
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
 // herdr and claude (a usage read, issue #366; a level's run, issue #482) are the ones on its PATH: the client is one long-lived process,
 // never a fresh login shell per call.
+// Native Windows is not supported (issue #704): there it stops at once, before it joins or dials in.
 // The client's install dir is this file's directory: the hopper loads its release there (release.ts,
 // issue #70), and the client exits 75 so whatever runs it (the unit, a box's entrypoint) starts the new files.
 import { readFileSync, rmSync } from 'node:fs';
@@ -18,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { dialIn } from './dial.ts';
 import { startDoor, type Door } from './door.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
-import { linkToken } from './link.ts';
+import { linkToken, unsupportedPlatform } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
 
@@ -74,6 +75,8 @@ export function takeJoinLine(env: NodeJS.ProcessEnv = process.env): string | und
 const say = (line: string): void => { process.stdout.write(`${line}\n`); };
 
 async function run(argv: string[]): Promise<void> {
+  const unsupported = unsupportedPlatform(process.platform);
+  if (unsupported) throw new Error(unsupported);
   const dir = process.env.HOPPER_CLIENT_DIR || join(homedir(), '.config', 'hopper-client');
   const name = machineName(process.env.HOPPER_CLIENT_NAME || hostname());
   if (argv[0] === 'join') {

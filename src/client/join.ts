@@ -53,15 +53,18 @@ export function readLink(dir: string): Link {
 /** Whether a client dir holds a link. */
 export const hasLink = (dir: string): boolean => existsSync(linkFile(dir));
 
-/** Joins the hopper the line names, under `name` (the hopper may give another when it is taken). Resolves the link, kept in `dir`. */
-export async function joinHopper(o: { line: string; name: string; dir: string }): Promise<Link> {
+/**
+ * Joins the hopper the line names, under `name` (the hopper may give another when it is taken). Resolves the link, kept
+ * in `dir`. It tells the hopper its platform (default this process's): the hopper refuses native Windows (issue #704).
+ */
+export async function joinHopper(o: { line: string; name: string; dir: string; platform?: string }): Promise<Link> {
   const { url, code } = parseJoinLine(o.line);
   const key = ownKey(o.dir);
   let res: Response;
   try {
     res = await fetch(new URL(JOIN_PATH, url), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code, key: key.publicKey, name: o.name }),
+      body: JSON.stringify({ code, key: key.publicKey, name: o.name, platform: o.platform ?? process.platform }),
     });
   } catch (e) {
     throw new Error(`could not reach the hopper at ${url}: ${(e as Error).message}`, { cause: e });
