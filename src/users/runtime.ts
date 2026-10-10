@@ -122,7 +122,7 @@ export interface UserRuntime {
   logins: Logins;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
-  /** Minor decisions, Jev first (issue #550). */
+  /** Decider calls, Jev first (issue #550). */
   minorDecisions: MinorDecisions;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
@@ -275,7 +275,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   const logins = createLogins({ store, clock });
-  // Minor decisions (issue #550) go through Jev first, through TypeSafe with the runtime's key.
+  // Decider calls (issue #550) go through Jev first, through TypeSafe with the runtime's key.
   const minorDecisions: MinorDecisions = createMinorDecisions({
     store, clock, logger, timeoutMs: JEV_TIMEOUT_MS,
     jev: seams.jev ?? createJev({

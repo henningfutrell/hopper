@@ -1,4 +1,4 @@
-// Minor decisions (issue #550), in Settings: bounded choices Jev makes first, before an escalation level, a model or a
+// Decider calls (issue #550), in Settings: bounded choices Jev makes first, before an escalation level, a model or a
 // person. Whether Jev can be asked now; per decision point its mode and threshold (an admin's, saved to the daemon,
 // applied from the next decision) and its record over the window — asked, applied, the agreement rate a person flips
 // it to active on —; then the newest picks, each with its options, what Jev picked and how sure, what became of it and
@@ -103,14 +103,14 @@ export function MinorDecisions() {
   const load = useCallback(async () => setView(await get<MinorDecisionsView>('/api/minor-decisions')), []);
   usePoll(load, POLL_MS);
   const reload = () => { load().catch(() => {}); };
-  if (!view) return <Panel title="Minor decisions" icon={Scale}><Empty>loading</Empty></Panel>;
+  if (!view) return <Panel title="Decider" icon={Scale}><Empty>loading</Empty></Panel>;
   const labelOf = (point: string) => view.points.find((p) => p.point === point)?.label ?? point;
   return (
     <div className="space-y-3">
-      <Panel title="Minor decisions" icon={Scale}>
+      <Panel title="Decider" icon={Scale}>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Jev makes small, bounded decisions first, before a model or a person. In shadow it only records what it would pick, next
+            Jev makes bounded decisions first, before a model or a person. In shadow it only records what it would pick, next
             to what was decided; active, a pick it is sure enough of is applied. Anything that deletes, sends, publishes, pays, changes
             permissions or runs on a gated machine always goes on to the next step. Figures over the last {view.windowDays} days.
           </p>

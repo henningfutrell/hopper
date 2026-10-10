@@ -31,7 +31,7 @@ export interface UserSeams {
   router?: Router;
   /** Replace the configured escalation levels, lowest first; [] = none. The report stays the host's. */
   levels?: EscalationLevel[];
-  /** Replaces Jev (TypeSafe through jev_pick.py) for the minor decisions (issue #550). */
+  /** Replaces Jev (TypeSafe through jev_pick.py) for the decider calls (issue #550). */
   jev?: JevChooser;
   /** Replaces the probe of every attached machine: online = its herdr session (ssh) or its container (docker) is running. */
   machineProbe?: (machine: AttachedMachine) => Promise<MachineProbe>;

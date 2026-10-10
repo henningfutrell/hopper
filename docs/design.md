@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
-| `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
+| `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
@@ -8536,7 +8536,7 @@ another job would meet it — problem `ba0f00fc` held every queued job of one ma
 (`lookedAgain`, `done-at-source.ts`, at most `PR_LOOKUP_MS`): its job said it was done, and its source said not done twice,
 a minute apart; GitHub may still show the work late. Done now: its record is written `resolved` (the note says done at its
 source), no hand-off opens, and its job ends finished, its source told again. Not done, or not known: assessed as before
-(a `job` cause: a person), and then it is a minor decision like a failure no known cause explains — Jev picks run it again
+(a `job` cause: a person), and then it is a decider call like a failure no known cause explains — Jev picks run it again
 or a person, in the words of a done-check miss. Whether it is done stays GitHub's to say, never Jev's, so Jev is not
 offered `done` or PR waiting: those come only from the source's own answer, here and before every run again.
 
@@ -9373,9 +9373,9 @@ marker on the screen and in print mode; what a source item asks for by label and
 reviewer levels, priority, stale cleanup, ask a job; an item with Research and Proposal headings researched then
 proposed in one job; `GET /api/sections`), `test/ui/research-view.test.ts`, and the proposal tests on the shared contract.
 
-## Minor decisions (issue #550, 2026-10-09)
+## Decider calls (issue #550, 2026-10-09)
 
-Hopper and its jobs make many small decisions. A **minor decision** is a bounded choice with a known option set and a
+Hopper and its jobs make many small decisions. A **decider call** is a bounded choice with a known option set and a
 low blast radius. Jev picks it first — before an escalation level, a model or a person — and the decision goes on as
 before when Jev's pick is not applied. Jev is not the router (that is the gate router, "Gate router"): it is asked
 before anything else at each **decision point**.
@@ -9390,15 +9390,15 @@ the options — is no pick, never a throw. Not a plugin and not a setting: no op
 up the hopper knows (issue #217). Tests put a double at the seam (`UserSeams.jev`).
 
 **Decision points.** Each declares its options; the settings are per point, in the database (`minorDecisions`, a user
-setting), edited in Settings → Minor decisions (admin), read at every decision:
+setting), edited in Settings → Decider (admin), read at every decision:
 
 | point | asked | options | applied |
 |---|---|---|---|
 | `question-answer` | a question whose text lists at least two numbered options (`1. …`, `2) …`, a dialog's cursor and border aside; the last run of them, numbered from 1), before the first escalation level | each listed option, by its number | the number is the answer (`answeredBy: jev`), typed as a level's answer is |
 | `failure-assessment` | a failure the rules hand to a person with no known cause, not superseded, not stale, within the retry limit — after the rules | `retry`, `person` | `retry`: the job runs again by the assessor (`job.rerun`, `by: assessor`; its record `retried`, note `run again: Jev picked it`); its hand-off, opened by the rules, closes as for any run again |
 
-Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other minor
-decisions the issue names — the queue gate and pre-sort, priority and lane choice, phase shifts, stale cleanup, client
+Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other decider
+calls the issue names — the queue gate and pre-sort, priority and lane choice, phase shifts, stale cleanup, client
 repair — are not decision points yet; each one is a new row here.
 
 **Modes.** `off`: Jev is not asked. `shadow` (the default for every point): Jev's pick is recorded next to what was

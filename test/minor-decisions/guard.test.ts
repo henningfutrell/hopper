@@ -1,4 +1,4 @@
-// Never for consequential actions (issue #550): what makes a minor decision consequential — the question's risk
+// Never for consequential actions (issue #550): what makes a decider call consequential — the question's risk
 // rules (delete, deploy and publish, force-push, spend, credentials, sending a message), changing permissions, and a
 // job on a machine the blast-radius gate keeps — so it is never applied, whatever Jev says.
 import { describe, expect, it } from 'vitest';

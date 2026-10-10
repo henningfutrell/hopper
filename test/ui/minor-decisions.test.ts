@@ -1,4 +1,4 @@
-// The minor decisions in the UI (issue #550), pure: the agreement rate as a percent, a pick in plain words — what Jev
+// The decider calls in the UI (issue #550), pure: the agreement rate as a percent, a pick in plain words — what Jev
 // picked, how sure, whether it was applied and why not, what was decided —, the mode names, and a pick's event line.
 import { describe, expect, it } from 'vitest';
 import { MODE_TEXT, pickDecided, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
@@ -8,7 +8,7 @@ const base = {
   mode: 'shadow' as const, threshold: 0.85, applied: false,
 };
 
-describe('minor decisions model', () => {
+describe('decider calls model', () => {
   it('rate: a percent, or a dash with nothing compared', () => {
     expect(rate(null)).toBe('—');
     expect(rate(2 / 3)).toBe('67%');

@@ -44,7 +44,7 @@ export interface TenantParts {
   logins: Logins;
   /** The failure assessor (issue #509). */
   failures: Failures;
-  /** Minor decisions through Jev first (issue #550). */
+  /** Decider calls through Jev first (issue #550). */
   minorDecisions: MinorDecisions;
   /** Every job source's status (/api/sources, SSE source.updated). */
   registry: SourceRegistry;

@@ -1,5 +1,5 @@
-// Jev first in the failure assessor (issue #550, design.md "Minor decisions"): a failure no known cause explains,
-// which the rules hand to a person, is a minor decision. Jev picks: run it again, or a person. Grouping stays the
+// Jev first in the failure assessor (issue #550, design.md "Decider calls"): a failure no known cause explains,
+// which the rules hand to a person, is a decider call. Jev picks: run it again, or a person. Grouping stays the
 // rules' own, from failures on several items. The pick runs the job again only when the decision point is active,
 // Jev is sure enough, and nothing makes it consequential — a goal that deletes, sends, publishes, pays or changes
 // permissions, or a machine the blast-radius gate keeps. Otherwise the hand-off to a person stands. A done-check miss

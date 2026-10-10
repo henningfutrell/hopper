@@ -1,4 +1,4 @@
-// The UI session's actions on minor decisions (issue #550): a decision point's mode and threshold (admin), a person's
+// The UI session's actions on decider calls (issue #550): a decision point's mode and threshold (admin), a person's
 // override of a pick (operator). Settings are kept in the database and apply from the next decision.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';

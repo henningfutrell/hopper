@@ -2061,7 +2061,7 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked a minor decision (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`) and the decision went on as before. A question's pick names it (`questionId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`) and the decision went on as before. A question's pick names it (`questionId`).
 
 | field | type | required |
 |---|---|---|
@@ -2130,7 +2130,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 
 ## `minor_decision.overridden`
 
-Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what a minor decision should have been (issue #550): `actual` in place of Jev's `pick`. Counts as a disagreement in the agreement rate unless it names Jev's pick.
+Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what a decider call should have been (issue #550): `actual` in place of Jev's `pick`. Counts as a disagreement in the agreement rate unless it names Jev's pick.
 
 | field | type | required |
 |---|---|---|

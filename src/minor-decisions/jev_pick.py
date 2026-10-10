@@ -1,4 +1,4 @@
-"""Ask Jev, through TypeSafe, one minor decision for the hopper (issue #550).
+"""Ask Jev, through TypeSafe, one decider call for the hopper (issue #550).
 
 Reads {"model", "instructions", "criteria": {option id: meaning}, "state"} as JSON on stdin and prints one JSON line:
 {"ok": true, "pick": <option id>, "confidence": <0..1>} or {"ok": false, "error": "<Type>: <message>"}. Always exits 0.

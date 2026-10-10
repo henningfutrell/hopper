@@ -1,5 +1,5 @@
-// Jev first in the question pipeline (issue #550, design.md "Minor decisions"): a question that lists its options
-// is a minor decision, and Jev is asked before any escalation level. Its pick goes on the question's trail; it is the
+// Jev first in the question pipeline (issue #550, design.md "Decider calls"): a question that lists its options
+// is a decider call, and Jev is asked before any escalation level. Its pick goes on the question's trail; it is the
 // answer only when the decision point is active, Jev is sure enough, and nothing makes it consequential — the risk
 // rules, permissions, a machine the blast-radius gate keeps. Anything else goes on to the levels, as before.
 import type { UserStore } from '../domain/ports.ts';

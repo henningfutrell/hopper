@@ -1,4 +1,4 @@
-// Minor decisions in plain words (issue #550): the agreement rate, a Jev pick — the option, how sure, what became of
+// Decider calls in plain words (issue #550): the agreement rate, a Jev pick — the option, how sure, what became of
 // it —, what was decided after it, the mode names, and a pick event's line. Pure.
 import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView } from './wire.ts';
 
