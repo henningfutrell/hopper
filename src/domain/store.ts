@@ -86,12 +86,12 @@ export interface WebhookRepository {
   /** Changes only the fields given; undefined when there is no such subscription. */
   update(id: string, patch: { url?: string; events?: string[]; active?: boolean }): WebhookSubscription | undefined;
   /**
-   * Keeps the subscription's signing secret, already sealed (issue #451), with when it changed (default now),
-   * and stops reading its runtime variable; undefined when there is no such subscription.
+   * Records that the subscription's signing secret was kept in the vault (issue #658), with when it changed (default
+   * now): its runtime variable is no longer read, and its copy from before #658 goes. Undefined when there is no such subscription.
    */
-  setSecret(id: string, sealed: string, changedAt?: string): WebhookSubscription | undefined;
-  /** The subscription's sealed signing secret; undefined when none is stored. Never part of a subscription. */
-  sealedSecret(id: string): string | undefined;
+  secretKept(id: string, changedAt?: string): WebhookSubscription | undefined;
+  /** The signing secret a subscription kept sealed in its row before issue #658, for the move into the vault; undefined: none. */
+  legacySecret(id: string): string | undefined;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
@@ -370,6 +370,9 @@ export interface StoredSignIn {
  * The sign-in config: the config record `sign-in`, read and replaced against `version` — the sha-256
  * of what `read` answers.
  */
+/** A vault's table as the system scope uses it (issue #658): the instance's has no templates and no data key. */
+export type InstanceVault = Pick<VaultRepository, 'list' | 'get' | 'add' | 'replace' | 'sealed' | 'remove'>;
+
 export interface SignInConfigRepository {
   read(): StoredSignIn;
   version(): string;
@@ -406,17 +409,20 @@ export interface ConnectedAccount {
   renewedAt?: string;
 }
 
+/** A connected account's row (issue #658): who and when. Its tokens are system secrets in the user's vault (src/connected-accounts/at-rest.ts). */
+export type StoredAccount = Omit<ConnectedAccount, 'accessToken' | 'refreshToken'>;
+
 export interface ConnectedAccountRepository {
-  /** The account as stored: its tokens sealed when the runtime gives a master key (issue #441). */
-  get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
-  /** Insert or replace the provider's account. */
-  put(account: ConnectedAccount): void;
-  /**
-   * Replace the account only while its stored refresh token is still `refreshToken` (as stored): one
-   * transaction, the row locked (issue #441). False, nothing written, when another process rotated it
-   * first or it is gone.
-   */
-  swap(provider: ConnectedAccountProvider, refreshToken: string, next: ConnectedAccount): boolean;
+  /** The account's row, without its tokens. */
+  get(provider: ConnectedAccountProvider): StoredAccount | undefined;
+  /** Insert or replace the provider's row; tokens given with it are not kept here. */
+  put(account: StoredAccount): void;
+  /** Inside a transaction: lock the provider's row until it ends (issue #441); false when there is none. */
+  lockRow(provider: ConnectedAccountProvider): boolean;
+  /** The tokens a row kept before issue #658 (sealed by the token box, or in clear), for the move into the vault; none: none left. */
+  legacyTokens(provider: ConnectedAccountProvider): { accessToken: string; refreshToken?: string } | undefined;
+  /** The row without the tokens it kept before issue #658: once they are in the vault. */
+  dropLegacyTokens(provider: ConnectedAccountProvider): void;
   /**
    * Take the account's renewal lock, held by this connection until `unlock` or until the connection
    * ends — a crashed process lets it go (issue #441). False when another connection holds it.
@@ -478,6 +484,8 @@ export interface InstanceStore {
   settings: InstanceSettingsRepository;
   /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */
   access: AccessRepository;
+  /** The instance's vault (issue #658): the system secrets of the whole hopper — its sign-in realms' secrets. */
+  vault: InstanceVault;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
   /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */

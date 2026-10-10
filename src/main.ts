@@ -28,6 +28,7 @@ import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot,
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
+import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { createPodmanEngine } from './sandboxes/podman.ts';
@@ -107,25 +108,28 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
-  const instance = openInstanceStore({ url: config.databaseUrl, clock });
+  const store = openInstanceStore({ url: config.databaseUrl, clock });
   // Held while the daemon runs: the operator CLI refuses `user transfer` against a running daemon (issue #212).
-  if (!instance.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
+  if (!store.holdDaemonLock()) logger.warn('hopper: another process holds this database\'s daemon lock (a second daemon?)');
   const env = seams.env ?? process.env;
   // The master key (issue #659): from the launch, checked against the database's fingerprint before anything opens a
   // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
   let masterKey: MasterKey;
   try {
     masterKey = resolveMasterKey({
-      env, kept: () => instance.keptSecrets(),
-      record: { fingerprint: () => instance.settings.masterKeyFingerprint(), setFingerprint: (fp) => instance.settings.setMasterKeyFingerprint(fp) },
+      env, kept: () => store.keptSecrets(),
+      record: { fingerprint: () => store.settings.masterKeyFingerprint(), setFingerprint: (fp) => store.settings.setMasterKeyFingerprint(fp) },
     });
   } catch (e) {
-    instance.close();
+    store.close();
     throw e;
   }
-  const masterKeyStatus = createMasterKeyStatus(masterKey, instance.settings);
+  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings);
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
   const keyed = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
+  // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
+  const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });
+  const { instance } = secrets;
   // Before anything starts: the sign-in config with what the environment sets (no bootstrap login, issue
   // #238); an invalid one stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
@@ -188,7 +192,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter,
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter, instanceSecrets: secrets.system,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -220,6 +224,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance.close();
     throw e;
   }
+  // The instance's vault events (issue #658) reach every user's log now that their runtimes exist.
+  secrets.connect((e) => runtimes.events.append(e));
   // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
   // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
   const secret = runtimeSecrets(env);

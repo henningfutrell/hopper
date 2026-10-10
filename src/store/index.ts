@@ -15,6 +15,7 @@ import { userSchemaName } from './tenant-migrations.ts';
 import { createUiSessionRepository } from './ui-sessions.ts';
 import { openUserStore, schemaUrl } from './user-store.ts';
 import { createIdentityLinks, createUserRepository } from './users.ts';
+import { createVaultRepository } from './vault.ts';
 
 export type { UserStore, InstanceStore } from '../domain/ports.ts';
 
@@ -46,8 +47,10 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     signInConfig: createSignInConfigRepository(ctx, config),
     settings: createInstanceSettingsRepository(ctx),
     access: createAccessRepository(ctx),
+    vault: createVaultRepository(ctx),
     userStore,
-    keptSecrets: () => keptSecrets(db, db.all('SELECT id FROM users').map((r) => schemaOf(String(r.id)))),
+    // The instance's own vault too (issue #658): the sign-in realms' secrets.
+    keptSecrets: () => keptSecrets(db, [instanceSchema, ...db.all('SELECT id FROM users').map((r) => schemaOf(String(r.id)))]),
     // Session-level: held while this connection lives, one key per instance schema.
     holdDaemonLock: () => db.get("SELECT pg_try_advisory_lock(hashtext('hopper daemon ' || current_schema())) AS held")!.held === true,
     tx: ctx.tx,

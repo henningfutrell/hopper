@@ -13,7 +13,6 @@
 // session of that user once the hopper has several (issue #221).
 // Every event the app emits is validated against its schema; stop() fails the test on any
 // nonconforming event (tracker + a scan of every user's whole event log).
-import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -104,7 +103,8 @@ export function writePlugins(dbPath: string, value: unknown): void {
 }
 
 /** The master key a test app is given unless the test names its own (issue #659). */
-export const TEST_MASTER_KEY = randomBytes(32).toString('hex');
+export { TEST_KEY as TEST_MASTER_KEY } from './system-secrets.ts';
+import { TEST_KEY as TEST_MASTER_KEY } from './system-secrets.ts';
 
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
 

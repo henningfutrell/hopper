@@ -3,7 +3,7 @@
 // events, webhooks and their deliveries) all move, in their order, after `keep`'s; a row whose key `keep`
 // already holds (a lane's machine and number, a webhook's name, a setting, a config record) is `keep`'s.
 // Two exceptions: the plugins config takes the instances only `from` names, and the connected account is
-// `from`'s — its user's own connection. Runs inside the caller's transaction.
+// `from`'s — its user's own connection, its tokens in the vault with it (issue #658). Runs inside the caller's transaction.
 import type { Db, Param } from './db.ts';
 import { quoteIdent } from './tenant-migrations.ts';
 
@@ -60,6 +60,10 @@ export function foldUserSchema(db: Db, keep: string, from: string): void {
     } else if (table === 'connected_accounts') {
       db.run(`DELETE FROM ${k}.${t} WHERE provider IN (SELECT provider FROM ${f}.${t})`);
       db.run(`INSERT INTO ${k}.${t} (${list}) SELECT ${list} FROM ${f}.${t}`);
+    } else if (table === 'vault_secrets') {
+      // A connection's tokens (issue #658) are `from`'s with its connection: `keep`'s go first, so none is left beside them.
+      db.run(`DELETE FROM ${k}.${t} WHERE name LIKE 'system/connected-account.%' AND EXISTS (SELECT 1 FROM ${f}.connected_accounts)`);
+      db.run(`INSERT INTO ${k}.${t} (${list}) SELECT ${list} FROM ${f}.${t}${order} ON CONFLICT DO NOTHING`);
     } else if (table === 'deliveries') {
       // Only a moved subscription's; its event by its new seq (the dispatcher reads the event by it).
       for (const r of db.all(`SELECT ${list} FROM ${f}.deliveries WHERE subscription_id IN (SELECT id FROM ${k}.webhooks) ORDER BY seq`)) {

@@ -312,8 +312,9 @@ export const EVENT_SCHEMAS = {
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
-  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), backend: z.string().optional(), mints: asset.optional() }),
+  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
+  'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),

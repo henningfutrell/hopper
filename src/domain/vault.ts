@@ -13,17 +13,53 @@ export const VAULT_SCOPE_MAX = 200;
 export const VAULT_REFERENCE_MAX = 500;
 
 /**
- * The vault's system scope (issue #657): secrets the hopper keeps for its own use for one user, such as their TypeSafe
- * API key. Each is a row of the vault's table named `system/<name>` — a name no vault secret can take —, sealed as any
- * other; but it is none of the vault's own secrets: not listed, in no template, never given to a job or minted from.
+ * The vault's system scope (issues #657, #658): the hopper's own secrets — for one user, their TypeSafe API key, their
+ * GitHub connection's access and refresh tokens and their webhook subscriptions' signing secrets; for the whole hopper
+ * (the instance's vault), its sign-in realms' secrets. Each is a row of a vault's table named `system/<name>` — a name no
+ * vault secret can take —, sealed as any other; but it is none of the vault's own secrets: not listed, in no template,
+ * never given to a job or minted from. Only the hopper opens one, in its own process.
  */
-export const SYSTEM_SECRETS = ['typesafe-api-key'] as const;
-export type SystemSecretName = (typeof SYSTEM_SECRETS)[number];
+export type SystemSecretName =
+  | 'typesafe-api-key'
+  | `connected-account.${'github'}.${'access-token' | 'refresh-token'}`
+  | `webhook.${string}.signing-secret`
+  | `sign-in.${string}.${string}`;
 const SYSTEM_PREFIX = 'system/';
 /** The vault row's name of a system secret. */
 export const systemSecretRow = (name: SystemSecretName): string => `${SYSTEM_PREFIX}${name}`;
 /** Whether a vault row's name is in the system scope. */
 export const isSystemSecret = (name: string): boolean => name.startsWith(SYSTEM_PREFIX);
+/** The system secret a vault row holds: its name without `system/`. */
+export const systemSecretName = (row: string): SystemSecretName => row.slice(SYSTEM_PREFIX.length) as SystemSecretName;
+
+/** The kinds of system secret, by what the hopper keeps them for. */
+export type SystemSecretKind = 'typesafe' | 'connected-account' | 'webhook' | 'sign-in';
+export const systemSecretKind = (name: string): SystemSecretKind =>
+  name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in' : 'typesafe';
+
+/** A system secret as Settings → Vault shows it (issue #658): never its value. */
+export interface SystemSecretView {
+  name: string;
+  kind: SystemSecretKind;
+  /** `user`: kept for this user; `instance`: for the whole hopper (the sign-in realms). */
+  scope: 'user' | 'instance';
+  /** The last 4 characters, kept when it was set; absent for one set before issue #658. */
+  last4?: string;
+  setBy: string;
+  setAt: string;
+  /** Why it cannot be opened now (the start check): the key it was sealed under is missing. */
+  problem?: string;
+}
+
+/** One entry of the system scope's audit trail (issue #658): an event naming the secret, never its value. */
+export interface SystemSecretAudit {
+  seq: number;
+  at: string;
+  type: string;
+  name: string;
+  by?: string;
+  detail?: string;
+}
 
 /** One vault secret, as anything but the sealer sees it: its metadata, never its value. */
 export interface VaultSecret {
@@ -49,6 +85,8 @@ export interface VaultSecret {
   mints?: Asset;
   /** When it was last delivered, to which machine, for which job (issue #558, slice 3); for a minting credential, when it last minted. */
   lastUsed?: { at: string; machine: string; job: string };
+  /** A system secret's last 4 characters (issue #658), kept when it is set: what its page shows. */
+  last4?: string;
   /**
    * What it is for (issue #583): the skill a credential request gave it to, the kind of credential the user gave,
    * and the user's own words for it when that kind is `other`. A job that asks for the domain is told these, never the value.
@@ -69,6 +107,8 @@ export interface VaultView {
   requests?: CredentialRequest[];
   /** Why no secret can be stored now (no master key); absent when one can. */
   problem?: string;
+  /** The hopper's own secrets (issue #658): the system scope's metadata and its audit trail, newest first. */
+  system?: { secrets: SystemSecretView[]; audit: SystemSecretAudit[] };
 }
 
 /**

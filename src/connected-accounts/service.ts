@@ -9,7 +9,7 @@
 //
 // GitHub App user tokens expire after 8 hours; the renewer (renewer.ts, issues #358, #441) keeps the token
 // renewed — ahead of expiry whether or not anything asks, at start, and on a 401 — atomically across
-// processes, and the tokens are sealed at rest (at-rest.ts). The sign-in ends only when GitHub refuses the
+// processes, and the tokens are system secrets in the user's vault, sealed at rest (at-rest.ts, issue #658). The sign-in ends only when GitHub refuses the
 // refresh token itself and no newer pair is stored, or the refresh token is past its own expiry: then the
 // account reads as expired — never as connected — offers no login, its source says to connect again —
 // nothing reads GitHub in its place (issue #359) — and the owner is told once (`onExpired`).
@@ -26,7 +26,7 @@
 // #652): a job's GitHub goes through the hopper, which asks for the token as it is at each call.
 import type { ConnectedAccount, ConnectedAccounts, ConnectedAccountTokens, Connection, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, type AppInstallation, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
-import type { TokenBox } from '../secrets/token-box.ts';
+import type { SystemSecrets } from '../vault/system.ts';
 import { createAtRest, NO_KEY, PROVIDER_NAME, recordOf } from './at-rest.ts';
 import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './device-flow.ts';
 import type { AccountIdentity } from './identity.ts';
@@ -47,7 +47,7 @@ interface Waiting { userCode: string; verificationUri: string; expiresAt: string
 
 
 export interface ConnectedAccountsOptions {
-  store: Pick<UserStore, 'connectedAccounts' | 'settings'>;
+  store: Pick<UserStore, 'connectedAccounts' | 'settings' | 'tx'>;
   apps: HopperApps;
   /** Who a token belongs to. */
   whoIs(provider: ConnectedAccountProvider, token: string): Promise<AccountIdentity>;
@@ -73,8 +73,8 @@ export interface ConnectedAccountsOptions {
   deleteToken?(provider: ConnectedAccountProvider, accessToken: string): Promise<void>;
   /** Whether the runtime gives a client secret (issue #597): `incorrect_client_credentials` without one ends the connection. */
   hasClientSecret?(): boolean;
-  /** Seals the tokens at rest (issue #441); absent: the master key is missing (issue #659), and no new token is kept. */
-  box?: TokenBox | undefined;
+  /** Where the tokens are kept (issue #658): system secrets in the user's vault, sealed under the master key; none is kept without it (issue #659). */
+  secrets: SystemSecrets;
   /** How often the renewer looks; default RENEW_EVERY_MS. */
   renewEveryMs?: number;
 }
@@ -95,7 +95,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   const failed = new Map<ConnectedAccountProvider, string>();
   const starting = new Map<ConnectedAccountProvider, Promise<ConnectedAccountStatus>>();
   const held = createHeldGrants(o);
-  const atRest = createAtRest(o.store, o.box);
+  const atRest = createAtRest(o.store, o.secrets);
   const past = (iso: string | undefined) => iso !== undefined && Date.parse(iso) <= o.clock.now().getTime();
 
   /** Why the account's sign-in ended, or undefined while it lives: GitHub refused it, or it expired with nothing to renew it. */
@@ -222,7 +222,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       refused = `${PROVIDER_NAME[provider]} refused the new token: ${(err as Error).message}`;
     }
     await replace(provider, g.accessToken, () => {
-      o.store.connectedAccounts.put(atRest.sealed({ ...recordOf(provider, who, g, connectedAt), connectedBy, ...(refused ? { ended: refused } : {}) }));
+      atRest.put({ ...recordOf(provider, who, g, connectedAt), connectedBy, ...(refused ? { ended: refused } : {}) });
       renewer.clear(provider);
     });
     if (refused) {
@@ -347,7 +347,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       await held.release(provider, false);
       failed.delete(provider);
       let gone = false;
-      await replace(provider, undefined, () => { gone = o.store.connectedAccounts.delete(provider); });
+      await replace(provider, undefined, () => { gone = atRest.remove(provider); });
       renewer.clear(provider);
       if (gone) {
         o.logger.info(`hopper: ${PROVIDER_NAME[provider]} disconnected`);
