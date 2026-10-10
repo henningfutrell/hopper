@@ -12,7 +12,7 @@
 
 import type { Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, GitHubApi, GitHubIssue, ReferencingPullRequest } from './api.ts';
+import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
 export const isOwnPullRequest = <P extends { createdAt: string }>(pr: P | undefined, job: Job): pr is P =>
@@ -28,6 +28,38 @@ export function isClosedAsComplete(issue: GitHubIssue, closer: ClosingPullReques
   return issue.stateReason === 'completed' && issue.closedAt !== undefined && Date.parse(issue.closedAt) >= Date.parse(job.createdAt);
 }
 
+/** Updated by the job (issue #618): its head commit made at or after the job was created. */
+export const isUpdatedBy = (pr: Pick<OpenPullRequest, 'headCommittedAt'>, job: Job): boolean =>
+  pr.headCommittedAt !== undefined && Date.parse(pr.headCommittedAt) >= Date.parse(job.createdAt);
+
+/** The most pull requests an issue's text is asked about (issue #618). */
+export const MAX_NAMED = 10;
+
+/** The numbers of the pull requests an issue's text may name in its own repo (issue #618): `#N` or `…/pull/N`, its own number left out. */
+export function namedNumbers(issue: Pick<GitHubIssue, 'repo' | 'number' | 'title' | 'body'>): number[] {
+  const text = `${issue.title}\n${issue.body}`;
+  const escaped = issue.repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const found = [
+    ...[...text.matchAll(/(?<![\w/#&])#(\d+)\b/g)].map((m) => m[1]!),
+    ...[...text.matchAll(new RegExp(`https://github\\.com/${escaped}/pull/(\\d+)\\b`, 'gi'))].map((m) => m[1]!),
+  ].map(Number).filter((n) => n !== issue.number);
+  return [...new Set(found)].slice(0, MAX_NAMED);
+}
+
+/** A pull request the job updated is done (issue #618): open and free of merge conflicts, or merged after the job began. */
+const updatedDone = (pr: NumberedPullRequest, job: Job): boolean =>
+  isUpdatedBy(pr, job) && (pr.state === 'open' ? !pr.conflicting : pr.state === 'merged' && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= Date.parse(job.createdAt));
+
+/** Pull request `n`, or undefined when GitHub says it is none (a permanent error: gone, no access). A transient error throws. */
+async function pullRequestOrNone(api: GitHubApi, repo: string, n: number): Promise<NumberedPullRequest | undefined> {
+  try {
+    return await api.pullRequest(repo, n);
+  } catch (err) {
+    if (err instanceof GitHubApiError && err.permanent) return undefined;
+    throw err;
+  }
+}
+
 export async function notComplete(api: GitHubApi, job: Job): Promise<string | undefined> {
   const { repo, number, url } = job.source ?? {};
   if (!repo || !number) return `job ${job.id} has no GitHub issue reference`;
@@ -36,8 +68,12 @@ export async function notComplete(api: GitHubApi, job: Job): Promise<string | un
   const found = await api.getIssue(repo, number);
   if (isClosedAsComplete(found, closer, job)) return undefined;
   const open = await api.openClosingPullRequests(repo, number);
-  if (open.some((pr) => !pr.isDraft && !pr.conflicting && isOwnPullRequest(pr, job))) return undefined;
-  return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}`;
+  if (open.some((pr) => !pr.isDraft && !pr.conflicting && (isOwnPullRequest(pr, job) || isUpdatedBy(pr, job)))) return undefined;
+  for (const n of namedNumbers(found)) {
+    const pr = await pullRequestOrNone(api, repo, n);
+    if (pr && updatedDone(pr, job)) return undefined;
+  }
+  return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`;
 }
 
 /** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */

@@ -36,14 +36,15 @@ export function contextComments(comments: GitHubComment[], assignee: string | un
 }
 
 /**
- * What done means to the job (issues #171, #187, #579): always its pull request, ready for review. JobSource.notComplete
+ * What done means to the job (issues #171, #187, #579): always its pull request, ready for review — or, for an issue that
+ * asks to update an existing pull request, that one, updated and free of merge conflicts (issue #618). JobSource.notComplete
  * holds the job to the part GitHub can show (completion.ts); the rest — checks, push — is the job's to do. With yolo
  * mode on for the repo the job may merge too, once the checks pass; the merge is never needed for done.
  */
 export function doneLine(n: number, yoloMode: boolean): string {
-  const done = `done: once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #${n}" in its body in place of "Closes #${n}", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged`;
+  const done = `done: once the change is ready for review — the repo's own checks pass, the change is pushed, and a pull request this job opens with "Closes #${n}" in its body is open, not a draft, and has no merge conflicts. A local commit, an unpushed branch or a draft is not done; a job that ends done without the pull request ends failed. One exception: when the issue needs no code change, close it as completed and end done. When the job ships only part of the issue, open the pull request with "Part of #${n}" in its body in place of "Closes #${n}", list in it what is left, and end done: the run ends partly done, and the next part runs once that pull request is merged. When the issue asks to update an existing pull request (rebase it, bring it up to date, fix its conflicts), push to the branch of that pull request and open no new one: the job is done when that pull request has no merge conflicts with its base`;
   return yoloMode
-    ? `${done}. Yolo mode is on for this repo: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done`
+    ? `${done}. Yolo mode is on for this repo: once the pull request's checks pass, merge it to the default branch and verify the merged change where the product runs; the merge is allowed, not needed for done. The same applies to an existing pull request that the job updated: once it is merged, close this issue as completed`
     : `${done}. Do not merge it: a person reviews and merges it`;
 }
 

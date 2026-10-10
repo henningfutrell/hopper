@@ -60,7 +60,33 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}`);
+    expect(failed.error).toBe(`not complete: no pull request opened by this job, ready for review, closes ${issue.url}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`);
+  });
+
+  it('a job whose issue asks to update an existing pull request is finished when it pushed to it and it has no merge conflicts: no new pull request (issue #618)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    gh.createIssue({ repo: REPO });
+    const older = gh.openPullRequest(REPO, 1, { createdAt: '2026-10-01T09:00:00.000Z', conflicting: true });
+    const issue = gh.createIssue({ repo: REPO, body: `${body({ op: 'echo' })}\nBring ${older.url} up to date with dev.`, labels: ['hopper'] });
+    a.scripted.ships(() => gh.pushToPullRequest(older.url, new Date().toISOString()));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'finished');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
+  });
+
+  it('a job whose issue asks to update an existing pull request, and leaves it with merge conflicts, ends failed (issue #618)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    gh.createIssue({ repo: REPO });
+    const older = gh.openPullRequest(REPO, 1, { createdAt: '2026-10-01T09:00:00.000Z', conflicting: true });
+    const issue = gh.createIssue({ repo: REPO, body: `${body({ op: 'echo' })}\nRebase #${older.url.split('/').at(-1)} onto dev.`, labels: ['hopper'] });
+    a.scripted.ships(() => gh.pushToPullRequest(older.url, new Date().toISOString(), { conflicting: true }));
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    const failed = await a.waitForStatus(job.id, 'failed');
+    expect(failed.error).toMatch(/^not complete: no pull request opened by this job/);
   });
 
   it('a job that closes its issue as completed with a commit, no pull request, is finished (issue #350)', async () => {

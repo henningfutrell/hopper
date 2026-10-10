@@ -7,7 +7,7 @@
 // app-only methods exist: the bot login and the installed repos.
 
 import { GitHubApiError } from './api.ts';
-import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, OpenPullRequest, ReferencingPullRequest } from './api.ts';
+import type { ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 type Method = keyof GitHubApi;
 
@@ -23,9 +23,11 @@ export interface FakeGitHub extends GitHubApi {
    */
   closeIssue(repo: string, number: number, closedBy?: string, o?: { at?: string; reason?: 'completed' | 'not_planned' }): void;
   /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
-  openPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean; conflicting?: boolean }): OpenPullRequest;
+  openPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
   /** A pull request (opened at createdAt) that ships part of the issue: its body says "Part of #N"; the issue stays open. */
-  openPartPullRequest(repo: string, number: number, pr: { createdAt: string; isDraft?: boolean; conflicting?: boolean }): OpenPullRequest;
+  openPartPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
+  /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
+  pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Merge an open pull request (at `at`, default now): one that closes its issue closes it. */
   mergePullRequest(url: string, at?: string): void;
   /** Close an open pull request without a merge. */
@@ -46,6 +48,9 @@ export interface FakeGitHub extends GitHubApi {
   readonly calls: { method: Method; args: unknown[] }[];
 }
 
+/** A pull request to open: when, a draft or not, merge conflicts or not, and its head commit's time (default createdAt). */
+export interface PullRequestInput { createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string }
+
 export interface FakeAppIdentity {
   botLogin: string;
   installedRepos?: string[];
@@ -62,10 +67,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
-  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean })[] = [];
-  const openPull = (repo: string, n: number, o: { createdAt: string; isDraft?: boolean; conflicting?: boolean }, closes: boolean): OpenPullRequest => {
+  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string })[] = [];
+  const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean): OpenPullRequest => {
     find(repo, n);
-    const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false };
+    const pr = {
+      url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false,
+      headCommittedAt: o.headCommittedAt ?? o.createdAt,
+    };
     pulls.push({ ...pr, state: 'open', body: `${closes ? 'Closes' : 'Part of'} #${n}`, repo, issue: key(repo, n), closes });
     return { ...pr };
   };
@@ -163,13 +171,21 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       enter('openClosingPullRequests', [repo, n]);
       find(repo, n);
       return find(repo, n).state === 'open'
-        ? pulls.filter((p) => p.issue === key(repo, n) && p.closes && p.state === 'open').map(({ url, createdAt, isDraft, conflicting }) => ({ url, createdAt, isDraft, conflicting }))
+        ? pulls.filter((p) => p.issue === key(repo, n) && p.closes && p.state === 'open')
+          .map(({ url, createdAt, isDraft, conflicting, headCommittedAt }) => ({ url, createdAt, isDraft, conflicting, ...(headCommittedAt ? { headCommittedAt } : {}) }))
         : [];
     },
     async referencingPullRequests(repo, n) {
       enter('referencingPullRequests', [repo, n]);
       find(repo, n);
-      return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, ...p }) => ({ ...p }));
+      return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, mergedAt: _m, ...p }) => ({ ...p }));
+    },
+    async pullRequest(repo, n) {
+      enter('pullRequest', [repo, n]);
+      const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
+      if (!p) return undefined;
+      const { issue: _i, closes: _c, body: _b, repo: _r, ...pr }: ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string } = p;
+      return { ...pr } satisfies NumberedPullRequest;
     },
   };
 
@@ -217,18 +233,24 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
     mergePullRequest(url, at) {
       const p = pull(url);
-      p.state = 'merged';
-      if (!p.closes) return;
       const mergedAt = at ?? new Date().toISOString();
+      p.state = 'merged';
+      p.mergedAt = mergedAt;
+      if (!p.closes) return;
       Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });
       closers.set(p.issue, { url, createdAt: p.createdAt, mergedAt });
     },
     closePullRequest(url) { pull(url).state = 'closed'; },
+    pushToPullRequest(url, at, o = {}) {
+      const p = pull(url);
+      p.headCommittedAt = at;
+      p.conflicting = o.conflicting ?? false;
+    },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
       Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };
-      pulls.push({ url: pr.url, createdAt, isDraft: false, conflicting: false, state: 'merged', body: `Closes #${n}`, repo, issue: key(repo, n), closes: true });
+      pulls.push({ url: pr.url, createdAt, isDraft: false, conflicting: false, headCommittedAt: createdAt, mergedAt, state: 'merged', body: `Closes #${n}`, repo, issue: key(repo, n), closes: true });
       closers.set(key(repo, n), pr);
       return { ...pr };
     },

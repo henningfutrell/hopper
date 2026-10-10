@@ -37,6 +37,18 @@ export interface OpenPullRequest {
   isDraft: boolean;
   /** GitHub says it cannot merge as it stands (`mergeable: CONFLICTING`); not yet computed counts as not. */
   conflicting: boolean;
+  /**
+   * When its head commit was committed (issue #618): a push that rebases or updates it makes a new head commit. A job
+   * that updated it pushed at or after it began. Absent: GitHub did not say.
+   */
+  headCommittedAt?: string;
+}
+
+/** A pull request by its number (issue #618): one an issue names to update, in any state. */
+export interface NumberedPullRequest extends OpenPullRequest {
+  state: 'open' | 'closed' | 'merged';
+  /** When it was merged; absent unless merged. */
+  mergedAt?: string;
 }
 
 /** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */
@@ -89,6 +101,8 @@ export interface GitHubApi {
   openClosingPullRequests(repo: string, number: number): Promise<OpenPullRequest[]>;
   /** The pull requests that mention the issue, newest 100, any state (issue #579); none is []. */
   referencingPullRequests(repo: string, number: number): Promise<ReferencingPullRequest[]>;
+  /** Pull request `number` of `repo` (issue #618); undefined when the number is an issue or names nothing. */
+  pullRequest(repo: string, number: number): Promise<NumberedPullRequest | undefined>;
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one

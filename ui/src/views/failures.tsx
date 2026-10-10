@@ -1,14 +1,15 @@
 // Failures (issue #509): what the failure assessor made of the failed jobs. What is left first (issue #517): how
 // many failed jobs are not assessed yet and how many need a person. Then Needs a person (issue #516) —
-// every failed job automatic handling ended for, with its own count; each card says the next step for why it was
+// every failed job automatic handling ended for whose hand-off is open, with its own count; each card says the next step for why it was
 // handed off, and a person resolves it there with a note (issue #551): Continue, I fixed it, Done by hand, Won't do,
 // each saying what it leads to, or why not now. A resolved card says what was done, by whom, whether its issue was
 // told, and links the job that follows; an admin names its cause from it —; then open problems — one shared cause,
 // shown once with the jobs it hit and the ones held for it, with Resolve and Release held —; then the newest
-// assessed failures nothing settled (issue #529), each with its decision, its summary and Retry; then the profile and, for an admin, the
-// settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
+// assessed failures still open (issues #529, #618), each with its decision, its summary and Retry; then Ended — the
+// hand-offs closed and the failures that ended in the last day, history that waits on nobody (issue #618) —; then the
+// profile and, for an admin, the settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
 // updates live, read again on each assessor event.
-import { History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
+import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -193,13 +194,30 @@ function HandoffRow({ h }: { h: HandoffView }) {
   );
 }
 
+/** Needs a person: the open hand-offs only; a closed one is in Ended (issue #618). */
 function NeedsAPerson({ handoffs }: { handoffs: HandoffView[] }) {
-  const open = handoffs.filter((h) => h.status === 'open').length;
-  const count = open > 0 ? <span data-slot="handoff-count" className="num grid h-5 min-w-5 place-items-center rounded-full bg-bad px-1.5 text-[11px] font-semibold text-background">{open}</span> : '';
+  const open = handoffs.filter((h) => h.status === 'open');
+  const count = open.length > 0 ? <span data-slot="handoff-count" className="num grid h-5 min-w-5 place-items-center rounded-full bg-bad px-1.5 text-[11px] font-semibold text-background">{open.length}</span> : '';
   return (
     <div data-section="needs-a-person">
-      <Panel title="Needs a person" icon={UserRound} count={count} list bodyClassName="p-0" className={open ? 'border-bad/40' : ''}>
-        {handoffs.length ? <ul className="divide-y">{handoffs.map((h) => <HandoffRow key={h.id} h={h} />)}</ul> : <Empty>no job waits on a person</Empty>}
+      <Panel title="Needs a person" icon={UserRound} count={count} list bodyClassName="p-0" className={open.length ? 'border-bad/40' : ''}>
+        {open.length ? <ul className="divide-y">{open.map((h) => <HandoffRow key={h.id} h={h} />)}</ul> : <Empty>no job waits on a person</Empty>}
+      </Panel>
+    </div>
+  );
+}
+
+/** Ended (issue #618): the hand-offs closed and the failures that ended in the last day. History: nothing waits on them. */
+function Ended({ handoffs, failures }: { handoffs: HandoffView[]; failures: FailureRecordView[] }) {
+  const closed = handoffs.filter((h) => h.status === 'closed');
+  if (!closed.length && !failures.length) return null;
+  return (
+    <div data-section="ended">
+      <Panel title="Ended in the last day" icon={Archive} count={closed.length + failures.length} list bodyClassName="p-0">
+        <ul className="divide-y">
+          {closed.map((h) => <HandoffRow key={h.id} h={h} />)}
+          {failures.map((r) => <FailureRow key={r.id} r={r} />)}
+        </ul>
       </Panel>
     </div>
   );
@@ -248,9 +266,12 @@ export function Failures() {
       {open.length
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{open.map((p) => <ProblemCard key={p.id} p={p} />)}</div>
         : <Panel title="Open problems" icon={OctagonAlert}><Empty>no open problem</Empty></Panel>}
-      <Panel title="Recent failures" icon={History} count={failures.recent.length || ''} list bodyClassName="p-0">
-        {failures.recent.length ? <ul className="divide-y">{failures.recent.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure left to look at</Empty>}
-      </Panel>
+      <div data-section="open-failures">
+        <Panel title="Recent failures" icon={History} count={failures.recent.length || ''} list bodyClassName="p-0">
+          {failures.recent.length ? <ul className="divide-y">{failures.recent.map((r) => <FailureRow key={r.id} r={r} />)}</ul> : <Empty>no failure left to look at</Empty>}
+        </Panel>
+      </div>
+      <Ended handoffs={failures.handoffs} failures={failures.ended} />
       {resolved.length > 0 && <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{resolved.map((p) => <ProblemCard key={p.id} p={p} />)}</div>}
       <FailureProfilePanel view={failures} />
       {canAdmin && <FailureSettingsPanel settings={failures.settings} />}
