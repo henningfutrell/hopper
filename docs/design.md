@@ -8917,7 +8917,9 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   itself, so a night of unanswered questions does not keep panes and agents live on the machines. The engine checks
   on each tick (`src/engine/auto-park.ts`): a `waiting_answer` job whose question is open at the human stage, waited
   at least the timeout since `escalatedToHumanAt` (time at the escalation levels, Jev and the fixed answers does not
-  count), is parked on the Park button's path (`recordPark`, then `releaseParked`), with `parked: { auto: true, why }`
+  count), or since `waitRestartedAt` when it began to wait on a person again — its job re-queued from parked with
+  the question still open, or the item of its fork rejected (issue #692: re-queued, it waits the full timeout again,
+  not a second) —, is parked on the Park button's path (`recordPark`, then `releaseParked`), with `parked: { auto: true, why }`
   and `job.parked { auto: true, why }`; `why` reads "Parked automatically: the question waited 30 min." (the timeout
   that applied). The timeout is the user's setting `autoPark` (`GET /api/auto-park`, `POST /ui/api/auto-park`,
   least role `admin`, `auto_park.settings_changed`; Settings → Auto-park; `hopper auto-park [set]`): `minutes` for a
