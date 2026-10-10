@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { UserStore } from '../domain/ports.ts';
 import { highFirst, jobPriorityTag, pathsOf, thenChoices, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, REVIEW_STATUSES, reviewSectionView, type ReviewItem, type ReviewItemView } from '../domain/types.ts';
 import { reviewSettingsView } from '../review/index.ts';
+import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
@@ -32,7 +33,8 @@ export function reviewItemView(store: UserStore, p: ReviewItem): ReviewItemView 
   const versions = p.kind === 'proposal' ? p.versions.map((v) => (v.paths ? v : { ...v, paths: pathsOf(v) })) : p.versions;
   const followOns = (p.signOff?.selected ?? []).flatMap((x) => (x.jobId ? [{ pathId: x.id, jobId: x.jobId, jobStatus: store.jobs.get(x.jobId)?.status ?? 'missing' }] : []));
   return {
-    ...p, versions, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
+    // Its TL;DR (issue #569) only while it is shown: written from its newest version, the setting on.
+    ...withShownTldr(p.kind, p, tldrSettings(store)), versions, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), p.jobId) ?? { priority: 0, high: false }), ...(switched ? { then: thenChoices(p.kind) } : {}),
     ...(forkQuestion ? { forkQuestion } : {}), ...(followOns.length > 0 ? { followOns } : {}),
   };
 }

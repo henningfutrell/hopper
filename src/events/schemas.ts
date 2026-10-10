@@ -4,9 +4,10 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS, SNAPSHOT_REASONS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
+import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
@@ -27,7 +28,6 @@ const stage = z.string().min(1);
 // Additive on every question event (issue #485): the raising machine, the question's snapshot. Absent: not known.
 // Who acted on a problem, a hand-off or a failure (issue #623): the person, and the way (the UI or the operator CLI).
 const acting = { person: z.string(), via: z.enum(ACTION_VIAS) };
-const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const actingIfPerson = { person: acting.person.optional(), via: acting.via.optional() };
 const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
 
@@ -47,7 +47,8 @@ function reviewEvents(kind: ReviewKind) {
     // `paths` (issue #651): how many paths a proposal's version has.
     submitted: strict({ ...item, ...headline, missing: z.array(z.enum(t.parts.map((p) => p.id) as [string, ...string[]])), paths: z.number().int().min(0).optional() }),
     escalated: strict({ ...item, target: stage, reason: z.string(), ...headline }),
-    escalated_to_human: strict({ ...item, reason: z.string() }),
+    // `tldr` (issue #569, additive): what a notification leads with — the TL;DR, else the agent's summary.
+    escalated_to_human: strict({ ...item, reason: z.string(), tldr: z.string().optional() }),
     // `paths` (issue #651, additive): the paths a level added to a proposal, and those it found not viable, by id.
     reviewed: strict({ ...item, stage, verdict: z.enum(REVIEW_VERDICTS), notes: z.string(), error: z.string().optional(), paths: strict({ added: z.array(z.string()), notViable: z.array(z.string()) }).optional() }),
     // `decision`: what sent it back — a level's or a person's request for changes, a person's dig deeper or steer (additive).
@@ -153,13 +154,15 @@ export const EVENT_SCHEMAS = {
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
     // Additive (issue #376): the question is a dialog the agent denies by itself at this time.
     lapsesAt: z.string().optional(),
+    // Additive (issue #569), at the human stage: what a notification leads with — the TL;DR, else the agent's summary.
+    tldr: z.string().optional(),
     raisedBy, ...priority,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(), raisedBy, ...priority,
+    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority,
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
@@ -299,6 +302,7 @@ export const EVENT_SCHEMAS = {
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
   'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }),
+  ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
   // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository.
@@ -352,11 +356,7 @@ export const EVENT_SCHEMAS = {
   'artifact.share_revoked': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), by: z.string() }),
   'artifact.removed': strict({ artifact: z.string(), reason: z.enum(['removed', 'retention']), by: z.string().optional() }),
   'artifact.settings_changed': strict({ from: artifactSettings, to: artifactSettings, by: z.string() }),
-  // Item snapshots (issue #662): hashes and who edited it, never the text. On the job's timeline.
-  'item.snapshot_recorded': strict({ key: z.string(), hash: sha256, reason: z.enum(SNAPSHOT_REASONS) }),
-  'item.changed_since_snapshot': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, editors: z.array(z.string()), newComments: z.number().int().min(0) }),
-  'item.original_kept': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, ...acting }),
-  'item.new_text_accepted': strict({ key: z.string(), fromHash: sha256, toHash: sha256, editors: z.array(z.string()), ...acting }),
+  ...ITEM_EVENT_SCHEMAS,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

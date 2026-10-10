@@ -32,6 +32,7 @@ import { createLogins, type Logins } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
+import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
@@ -127,6 +128,8 @@ export interface UserRuntime {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
   typesafeKey: TypesafeKey;
+  /** The TL;DR of every long card (issue #569): its sweep. */
+  tldrs: Tldrs;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   /** The user's connected GitHub account (issue #214). */
@@ -282,6 +285,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const logins = createLogins({ store, clock });
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
+  // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
+  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) });
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
@@ -348,7 +353,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
   const history = createHistoryRecorders({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
@@ -357,7 +362,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -373,7 +378,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
-      history.start(); minorDecisions.start();
+      history.start(); minorDecisions.start(); tldrs.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
       jobStream.start();
@@ -382,7 +387,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       stopped ??= (async () => {
         jobStream.stop();
         await failures.stop();
-        minorDecisions.stop();
+        minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
         history.stop();
         connectedAccounts.stop();

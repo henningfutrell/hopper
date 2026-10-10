@@ -36,6 +36,9 @@
     },
     "reason": {
       "type": "string"
+    },
+    "tldr": {
+      "type": "string"
     }
   },
   "required": [

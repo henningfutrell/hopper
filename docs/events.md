@@ -175,7 +175,7 @@ Version 1 (`docs/schemas/job.finished.v1.json`). A job ended successfully. `part
 
 ## `job.failed`
 
-Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/job.failed.v1.json`). A job ended with an error. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `tldr` (issue #569): for a long question, what a notification leads with — its TL;DR when written, else the agent's own summary; absent for a short one or with the TL;DR off.
 
 | field | type | required |
 |---|---|---|
@@ -404,6 +404,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 | `notifyCount` | integer | no |
 | `renotify` | boolean | no |
 | `lapsesAt` | string | no |
+| `tldr` | string | no |
 | `raisedBy` | object | no |
 | `priority` | number | no |
 | `high` | boolean | no |
@@ -436,6 +437,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `answerUrl` | string | yes |
 | `notifyCount` | integer | yes |
 | `lapsesAt` | string | no |
+| `tldr` | string | no |
 | `raisedBy` | object | no |
 | `priority` | number | no |
 | `high` | boolean | no |
@@ -1514,7 +1516,7 @@ Version 2 (`docs/schemas/proposal.escalated.v2.json`). A proposal entered a stag
 
 ## `proposal.escalated_to_human`
 
-Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version.
+Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reached a person (issue #537): every reviewer level passed it up, there are none, or they asked for changes more often than the settings allow. Once per version. `tldr` (issue #569): its TL;DR part, the agent's headline (issue #651), or for a proposal written before paths, its summary.
 
 | field | type | required |
 |---|---|---|
@@ -1524,6 +1526,7 @@ Version 1 (`docs/schemas/proposal.escalated_to_human.v1.json`). A proposal reach
 | `priority` | number | no |
 | `high` | boolean | no |
 | `reason` | string | yes |
+| `tldr` | string | no |
 
 ```json
 {
@@ -1783,7 +1786,7 @@ Version 1 (`docs/schemas/research.escalated.v1.json`). A research report entered
 
 ## `research.escalated_to_human`
 
-Version 1 (`docs/schemas/research.escalated_to_human.v1.json`). A research report reached a person (issue #543): every reviewer level passed it up, there are none (the default), or they asked for changes more often than the settings allow. Once per round.
+Version 1 (`docs/schemas/research.escalated_to_human.v1.json`). A research report reached a person (issue #543): every reviewer level passed it up, there are none (the default), or they asked for changes more often than the settings allow. Once per round. `tldr` (issue #569): for a long one, its TL;DR when written, else the agent's own summary.
 
 | field | type | required |
 |---|---|---|
@@ -1793,6 +1796,7 @@ Version 1 (`docs/schemas/research.escalated_to_human.v1.json`). A research repor
 | `priority` | number | no |
 | `high` | boolean | no |
 | `reason` | string | yes |
+| `tldr` | string | no |
 
 ```json
 {
@@ -3018,6 +3022,48 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
     "linkHoursMax": 168
   },
   "by": "github:octocat"
+}
+```
+
+## `tldr.written`
+
+Version 1 (`docs/schemas/tldr.written.v1.json`). A cheap model (Claude Haiku) wrote the TL;DR of a long card (issue #569): `kind` (`question`, `research`, `handoff`; a proposal has its own TL;DR part, issue #651) and its `id`, the `text` — one or two plain sentences, no Markdown or HTML — and the `model` that wrote it. Written once per text: again only when the card's text changes (a research report's next round). The card leads with it; a notification sent before it shows the agent's own summary.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `question` \| `research` \| `handoff` | yes |
+| `id` | string | yes |
+| `text` | string | yes |
+| `model` | string | no |
+
+```json
+{
+  "kind": "question",
+  "id": "q1",
+  "text": "The job asks which branch to rebase onto: dev or main.",
+  "model": "claude-haiku-4-5"
+}
+```
+
+## `tldr.settings_changed`
+
+Version 1 (`docs/schemas/tldr.settings_changed.v1.json`). An admin turned the TL;DR on or off (issue #569): `enabled`, `from` and `to`. Off, no TL;DR is written or shown, and notifications carry none.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": true
+  },
+  "to": {
+    "enabled": false
+  },
+  "by": "admin"
 }
 ```
 

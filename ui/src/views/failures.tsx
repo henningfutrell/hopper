@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { JobTitle } from '@/components/job';
-import { Markdown } from '@/components/markdown';
+import { Markdown, TldrLine } from '@/components/markdown';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -179,6 +179,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
         </span>
       </div>
       <div data-slot="what-happened" className="text-sm font-medium">{h.card.whatHappened}</div>
+      {h.tldr && <TldrLine text={h.tldr.text} />}
       {open && canAct && <Resolve key={h.card.link ?? ''} h={h} />}
       {open && !canAct && (
         <div data-slot="recommended" className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{recommended.label}: </span>{h.card.why}</div>

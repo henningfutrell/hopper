@@ -254,6 +254,8 @@ export interface NotifierEvents {
   answerUrl(questionId: string): string;
   /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
   highPriority?(): number;
+  /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
+  tldr?(q: Question): string | undefined;
 }
 
 /**

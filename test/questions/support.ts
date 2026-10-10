@@ -57,7 +57,7 @@ export function createMemoryStore(): MemoryStore {
     },
     // The priority lane settings never saved: the default high-priority threshold (issue #535). Auto-answer (issue #632):
     // as a test sets it, never saved by default.
-    settings: { getPriorityLanes: () => undefined, getAutoAnswer: () => autoAnswer, setAutoAnswer: (s: AutoAnswerSettings) => { autoAnswer = s; } },
+    settings: { getPriorityLanes: () => undefined, getTldr: () => undefined, getAutoAnswer: () => autoAnswer, setAutoAnswer: (s: AutoAnswerSettings) => { autoAnswer = s; } },
     tx<T>(fn: () => T): T {
       if (depth > 0) return fn();
       const snap = { q: structuredClone(questions), e: structuredClone(events) };

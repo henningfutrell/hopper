@@ -1,6 +1,7 @@
 // The question's types (design.md "Question pipeline"), apart from types.ts for its size; re-exported there.
 import type { Confidence, QuestionCorrection } from './auto-answer.ts';
 import type { AttemptPhaseFields, QuestionPhaseFields } from './phase.ts';
+import type { Tldr } from './tldr.ts';
 import type { JobId, LaneId, MachineId } from './types.ts';
 
 /** open: being worked on (tier = the stage holding it). answered/expired/cancelled are terminal. */
@@ -84,6 +85,8 @@ export interface Question extends QuestionPhaseFields {
   lapsesAt?: string;
   /** When the owner first saw it in the UI (POST /ui/api/questions/:id/seen). Unseen open questions at the human stage are the nav badge. */
   seenAt?: string;
+  /** Its TL;DR (issue #569), once a long question has one. */
+  tldr?: Tldr;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,5 +1,6 @@
 // Agent text on a card, as Markdown (issue #569): rendered and sanitized by `@/lib/markdown`, styled by `.md` in
-// index.css. A long text shows its summary first, the rest behind Show all, so a card stays compact.
+// index.css. A long text shows its TL;DR — plain text a cheap model wrote, never rendered as HTML — or else its
+// summary first, the rest behind Show all, so a card stays compact.
 import { ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { inlineMarkdownHtml, markdownHtml } from '@/lib/markdown';
@@ -29,16 +30,39 @@ export function FoldToggle({ open, onToggle, lines }: { open: boolean; onToggle:
   );
 }
 
-/** An agent's text on a card: whole when short; else its summary, and the whole text behind Show all. */
-export function CardText({ text, className }: { text: string; className?: string }) {
+/** A card's TL;DR (issue #569): plain text, shown as text — HTML in it is never markup. */
+export function TldrLine({ text }: { text: string }) {
+  return (
+    <p data-slot="tldr" className="text-sm">
+      <span className="mr-1.5 rounded bg-muted px-1 py-0.5 align-[1px] text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">TL;DR</span>
+      {text}
+    </p>
+  );
+}
+
+/**
+ * An agent's text on a card: whole when short; else its TL;DR when it has one, or its summary, and the whole text
+ * behind Show all.
+ */
+export function CardText({ text, className, tldr }: { text: string; className?: string; tldr?: string | undefined }) {
   const [open, setOpen] = useState(false);
   const long = isLong(text);
   const summary = useMemo(() => (long ? summaryOf(text) : ''), [long, text]);
+  const toggle = <FoldToggle open={open} onToggle={() => setOpen((o) => !o)} lines={text.trim().split('\n').length} />;
+  if (long && tldr) {
+    return (
+      <div data-slot="card-text" data-open={open ? '' : undefined} className="space-y-1.5">
+        <TldrLine text={tldr} />
+        {open && <Markdown text={text} className={className} />}
+        {toggle}
+      </div>
+    );
+  }
   if (!long || !summary) return <Markdown text={text} className={className} />;
   return (
     <div data-slot="card-text" data-open={open ? '' : undefined} className="space-y-1.5">
       <Markdown text={open ? text : summary} className={className} />
-      <FoldToggle open={open} onToggle={() => setOpen((o) => !o)} lines={text.trim().split('\n').length} />
+      {toggle}
     </div>
   );
 }

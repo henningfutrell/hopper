@@ -10,6 +10,7 @@ import type { UserStore } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
 import { highFirst, jobPriorityTag, REVIEW_SECTIONS, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
 import { forksOf, running } from '../questions/stale.ts';
+import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
@@ -39,7 +40,8 @@ export function questionView(t: { store: UserStore; engine: Pick<Engine, 'phaseS
   const { store } = t;
   const forks = questionForks(store, q);
   return {
-    ...q, ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId) ?? { priority: 0, high: false }),
+    // Its TL;DR (issue #569) only while it is shown: written from the text as it is, the setting on.
+    ...withShownTldr('question', q, tldrSettings(store)), ...(jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId) ?? { priority: 0, high: false }),
     ...(q.status === 'open' ? { shifts: t.engine.phaseShifts.offered(q) } : {}),
     ...(forks.length > 0 ? { forks } : {}),
   };

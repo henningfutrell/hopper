@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A long question, research report or failed-job card now starts with a TL;DR: one or two plain sentences that say what is asked and what you decide. Claude Haiku writes it once. Show all opens the agent's full text. Notifications start with it too. You can turn it off in Settings, TL;DR. Without it, a card shows the agent's own summary.
 - Run again, and every automatic rerun, now runs the issue text the job first ran with. When someone edits the issue after that, the new job waits with a card that shows what changed, who changed it and any new comments. Choose Rerun the original, Accept the new text (only the owner can) or Cancel. A waiting job whose issue changes waits the same way before it starts.
 - Your saved secrets no longer depend on a storage volume. The hopper now uses one master key, which you keep in a password manager and give it at each start. A new hopper makes the key and shows it to you once: save it then. If the key is missing, the hopper starts with secrets switched off and deletes nothing.
 - The top bar is easier to use on a phone. Your name and role, the theme, logging in another device and Sign out are now in one menu behind the button with your initials. Sign out is at the bottom of that menu and needs a second tap, so a stray tap does not sign you out.
