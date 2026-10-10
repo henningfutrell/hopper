@@ -3,6 +3,7 @@
 
 import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
+import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
@@ -420,6 +421,8 @@ export interface UserStore {
   vault: VaultRepository;
   /** The job stream's events and watches (issue #613). */
   jobStream: JobStreamRepository;
+  /** The artifacts jobs make for a person to see, and their shares (issue #624). */
+  artifacts: ArtifactRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "size": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "issue": {
+      "type": "string"
+    },
+    "masked": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "artifact",
+    "title",
+    "name",
+    "type",
+    "size",
+    "sha256"
+  ],
+  "additionalProperties": false
+}

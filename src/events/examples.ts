@@ -153,5 +153,13 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.credential_declined': { request: 'c9d0e1f2-0000-4000-8000-000000000583', skill: 'example-api', template: 'web', reason: 'deploy by hand this time', by: 'github:octocat', jobs: ['f3b1c2d4-0000-4000-8000-000000000001'] },
   'skill.listed': { requestId: 'r4', machine: 'hopper-sandbox-kube', template: 'kube' },
   'skill.loaded': { requestId: 'r5', machine: 'hopper-sandbox-kube', template: 'kube', skill: 'kube-diagnostics', asset: 'cluster/prod', decision: 'd1' },
-  'skill.refused': { requestId: 'r6', machine: 'desk', skill: 'example-api', reason: 'the hopper has no skill example-api. It has: github, kube-diagnostics, aws-diagnostics. For another service, say what credential it takes: sh "$HOPPER_SKILL" example-api --credential "<what it takes>". Else find another way.' },
+  'skill.refused': { requestId: 'r6', machine: 'desk', skill: 'example-api', reason: 'the hopper has no skill example-api. It has: github, kube-diagnostics, aws-diagnostics, artifacts. For another service, say what credential it takes: sh "$HOPPER_SKILL" example-api --credential "<what it takes>". Else find another way.' },
+  'artifact.created': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', title: 'Queue wait by hour', name: 'chart.html', type: 'text/html', size: 18432, sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', issue: 'https://github.com/octo-org/hello/issues/7' },
+  'artifact.shared': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', share: 's1', with: 'link', expiresAt: '2026-10-11T12:00:00.000Z', by: 'github:octocat' },
+  'artifact.share_revoked': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', share: 's1', with: 'link', by: 'github:octocat' },
+  'artifact.removed': { artifact: 'a1b2c3d4-0000-4000-8000-000000000624', reason: 'retention' },
+  'artifact.settings_changed': {
+    from: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 168 },
+    to: { maxBytes: 10485760, userBytes: 524288000, retentionDays: 30, publicLinks: false, linkHours: 24, linkHoursMax: 168 }, by: 'github:octocat',
+  },
 };

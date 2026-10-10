@@ -1,5 +1,6 @@
 // How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
-// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, and ticking times.
+// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its artifacts
+// (issue #624), and ticking times.
 import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
@@ -7,6 +8,7 @@ import { afterDone, goalOf, issueRef } from '@/model/job';
 import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
 import { cn } from '@/lib/utils';
+import { ArtifactChips } from './artifacts';
 import { HighTag, useIsHigh } from './priority';
 
 const GITHUB = 'https://github.com/';
@@ -47,6 +49,7 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
         )}
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}
+        <ArtifactChips jobId={job.id} />
       </div>
     </div>
   );

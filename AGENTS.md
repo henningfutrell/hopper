@@ -46,7 +46,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
   request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
-  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. Every other mutation is the UI's
+  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A running
+  job's artifacts (issue #624, `docs/design.md` "Artifacts"): `/job/artifacts`, with the job's proxy token, puts, shares, revokes
+  and removes that user's artifacts, each an event on the job's timeline; it changes no job, question, webhook or setting. Their
+  content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
+  (a public link), under a sandbox policy; they change nothing. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and

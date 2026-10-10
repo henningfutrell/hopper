@@ -28,6 +28,7 @@ import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerAutoAnswerRoutes } from './auto-answer.ts';
 import { registerAccessRoutes } from './access.ts';
+import type { ArtifactEdge } from '../artifacts.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
@@ -51,6 +52,8 @@ export interface UiRouteOptions {
   instanceAdmin: InstanceAdmin;
   /** Access (issue #559): the instance's. */
   access: Access;
+  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
+  artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
   sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
 }
@@ -296,7 +299,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
-  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant });
+  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts });
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
 

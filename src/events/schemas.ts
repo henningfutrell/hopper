@@ -4,12 +4,16 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, SHARE_KINDS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
+const artifactSettings = z.strictObject({
+  maxBytes: z.number().int().min(1), userBytes: z.number().int().min(1), retentionDays: z.number().int().min(1),
+  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1),
+});
 const decisionPoint = z.enum(DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
 const gateActor = z.enum(['user', 'pre-sort']);
@@ -319,6 +323,15 @@ export const EVENT_SCHEMAS = {
   'skill.listed': strict(skillAsked),
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
+  // Artifacts (issue #624): what a job made for a person to see, its shares, and its end. On the job's timeline.
+  'artifact.created': strict({
+    artifact: z.string(), title: z.string(), name: z.string(), type: z.string(), size: z.number().int().min(1), sha256: z.string(),
+    issue: z.string().optional(), masked: z.number().int().min(1).optional(),
+  }),
+  'artifact.shared': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), user: z.string().optional(), expiresAt: z.iso.datetime().optional(), by: z.string() }),
+  'artifact.share_revoked': strict({ artifact: z.string(), share: z.string(), with: z.enum(SHARE_KINDS), by: z.string() }),
+  'artifact.removed': strict({ artifact: z.string(), reason: z.enum(['removed', 'retention']), by: z.string().optional() }),
+  'artifact.settings_changed': strict({ from: artifactSettings, to: artifactSettings, by: z.string() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

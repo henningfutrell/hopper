@@ -30,6 +30,15 @@ export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTu
     ...boxes.map(({ machine, template }) => ({ subject: machineObject({ userId, machine }), relation: 'instance_of', object: templateObject(template) })),
   ]);
 }
+/** An artifact (issue #624), a public link to one, and the tuple each live share is: its user or link is a viewer. */
+export const artifactObject = (a: { userId: string; id: string }): string => `artifact:${a.userId}/${a.id}`;
+export const linkObject = (l: { userId: string; shareId: string }): string => `link:${l.userId}/${l.shareId}`;
+export function shareTuples(shares: readonly { ownerId: string; artifactId: string; shareId: string; userId?: string }[]): RelationshipTuple[] {
+  return shares.map((s) => ({
+    subject: s.userId !== undefined ? userObject(s.userId) : linkObject({ userId: s.ownerId, shareId: s.shareId }),
+    relation: 'viewer', object: artifactObject({ userId: s.ownerId, id: s.artifactId }),
+  }));
+}
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 
 /** `read/cluster/x`: the operation, then the asset. */

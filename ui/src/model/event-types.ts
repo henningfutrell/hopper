@@ -36,6 +36,7 @@ const ALL: Record<EventType, true> = {
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
+  'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

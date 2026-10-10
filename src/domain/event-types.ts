@@ -27,6 +27,7 @@ export const EVENT_TYPES = [
   'vault.credential_asked', 'vault.credential_given', 'vault.credential_declined',
   'yolo_mode.changed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.finish_briefed',
   'skill.listed', 'skill.loaded', 'skill.refused',
+  'artifact.created', 'artifact.shared', 'artifact.share_revoked', 'artifact.removed', 'artifact.settings_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -62,4 +63,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'vault.credential_asked': 1, 'vault.credential_given': 1, 'vault.credential_declined': 1,
   'yolo_mode.changed': 1, 'job.pull_request_merged': 1, 'job.pull_request_closed': 1, 'job.finish_briefed': 1,
   'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
+  'artifact.created': 1, 'artifact.shared': 1, 'artifact.share_revoked': 1, 'artifact.removed': 1, 'artifact.settings_changed': 1,
 };

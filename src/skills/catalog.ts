@@ -5,6 +5,7 @@
 // credential says the kinds it takes and how a person gets one: when the box's template gives none, the vault asks a
 // person for it (issue #583, design.md "The dynamic vault"). Pure.
 import type { AssetKind, Operation } from '../domain/access.ts';
+import { ARTIFACT_HELP } from '../artifacts/script.ts';
 import { PROXY_HELP } from '../github-proxy/script.ts';
 
 /** How the link's credential reaches the tool: the form of the vault's helper (`$HOPPER_SECRET <form> NAME`). */
@@ -79,6 +80,12 @@ export const SKILLS: readonly Skill[] = [
       kinds: [{ id: 'access-key', title: 'An access key pair, read-only, as JSON: {"AccessKeyId": "…", "SecretAccessKey": "…"}' }],
       setup: 'In the AWS console: IAM → Users → a user for the hopper with only the ReadOnlyAccess policy → Security credentials → Create access key. Give the pair as JSON.',
     },
+  },
+  {
+    // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
+    name: 'artifacts',
+    line: 'put a file (a chart, an HTML page, a report, an image, a CSV) on the hopper for a person to see, and share it',
+    text: ARTIFACT_HELP,
   },
 ];
 

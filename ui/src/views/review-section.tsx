@@ -8,7 +8,9 @@
 // notice. Shown, the ones waiting on a person are marked seen; the nav badge counts them until they are decided, seen
 // or not. Below: the earlier ones, and for an admin the section's settings. Phase shifts (issue #548): an item says
 // where it came from — a fork of another job's question, or a phase its job's question switched it to —, and Accept
-// on one of a switched phase asks what the job does next, exactly the choices the server takes (`then`).
+// on one of a switched phase asks what the job does next, exactly the choices the server takes (`then`). An artifact the
+// text links to by its URL is embedded below it (issue #624).
+import { ArtifactEmbeds } from '@/components/artifacts';
 import { Check, ChevronRight, FileCheck, Lock, RotateCcw, Telescope, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -79,6 +81,8 @@ function Version({ v, type }: { v: ReviewVersion; type: ReviewSectionView }) {
       {v.missing.length > 0 && (
         <div data-slot="missing" className="text-xs text-warn">Left out: {v.missing.map((m) => partLabel(type, m)).join(', ')}</div>
       )}
+      {/* An artifact the text links to (issue #624) shows here. */}
+      <ArtifactEmbeds text={v.text} />
     </div>
   );
 }

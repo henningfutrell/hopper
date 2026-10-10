@@ -18,6 +18,7 @@ import type {
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, Confidence,
   CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
+  Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -38,6 +39,7 @@ export type {
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, Confidence,
   CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
+  Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
 };
 
 export interface Queue {
