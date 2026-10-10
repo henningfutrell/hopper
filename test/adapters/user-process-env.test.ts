@@ -32,6 +32,14 @@ describe('scrubbedEnv (issue #652)', () => {
   });
 });
 
+describe('the master key (issue #659)', () => {
+  it('reaches no process, admin\'s included, in any of its variables', () => {
+    const env = { PATH: '/bin', HOPPER_MASTER_KEY: 'k', HOPPER_MASTER_KEY_PREVIOUS: 'p', HOPPER_TOKEN_KEY: 'o', HOPPER_TOKEN_KEY_FILE: '/f', HOPPER_PORT: '4790' };
+    expect(userProcessEnv({}, env)).toEqual({ PATH: '/bin', HOPPER_PORT: '4790' });
+    expect(scrubbedEnv(env)).toEqual({ PATH: '/bin', HOPPER_PORT: '4790' });
+  });
+});
+
 describe('a process a user added later starts', () => {
   it("does not see a variable of the daemon's environment; admin's still does", async () => {
     process.env[SECRET] = 'admin-only';
