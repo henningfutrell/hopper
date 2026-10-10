@@ -8,7 +8,7 @@
 import type { FollowUp, Job } from '../../domain/types.ts';
 import { SourceError } from '../../domain/ports.ts';
 import type { GitHubApi } from './api.ts';
-import { isClosedAsComplete, isPartOf } from './completion.ts';
+import { isClosedAsCompleted, isPartOf } from './completion.ts';
 import { LABEL_DONE, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { ensureLabels, type ReportContext } from './report.ts';
 
@@ -17,10 +17,10 @@ interface Followed { pullRequest?: string; follow?: string; part?: boolean }
 type PullState = 'open' | 'merged' | 'closed';
 
 /** Where the pull request is now; undefined: it cannot be told yet (the report named none, and nothing merged). */
-async function stateOf(api: GitHubApi, job: Job, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
+async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
   if (!s.part) {
     const closer = await api.closingPullRequest(repo, number);
-    if (isClosedAsComplete(await api.getIssue(repo, number), closer, job)) return { state: 'merged', url: closer?.url ?? s.pullRequest ?? '' };
+    if (isClosedAsCompleted(await api.getIssue(repo, number), closer)) return { state: 'merged', url: closer?.url ?? s.pullRequest ?? '' };
   }
   if (!s.pullRequest) return undefined;
   const mention = (await api.referencingPullRequests(repo, number)).find((pr) => pr.url === s.pullRequest);
@@ -34,7 +34,7 @@ export async function followPullRequest(ctx: ReportContext, job: Job): Promise<F
   const { repo, number } = job.source ?? {};
   if (s.follow !== 'open' || !repo || !number) return undefined;
   try {
-    const now = await stateOf(ctx.api, job, repo, number, s);
+    const now = await stateOf(ctx.api, repo, number, s);
     if (!now || now.state === 'open') return undefined;
     const part = s.part === true;
     await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE]);

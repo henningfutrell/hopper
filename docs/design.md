@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place (`done-at-source.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -1794,32 +1794,32 @@ Comments the hopper posted before this rule start with a hidden marker line (`<!
 kind=… -->`). They remain on issues, so the context filter still drops any comment carrying the
 `<!-- hopper v1 ` prefix (and, in app mode, any by the bot).
 
-**Done is a pull request** (issues #171, #187, #579). A job that ends done (`HOPPER_DONE`, or any
+**Done is a pull request** (issues #171, #187, #579, #637). A job that ends done (`HOPPER_DONE`, or any
 executor's `finished` outcome) is not recorded finished until its source has said its work is **complete**
-(`JobSource.notComplete(job)`, asked by the engine's runner before `recordOutcome`). For the GitHub sources
-(`src/sources/github/completion.ts`) complete is one rule, for every issue: the job's own pull request — opened at
-or after the job's `createdAt` — is open, not a draft, has no merge conflicts (GraphQL `mergeable` is not
-`CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), and its merge will close the issue
-(`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch); or the issue is
-**closed as complete** — its last close event's closer a merged pull request opened at or after the job's
-`createdAt` (a merge closes an issue only on the default branch, `dev`), or, no pull request closing it, closed as
-completed (`state_reason`) at or after the job's `createdAt`, by a commit or with no code (issue #350). **A merge
-is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). Before it, a
-source's `completion` option (default `merge`) and the labels `hopper:complete-at-merge` /
-`hopper:complete-at-pr` held a job to the merge, and a job whose pull request was open and waiting for review ended
-failed; tenant migration 30 removes the option from the stored config, and the labels mean nothing now.
+(`JobSource.notComplete(job)`, asked by the engine's runner before `recordOutcome`). **What GitHub shows decides, not
+what the job did** (issue #637): before it the rule asked "did this job make the pull request?", and a run again that
+pushed to an older pull request, one whose older pull request merged before the check, or a maintenance job with nothing
+left to push all ended failed. For the GitHub sources (`src/sources/github/completion.ts`) complete is one of:
 
-**A job that updates an existing pull request** (issue #618) — rebase it, bring it up to date with its base, fix its
-conflicts — opens no pull request of its own, so the rule above alone would fail it. It is complete too when a pull
-request it **updated** — its head commit made at or after the job's `createdAt` (a rebase or an update makes a new
-head commit; GraphQL `commits(last: 1)` `committedDate`, `headCommittedAt` on the port) — is open and has no merge
-conflicts, or was merged at or after the job's `createdAt` (yolo mode). Which pull requests count: one the issue's
-title or body names in its own repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an
-issue or names nothing counts for nothing), and an older one that closes the issue, open and not a draft — the one a
-run again goes on with (the job rules' "existing pull request" rule). A pull request the issue names keeps its draft
-state: the job updates it, it does not take it over. The report follows an older closing one the job updated as its
-own; one the issue names is not followed, since its merge closes another issue. The job closes its issue as completed
-once the updated pull request is merged.
+1. The issue is **closed as completed** — by any pull request, commit or person, at any time (`isClosedAsCompleted`: its
+   `state_reason` is completed, or its last close event's closer is a merged pull request and it is not closed as not
+   planned). Closed as not planned is not done.
+2. A pull request **of the issue's repo that closes or references it** — `closedByPullRequestsReferences` (a closing
+   keyword, to the default branch), or a cross-reference (`Refs #N`, any mention) — is open, not a draft and has no merge
+   conflicts (GraphQL `mergeable` is not `CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), or is
+   merged at or after the job's `createdAt`. Whoever opened it, whenever. One that says `Part of #N` ships a part, not the
+   whole (partly done, below). A merge before the job, on an issue still open, is work the job was asked to redo: not done.
+3. The issue **asks to update the pull requests it names** (`asksToUpdate`: its title, or a line of its body, starts with
+   bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
+   repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
+   merged, at any time, or open with no merge conflicts. The job need not have pushed: one already current has nothing to push.
+
+**A merge is never needed:** a pull request is done; a merge is only allowed (owner decision, issue #579). A miss names
+what was looked at (issue #637): `not complete: the issue <url> is open, and no pull request in <repo> that closes or
+references it is ready for review or merged since the job began: #12 (open, draft), #13 (open, merge conflicts)` — plus,
+for an update, the named pull requests and their state. **A miss is asked again** once after `HOPPER_DONE_RECHECK_MS`
+(default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. Not checked:
+a pull request that names the issue only in its branch name.
 
 **A pull request left in conflict or as a draft** (issue #626) is not done, but the next step is fixed, so no person
 is asked. When a done job is neither complete nor partly done, the runner asks its source for the job's own open pull
@@ -1852,10 +1852,9 @@ no new pull request, once it has no merge conflicts with its base (issue #618).
 The prompt's `done:` line carries the parts the hopper cannot see — the repo's own checks, verifying where the
 product runs — so a job is told everything done means, and the gate holds it to the part GitHub can show. Anything
 short of it — a local commit, a branch, a draft, a pull request with merge conflicts, the issue closed as not
-planned, closed before the job, or closed by an older pull request — fails the job with `not complete: no pull
-request opened by this job, ready for review, closes <issue url>`; an error asking GitHub (transient or not) fails
-it with `could not confirm the work is complete: <error>`. Fail closed: a failed job's issue stays open with
-`hopper:failed`, never `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job
+planned — fails the job with `not complete: <what was looked at>` after the re-check; an error asking GitHub
+(transient or not) fails it with `could not confirm the work is complete: <error>`. Fail closed: a failed job's issue
+stays open with `hopper:failed`, never `hopper:done`, and removing that label re-runs it. A source without `notComplete`, and a job
 of no source, take every done job as complete. Before issue #171, a job that said it was done was closed as
 completed with nothing on the default branch.
 
@@ -3030,6 +3029,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
+| `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
@@ -8442,7 +8442,9 @@ a cause a person named for that signature first, then the built-in ones by their
 
 0. A job that **timed out** (the built-in cause `timed-out`) is decided by its **liveness** alone (issue #630,
    "A timed-out job" below): never grouped into a problem, nor joined to one.
-1. The open **problem** of the signature whose scope covers the job's machine takes it: held, or redirected.
+1. The open **problem** of the signature whose scope covers the job's machine takes it: held, or redirected. Not a
+   `job` cause's failure (issue #637): a done-check miss is its own job's, even when an older build grouped its
+   signature into a problem.
 2. A known `shared` cause opens a problem, scoped by the cause to the job's machine (`machine`), its executor on
    that machine (`executor`: an expired login), or every machine.
 3. The signature failed on `groupThreshold` items (default 3, counting this one; a retry chain is one item)
@@ -8479,14 +8481,22 @@ it runs again at once, and the decider keeps it off that machine. Any other is h
 release. While a problem is open the decider (`DecisionInputs.problems`, `problemHold` and `eligible` in
 `assign.ts`) keeps every new job it covers off its machine, and holds one with no other machine — pinned there,
 or no other online machine runs its executor — with the reason `held by problem: <title>`. A resuming job returns
-to its pane. With automatic hold off, problems are still grouped and shown, but hold no job.
+to its pane. With automatic hold off, problems are still grouped and shown, but hold no job. A **general** (Recurring)
+problem holds only the jobs grouped in it, never every job of its scope (issue #637): with no known cause, nothing says
+another job would meet it — problem `ba0f00fc` held every queued job of one machine for ten hours over done-check misses.
 
 **Running again** is the sync loop's Run again (issues #313, #354), `by: "assessor"` on `job.rerun`: the item is
 given back by its source and a new job queued, `rerunOf` the failed one. Each run again the assessor decides is
 **pending** on the failure record (`pending`, `pendingAt`) until made, so a retry due later, a redirect or a
 release outlives a restart; the sweep (every tick) makes the due ones. A refusal that may pass — the end not yet
 reported to its source, the source not running, the source down — is tried again later; any other ends it
-`not_retried`, its reason kept. The attempt count is the chain of earlier jobs of the item a retry ran again.
+`not_retried`, its reason kept. **Finished work is never run again** (issue #637): before each run again — a retry, a
+redirect, a release, a person's Retry — the source is asked whether the job's work is done there
+(`FailuresOptions.doneAtSource`, the source's `notComplete`: its issue closed as completed, a pull request that closes
+it ready or merged). Done: the job ends finished (`finishShipped`, its source told again: `hopper:done` or
+`hopper:pr-ready`, its pull request followed), the record `resolved` with the note `done at its source: …`, and nothing
+runs again — Run again would reopen the closed issue (`takeBack`). A person's Retry is then refused, saying so. A source
+that cannot tell postpones the run again 30 s. The attempt count is the chain of earlier jobs of the item a retry ran again.
 
 **Release.** Resolving a problem (a person; or its **check**: a `machine offline` or `disk full` problem whose
 check saw the cause on its machine — offline, disk low — and then sees it gone) sets its held jobs to run again,

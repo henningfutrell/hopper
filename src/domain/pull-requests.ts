@@ -90,5 +90,10 @@ export async function overAtSource(source: { notComplete?: NotComplete; partlyDo
   return item === undefined || item === 'open' ? undefined : `its issue is ${item === 'gone' ? 'gone' : 'closed'}`;
 }
 
+/** Whether a failed job's work is done at its source (issue #637), asked before any run again: false for a source that does not judge. */
+export async function doneAtSource(source: { notComplete?: NotComplete } | undefined, job: Job): Promise<boolean> {
+  return source?.notComplete ? (await source.notComplete(job)) === undefined : false;
+}
+
 /** A source state that names an ended job's pull request still to follow (issue #579). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
