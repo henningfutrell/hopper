@@ -12,6 +12,8 @@
 //   Scenario: the new pair is stored the moment GitHub answers, before anything else runs
 //   Scenario: bad_refresh_token after another process rotated recovers with the newer pair
 //   Scenario: a real revocation ends the connection, told once
+//   Scenario: a 401 long before expiry, then the renewal refused as the app's, ends it at once: reconnect needed (#597)
+//   Scenario: the app refused while renewing a token that is due ends nothing; it is tried again
 //   Scenario: a 5xx or a network error ends nothing; it is tried again with backoff
 //   Scenario: a web flow grant without the client secret is not sent, and ends nothing
 //   Scenario: the tokens are sealed at rest; a fresh process with the same key carries on
@@ -211,6 +213,45 @@ describe('the renewer (#441)', () => {
     expect(service.ended('github')).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     await service.renewDue();
     expect(told).toHaveLength(1);
+  });
+
+  it('a 401 long before expiry, then the renewal refused as the app\'s, ends it at once: reconnect needed, told once (#597)', async () => {
+    const github = await forge();
+    const clock = fixedClock(T0);
+    const s = store(temp.url(), clock);
+    const first = connected(github, s, clock);
+    clock.set(new Date(Date.parse(T0) + 1 * H).toISOString()); // seven hours left: not due
+    const { service, told } = process_(github, s, clock);
+    // GitHub ended the user's authorization of the app: the token is refused, and so is its renewal.
+    github.tokens.delete(first.accessToken);
+    github.refreshRefusedWith = 'incorrect_client_credentials';
+
+    await expect(service.renew('github', first.accessToken)).rejects.toThrow(/Connect GitHub again/);
+    expect(refreshes(github)).toHaveLength(1);
+    expect(told).toEqual([expect.stringMatching(/^octo-user: reconnect needed: GitHub refused the token before it was due for renewal, then refused its renewal \(incorrect_client_credentials\)/)]);
+    expect((await service.status())[0]).toMatchObject({ state: 'expired', error: expect.stringMatching(/^reconnect needed/) });
+
+    // Not retried: no call, no backoff, until it is connected again.
+    await service.renewDue();
+    await expect(service.token('github')).rejects.toThrow(/Connect GitHub again/);
+    await expect(service.renew('github', first.accessToken)).rejects.toThrow(/Connect GitHub again/);
+    expect(refreshes(github)).toHaveLength(1);
+    expect(told).toHaveLength(1);
+  });
+
+  it('the app refused while renewing a token that is due ends nothing: shown on the account, tried again', async () => {
+    const github = await forge();
+    const clock = fixedClock(T0);
+    const s = store(temp.url(), clock);
+    const first = connected(github, s, clock);
+    clock.set(new Date(Date.parse(T0) + 7.5 * H).toISOString());
+    const { service, told } = process_(github, s, clock);
+    github.refreshRefusedWith = 'incorrect_client_credentials';
+
+    await service.renewDue();
+    expect(told).toEqual([]);
+    expect((await service.status())[0]).toMatchObject({ state: 'connected', renewal: expect.stringMatching(/incorrect_client_credentials/) });
+    expect(await service.token('github')).toBe(first.accessToken);
   });
 
   it('a 5xx or a network error ends nothing: shown on the account, tried again with backoff, then renewed', async () => {

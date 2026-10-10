@@ -12,8 +12,12 @@
 // `refreshDown` makes the refresh grant answer that status instead (a 5xx, a rate limit).
 // Each device or web flow grant is one token of the user at the app, renewed within itself by the refresh
 // grant. With `tokenLimit`, GitHub keeps at most that many per user (ten, issue #514): one more revokes the
-// one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
-// GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
+// one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication) is
+// GitHub's leak report: as GitHub does (issue #597), it ends the whole authorization of the user at the app —
+// every token of theirs, the newest too — and a refresh then answers `incorrect_client_credentials`; it is
+// recorded in `revoked`, so a test shows the hopper never calls it. `DELETE /api/v3/applications/{client_id}/token`
+// (basic authentication with the client id and secret) deletes the one access token it is given (`deleted`).
+// `refreshRefusedWith` makes the refresh grant answer that OAuth error.
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -58,12 +62,14 @@ export interface FakeForge {
   installationsDown?: boolean;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
-  /** The credentials revoke requests named (issue #514), in order. */
+  /** The credentials GitHub's leak report (`POST /credentials/revoke`) was sent, in order: the hopper sends none (issue #597). */
   revoked: string[][];
-  /** Called as a revoke request arrives, before GitHub answers it. */
-  onRevoke?: (credentials: string[]) => void;
-  /** GitHub: the revoke endpoint answers this status, revoking nothing. */
-  revokeDown?: number;
+  /** The access tokens deleted through `DELETE /applications/{client_id}/token` (issue #597), in order. */
+  deleted: string[];
+  /** GitHub: the token delete answers this status, deleting nothing. */
+  deleteDown?: number;
+  /** GitHub: the refresh grant answers this OAuth error, as GitHub does once the user's authorization of the app ended (issue #597). */
+  refreshRefusedWith?: string;
   /** Mint a pair as the device flow grants it (issue #441), for tests that start with an account already connected. */
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
@@ -85,7 +91,7 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][] }): Promise<FakeForge> {
+async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; deleted: string[] }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
   let base = '';
   let handle: Handler = () => ({ status: 500 });
@@ -106,7 +112,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
   handle = handler(base);
   const pending = () => extra.devices.filter((d) => d.state === 'pending').at(-1);
   return {
-    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked,
+    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked, deleted: extra.deleted,
     approve(login) { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'approved'; d.login = login; },
     deny() { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'denied'; },
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
@@ -136,6 +142,9 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
   /** Web flow codes GitHub handed back to the browser: code → who, and what it was asked with. */
   const codes = new Map<string, { login: string; redirectUri: string; challenge: string }>();
   const revoked: string[][] = [];
+  const deleted: string[] = [];
+  /** Users whose authorization of the app ended (a leak report named one of their tokens): a refresh answers `incorrect_client_credentials`. */
+  const ended = new Set<string>();
   /** GitHub's tokens of the app per user (issue #514): each grant's current pair, and when it was last used (0: never). */
   const grants: { login: string; access: string; refresh?: string; used: number }[] = [];
   let tick = 0;
@@ -203,6 +212,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       }
       if (r.method === 'POST' && r.path === '/login/oauth/access_token' && r.body.grant_type === 'refresh_token') {
         if (forge?.refreshDown) return { status: forge.refreshDown, body: { message: 'Service Unavailable' } };
+        if (forge?.refreshRefusedWith) return { status: 200, body: { error: forge.refreshRefusedWith } };
+        if (ended.has(String(r.body.refresh_token).replace(/^ghr_(.*)_\d+$/, '$1'))) return { status: 200, body: { error: 'incorrect_client_credentials' } };
         const g = refreshTokens.get(String(r.body.refresh_token));
         if (r.body.client_id !== o.clientId) return { status: 200, body: { error: 'incorrect_client_credentials' } };
         if (g?.web && (!o.clientSecret || r.body.client_secret !== o.clientSecret)) return { status: 200, body: { error: 'incorrect_client_credentials' } };
@@ -223,12 +234,27 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (r.method === 'POST' && r.path === '/api/v3/credentials/revoke') {
         if (r.auth) return { status: 403, body: { message: 'Must not be authenticated' } };
         const credentials = (r.body.credentials as string[] | undefined) ?? [];
-        forge?.onRevoke?.(credentials);
-        if (forge?.revokeDown) return { status: forge.revokeDown, body: { message: 'Server Error' } };
         revoked.push(credentials);
-        for (const g of grants.filter((x) => credentials.includes(x.access) || (x.refresh !== undefined && credentials.includes(x.refresh)))) drop(g);
-        for (const c of credentials) { tokens.delete(c); refreshTokens.delete(c); }
+        // The whole authorization of every user named ends: their tokens of the app, the newest too.
+        const whose = new Set(grants.filter((x) => credentials.includes(x.access) || (x.refresh !== undefined && credentials.includes(x.refresh))).map((x) => x.login));
+        for (const login of whose) {
+          ended.add(login);
+          for (const g of grants.filter((x) => x.login === login)) drop(g);
+          for (const [t, l] of tokens) if (l === login) tokens.delete(t);
+        }
         return { status: 202, body: {} };
+      }
+      if (r.method === 'DELETE' && r.path === `/api/v3/applications/${o.clientId}/token`) {
+        const basic = /^basic\s+(\S+)$/i.exec(r.auth)?.[1];
+        if (!o.clientSecret || basic !== Buffer.from(`${o.clientId}:${o.clientSecret}`).toString('base64')) return { status: 401, body: { message: 'Bad credentials' } };
+        if (forge?.deleteDown) return { status: forge.deleteDown, body: { message: 'Server Error' } };
+        const token = String(r.body.access_token ?? '');
+        if (!tokens.has(token)) return { status: 404, body: { message: 'Not Found' } };
+        deleted.push(token);
+        tokens.delete(token);
+        const g = grants.find((x) => x.access === token);
+        if (g) grants.splice(grants.indexOf(g), 1);
+        return { status: 204 };
       }
       if (!r.path.startsWith('/api/v3/')) return { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
@@ -314,7 +340,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       return { status: 404, body: { message: 'Not Found' } };
     };
   }, {
-    issues, tokens, refreshTokens, devices, revoked,
+    issues, tokens, refreshTokens, devices, revoked, deleted,
     mint: (login, web = false) => { const g = grant(login, web, ''); return { accessToken: g.access_token, refreshToken: g.refresh_token! }; },
   }).then((f) => (forge = f));
 }

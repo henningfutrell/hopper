@@ -218,11 +218,12 @@ describe('the API door: a GitHub token', () => {
     const unknown = await read(app, '/api/connected-accounts', bearer('gho_revoked'));
     expect(unknown.status).toBe(401);
 
-    // The user disconnected GitHub: the connection's token is revoked at GitHub (issue #514), and another
-    // token GitHub still grants the same account no longer reads as them.
+    // The user disconnected GitHub: the hopper forgets the connection. With no client secret nothing is sent
+    // to GitHub (issue #597): the token lives there until it expires, but it no longer reads as them here, nor
+    // does another token GitHub still grants the same account.
     const other = grant(github, 'octo-user');
     expect((await post(app, '/ui/api/connected-accounts', { action: 'disconnect', provider: 'github' }, { 'x-hopper-session': octo.session })).status).toBe(200);
-    expect(github.tokens.has(octo.token)).toBe(false);
+    expect(github.tokens.has(octo.token)).toBe(true);
     expect((await read(app, '/api/connected-accounts', bearer(octo.token))).status).toBe(401);
     const gone = await read(app, '/api/connected-accounts', bearer(other));
     expect(gone.status).toBe(401);

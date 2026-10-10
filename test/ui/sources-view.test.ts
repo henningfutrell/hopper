@@ -31,7 +31,7 @@ describe('Sources view: GitHub', () => {
     expect(document.body.textContent).not.toContain('Log in to GitHub');
   });
 
-  it('a sign-in that expired says so, names the account, and asks to sign in again (#359)', async () => {
+  it('a sign-in that expired says reconnect needed, names the account, and asks to sign in again (#359, #597)', async () => {
     const paused = "GitHub's sign-in expired: Sources → Connect GitHub again";
     await boot({
       '/api/sources': { sources: [source('github-account', 'github-account', 'disabled', { mode: 'account', paused, expired: true })] },
@@ -39,12 +39,12 @@ describe('Sources view: GitHub', () => {
     });
     const panel = () => document.querySelector('[data-connected-account="github"]');
     await vi.waitFor(() => expect(panel()?.querySelector('[data-expired]')).not.toBeNull());
-    expect(panel()!.textContent).toContain('The sign-in of octo-user expired');
-    expect(document.body.textContent).toContain('sign-in expired');
+    expect(panel()!.textContent).toContain('Reconnect needed: the GitHub connection of octo-user ended');
+    expect(document.body.textContent).toContain('reconnect needed'); // the badge
     expect(document.querySelector('[data-github-summary]')?.textContent).toBe(`No issue is read through your GitHub connection: ${paused}.`);
     // The header says so on every screen, and leads to Sources (issue #441).
     const header = document.querySelector('header [data-connection-ended]') as HTMLAnchorElement | null;
-    expect(header?.textContent).toBe('GitHub sign-in expired: connect again');
+    expect(header?.textContent).toBe('GitHub: reconnect needed');
     expect(header?.getAttribute('href')).toBe('#sources');
     const button = [...panel()!.querySelectorAll('button')].find((b) => b.textContent === 'Connect GitHub again')!;
     await act(async () => { button.click(); });

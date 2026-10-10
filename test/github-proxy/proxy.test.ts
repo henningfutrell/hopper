@@ -127,3 +127,24 @@ describe('the broker when the hopper cannot act', () => {
     expect(String(r.body.error)).toMatch(/^refused: not a request the hopper takes \(body: .*\)\. sh "\$HOPPER_GH" help$/);
   });
 });
+
+describe('the broker masks GitHub tokens (#597)', () => {
+  const key = mintLinkKey().privateKey;
+  const job = { id: 'job-1', status: 'running', laneId: 'm/lane-1', source: { source: 's', kind: 'k', key: 'x', repo: 'octo/tools' } } as Job;
+  const user: ProxyUser = { id: 'u1', holds: (p) => holdsProxyToken(key, p), job: (id) => (id === job.id ? job : undefined), machineOf: () => 'm', record: () => {} };
+  const bearer = `Bearer ${proxyToken(key, 'u1', 'job-1')}`;
+  const token = `gho_${'A'.repeat(36)}`;
+  const pat = `github_pat_${'B'.repeat(40)}`;
+
+  it('in the title and body a job asks it to post, before GitHub sees them', async () => {
+    const sent: ProxyRequest[] = [];
+    const proxy = createGitHubProxy({
+      user: () => user, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {},
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ perform: async (r: ProxyRequest) => { sent.push(r); return { number: 1, url: 'u' }; } }) } }),
+    });
+    expect((await proxy.handle(bearer, { op: 'pr.create', repo: 'octo/tools', head: 'x', title: `fix ${token}`, body: `used ${token} and ${pat}` })).status).toBe(200);
+    expect((await proxy.handle(bearer, { op: 'issue.comment', repo: 'octo/tools', number: 3, body: `token ${token}` })).status).toBe(200);
+    expect(JSON.stringify(sent)).not.toMatch(/gho_|github_pat_/);
+    expect(sent[0]).toMatchObject({ title: 'fix [masked GitHub token]', body: 'used [masked GitHub token] and [masked GitHub token]' });
+  });
+});

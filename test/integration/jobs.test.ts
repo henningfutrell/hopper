@@ -68,6 +68,21 @@ describe('jobs pulled from a source', () => {
     expect((await t.api('GET', '/api/jobs?status=bogus')).status).toBe(400);
   });
 
+  it('masks GitHub tokens in a job\'s progress, result and error before they are kept (issue #597)', async () => {
+    const token = `gho_${'A'.repeat(36)}`;
+    const slept = await t.pull({ op: 'sleep', ms: 100, message: `pushing with ${token}` });
+    const echoed = await t.pull({ op: 'echo', message: `done with ${token}` });
+    const failed = await t.pull({ op: 'fail', message: `push refused for github_pat_${'B'.repeat(40)}` });
+    await t.waitForStatus(slept.id, 'finished');
+    expect((await t.waitForStatus(echoed.id, 'finished')).result).toEqual({ echo: 'done with [masked GitHub token]' });
+    expect((await t.waitForStatus(failed.id, 'failed')).error).toBe('push refused for [masked GitHub token]');
+    const events = (await t.events()).filter((e) => [slept.id, echoed.id, failed.id].includes(e.jobId ?? ''));
+    expect(events.some((e) => e.type === 'job.progressed' && e.data.message === 'pushing with [masked GitHub token]')).toBe(true);
+    const job = (await t.api<Job>('GET', `/api/jobs/${slept.id}`)).body;
+    const kept = JSON.stringify([events.filter((e) => ['job.progressed', 'job.finished', 'job.failed'].includes(e.type)), job.progressMessage]);
+    expect(kept).not.toMatch(/gho_A|github_pat_B/);
+  });
+
   it('a sleep job runs to finished with the full event sequence, and the source hears claimed then finished', async () => {
     const job = await t.pull({ op: 'sleep', ms: 200 });
     const done = await t.waitForStatus(job.id, 'finished');
