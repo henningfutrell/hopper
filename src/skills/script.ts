@@ -15,13 +15,43 @@ export const SKILL_SCRIPT = `#!/bin/sh
 # hopper-skill — what the hopper can set up for this box (issue #582). Written by the hopper at each job start.
 #   sh "$HOPPER_SKILL"               the catalog: one line per skill
 #   sh "$HOPPER_SKILL" NAME [ASSET]  load one skill (ASSET as the catalog says, e.g. cluster/prod)
+#     --why TEXT         what the job needs it for: the user reads it when the hopper asks them for a credential
+#     --credential TEXT  for a service the hopper has no skill for: the credential it takes (issue #583)
+#     --wait             while the hopper waits for the user to give the credential (202), ask again every few seconds
+# Exit 0: the answer; 1: a no, with why; 2: a bad call; 3: the user is asked, and --wait was not given.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-case $# in
-  0) ;;
-  1) set -- --data-urlencode "name=$1" ;;
-  2) set -- --data-urlencode "name=$1" --data-urlencode "asset=$2" ;;
-  *) echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET]]' >&2; exit 2 ;;
-esac
-printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS --fail-with-body -H @- -X POST "$@" "$HOPPER_URL${SKILL_PATH}" || exit 1
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--credential TEXT] [--wait]]' >&2; exit 2; }
+wait=; opt=; pos=0
+for a in "$@"; do
+  shift
+  if [ -n "$opt" ]; then set -- "$@" --data-urlencode "$opt=$a"; opt=; continue; fi
+  case $a in
+    --wait) wait=1 ;;
+    --why) opt=why ;;
+    --credential) opt=credential ;;
+    -*) usage ;;
+    *) case $pos in
+         0) set -- "$@" --data-urlencode "name=$a" ;;
+         1) set -- "$@" --data-urlencode "asset=$a" ;;
+         *) usage ;;
+       esac
+       pos=$((pos + 1)) ;;
+  esac
+done
+[ -z "$opt" ] || usage
+told=
+while :; do
+  out=$(printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- -X POST "$@" -w '\\n%{http_code}' "$HOPPER_URL${SKILL_PATH}") || exit 1
+  code=\${out##*
+}
+  body=\${out%
+*}
+  case $code in
+    200) printf '%s' "$body"; exit 0 ;;
+    202) if [ -z "$wait" ]; then printf '%s' "$body"; exit 3; fi
+         [ -n "$told" ] || printf '%s' "$body" >&2; told=1; sleep "\${HOPPER_SKILL_POLL:-5}" ;;
+    *) printf '%s' "$body"; exit 1 ;;
+  esac
+done
 `;

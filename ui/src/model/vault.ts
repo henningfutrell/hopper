@@ -1,7 +1,7 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, OperationProfile, TemplateRadius, TemplateView, VaultSecret } from './wire.ts';
+import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -80,3 +80,22 @@ export function approvalText(t: TemplateView): string {
 
 /** A template's rating in a few words (issue #584): the level, then the reasons that set it. */
 export const radiusText = (r: TemplateRadius): string => `${r.level} radius: ${r.reasons.join('; ')}`;
+
+/** Who waits on a credential request (issue #583): each job, its box, and what it said it needs the credential for. */
+export function requestWaiting(r: CredentialRequest): string[] {
+  return r.asked.map((a) => `job ${a.job.slice(0, 8)} on ${a.machine}${a.why ? `: ${a.why}` : ''}`);
+}
+
+/** The kinds a person may give: the hopper's suggestions first, then something else in their own words. */
+export function kindChoices(r: CredentialRequest): { id: string; title: string }[] {
+  return [...r.kinds, { id: 'other', title: 'Something else — say what it is' }];
+}
+
+/** Why a person's answer cannot be sent yet, or undefined. */
+export function giveProblem(g: { name: string; kind: string; note: string; value: string }, r: CredentialRequest): string | undefined {
+  const name = nameProblem(g.name.trim());
+  if (name) return name;
+  if (g.kind === 'other' && !g.note.trim()) return 'say what you give, so the job knows how to use it';
+  if (!g.value && !r.existing.includes(g.name.trim())) return 'enter the value';
+  return undefined;
+}

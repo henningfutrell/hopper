@@ -125,7 +125,8 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(lines).toEqual(expect.arrayContaining([
       expect.stringMatching(/^github: /), expect.stringMatching(/^kube-diagnostics: /), expect.stringMatching(/^aws-diagnostics: /),
     ]));
-    expect(lines.at(-1)).toMatch(/sh "\$HOPPER_SKILL" NAME/);
+    expect(lines.at(-2)).toMatch(/sh "\$HOPPER_SKILL" NAME/);
+    expect(lines.at(-1)).toMatch(/^A credential for any other service: sh "\$HOPPER_SKILL" SERVICE --credential/);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(160);
     expect(catalog.stdout.length).toBeLessThan(800);
     expect(eventsOf(a, 'skill.listed')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ machine: 'desk' }) })]);
@@ -135,10 +136,10 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(github.stdout).toContain(PROXY_HELP);
     expect(eventsOf(a, 'skill.loaded')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'github', machine: 'desk' }) })]);
 
-    const render = await skill(a, job, ['render']);
-    expect(render.code).toBe(1);
-    expect(render.stdout).toMatch(/^no: the hopper has no skill render\. It has: github, kube-diagnostics, aws-diagnostics\. Find another way\./);
-    expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'render', reason: expect.stringContaining('no skill render') }) })]);
+    const other = await skill(a, job, ['example-api']);
+    expect(other.code).toBe(1);
+    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
+    expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'example-api', reason: expect.stringContaining('no skill example-api') }) })]);
   });
 
   it('a box gets a clear no with Access\'s reason; once Access allows it, the skill and its link for that box, never a value', async () => {

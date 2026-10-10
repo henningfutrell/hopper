@@ -5,6 +5,7 @@ import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import { suggestionIn } from '../domain/phase.ts';
 import type { Job, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
+import { maskGitHubTokens } from '../secrets/mask.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { recordReport } from './reviews.ts';
 
@@ -16,8 +17,10 @@ const TERMINAL: Recorded = { kind: 'terminal' };
 const TAIL_CHARS = 2000;
 
 function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string): Recorded {
-  c.store.jobs.update(job.id, { status: 'failed', error, finishedAt: at, pendingAnswer: undefined, ...(tail ? { errorTail: tail.slice(-TAIL_CHARS) } : {}) });
-  c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error, ...priorityTagOf(c, job.id) } });
+  const maskedError = maskGitHubTokens(error);
+  const maskedTail = tail ? maskGitHubTokens(tail.slice(-TAIL_CHARS)) : undefined;
+  c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, ...(maskedTail ? { errorTail: maskedTail } : {}) });
+  c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error: maskedError, ...priorityTagOf(c, job.id) } });
   return TERMINAL;
 }
 
@@ -27,9 +30,10 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
   // Where it was asked (issue #485): a snapshot, so it stays right after the job moves or the machine changes.
   const raised = raisedBy({ laneId, resumeOn: job.resumeOn, pin: job.spec.machineId, machines: new Map(machine ? [[machine.id, machine.label]] : []) });
   // A phase shift the job suggests in its question (issue #548): offered to the person, never made by itself.
-  const suggestion = suggestionIn(question.text);
+  const maskedText = maskGitHubTokens(question.text);
+  const suggestion = suggestionIn(maskedText);
   const q = store.questions.create({
-    jobId: job.id, text: question.text, recentOutput: question.recentOutput, detectedBy: question.detectedBy, ...(suggestion ? { suggestion } : {}),
+    jobId: job.id, text: maskedText, recentOutput: question.recentOutput ? maskGitHubTokens(question.recentOutput) : question.recentOutput, detectedBy: question.detectedBy, ...(suggestion ? { suggestion } : {}),
     tier: c.questions.firstStage(), ...(question.lapsesAt ? { lapsesAt: question.lapsesAt } : {}), ...(raised ? { raisedBy: raised } : {}),
   });
   store.jobs.update(job.id, {
@@ -69,8 +73,9 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       store.events.append({ type: 'job.cancelled', jobId: job.id, laneId, data: { reason: cancelReason } });
     } else if (outcome.kind === 'finished') {
       const part = outcome.partlyDone ? { partlyDone: outcome.partlyDone } : {};
-      store.jobs.update(job.id, { status: 'finished', result: outcome.result, finishedAt: at, pendingAnswer: undefined, ...part });
-      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { result: outcome.result, ...part } });
+      const maskedResult = typeof outcome.result === 'string' ? maskGitHubTokens(outcome.result) : outcome.result;
+      store.jobs.update(job.id, { status: 'finished', result: maskedResult, finishedAt: at, pendingAnswer: undefined, ...part });
+      store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { ...(maskedResult !== undefined && maskedResult !== null ? { result: maskedResult } : {}), ...part } });
     } else if (outcome.kind === 'failed') {
       fail(c, job, laneId, outcome.error, at, outcome.tail);
     } else if (outcome.kind === 'report') {

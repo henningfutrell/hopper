@@ -1,24 +1,31 @@
-// Revoking a GitHub grant the hopper replaces or drops (issue #514, design.md "Keeping the connection").
-// GitHub keeps at most ten tokens per user and app; making an eleventh revokes an older one — never used
-// first, else the least recently used — whoever holds it. Each connect and each sign-in with GitHub is a new
-// grant, so a grant left behind at a reconnect or a disconnect counts toward the ten until it expires,
-// months later. GitHub's credential revocation (`POST /credentials/revoke`, through @octokit/request as
-// everything else here) takes the access token and the refresh token, needs no authentication and no client
-// secret — the hopper's app ships none — and GitHub tells the account's owner by email that they were
-// revoked. Best effort: a refusal or a timeout throws, the caller logs it and goes on.
+// Deleting a GitHub grant the hopper replaces or drops (issue #597, issue #514, design.md "Keeping the
+// connection"). GitHub keeps at most ten tokens per user and app; making an eleventh revokes an older one —
+// never used first, else the least recently used — whoever holds it. Each connect and each sign-in with
+// GitHub is a new grant, so a grant left behind at a reconnect or a disconnect counts toward the ten until
+// it expires, months later. The hopper deletes the old access token (`DELETE
+// /applications/{client_id}/token`, through @octokit/request as everything else here), and only when the
+// runtime gives the app's client secret — needed for the endpoint — and never revokes the refresh token: that
+// is not routine cleanup, it is for a confirmed leak. The delete calls GitHub's email a security warning, so
+// it is not sent during a sign-in, connect or replace: the token goes away only when its holder does not use
+// it. Best effort: a refusal or a timeout throws, the caller logs it and goes on.
 import { request as octokitRequest } from '@octokit/request';
 import type { HopperApp } from './hopper-app.ts';
 
-/** Revokes these tokens at GitHub; throws when GitHub did not accept the request. */
-export type Revocation = (credentials: string[]) => Promise<void>;
+/** Deletes the old access token at GitHub when the runtime gives the client secret; throws when GitHub did not accept the request. */
+export type TokenDeletion = (accessToken: string) => Promise<void>;
 
-/** How long a revocation may hold up a connect, a sign-in or a disconnect. */
-export const REVOKE_TIMEOUT_MS = 10_000;
+/** How long a deletion may hold up a connect, a sign-in or a disconnect. */
+export const DELETE_TIMEOUT_MS = 10_000;
 
-export function revocation(app: HopperApp): Revocation {
+export function tokenDeletion(app: HopperApp, clientSecret: string | undefined): TokenDeletion {
   const request = octokitRequest.defaults({ baseUrl: app.apiUrl, headers: { 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' } });
-  return async (credentials) => {
-    if (credentials.length === 0) return;
-    await request('POST /credentials/revoke', { credentials, request: { signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS) } });
+  return async (accessToken) => {
+    if (!clientSecret) return;
+    await request('DELETE /applications/{client_id}/token', {
+      client_id: app.clientId,
+      access_token: accessToken,
+      headers: { authorization: `basic ${Buffer.from(`${app.clientId}:${clientSecret}`).toString('base64')}` },
+      request: { signal: AbortSignal.timeout(DELETE_TIMEOUT_MS) },
+    });
   };
 }

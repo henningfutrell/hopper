@@ -3,7 +3,7 @@
 import type { Vault, VaultService } from './service.ts';
 
 /** The vault in the hopper's own process. */
-export const localVault = (v: VaultService): Vault => ({
+export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decline'> => ({
   view: () => v.view(),
   status: async () => v.view().problem,
   set: async (s, by) => v.set(s, by),

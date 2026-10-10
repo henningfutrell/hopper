@@ -6,6 +6,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
 import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
+import { maskGitHubTokens } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { placeCredentials } from './credentials.ts';
@@ -87,9 +88,10 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const emit = (p: { fraction: number; message?: string }): void => {
       lastAt = c.clock.now().getTime();
       pending = undefined;
+      const masked = p.message !== undefined ? maskGitHubTokens(p.message) : undefined;
       c.store.tx(() => {
-        c.store.jobs.update(jobId, { progress: p.fraction, progressMessage: p.message });
-        c.store.events.append({ type: 'job.progressed', jobId, laneId, data: { progress: p.fraction, message: p.message } });
+        c.store.jobs.update(jobId, { progress: p.fraction, progressMessage: masked });
+        c.store.events.append({ type: 'job.progressed', jobId, laneId, data: { progress: p.fraction, message: masked } });
       });
     };
     return {

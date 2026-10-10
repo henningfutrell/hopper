@@ -288,6 +288,10 @@ export const EVENT_SCHEMAS = {
     mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }),
     machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(),
   }),
+  // The dynamic vault (issue #583): a credential request asked, given or declined. Never a value.
+  'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),
+  'vault.credential_given': strict({ request: z.string(), skill: z.string(), name: z.string(), kind: z.string(), template: z.string(), by: z.string(), approved: z.boolean(), jobs: z.array(z.string()) }),
+  'vault.credential_declined': strict({ request: z.string(), skill: z.string(), template: z.string(), reason: z.string(), by: z.string(), jobs: z.array(z.string()) }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
   'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),

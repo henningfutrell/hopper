@@ -25,7 +25,7 @@ export function remoteVault(o: {
   local: VaultService;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
-}): Vault {
+}): Omit<Vault, 'need' | 'give' | 'decline'> {
   /** The vault container's answer, or why there is none. */
   async function call<T>(op: VaultOp, body: Record<string, unknown>): Promise<{ result: T } | { problem: string }> {
     const key = o.secret(VAULT_KEY_VARIABLE);

@@ -1,7 +1,7 @@
 // Issue #558: the Vault settings page's pure model. A secret is only its metadata: the page says what it is, who set
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
-import { approvalText, explicitApprovals, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -94,5 +94,27 @@ describe('a minting credential on the page (issue #580)', () => {
     expect(mintsOf('aws-account/123456789012')).toEqual({ kind: 'aws-account', name: '123456789012' });
     expect(mintsOf('namespace/lab/web')).toMatch(/cluster\/NAME or aws-account\/ID/);
     expect(mintsOf('cluster/')).toMatch(/cluster\/NAME or aws-account\/ID/);
+  });
+});
+
+describe('a credential request on the page (issue #583)', () => {
+  const request = {
+    id: 'r1', skill: 'example-api', title: 'example-api', known: false, template: 'web', secret: 'example-api', setup: 'Ask whoever runs example-api for a token',
+    kinds: [{ id: 'asked', title: 'an API token' }, { id: 'config', title: 'a config file' }],
+    asked: [{ job: 'f3b1c2d4-0000-4000-8000-000000000001', machine: 'hopper-sandbox-web', why: 'deploy the web service', at: '2026-10-09T10:00:00Z' }],
+    existing: [], createdAt: '2026-10-09T10:00:00Z',
+  };
+
+  it('says who waits — the job, its box and why — and offers the suggested kinds first, then something else', () => {
+    expect(requestWaiting(request)).toEqual(['job f3b1c2d4 on hopper-sandbox-web: deploy the web service']);
+    expect(kindChoices(request).map((k) => k.id)).toEqual(['asked', 'config', 'other']);
+  });
+
+  it('something else needs the user\'s words; a value is needed unless a secret the vault holds is given', () => {
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: 'x' }, request)).toBeUndefined();
+    expect(giveProblem({ name: 'example-api', kind: 'other', note: '', value: 'x' }, request)).toMatch(/say what/);
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, request)).toMatch(/value/);
+    expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, { ...request, existing: ['example-api'] })).toBeUndefined();
+    expect(giveProblem({ name: '1x', kind: 'asked', note: '', value: 'x' }, request)).toMatch(/letter/);
   });
 });

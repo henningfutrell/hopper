@@ -21,7 +21,7 @@ import { createConnectedAccounts, type ConnectedAccountsOptions } from '../../sr
 import type { DeviceFlow, Grant } from '../../src/connected-accounts/device-flow.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { renewal } from '../../src/connected-accounts/renewal.ts';
-import { revocation } from '../../src/connected-accounts/revocation.ts';
+import { tokenDeletion } from '../../src/connected-accounts/revocation.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { waitFor } from '../support/wait.ts';
@@ -72,7 +72,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
     installations: async () => [],
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => undefined)(refresh, grantedBy),
-    revoke: (p, credentials) => revocation(apps[p])(credentials),
+    deleteToken: (p, accessToken) => tokenDeletion(apps[p], undefined)(accessToken),
     flows: { github: approvedAs(github, 'octo-user', clock) },
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
     ...o,
@@ -90,92 +90,51 @@ async function connect(service: ReturnType<typeof hopper>['service'], s: UserSto
 }
 
 describe('grant hygiene under the ten-token limit (#514)', () => {
-  it('connecting again over a live grant revokes it at GitHub before the new pair is kept', async () => {
+  // Issue #597: GitHub's credential revocation API (POST /credentials/revoke) is a leak report, it emails the
+  // owner a security warning and killed a fresh grant; it is never used for routine cleanup. Without the
+  // app's client secret (this hopper's app ships none) an old grant is left to expire at GitHub.
+  it('connecting again over a live grant never reports it to GitHub; the new pair is kept', async () => {
     const github = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
     const { service } = hopper(github, s, clock);
     const first = await connect(service, s);
-
-    let storedAtRevoke: string | undefined;
-    github.onRevoke = () => { storedAtRevoke = s.connectedAccounts.get('github')?.accessToken; };
     await connect(service, s);
 
-    expect(github.revoked).toEqual([[first.accessToken, first.refreshToken]]);
-    expect(storedAtRevoke).toBe(first.accessToken); // revoked while the old pair was still the stored one
-    expect(github.tokens.has(first.accessToken)).toBe(false);
-    expect(github.refreshTokens.has(first.refreshToken!)).toBe(false);
+    expect(github.revoked).toEqual([]);
+    expect(github.tokens.has(first.accessToken)).toBe(true);
     const now = s.connectedAccounts.get('github')!;
+    expect(now.accessToken).not.toBe(first.accessToken);
     expect(github.tokens.has(now.accessToken)).toBe(true);
     expect(await service.token('github')).toBe(now.accessToken);
   });
 
-  it('a sign-in with GitHub over a live grant revokes it the same way', async () => {
+  it('a sign-in with GitHub over a live grant never reports either grant to GitHub', async () => {
     const github = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
     const { service } = hopper(github, s, clock);
-    const first = await connect(service, s);
+    await connect(service, s);
 
     const signIn = github.mint('octo-user');
     await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(github.revoked).toEqual([[first.accessToken, first.refreshToken]]);
+    expect(github.revoked).toEqual([]);
     expect(s.connectedAccounts.get('github')!.accessToken).toBe(signIn.accessToken);
-
-    // The same grant handed over again is not revoked: it is the one kept.
-    await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(github.revoked).toHaveLength(1);
     expect(github.tokens.has(signIn.accessToken)).toBe(true);
+    expect(await service.token('github')).toBe(signIn.accessToken);
   });
 
-  it('disconnecting revokes the grant, then forgets it; GitHub not answering forgets it anyway and says so', async () => {
+  it('disconnecting forgets the grant without reporting it to GitHub, and logs no token', async () => {
     const github = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
     const { service, logs } = hopper(github, s, clock);
-    const first = await connect(service, s);
+    await connect(service, s);
 
-    let storedAtRevoke: ConnectedAccount | undefined;
-    github.onRevoke = () => { storedAtRevoke = s.connectedAccounts.get('github'); };
     expect(await service.disconnect('github')).toMatchObject({ state: 'not-connected' });
-    expect(storedAtRevoke?.accessToken).toBe(first.accessToken);
-    expect(github.revoked).toEqual([[first.accessToken, first.refreshToken]]);
+    expect(github.revoked).toEqual([]);
     expect(s.connectedAccounts.get('github')).toBeUndefined();
-
-    const second = await connect(service, s);
-    github.onRevoke = undefined;
-    github.revokeDown = 500;
-    expect(await service.disconnect('github')).toMatchObject({ state: 'not-connected' });
-    expect(s.connectedAccounts.get('github')).toBeUndefined();
-    expect(github.tokens.has(second.accessToken)).toBe(true); // still alive at GitHub: said, not hidden
-    expect(logs.some((l) => /could not revoke/.test(l))).toBe(true);
     expect(logs.join('\n')).not.toMatch(/gh[or]_/); // never a token in the log
-  });
-
-  it('twelve reconnects on one hopper leave another hopper\'s grant alive under the ten-token limit', async () => {
-    const github = await forge({ tokenLimit: 10 });
-    const clock = fixedClock(T0);
-    // The durable hopper: its own database, connected first, its token used once and then left alone.
-    const durableStore = store(temp.url(), clock);
-    const durable = hopper(github, durableStore, clock);
-    const kept = await connect(durable.service, durableStore);
-    await fetch(`${github.url}/api/v3/user`, { headers: { authorization: `token ${kept.accessToken}` } });
-
-    // Another hopper, on another database, connects again and again (a verify run, a person retrying).
-    const busyStore = store(temp.url(), clock);
-    const busy = hopper(github, busyStore, clock);
-    for (let i = 0; i < 12; i++) {
-      const t = (await connect(busy.service, busyStore)).accessToken;
-      await fetch(`${github.url}/api/v3/user`, { headers: { authorization: `token ${t}` } });
-    }
-
-    expect(github.refreshTokens.has(kept.refreshToken!)).toBe(true);
-    // Hours later the durable hopper renews as ever: its sign-in did not end.
-    clock.set(new Date(Date.parse(T0) + 7.5 * H).toISOString());
-    const renewed = await durable.service.token('github');
-    expect(renewed).not.toBe(kept.accessToken);
-    expect(github.tokens.has(renewed)).toBe(true);
-    expect(durable.told).toEqual([]);
   });
 
   it('a connection sealed under another key reads unreadable and says to give the key back, never to connect again', async () => {

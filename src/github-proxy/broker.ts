@@ -7,6 +7,7 @@
 // another user's job is also an event of the hopper's own user, whose connection it would act with.
 import { randomUUID } from 'node:crypto';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
+import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
 import { checkRequest, filedNote, proxyRequest, type ProxyRequest } from './policy.ts';
@@ -95,8 +96,14 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
-      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it.
-      const sent: ProxyRequest = req.op === 'issue.create' ? { ...req, body: `${req.body}${filedNote(job.id, requestId)}` } : req;
+      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it (issue #597: mask tokens).
+      const maskRequest = (r: ProxyRequest): ProxyRequest => {
+        if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
+        if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
+        return r;
+      };
+      const masked = maskRequest(req);
+      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId)}` } : masked;
       try {
         const result = await api.perform(sent);
         record('github_proxy.done', { op: req.op, repo: req.repo, number: result.number, url: result.url });

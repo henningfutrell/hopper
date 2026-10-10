@@ -6,7 +6,8 @@
 // sync or apply profile takes its own explicit approval. Editing is an admin's. A secret may instead be kept in a vault
 // backend (issue #585): the person names the backend and where the value is there, never the value. A minting
 // credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
-// never given to a box, so no template lists it.
+// never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
+// vault does not give; an admin gives one — of the kind suggested, or another — or declines.
 import { Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -19,26 +20,18 @@ import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
 import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
 import type { Asset, AssetKind, Operation, OperationProfile, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
+import { AskedFor } from './vault-requests';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
   | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template'; name: string }
-  | ({ action: 'approve-profile'; name: string } & OperationProfile);
-type Send = (e: Edit, done: string) => Promise<boolean>;
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-xs font-medium text-muted-foreground">{children}</div>;
-}
-
-/** A write-only value: never filled in from the hopper, never remembered by the browser. */
-function ValueInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <Input className="h-9 font-mono text-sm" type="password" value={value} required maxLength={65536}
-      autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => onChange(e.target.value)} />
-  );
-}
+  | ({ action: 'approve-profile'; name: string } & OperationProfile)
+  | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
+export type VaultEdit = Edit;
+export type Send = (e: Edit, done: string) => Promise<boolean>;
 
 /** Where the value is kept: in the hopper (`''`), or in one of the vault backends, by name. */
 function KeptIn({ backends, kept, local, onChange }: { backends: VaultBackendView[]; kept: string; local: boolean; onChange: (k: string) => void }) {
@@ -288,8 +281,10 @@ export function Vault() {
   const backends = view?.backends ?? [];
   // A value kept in the hopper needs its token key; a secret kept in a backend does not.
   const local = view !== null && view.problem === undefined;
+  const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
+      <AskedFor requests={requests} can={can} busy={busy} send={send} />
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>
