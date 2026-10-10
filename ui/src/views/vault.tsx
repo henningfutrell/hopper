@@ -8,7 +8,8 @@
 // credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
 // never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
 // vault does not give; an admin gives one — of the kind suggested, or another — or declines. The hopper's own secrets
-// (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx).
+// (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
+// what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>.
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -20,11 +21,12 @@ import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/templat
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
 import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
-import type { Asset, AssetKind, Operation, OperationProfile, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import type { Asset, AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
 import { AskedFor } from './vault-requests';
 import { SystemSecrets } from './vault-system';
+import { SharedSecrets } from './vault-shared';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
@@ -168,9 +170,9 @@ function ProfilesInput({ profiles, busy, onChange }: { profiles: OperationProfil
 }
 
 /** A template's form: its name (fixed once saved), its image, the vault secrets and the operation profiles its boxes may ask for. */
-function TemplateForm({ t, secrets: all, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
-  // A minting credential is never given to a box: no template's scope lists it.
-  const secrets = all.filter((s) => !s.mints);
+function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; shared?: SharedSecretView[]; busy: boolean; send: Send; onDone: () => void }) {
+  // A minting credential is never given to a box: no template's scope lists it. A shared secret may be (issue #718).
+  const secrets = [...all.filter((s) => !s.mints).map((s) => ({ key: s.id, name: s.name })), ...shared.map((s) => ({ key: s.name, name: s.name }))];
   const [name, setName] = useState(t?.name ?? '');
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
@@ -193,7 +195,7 @@ function TemplateForm({ t, secrets: all, busy, send, onDone }: { t?: TemplateVie
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="Secrets">
             {secrets.map((s) => {
               const on = scope.includes(s.name);
-              return <button key={s.id} type="button" aria-pressed={on} disabled={busy} onClick={() => toggle(s.name)}
+              return <button key={s.key} type="button" aria-pressed={on} disabled={busy} onClick={() => toggle(s.name)}
                 className={`min-h-8 rounded-md border px-2 font-mono text-xs transition-colors ${on ? 'border-primary bg-primary text-primary-foreground' : 'border-input text-muted-foreground hover:bg-muted'}`}>{s.name}</button>;
             })}
           </div>
@@ -209,7 +211,7 @@ function TemplateForm({ t, secrets: all, busy, send, onDone }: { t?: TemplateVie
   );
 }
 
-function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; can: boolean; busy: boolean; send: Send }) {
+function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; shared: SharedSecretView[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
   const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.some((p) => !highRadius(p));
   const explicit = explicitApprovals(t);
@@ -229,7 +231,7 @@ function TemplateItem({ t, secrets, can, busy, send }: { t: TemplateView; secret
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
         {t.approval && <><dt className="text-muted-foreground">Approved by</dt><dd className="break-words">{t.approval.by} · {new Date(t.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
       </dl>
-      {editing ? <TemplateForm t={t} secrets={secrets} busy={busy} send={send} onDone={() => setEditing(false)} /> : (
+      {editing ? <TemplateForm t={t} secrets={secrets} shared={shared} busy={busy} send={send} onDone={() => setEditing(false)} /> : (
         <div className="flex flex-wrap gap-2">
           {waiting && (
             <Confirm title={`Approve ${t.name}?`} action="Approve" onConfirm={() => void send({ action: 'approve-template', name: t.name }, `${t.name}: approved`)}
@@ -286,6 +288,7 @@ export function Vault() {
 
   const secrets = view?.secrets ?? [];
   const templates = view?.templates ?? [];
+  const shared = view?.shared ?? [];
   const backends = view?.backends ?? [];
   // A value kept in the hopper needs its master key; a secret kept in a backend does not.
   const local = view !== null && view.problem === undefined;
@@ -304,10 +307,11 @@ export function Vault() {
       <Panel title="Templates" icon={Boxes} count={templates.length || ''} bodyClassName="space-y-3"
         action={can && !addingTemplate ? <Button size="sm" onClick={() => setAddingTemplate(true)} disabled={busy}><Plus />Add template</Button> : undefined}>
         <p className="text-sm text-muted-foreground">A template is an image and the secrets its boxes may ask for. A sandbox box added from Machines with a template gets those secrets, once you approve the template: never more, whatever job runs in it.</p>
-        {addingTemplate && <div className="rounded-md border p-3"><TemplateForm secrets={secrets} busy={busy} send={send} onDone={() => setAddingTemplate(false)} /></div>}
+        {addingTemplate && <div className="rounded-md border p-3"><TemplateForm secrets={secrets} shared={shared} busy={busy} send={send} onDone={() => setAddingTemplate(false)} /></div>}
         {view && templates.length === 0 && !addingTemplate && <Empty>No templates yet.</Empty>}
-        {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} can={can} busy={busy} send={send} />)}</ul>}
+        {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} shared={shared} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
+      {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} />}
     </div>
   );

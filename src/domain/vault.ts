@@ -36,6 +36,34 @@ export const isSystemSecret = (name: string): boolean => name.startsWith(SYSTEM_
 /** The system secret a vault row holds: its name without `system/`. */
 export const systemSecretName = (row: string): SystemSecretName => row.slice(SYSTEM_PREFIX.length) as SystemSecretName;
 
+/**
+ * A shared secret (issue #718, design.md "Shared secrets"): a vault secret the hopper's admin shares with the agents of
+ * every user, or of the users named, in place of a copy per user. A row of the instance's vault named `shared/<name>`,
+ * sealed under the master key. A template names it by that row name; a job on a box of the template gets it only once
+ * a person approved that, and Access (`shared_secret#can_read`) allows the job's user. A vault secret is the user's by
+ * default: sharing is the admin's choice.
+ */
+const SHARED_PREFIX = 'shared/';
+/** The instance's vault row, and the name a template and a job use, of the shared secret `name`. */
+export const sharedSecretRow = (name: string): string => `${SHARED_PREFIX}${name}`;
+/** Whether a name is a shared secret's row. */
+export const isSharedSecret = (name: string): boolean => name.startsWith(SHARED_PREFIX);
+/** The shared secret's own name: its row name without `shared/`. */
+export const sharedSecretName = (row: string): string => (isSharedSecret(row) ? row.slice(SHARED_PREFIX.length) : row);
+
+/** A shared secret as every user's vault page shows it: its metadata, never its value. */
+export interface SharedSecretView {
+  /** Its row name, `shared/<name>`: what a template names. */
+  name: string;
+  scope?: string;
+  /** The users whose agents may read it. Absent: every user's. */
+  readers?: string[];
+  setBy: string;
+  createdAt: string;
+  changedBy: string;
+  changedAt: string;
+}
+
 /** The kinds of system secret, by what the hopper keeps them for. */
 export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in';
 export const systemSecretKind = (name: string): SystemSecretKind =>
@@ -99,6 +127,8 @@ export interface VaultSecret {
   skill?: string;
   kind?: string;
   note?: string;
+  /** A shared secret's readers (issue #718): the users whose agents may read it. Absent: every user's. */
+  readers?: string[];
 }
 
 /** `GET /api/vault`: never a value. */
@@ -114,6 +144,8 @@ export interface VaultView {
   problem?: string;
   /** The hopper's own secrets (issue #658): the system scope's metadata and its audit trail, newest first. */
   system?: { secrets: SystemSecretView[]; audit: SystemSecretAudit[] };
+  /** The shared secrets (issue #718): what the hopper's admin shares with agents, for a template to name. Never a value. */
+  shared?: SharedSecretView[];
 }
 
 /**

@@ -109,8 +109,8 @@ export interface UserRuntimeOptions {
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
    */
   access?: VaultAccess; minter?: CredentialMinter;
-  /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page. */
-  instanceSecrets?: SystemSecrets;
+  /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
+  instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
 }
 
 
@@ -320,7 +320,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },

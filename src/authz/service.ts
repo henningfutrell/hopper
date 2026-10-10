@@ -15,8 +15,8 @@ import {
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest,
   type OperationProfile, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, systemSecretGaps, type ModelJson } from './model.ts';
-import { approvalTuples, artifactObject, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, systemSecretCheck, userObject } from './objects.ts';
+import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, type ModelJson } from './model.ts';
+import { approvalTuples, artifactObject, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, userObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -93,6 +93,7 @@ export function createAccess(o: AccessOptions): Access {
   const artifactGapsOf = gapsMemo(artifactGaps);
   const systemGapsOf = gapsMemo(systemSecretGaps);
   const itemGapsOf = gapsMemo(itemGaps);
+  const sharedGapsOf = gapsMemo(sharedSecretGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -101,7 +102,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -240,6 +241,10 @@ export function createAccess(o: AccessOptions): Access {
     decideSystemSecret(ask) {
       const { tuple, contextual } = systemSecretCheck(ask);
       return checkOnce('system secrets', systemGapsOf(model().dsl), tuple, contextual, (allowed) => `${tuple.subject} may${allowed ? '' : ' not'} ${ask.action} ${tuple.object}`);
+    },
+    decideSharedSecret(ask) {
+      const { tuple, contextual } = sharedSecretCheck(ask);
+      return checkOnce('shared secrets', sharedGapsOf(model().dsl), tuple, contextual, (allowed) => `${tuple.subject} may${allowed ? '' : ' not'} ${ask.action} ${tuple.object}`);
     },
     decideTextAcceptance(userId, item) {
       const object = itemObject(item);

@@ -8331,10 +8331,11 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #716).** A template made on request from what a job needs, with read scope auto-approved
+**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
 inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
 first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
-token is a second door beside the UI session), so it needs the owner's decision first.
+token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
+built: `vault set <name> --shared` ("Shared secrets").
 
 ## Reserved lanes (issue #372, 2026-10-07)
 
@@ -9860,6 +9861,55 @@ denies a job, its machine and its box every kind), `test/vault/system-scope.test
 `test/connected-accounts/rotation.test.ts` (a renewal through the vault keeps exactly one refresh token),
 `test/auth/sealed-secrets.test.ts` (the sign-in config over the vault), `test/ui/vault-system.test.ts`.
 
+## Shared secrets (issue #718, part 1, 2026-10-10)
+
+Owner request (issue #718, item 3): besides each user's own vault secrets, a scope any agent can read under OpenFGA, so
+a credential many users' jobs need has no copy per user. It extends #658's instance's vault, but it is not the system
+scope: a system secret is the hopper's own and never given to a job; a **shared secret** exists to be given to jobs.
+Per-user stays the default; sharing is the hopper's admin's explicit act.
+
+- **Where.** A row `shared/<name>` of the instance's vault (`vault_secrets` in the instance schema, instance migration
+  33: no migration), sealed by the hopper's sealer under the master key, bound to `vault:<id>/value`; its metadata — the
+  scope line, the **readers**, who set it and when — in the row's body. Under the master key always: never in a vault
+  container or under a KMS's data key, which are per user. Without the master key none is kept (503) or opened.
+  `src/vault/shared.ts` (`SharedSecrets`) is the only code that writes or opens one; its events are the instance's
+  (`vault.secret_set`, `vault.secret_removed`, the row name, who; never a value), which reach every user's log.
+- **Who changes one.** Only the instance admin: `POST /ui/api/vault/shared` (`set` — name, value, optional `scope`,
+  optional `readers`; `remove`) behind the `instance` guard, and `hopper vault set <name> --shared [--reader <user id>]...`
+  / `hopper vault remove <name> --shared` from the operator CLI (its session's realm `cli` is an instance admin's). Access
+  is asked too (`shared_secret#can_change`, the admin told as a contextual tuple): a model edit can take the right away.
+- **Who reads one.** A job, through the box client's helper, as any vault secret: `$HOPPER_SECRET get shared/<name>`
+  (the client takes the `shared/` form). The hopper answers it in its own process, in front of the user's vault wherever
+  that runs (`withSharedSecrets`, `src/vault/shared-delivery.ts`): the same box checks as a delivery (`boxAsk`), then the
+  box's template must give it — the template names `shared/<name>` in its scope and a person approved that, as for any
+  secret (`save-template` refuses one the hopper does not hold) —, then Access: `shared_secret#can_read` of
+  `user:<the job's user>`, the readers told at each ask as contextual tuples — `user:*` when the admin named none, else
+  each user named. Delivered: `vault.delivered` in the job's user's log; refused: `vault.refused` with why. Never minted
+  from: a minting credential stays a user's own.
+- **The model** gains `type shared_secret` (`admin: [user]`, `reader: [user, user:*]`, `can_change: admin`,
+  `can_read: reader`). Its relations are checked apart (`sharedSecretGaps`): a model edited before them denies every
+  shared secret, naming the gap, and still decides mints; a model the hopper wrote is replaced by this build's default.
+- **Seen by everyone.** `GET /api/vault` carries `shared` (each one's row name, scope, readers, who and when) for every
+  user, so a template can name one; Settings → Vault shows the panel **Shared secrets**, with **Share secret** and
+  **Remove** for the instance admin, and the template form offers the shared names beside the user's own secrets.
+- **One reseal.** `resealRows` (`src/vault/reseal.ts`) seals again, on a key rotation, the user vault's own rows, the
+  system scope's and the shared secrets' (at start, with the instance's system secrets).
+
+**Residual risk, stated.** With no readers named, every user's job on an approved template that names it may read it:
+each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
+against the users the hopper has: an id of no user matches no one.
+
+**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
+inside a standing read policy (item 1); tools assembled per run (item 2); a token-scoped mutating API so an agent does
+all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
+first use (item 5), which waits on #715's suite.
+
+Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
+for every user, sealed in the instance's vault, refused to an admin of their own user only; given to a job only once the
+template naming it is approved; refused when the readers leave the job's user out, and after removal; the CLI's
+`--shared`), `test/authz/shared-secrets.test.ts` (every user reads with no readers named, only the named ones else, only
+an admin changes; a model without the type denies and names the gap), `test/ui/vault-shared.test.ts`.
+
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
 The vault (issue #558) will hand jobs short-lived credentials. Before it mints or renews one, it asks **access**
@@ -10319,7 +10369,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault"); the system scope (`system.ts`, `system-read.ts`, issue #657, "The TypeSafe API key in the vault's system scope") | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault"); the system scope (`system.ts`, `system-read.ts`, issue #657, "The TypeSafe API key in the vault's system scope"); the shared secrets (`shared.ts`, `shared-delivery.ts`, issue #718, "Shared secrets") and the one reseal (`reseal.ts`) | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,

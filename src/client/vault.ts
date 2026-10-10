@@ -27,7 +27,8 @@ export const SOCKET_VARIABLE = 'HOPPER_VAULT_SOCKET';
 /** The variable a job finds the helper by (the hopper sets it from the client's `/release`). */
 export const SECRET_HELPER_VARIABLE = 'HOPPER_SECRET';
 
-const NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+/** A vault secret's name, or a shared secret's (issue #718): `shared/` before one. */
+const NAME = /^(shared\/)?[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 /** A job's proxy token (issue #563): `<user, base64url>.<job id>.<mac>`. */
 const JOB_TOKEN = /^[A-Za-z0-9_-]{1,200}\.[A-Za-z0-9_-]{1,200}\.[A-Za-z0-9_-]{1,200}$/;
 const SALT = 32;
@@ -35,7 +36,7 @@ const NONCE = 12;
 const TAG = 16;
 const MAX_ASK = 4096;
 
-/** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
+/** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64; `shared/` before it for a shared secret. */
 export const isSecretName = (v: unknown): v is string => typeof v === 'string' && NAME.test(v);
 
 /** What the vault mints (issue #580): an AWS role session or a Kubernetes token. */

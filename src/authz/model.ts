@@ -70,6 +70,16 @@ type system_secret
     define can_change: owner or admin
     define can_read: owner
 
+# A secret an admin shares with agents (issue #718), in the instance's vault. At each ask the hopper tells its readers —
+# every user (user:*) when the admin named none — and, for the hopper's admin's session, the admin. A job reads it as
+# its user; only an admin changes it.
+type shared_secret
+  relations
+    define admin: [user]
+    define reader: [user, user:*]
+    define can_change: admin
+    define can_read: reader
+
 # A source item jobs run (issue #662): a GitHub issue. The hopper tells, at each check, the user whose hopper takes it as its
 # owner. Only who may accept new text replaces the text the item's jobs run.
 type item
@@ -112,6 +122,10 @@ const ARTIFACT_ASKED: readonly [type: string, relation: string][] = [['artifact'
 const SYSTEM_SECRET_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['system_secret', 'owner', 'user'], ['system_secret', 'admin', 'user']];
 const SYSTEM_SECRET_ASKED: readonly [type: string, relation: string][] = [['system_secret', 'can_change'], ['system_secret', 'can_read']];
 
+/** What the hopper tells and asks for a shared secret (issue #718): apart, so a model edited before them still decides mints. */
+const SHARED_SECRET_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['shared_secret', 'admin', 'user'], ['shared_secret', 'reader', 'user']];
+const SHARED_SECRET_ASKED: readonly [type: string, relation: string][] = [['shared_secret', 'can_change'], ['shared_secret', 'can_read']];
+
 /** Each relation the hopper needs that the model lacks (`type#relation`) or no longer lets it write (`… accepts type`); empty: none. */
 export function modelGaps(model: ModelJson): string[] {
   return gapsIn(model, WRITTEN, ASKED);
@@ -125,6 +139,11 @@ export function artifactGaps(model: ModelJson): string[] {
 /** What the model lacks for system secrets (issue #657); empty: they are decided. A gap here denies every change and read, never a mint. */
 export function systemSecretGaps(model: ModelJson): string[] {
   return gapsIn(model, SYSTEM_SECRET_WRITTEN, SYSTEM_SECRET_ASKED);
+}
+
+/** What the model lacks for shared secrets (issue #718); empty: they are decided. A gap here denies every change and read, never a mint. */
+export function sharedSecretGaps(model: ModelJson): string[] {
+  return gapsIn(model, SHARED_SECRET_WRITTEN, SHARED_SECRET_ASKED);
 }
 
 /** What the model lacks for items (issue #662); empty: accepting new text is decided. A gap here denies every acceptance, never a mint. */

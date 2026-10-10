@@ -30,6 +30,7 @@ import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerAutoAnswerRoutes } from './auto-answer.ts';
 import { registerAccessRoutes } from './access.ts';
+import { registerSharedSecretRoutes } from './vault-shared.ts';
 import type { ArtifactEdge } from '../artifacts.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
@@ -300,6 +301,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts, access: o.access, updater: o.updater });
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
+  registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

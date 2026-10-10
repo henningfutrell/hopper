@@ -5,6 +5,7 @@ import type { VaultView } from '../domain/vault.ts';
 import type { MintAsk } from './mint.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 import type { SetSecret, VaultResult, VaultService } from './service.ts';
+import type { SharedSecrets } from './shared.ts';
 
 /**
  * The vault as the hopper's parts reach it (issue #586): in the hopper (`localVault`), or with its secrets in a container
@@ -29,6 +30,8 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   give(id: string, g: Give, by: string): Promise<VaultResult>;
   /** A person declines a request: each job that waits on it is told why. */
   decline(id: string, reason: string, by: string): VaultResult;
+  /** The shared secrets (issue #718): the hopper's admin sets and removes them. Absent: this hopper keeps none. */
+  shared?: Pick<SharedSecrets, 'set' | 'remove'>;
 }
 
 /**
