@@ -29,7 +29,6 @@ import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter } from './resources.ts';
-import { spawnOf } from './spawn.ts';
 import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
@@ -166,8 +165,7 @@ async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree', b
 
 function runArgv(argv: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const { file, args, env } = spawnOf(argv, process.env);
-    const child = execFile(file, args, { env, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return resolve({ code: 124, stdout, stderr: `timed out after ${timeoutMs} ms` });

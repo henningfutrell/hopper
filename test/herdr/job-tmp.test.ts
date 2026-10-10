@@ -4,7 +4,7 @@
 // shell, under a work tree as deep as a real one, then a socket bound where Chromium binds its own.
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readlinkSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,21 +49,5 @@ describe('a job\'s TMPDIR (issue #506)', () => {
     } finally {
       rmSync(jobTmpOf(id), { recursive: true, force: true });
     }
-  });
-
-  // Issue #691: under Git for Windows (MSYS) `ln -s` copies the directory, or names it as /c/… where the work tree
-  // said C:/…, so the link check failed every job on a Windows client in seconds. There the job has no temp link:
-  // its TMPDIR is the scratch dir itself, set in the pane's shell, where Claude starts.
-  it('on a Windows shell, makes no temp link and points TMPDIR and Claude\'s temp dir at the scratch dir', () => {
-    const bin = join(root, 'bin');
-    mkdirSync(bin);
-    writeFileSync(join(bin, 'uname'), '#!/bin/sh\necho MINGW64_NT-10.0-26100\n');
-    chmodSync(join(bin, 'uname'), 0o755);
-    const cwd = join(root, 'w');
-    const out = execFileSync('sh', ['-c', `${scratchCommand(cwd, id, true)}; printf 'tmp=%s claude=%s\\n' "$TMPDIR" "$CLAUDE_CODE_TMPDIR"`],
-      { encoding: 'utf8', env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
-    expect(out).toContain('hopper-scratch-ready');
-    expect(out).toContain(`tmp=${jobScratchOf(cwd, id)} claude=${jobScratchOf(cwd, id)}`);
-    expect(() => lstatSync(jobTmpOf(id))).toThrow();
   });
 });

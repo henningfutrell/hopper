@@ -8,7 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
-- A machine can now keep a separate folder for each repository: a job for that repository works in its own folder, which the hopper makes and fills when it is missing, and jobs for other repositories keep the machine's usual folder. Jobs on a Windows computer no longer fail in their first seconds.
+- A machine can now keep a separate folder for each repository: a job for that repository works in its own folder, which the hopper makes and fills when it is missing, and jobs for other repositories keep the machine's usual folder.
 - A machine you reach over ssh now finds by itself which address of the hopper it can reach, and its jobs use that one. When it can reach none, Machines says so and what to set, and its jobs wait for another machine instead of failing halfway.
 - A setting that fails to save because the hopper's access service (OpenFGA) is not running no longer signs you out or ends your GitHub connection. The save says so, and your other settings stay as they were. A banner on every page now says when that service is missing and how to add it. If you run the hopper in containers from an older setup, add the OpenFGA service from the new compose file, then start the stack again.
 - Machines now shows how many lanes each machine can run, from its own CPU, memory and disk over the last week and from how much of your plan you use, next to the lanes it has now, with the reason. The hopper does not change the lanes yet. An admin can turn this off per machine and set the least and most lanes it may suggest.
