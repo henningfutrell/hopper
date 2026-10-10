@@ -4,7 +4,7 @@
 // refuses to start when a route and this document disagree (`referenceDrift`, checked on ready).
 import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind, type UiRole } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind } from '../domain/types.ts';
 import { jobsQuery } from './jobs.ts';
 import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
@@ -34,29 +34,7 @@ import { autoParkBody } from './ui/auto-park.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { accessEditBody } from './ui/access.ts';
 import { usageHistoryQuery } from './usage-history.ts';
-
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access';
-
-interface Operation {
-  method: 'get' | 'post';
-  /** Fastify's form: `/api/jobs/:id`. */
-  path: string;
-  tag: Tag;
-  summary: string;
-  description?: string;
-  query?: z.ZodObject;
-  body?: z.ZodType;
-  /** Body media type; default JSON. */
-  form?: boolean;
-  /** What a 200 carries. */
-  returns: string;
-  /** Answer media type; default JSON. */
-  answers?: 'html' | 'sse' | 'xml' | 'redirect';
-  /** A UI mutation: the least UI role that may make it. */
-  role?: UiRole;
-  /** Error statuses beyond the guards'. */
-  errors?: number[];
-}
+import type { Operation, Tag } from './openapi-operation.ts';
 
 const id = (what: string) => ({ name: 'id', in: 'path', required: true, description: `the ${what}'s id`, schema: { type: 'string' } });
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
