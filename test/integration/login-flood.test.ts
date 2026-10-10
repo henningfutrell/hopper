@@ -88,18 +88,17 @@ describe('a job polling a device flow', () => {
     expect(await authTypes(a, job.id)).toEqual(['auth.pending', 'auth.completed']);
   });
 
-  it("gh's device flow: once it reaches the user (issue #563), Claude checking on it again and again is the same login, never steered again; gh saying it is logged in completes it", async () => {
+  it("gh's device flow reported again after it was steered to the hopper: the job fails, and the login never reaches the user (issue #695)", async () => {
     const done: FakeTurn = { output: ['● BashOutput(gh)', '  ⎿  ✓ Authentication complete.', '     ✓ Logged in as octocat', '● Pushed.', '  HOPPER_DONE'] };
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ghAuth(5), ghAuth(5), ghAuth(5), ghAuth(5), done] });
     const a = await start(herdr);
     const job = await a.pull({}, item);
-    await a.waitForStatus(job.id, 'finished', 8000);
+    const failed = await a.waitForStatus(job.id, 'failed', 8000);
+    expect(failed.error).toContain('a job never signs in to GitHub');
     // The prompt, and the one note that steers the first report to the hopper's GitHub proxy.
     expect(herdr.prompts).toHaveLength(2);
-    const after = await logins(a);
-    expect(after).toHaveLength(1);
-    expect(after[0]).toMatchObject({ tool: 'gh', status: 'completed' });
-    expect(await authTypes(a, job.id)).toEqual(['auth.pending', 'auth.completed']);
+    expect(await logins(a)).toEqual([]);
+    expect(await authTypes(a, job.id)).toEqual([]);
   });
 
   it('a job that ends with no login signal: its login fails with the job, never completed', async () => {

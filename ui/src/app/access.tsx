@@ -1,5 +1,5 @@
 // Access checks unavailable (issue #696): the banner over every view while OpenFGA is not set up or not reached, with
-// the compose fix, and the same fix in the update panel. OpenFGA is a required compose service; an install on an older
+// the compose fix (the update script, issue #697), and the same fix in the update panel. OpenFGA is a required compose service; an install on an older
 // compose.yaml lacks it. Not dismissable: it ends when OpenFGA answers.
 import { ShieldAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -24,12 +24,14 @@ export function useAccessStatus(): AccessStatusView | null {
   return status;
 }
 
-/** The compose fix: the `openfga` service in compose.yaml, then the stack up again. */
+/** The compose fix: an older compose.yaml lacks the `openfga` service; the update script puts in the one the image ships with (issue #697). */
 export function AccessFix() {
   return (
     <p className="text-xs text-muted-foreground">
-      In containers: copy the <code>openfga</code> and <code>openfga-migrate</code> services from the current <code>compose.yaml</code> into
-      yours, then run <code>podman-compose up -d</code> in its folder.{' '}
+      In containers, an older <code>compose.yaml</code> lacks the <code>openfga</code> service. Do not edit it: in its folder, make the
+      update script from your channel's image and run it. It puts in the <code>compose.yaml</code> the image ships with and starts the whole
+      stack: <code>podman run --rm --pull=always ghcr.io/henningfutrell/hopper:&lt;channel&gt; hopper update podman &gt; hopper-update.sh</code>,
+      then <code>sh hopper-update.sh</code>.{' '}
       <a className="underline" href={ACCESS_DOCS_URL} target="_blank" rel="noreferrer">How to set up OpenFGA</a>
     </p>
   );

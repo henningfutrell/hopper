@@ -3,7 +3,7 @@
 // #567), never Claude going on by itself. After a restart, the job waits on: the URL and code are read back from
 // the screen, and nothing is reported anew.
 // Issue #563: a GitHub login is not a job's to make. The job is told to ask the hopper's GitHub proxy instead;
-// only when it reports the same login again, right after, does it go to the logins.
+// when it reports the login again, the job fails (issue #695): a GitHub sign-in never goes to the user.
 import { describe, expect, it } from 'vitest';
 import type { LoginReport, RunLogins } from '../../src/domain/types.ts';
 import { githubLoginNote, isGitHubLogin } from '../../src/executors/herdr/login.ts';
@@ -100,15 +100,15 @@ describe('herdr-claude executor: a login', () => {
     expect(JSON.stringify(progress)).not.toContain('ABCD-1234');
   });
 
-  it('takes a GitHub login the job reports again right after being steered: then it goes to the user', async () => {
+  it('fails a job that reports a GitHub login again after being steered: it never goes to the user (issue #695)', async () => {
     const s = setup({ turns: [GH_AUTH, GH_AUTH, DONE] }, { idleNudgeMs: 20000 });
     const r = recorder();
     const { ctx } = contextFor(jobWith({ prompt: 'go', timeoutMs: 3_600_000 }));
-    const run = s.executor.run({ ...ctx, logins: r.logins });
-    await until(() => r.reports.length === 1, 100000);
-    expect(r.reports[0]).toMatchObject({ report: { tool: 'gh auth login', userCode: 'ABCD-1234' } });
-    s.herdr.wake(s.herdr.agentStarts[0]!.name);
-    expect(await run).toMatchObject({ kind: 'finished' });
+    const out = await s.executor.run({ ...ctx, logins: r.logins });
+    expect(out).toMatchObject({ kind: 'failed' });
+    expect((out as { error: string }).error).toContain('a job never signs in to GitHub');
+    expect((out as { error: string }).error).not.toContain('ABCD-1234');
+    expect(r.reports).toEqual([]);
   });
 
   it('a device-flow script polling never completes it: not Claude going on, not the same code again, not the screen changing (issue #567)', async () => {

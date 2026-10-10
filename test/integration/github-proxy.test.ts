@@ -20,6 +20,10 @@
 //     And both are in that job's timeline and in the hopper's own user's log, naming the user and the job
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
+//   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
+//     Given a machine where the reach check finds no hopper at the URL the job would be given
+//     When a job starts there
+//     Then it fails at once: "this machine cannot reach the hopper at <url>", with the action, and no file is kept there
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -52,6 +56,8 @@ interface Held { env: Record<string, string>; end(): void }
  */
 function holder(root: string) {
   const held = new Map<string, Held>();
+  /** What the reach check says on the machine (issue #695); the URLs it was asked for. */
+  const reach: { unreached?: string; asked: string[] } = { asked: [] };
   const shell: MachineShell = {
     async reap() { return { kept: [] }; },
     async survey() { return { scopes: [], processes: [], scratch: [] }; },
@@ -61,6 +67,7 @@ function holder(root: string) {
       writeFileSync(path, content, { mode: 0o600 });
     },
     async discover() { return NOTHING; },
+    async reach(url) { reach.asked.push(url); return reach.unreached; },
   };
   const executor: Executor = {
     name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
@@ -71,7 +78,7 @@ function holder(root: string) {
     },
     resume: async () => ({ kind: 'failed', error: 'not resumed' }),
   };
-  return { executor, held };
+  return { executor, held, reach };
 }
 
 interface Run { code: number; stdout: string; stderr: string }
@@ -106,7 +113,7 @@ async function start() {
   });
   apps.push(app);
   connectGitHub(app, ['octo/tools', 'octo/site']);
-  return { app, github, root, held: h.held };
+  return { app, github, root, held: h.held, reach: h.reach };
 }
 
 /** A job of the user's own, running in the holder: its id and variables. */
@@ -251,5 +258,22 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(help).toMatchObject({ code: 0 });
     expect(help.stdout.trim()).toBe(PROXY_HELP);
     expect((await hopperGh(t.root, env, ['auth', 'login'])).code).toBe(2);
+  });
+
+  it('fails a job whose machine cannot reach the hopper at its start, saying why and what to do; no file is kept there (issue #695)', async () => {
+    const t = await start();
+    t.reach.unreached = `this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`;
+    const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools' });
+    const failed = await t.app.waitForStatus(job.id, 'failed', 10000);
+    expect(failed.error).toContain(`this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`);
+    expect(failed.error).toContain('Settings → Artifacts');
+    expect(t.reach.asked).toEqual([t.app.url]);
+    expect(t.held.has(job.id)).toBe(false);
+  });
+
+  it('checks that the machine reaches the hopper at the URL the job is given, before the job runs (issue #695)', async () => {
+    const t = await start();
+    const { env } = await running(t);
+    expect(t.reach.asked).toEqual([env.HOPPER_URL]);
   });
 });

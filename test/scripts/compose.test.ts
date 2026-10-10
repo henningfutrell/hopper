@@ -170,6 +170,11 @@ describe('compose.yaml with a .env beside it', () => {
     expect(hopper.environment?.HOPPER_PORT).toBe('4800');
     expect(hopper.image).toBe('localhost/hopper:dev');
   });
+
+  it('publishes the port on the address HOPPER_BIND names, so a LAN install keeps it across updates (issue #697)', () => {
+    const hopper = svc(render('HOPPER_BIND=0.0.0.0\n'), 'hopper');
+    expect(hopper.ports).toEqual([expect.objectContaining({ host_ip: '0.0.0.0', published: '4790', target: 4790 })]);
+  });
 });
 
 describe('the image is not a machine (issue #141)', () => {
@@ -177,6 +182,10 @@ describe('the image is not a machine (issue #141)', () => {
 
   it('carries WHATS-NEW.md, so the Updates panel says what the running version brought (issue #165)', () => {
     expect(dockerfile).toMatch(/^COPY WHATS-NEW\.md \.\/$/m);
+  });
+
+  it('carries its compose.yaml, so an update fetches the compose file of the image it updates to (issue #697)', () => {
+    expect(dockerfile).toMatch(/^COPY compose\.yaml \.\/$/m);
   });
 
   it('registers no `local` machine: it sets HOPPER_LOCAL_MACHINE=false and starts no herdr session of its own', () => {
@@ -214,8 +223,10 @@ describe('the install page', () => {
     expect(page).toContain('data-copy="podman compose up -d"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
-    // Updated by its user, recreating the hopper's container alone (issue #494).
-    expect(page).toContain('data-copy="podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper"');
+    // Updated by its user (issue #494), with the release's compose file and the whole stack (issue #697).
+    expect(page).toContain('data-copy="podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh"');
+    expect(page).toContain('data-copy="sh hopper-update.sh"');
+    expect(page).not.toContain('--no-deps hopper"');
     expect(page).toContain('data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
   });
 

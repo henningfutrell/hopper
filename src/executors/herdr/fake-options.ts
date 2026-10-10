@@ -90,6 +90,8 @@ export interface FakeHerdrOptions {
   survey?: Survey;
   /** What a discovery finds on the machine (issue #542). Default nothing. */
   discovery?: DiscoveryFacts;
+  /** What the reach check says on the machine (issue #695): why it cannot reach the hopper. Default it reaches it. */
+  unreached?: string;
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */

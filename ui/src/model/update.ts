@@ -21,17 +21,24 @@ export type ContainerTool = (typeof CONTAINER_TOOLS)[number];
 /** The container tool a browser remembers (issue #521): Podman, the one the docs lead with, until Docker is chosen. */
 export const parseContainerTool = (text: string | null): ContainerTool => (text === 'Docker' ? 'Docker' : 'Podman');
 
-/** How the user updates a container install (issue #494): run from the folder that holds compose.yaml, with `env` in `.env` beside it. */
+/**
+ * How the user updates a container install (issues #494, #697): in the folder that holds compose.yaml, the selected
+ * channel's image makes the update script (`hopper update <tool>`, src/update/update-script.ts), which brings the whole
+ * stack to the compose file that image ships with — never the hopper's container alone on an old one.
+ */
 export interface ImageUpdate {
-  /** The `.env` line that names the selected channel's tag. */
-  env: string;
-  /** Pull, then recreate the hopper's container alone (never Postgres, never a volume); then the optional prune of the replaced image. */
-  commands: { tool: ContainerTool; update: string; prune: string }[];
+  /** The selected channel's image: the script sets it as HOPPER_IMAGE in `.env`. */
+  image: string;
+  /** Make the script from the image, run it; then the optional prune of the replaced image. */
+  commands: { tool: ContainerTool; make: string; run: string; prune: string }[];
   /** Set when the running image is another channel's than the selected one. */
   mismatch?: string;
   /** What a recreate would end now: the restart blockers, as the host updater waits on them. */
   blockers: string;
 }
+
+/** The file the update script is saved as (src/update/update-script.ts UPDATE_SCRIPT_FILE). */
+const SCRIPT = 'hopper-update.sh';
 
 const cli = (tool: ContainerTool) => tool.toLowerCase();
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -61,12 +68,13 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   if (s.state !== 'available' || s.installed?.kind !== 'image') return undefined;
   const n = s.restartBlockers;
   const mismatch = channelMismatch(s);
+  const image = `${IMAGE}:${s.channel}`;
   return {
-    env: `HOPPER_IMAGE=${IMAGE}:${s.channel}`,
-    // --force-recreate: podman-compose keeps the old container on a newly pulled image without it.
+    image,
     commands: CONTAINER_TOOLS.map((tool) => ({
       tool,
-      update: `${cli(tool)} compose pull hopper && ${cli(tool)} compose up -d --force-recreate --no-deps hopper`,
+      make: `${cli(tool)} run --rm --pull=always ${image} hopper update ${cli(tool)} > ${SCRIPT}`,
+      run: `sh ${SCRIPT}`,
       prune: `${cli(tool)} ${PRUNE}`,
     })),
     mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,

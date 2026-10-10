@@ -95,10 +95,11 @@ export interface UserRuntimeOptions {
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
   otherUsersKnow?(keys: string[]): Set<string>;
   /**
-   * The hopper's URL as a job on `machine` reaches it (issue #563): `dialled`, the URL a client target dialled in
-   * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
+   * The hopper's URL as a job on `machine` reaches it (issues #563, #695): `dialled`, the URL a client target dialled in
+   * at; `linkBase`, the user's (Settings → Artifacts). Undefined: the machine cannot reach the hopper, and its jobs get no
+   * GitHub proxy. Absent: none.
    */
-  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
+  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
   /** The hopper's addresses (issue #698): an ssh target's probe asks which one it reaches. Absent: not asked. */
   hopperUrls?(): string[];
   /** The hopper's network (issue #711): a machine off it is shown the command that joins it. Absent: none. */
@@ -199,6 +200,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  // The addresses an ssh target's probe asks (issues #695, #698): the user's link base (Settings → Artifacts) first, when
+  // set, then the hopper's own; a job there gets only the one the probe found it reaches, the link base too.
+  const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
@@ -221,7 +225,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
           // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
           // after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: o.hopperUrls() } : {}) }).then(async (found) => ({
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}) }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             ...found,
           })))),
@@ -242,7 +246,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id)) });
+  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({

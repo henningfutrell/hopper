@@ -34,6 +34,7 @@ import { autoAnswerBody } from './ui/auto-answer.ts';
 import { autoParkBody } from './ui/auto-park.ts';
 import { LANE_TUNING_OPERATIONS } from './ui/lane-tuning.ts';
 import { ACCESS_OPERATIONS } from './access.ts';
+import { UPDATE_OPERATIONS } from './update.ts';
 import { BUG_REPORT_OPERATIONS } from './ui/bug-reports.ts';
 import { tldrBody } from './ui/tldr.ts';
 import { deliveriesQuery } from './webhooks.ts';
@@ -187,8 +188,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/webhooks/test', tag: 'Webhooks', summary: 'Send a test event to a subscription', description: 'One signed test event, one attempt: typed as the first event type the subscription names, with that type\'s example data plus `test: true` and `subscription`; `webhook.test` when it names only `*`. Answers the receiver\'s HTTP result, or why nothing was sent. No delivery is stored; nothing is appended to the event log.', role: 'admin', body: webhookTestBody, returns: '`{ ok, status?, detail }`', errors: [404] },
   { method: 'get', path: '/api/events', tag: 'Events', summary: 'The event log', description: 'Without `after`: the newest `limit` events, oldest first.', query: eventsQuery, returns: '`{ events: DomainEvent[] }` (envelope schema below; `data` per type in docs/schemas)' },
   { method: 'get', path: '/api/events/stream', tag: 'Events', summary: 'Live events (server-sent events)', description: 'Replays after `after` (or `Last-Event-ID`), then live. Also `delivery.updated`, `source.updated` `usage.recorded` (new usage samples kept: `{ added }`) and `machine.recorded` (new machine samples kept: `{ added }`) without an id, and a ping comment every 15 s. Beyond loopback the session goes in the `session` query parameter: EventSource sends no headers.', query: streamQuery, answers: 'sse', returns: 'an event stream' },
-  { method: 'get', path: '/api/update', tag: 'Self-update', summary: 'Installed version and available update', returns: '`UpdateStatus`' },
-  { method: 'get', path: '/api/update/history', tag: 'Self-update', summary: 'Version history', description: 'The versions the installed commit is made of, newest first: each commit of the tracked branch (first parent) that added What\'s new lines, with its date and those lines. Checks the update repository first when it lacks the installed commit. Always carries `build`: what the running build\'s install.json says (an install or an image), whole or not; `reason` names what it lacks.', returns: '`VersionHistory`' },
+  ...UPDATE_OPERATIONS,
   { method: 'get', path: '/api/master-key', tag: 'Vault', summary: 'Where the master key came from, and whether it was saved', description: 'Issue #659. `source`: `given` (HOPPER_MASTER_KEY at launch), `generated` (made at this first start), `old-token-key` (read from the old token key) or `missing` (none, while the database keeps secrets: the hopper is limited, nothing is deleted, and what needs a secret stays off; `problem` says which key and how to give it). `fingerprint`: the first 16 hex digits of an HMAC of a fixed label under the key. `previous` (issue #685): HOPPER_MASTER_KEY_PREVIOUS gives at least one previous key. `saved`: a person said they saved it. `revealable`: the reveal still answers it. Never the key.', returns: '`MasterKeyView`' },
   { method: 'post', path: '/ui/api/master-key', tag: 'Vault', summary: 'Show the master key once, or say it was saved', description: 'Only the instance admin (issue #659). `reveal` answers the key (`key`) of a start that made it or read it from the old token key — once: 409 after, and for a key given at launch. `saved` records that a person saved this key: the banner asks no more, and the key is never shown again. Keep it in a password manager and give it as HOPPER_MASTER_KEY at each launch.', role: 'admin', body: masterKeyBody, returns: '`MasterKeyView`, with `key` on `reveal`', errors: [403, 409] },
   { method: 'post', path: '/ui/api/update', tag: 'Self-update', summary: 'Check, apply, or change update settings', description: 'Only the instance admin: the first person to sign in with GitHub, else the oldest user (issue #240).', role: 'admin', body: updateBody, returns: '`UpdateStatus`', errors: [409] },
@@ -251,7 +251,7 @@ function parameters(op: Operation): unknown[] {
   return out;
 }
 
-const MEDIA = { html: 'text/html', sse: 'text/event-stream', xml: 'application/samlmetadata+xml' } as const;
+const MEDIA = { html: 'text/html', sse: 'text/event-stream', xml: 'application/samlmetadata+xml', markdown: 'text/markdown' } as const;
 const ERROR = { description: '', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } };
 
 function responses(op: Operation): Record<string, unknown> {

@@ -47,7 +47,10 @@ describe('access checks unavailable (#696)', () => {
     expect(banner.textContent).toContain('OpenFGA is not set up: set HOPPER_OPENFGA_URL');
     expect(banner.textContent).toContain('openfga');
     expect(banner.textContent).toContain('compose.yaml');
-    expect(banner.textContent).toContain('podman-compose up -d');
+    // The fix is the update script, which puts in the compose file the image ships with (issue #697): never a hand edit.
+    expect(banner.textContent).toContain('hopper update podman > hopper-update.sh');
+    expect(banner.textContent).toContain('sh hopper-update.sh');
+    expect(banner.textContent).not.toMatch(/copy the/i);
     expect(banner.querySelector('a')?.getAttribute('href')).toBe(ACCESS_DOCS_URL);
   });
 });

@@ -206,7 +206,8 @@ Without it, a new container on the same database is limited ("The master key" ab
 - **Settings and secrets: `.env` beside `compose.yaml`**, optional (`.env.example`, mode 600). Compose
   reads it for the file's own variables and passes all of it to the hopper.
 - **The UI** is published on this computer's loopback, `127.0.0.1:${HOPPER_PORT:-4790}`, the same port
-  inside and out. Those requests reach the daemon from the compose network, so they are LAN requests:
+  inside and out. `HOPPER_BIND` in `.env` names another address: `HOPPER_BIND=0.0.0.0` publishes it on every
+  interface, for a LAN install (issue #697). Those requests reach the daemon from the compose network, so they are LAN requests:
   `/api/` needs a UI session (docs/design.md "Reaching the UI across the LAN"). `HOPPER_LAN_PEERS`
   defaults to the private ranges and `HOPPER_LAN_NAMES` to `hopper`, the name a reverse proxy on the
   compose network reaches it by; set `HOPPER_PUBLIC_URL` for one.
@@ -218,25 +219,53 @@ Without it, a new container on the same database is limited ("The master key" ab
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
-  and Settings → Version give these commands with the selected channel's tag.
+  and Settings → Version give the commands below with the selected channel's tag.
   - **The channel is the image tag.** `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel>` in `.env` beside
     `compose.yaml`, where `<channel>` is the channel picked in Settings → Version: `dev`, `beta` or `stable`.
     Unset, it is `:latest`, the same image as `:stable`. A container on `:latest` with the channel set to `dev`
     never reaches `dev`'s head by pulling, so the notice says "this container runs the `stable` image; the
-    selected channel is `dev`: switch the image tag". **Switch channels** by changing `HOPPER_IMAGE` and running
-    the commands below; pick the same channel in Settings → Version.
+    selected channel is `dev`: switch the image tag". **Switch channels** by running the update below with the
+    channel's image (it sets `HOPPER_IMAGE`); pick the same channel in Settings → Version.
   - **Before you update, check that `.env` holds `HOPPER_MASTER_KEY`.** The new container gets the key only from
     there. An install from before keeps it in the secrets volume's `token_key`: the hopper reads that one until
     `HOPPER_MASTER_KEY` is set, and shows it once to be saved ("The master key" above).
-  - **Pull and recreate the hopper's container alone**, in the folder that holds `compose.yaml`. Postgres and
-    every volume stay as they are:
+  - **Update with the compose file the new image ships with, the whole stack** (issue #697). Every image carries
+    the `compose.yaml` of its commit. In the folder that holds `compose.yaml`, make the update script from the image of
+    the channel, read it, then run it:
 
     ```sh
-    podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper   # Podman
-    docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper   # Docker
+    podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh   # Podman
+    docker run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update docker > hopper-update.sh   # Docker
+    sh hopper-update.sh
     ```
 
-    `--force-recreate`: podman-compose keeps the old container on a newly pulled image without it.
+    (`hopper update podman-compose` for podman-compose without `podman compose`; `--image <ref>` for another image.)
+    In order, the script:
+    1. stops when `.env` lacks `HOPPER_MASTER_KEY` and the running hopper made its key at this start (a recreate
+       would lose it);
+    2. backs up the database (`hopper-backup-<time>.dump`, `pg_dump -Fc`), `compose.yaml` (as
+       `compose.yaml.bak-<commit>`) and `.env`;
+    3. pulls the image;
+    4. moves the install's own settings from the old `compose.yaml` to `.env` — the published port's address
+       (`HOPPER_BIND`), the port, and `HOPPER_*` settings written into the file — and names what it cannot move
+       (a service of the install's own: move it to `compose.override.yaml`); sets `HOPPER_IMAGE` to the image;
+    5. puts in the image's `compose.yaml`, stamped `# hopper version: <branch> <commit>`, and shows the change;
+    6. pulls the images of the whole stack and recreates it (`up -d --force-recreate`, never `--no-deps hopper`);
+    7. checks that the hopper and OpenFGA answer.
+
+    It stops at the first step that fails and says how to go back: put back `compose.yaml.bak-<commit>` and
+    `.env.bak-<commit>`, then `podman compose up -d --force-recreate`.
+  - **Never update the hopper's container alone** (`pull hopper`, `up -d --no-deps hopper`). It keeps the old
+    compose file: a version that adds a required service (OpenFGA, issue #559) or a setting never gets it, and
+    features fail. **Never edit `compose.yaml`**: each update replaces it whole. Put your own settings in `.env`
+    (`HOPPER_IMAGE`, `HOPPER_MASTER_KEY`, `HOPPER_BIND`, `HOPPER_PORT`, `HOPPER_LAN_NAMES`, `HOPPER_PUBLIC_URL`, …) or in
+    `compose.override.yaml`, which compose reads beside it.
+  - **An agent that updates a hopper** follows the update skill: `GET /api/update/skill` on the running hopper, or
+    `podman run --rm <image> hopper update skill`. `GET /api/update/compose` answers the compose file the running
+    build ships with, and its version.
+  - **From a beta install on an old compose file** (one without `openfga`): run the update above once. It keeps
+    a LAN install's `0.0.0.0` as `HOPPER_BIND=0.0.0.0` in `.env`, adds OpenFGA, and keeps the old file as the backup.
+    An image from before this change has no `hopper update`: make the script from the new image, as above.
   - **Optionally, remove the image it replaced:** `podman image prune -f --filter label=org.opencontainers.image.title=hopper`
     (`docker image prune …` the same). It removes only untagged hopper images, so repeated upgrades do not
     pile up images.
@@ -326,8 +355,8 @@ every credential is denied, and Settings → Access says why.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
   The key is read at each call: rotate it in OpenFGA and the runtime together.
-- **Update OpenFGA** by changing the image tag in `compose.yaml` (`openfga-migrate` and `openfga` together), then
-  `podman compose up -d`.
+- **Update OpenFGA** with the hopper: the `compose.yaml` each hopper image ships with names the OpenFGA version it
+  runs, and the update puts it in (issue #697). Do not change the tag in `compose.yaml` by hand.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
   filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
 - **Without OpenFGA** (issue #696): every page shows a banner that says why access checks are off, with this fix, and
@@ -335,11 +364,10 @@ every credential is denied, and Settings → Access says why.
   the same reason, and a save tried anyway answers 503 `access checks are unavailable: OpenFGA is not reachable`.
   Nothing else changes: your other secrets, your GitHub connection and your session stay as they were.
   `GET /api/access/status` answers the state to any reader.
-- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): copy the
-  `openfga-migrate` and `openfga` services, and the `postgres` service's start script that writes OpenFGA's files,
-  from the current `compose.yaml` into yours — or take the whole file and keep your `.env` —, then run
-  `podman-compose up -d` (or `podman compose up -d`) in its folder. The banner goes within a minute of OpenFGA
-  answering.
+- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
+  copy services into it. Run the update ("In containers, with Podman" → Upgrade, issue #697): it puts in the
+  `compose.yaml` the image ships with, which has OpenFGA, keeps your own settings in `.env`, and starts the whole
+  stack. The banner goes within a minute of OpenFGA answering.
 
 ### Minting short-lived credentials
 
