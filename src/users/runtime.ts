@@ -198,6 +198,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  // The addresses an ssh target's probe asks (issues #695, #698): the user's link base (Settings → Artifacts) first, when
+  // set, then the hopper's own; a job there gets only the one the probe found it reaches, the link base too.
+  const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
@@ -220,7 +223,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
           // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
           // after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: o.hopperUrls() } : {}) }).then(async (found) => ({
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}) }).then(async (found) => ({
             online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
             ...found,
           })))),
