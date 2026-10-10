@@ -40,7 +40,8 @@ const SHUTDOWN_WAIT_MS = 5000;
  * new priority lane settings change which lanes default jobs may take (issue #535); a proposal or a research report frees
  * a lane, and one sent back or accepted on to the next section requeues its job (issues #537, #543); a discovery that
  * changed a machine, new blast-radius settings and a job let through the gate change which machines a job may take
- * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548). */
+ * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548); a template
+ * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
@@ -48,6 +49,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.parked', 'job.unparked', 'job.continued', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
   'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed', 'job.forked',
+  'template.saved', 'template.removed', 'template.profile_approved', 'vault.secret_set', 'vault.secret_removed',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ReviewHandlers {
@@ -96,7 +98,7 @@ export function createEngine(o: EngineOptions): Engine {
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, verdict: o.verdict, credentials: o.credentials, jobProxy: o.jobProxy ?? (() => undefined), problems: o.problems,
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, verdict: o.verdict, credentials: o.credentials, jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,

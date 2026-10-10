@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobCredentials, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import { jobPriorityTag, type DeciderPolicy, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
+import { jobPriorityTag, type DeciderPolicy, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -44,6 +44,8 @@ export interface EngineOptions {
   credentials: (job: Job) => Promise<JobCredentials | undefined>;
   /** What a job on this machine asks the hopper's GitHub proxy with (issue #563); undefined: the machine cannot reach the hopper. Absent: none. */
   jobProxy?: (job: Job, machine: MachineSnapshot) => JobProxyCredentials | undefined;
+  /** A box's template and its rating now (issue #605): the box's blast radius includes it. Absent: no machine is a box. */
+  boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
   problems: () => ProblemBlock[];
 }

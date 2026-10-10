@@ -295,6 +295,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const jobSources = () => [...running.map((r) => r.source), ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
+  const vault = await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
@@ -308,15 +309,15 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing,
     },
     tickMs: config.tickMs,
-    maxQuestions: config.maxQuestions,
-    keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
+    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     verdict: (job) => judge(sourceOf(job), job),
     // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
     // A fork (issue #548) acts through its parent's source's connection.
     credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL.
-    jobProxy: proxy.jobProxy,
+    // A box's blast radius includes its template's rating (issue #605), read live from the vault.
+    jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
     // Read at each Decision; reached only after `failures` exists.
     problems: () => failures.blocks(),
   });
@@ -353,7 +354,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
-    secretProblem: (sub) => webhookSecrets.problem(sub), vault: await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), // issues #558, #585, #586
+    secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
     machineLink: {
       hopperKey: hopperLink.publicKey,
       join: (j) => host.joinMachine(j),
