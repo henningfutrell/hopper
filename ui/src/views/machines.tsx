@@ -22,7 +22,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, templateText, workTreeText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, kindOf, mayAddThisMachine, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
@@ -119,6 +119,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {res && <Fact label="memory">{res.memory}</Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
+        {workTreesText(m) && <Fact label="work trees per repository">{workTreesText(m)}</Fact>}
       </dl>
       {updateLine && (
         <div role="alert" className="grid gap-1.5 text-sm">

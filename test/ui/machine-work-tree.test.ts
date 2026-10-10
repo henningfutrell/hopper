@@ -2,7 +2,7 @@
 // with the machine (the jobs directory when it names none).
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { DETAILS, editBody, editDraft, editProblem, kindOf, localBody, workTreeText } from '../../ui/src/model/machines.ts';
+import { DETAILS, editBody, editDraft, editProblem, kindOf, localBody, workTreeText, workTreesText } from '../../ui/src/model/machines.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -51,5 +51,15 @@ describe('a machine\'s work tree', () => {
     expect(workTreeText({ ...base, ssh: 'desk' })).toBe('~/hopper-jobs (the jobs directory)');
     expect(workTreeText({ ...base, ssh: 'desk', workTree: '/srv/w' })).toBe('/srv/w');
     expect(workTreeText({ ...base, docker: 'c' })).toBeNull();
+  });
+});
+
+// Issue #691: the work trees a machine keeps per repository, shown on its panel.
+describe('Machines view: work trees per repository (issue #691)', () => {
+  it('lists each repository and its work tree, sorted; none for a machine that maps none', () => {
+    const m = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], workTrees: { 'acme/zeta': '~/z', 'acme/alpha': '/srv/a' } };
+    expect(workTreesText(m)).toBe('acme/alpha → /srv/a; acme/zeta → ~/z');
+    expect(workTreesText({ ...m, workTrees: {} })).toBeNull();
+    expect(workTreesText({ id: 'box', label: 'box', maxLanes: 1, online: true, executors: [] })).toBeNull();
   });
 });
