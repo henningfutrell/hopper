@@ -2,7 +2,8 @@
 // or an escalation level's claude. A code the output shows is reported to the logins while the run waits on it,
 // once per code; when the run ends, the login is completed (the run succeeded) or failed (it did not). A
 // print-mode run cannot be asked for a new code: its tool takes no input.
-import type { Clock, RunLogins } from '../domain/ports.ts';
+import type { Clock } from '../domain/ports.ts';
+import type { RunLogins } from '../domain/types.ts';
 import { hideCodes, recogniseDeviceCode } from './recognise.ts';
 
 /** The tail of the output the recognisers read: a prompt is a few lines, and a long run's output is long. */

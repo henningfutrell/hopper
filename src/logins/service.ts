@@ -3,9 +3,9 @@
 // (`logins`, the user's schema) and its events, but the URL and the code — credentials in flight — only in
 // this process's memory, dropped when the login ends; only a UI session of the user reads them. The run polls
 // `check` for what the user did (a new code, cancel), and the hopper expires a login at `expiresAt` itself.
-import type { Clock, RunLogins, UserStore } from '../domain/ports.ts';
+import type { Clock, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginReport, type LoginSettings, type LoginStatus, type LoginView,
+  DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginReport, type LoginSettings, type LoginStatus, type LoginView, type RunLogins,
 } from '../domain/types.ts';
 import { LOGIN_KIND_HANDLERS } from './kinds.ts';
 
