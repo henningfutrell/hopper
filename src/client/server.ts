@@ -35,7 +35,8 @@ import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResp
 const MAX_BODY = 1024 * 1024;
 const MAX_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 15000;
-const BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+/** The waits between dials: at most 10 s (issue #704), so a client is back soon after the hopper restarts. */
+export const BACKOFF_MS: readonly number[] = [1000, 2000, 5000, 10000];
 /** A link that stayed up this long starts the backoff over. */
 const STABLE_MS = 60000;
 

@@ -1,7 +1,9 @@
 // The vault on a machine (design.md "The vault", issue #558): how a job on a joined machine gets a vault
 // secret just in time, never from its environment or a file. The client serves a socket in its client dir
 // (the dir 700, the socket 600: only this user opens it) and writes the `hopper-secret` helper beside it
-// (secret.ts). A job runs the helper; the helper asks the client over the socket for one secret, showing the job's
+// (secret.ts). On Windows, where a socket path in the profile is refused, it serves a named pipe of a new name at
+// each start (issue #704): another account may at most open it to read, never send an ask, and an ask still needs a
+// job's token. A job runs the helper; the helper asks the client over the socket for one secret, showing the job's
 // proxy token (issue #563: derived for that job, honoured only while it is at work); the client asks the hopper at
 // `POST /client/vault`, signed with the client token (signature.ts signVault), so the hopper knows the machine too.
 // The hopper answers only a secret in the approved scope of the machine's template, for a job at work on it, sealed
@@ -149,15 +151,23 @@ export interface Vault {
   stop(): Promise<void>;
 }
 
+/**
+ * Where the vault listens (issue #704): `vault.sock` in the client dir, or on Windows a named pipe, since Node there
+ * takes a listen path only as a pipe name. `id` makes the pipe's name new at each start.
+ */
+export const socketOf = (dir: string, platform: string, id: string): string =>
+  (platform === 'win32' ? `\\\\.\\pipe\\hopper-vault-${id}` : join(dir, SOCKET_FILE));
+
 const quote = (s: string): string => `'${s.replaceAll('\'', '\'\\\'\'')}'`;
 
 /** Serves the vault's socket and writes the helper. One ask per connection: a line of JSON in, a line of JSON out. */
 export function startVault(o: VaultOptions): Promise<Vault> {
   mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   chmodSync(o.dir, 0o700);
-  const socket = join(o.dir, SOCKET_FILE);
+  const pipe = process.platform === 'win32';
+  const socket = socketOf(o.dir, process.platform, randomBytes(8).toString('hex'));
   const helper = join(o.dir, HELPER_FILE);
-  rmSync(socket, { force: true });
+  if (!pipe) rmSync(socket, { force: true });
   const script = `#!/bin/sh\n# The vault's helper (hopper client, issue #558): written by the client at each start.\n${SOCKET_VARIABLE}=${quote(socket)} exec ${quote(o.node ?? process.execPath)} ${quote(join(o.installDir, 'secret.ts'))} "$@"\n`;
   writeFileSync(`${helper}.tmp`, script, { mode: 0o700 });
   renameSync(`${helper}.tmp`, helper);
@@ -186,10 +196,10 @@ export function startVault(o: VaultOptions): Promise<Vault> {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(socket, () => {
-      chmodSync(socket, 0o600);
+      if (!pipe) chmodSync(socket, 0o600);
       resolve({
         socket, helper,
-        stop: () => new Promise((done) => { server.close(() => done()); rmSync(socket, { force: true }); }),
+        stop: () => new Promise((done) => { server.close(() => done()); if (!pipe) rmSync(socket, { force: true }); }),
       });
     });
   });

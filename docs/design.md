@@ -4234,7 +4234,7 @@ is, not a secret — and its own link key, a secret by the same exception as its
 Fastify's hooks), finds the client target holding that key, checks the signature with its token, answers
 101, and keeps the socket as the machine's **link** (`src/machines/links.ts`; a second dial-in replaces
 the first). The hopper is the HTTP/2 client on it, the client the server: `POST /herdr`, `/release`,
-`/load` unchanged. A link that ends is dialled again (1 s … 30 s); a fresh dial-in is probed at once, not
+`/load` unchanged. A link that ends is dialled again (1 s … 10 s, issue #704: back soon after a hopper restart); a fresh dial-in is probed at once, not
 at the next 30 s. A removed machine's key finds no client target: refused, 401.
 
 **Reach.** Whatever reaches the UI reaches the dial-in: a box on the compose network as `hopper:<port>`
@@ -10277,7 +10277,9 @@ A job on a box gets a vault secret at the moment a tool asks for it, and only th
 or written to its disk: the value is in memory, in the client and the helper, for the one call.
 
 **On the box.** The hopper client (`src/client/vault.ts`) serves a Unix socket, `vault.sock` in its client dir (the
-dir 700, the socket 600), and writes the helper `hopper-secret` beside it at each start: a short sh script that runs
+dir 700, the socket 600) — on Windows, where Node takes a listen path only as a pipe name, a named pipe
+`\\.\pipe\hopper-vault-<random>`, a new name at each start (issue #704; another account may at most open it to read,
+never send an ask) —, and writes the helper `hopper-secret` beside it at each start: a short sh script that runs
 the client's `secret.ts` with node, the socket named. The client's `/release` answer says the helper's path (`vault`);
 the hopper keeps it on the machine (`MachineSnapshot.client.vault`) and gives each job there `HOPPER_SECRET`, beside the
 GitHub proxy's `HOPPER_TOKEN_FILE` (`src/users/github-proxy.ts`, issue #563). A machine whose client says no helper (an
