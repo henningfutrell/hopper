@@ -364,7 +364,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
 
     // armHuman arms only an open question at the human stage; the expiry written to any other is never read.
     unparked(id) {
-      if (store.questions.get(id)?.tier === HUMAN) store.questions.update(id, { expiresAt: new Date(clock.now().getTime() + o.humanTimeoutMs).toISOString(), lastNotifiedAt: iso() });
+      if (store.questions.get(id)?.tier === HUMAN) store.questions.update(id, { expiresAt: new Date(clock.now().getTime() + o.humanTimeoutMs).toISOString(), lastNotifiedAt: iso(), waitRestartedAt: iso() });
       armHuman(id);
     },
 

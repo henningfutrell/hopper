@@ -272,6 +272,10 @@ export interface MachineSnapshot {
   workTrees?: Record<string, string>;
   /** Why its work tree cannot be made usable, as its last probe found (issue #361): no job is routed to it. Absent: usable, or not probed yet. */
   workTreeProblem?: string;
+  /** An ssh target: the hopper's address its last probe found it reaches, given to its jobs as HOPPER_URL (issue #698). Absent: none found, or not probed yet. */
+  hopperUrl?: string;
+  /** An ssh target: why its jobs cannot reach the hopper, as its last probe found (issue #698): no new job is routed to it. */
+  addressProblem?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
   /**

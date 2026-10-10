@@ -137,6 +137,10 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
       )}
+      {m.addressProblem && (
+        <p role="alert" className="text-sm text-destructive">Takes no new job: {m.addressProblem}. Its jobs wait for another machine.</p>
+      )}
+      {m.hopperUrl && <p className="text-xs text-muted-foreground">Its jobs reach the hopper at <code>{m.hopperUrl}</code>.</p>}
       <CpuSparkline series={ctx.sparks} machineId={m.id} />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide resources' : 'Resources over time'}</Button>

@@ -1,6 +1,7 @@
 // Auto-park (issue #650, design.md "Parked jobs"): on each tick, a job whose question has waited on a person past the
 // park timeout is parked as the Park button parks it (`recordPark`, then `releaseParked`): its pane and agent end, its
-// work tree, agent session and open question are kept. The wait counts from when the question reached a person. Only a
+// work tree, agent session and open question are kept. The wait counts from when the question reached a person, or
+// from when it began to wait on one again (`waitRestartedAt`: its job re-queued from parked, issue #692). Only a
 // job on a question (`waiting_answer`) parks by itself: a job waiting on a login is running (issue #476). Never parked
 // by it: a question a risk rule or the consequential guard sent to a person (`keptBy`), a job with no agent session to
 // resume (its pick up needs a person's confirmation, issue #530), and one a fork of its question still works for. The
@@ -38,7 +39,7 @@ export async function autoPark(c: EngineContext): Promise<void> {
       const job = store.jobs.get(waiting.id);
       if (job?.status !== 'waiting_answer') return undefined;
       const due = dueAfter(c, job, settings);
-      if (!due || now - new Date(due.q.escalatedToHumanAt!).getTime() < due.minutes * MINUTE_MS) return undefined;
+      if (!due || now - new Date(due.q.waitRestartedAt ?? due.q.escalatedToHumanAt!).getTime() < due.minutes * MINUTE_MS) return undefined;
       return recordPark(c, job, 'waiting_answer', undefined, autoParkWhy(due.minutes));
     });
     if (parked) await releaseParked(c, parked);

@@ -4,6 +4,7 @@
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 // A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag.
 // The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the commands are one container tool's, the one this browser chose last.
+// An install whose compose.yaml has no OpenFGA (issue #696): How to update says to add it, with the fix.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
 import { ArrowUpCircle, ChevronDown, Info, RefreshCw, X } from 'lucide-react';
 import { useState } from 'react';
@@ -20,6 +21,8 @@ import { ago } from '@/model/format';
 import { CHANNELS, CONTAINER_TOOLS, channelBadge, headline, imageUpdate, showNotice } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
+import { accessDown } from '@/model/access-status';
+import { AccessFix, useAccessStatus } from './access';
 import { updateAct, useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
@@ -82,6 +85,7 @@ function Command({ text }: { text: string }) {
 /** How to update a container install: the channel's tag in .env, pull and recreate the hopper's container, prune — for the chosen container tool; and what a recreate would end now. */
 function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
   const tool = useContainerTool();
+  const access = accessDown(useAccessStatus());
   const u = imageUpdate(s);
   if (!u) return null;
   const c = u.commands.find((x) => x.tool === tool) ?? u.commands[0]!;
@@ -101,6 +105,12 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
       <Command text={c.update} />
       <Command text={c.prune} />
       <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>
+      {access !== undefined && (
+        <div data-slot="access-missing" className="space-y-1">
+          <p className={TEXT.bad}>This hopper has no OpenFGA, a required service: {access}</p>
+          <AccessFix />
+        </div>
+      )}
     </div>
   );
 }
