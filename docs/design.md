@@ -2553,6 +2553,17 @@ fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `ro
 4. Accepted → the answer is typed into the pane; `answeredBy` names the level, and `question.answered`
    carries `auto: true` and the confidence. Past the top level, or with no levels → the human.
 
+**Why a question came to a person** (issue #679, `src/questions/escalation.ts`). When a question reaches the human
+stage, it keeps `escalation`: `reason` — `guard` (a risk rule or the consequential guard held an answer back on
+purpose; `guards` names each, with what it catches), `low_confidence` (the top level was below the threshold),
+`no_answer` (no level gave an answer: it failed, gave none, or there are no levels), `frontier_escalated` (the top
+level sent it up), `high_priority`, `auto_answer_off`, or `fork` (it waits for a fork's result) — and
+`recommendation`, the last answer on the trail (who, what, how sure). The question card says it in one sentence at
+the top, with what the level recommends; Use answer names the level (`Use Fable's answer`). The Questions list
+filters by reason, with counts; `GET /api/questions?reason=` and `hopper question list [--reason]` do the same. A
+question sent to a person before this has no `escalation`; the card says the reason was not recorded. Attempt
+reasons no longer end in "(no rules yet)"; the rules view says when there are none.
+
 **Correcting an auto-answer** (issue #632). A person may correct a level's answer that went into the
 job (`POST /ui/api/questions/:id/correct`, Settings → Question history): the question's answer is the
 person's now, `corrected` keeps the level, its answer, when and by whom, and `question.corrected` is on
@@ -8113,7 +8124,7 @@ holds the database's credentials, the daemon's own trust, so acting from it wide
 
 - **Commands** (`src/cli-operator.ts`): `hopper job accept|reject|rerun <id>` (`reject --reason <text>`),
   `hopper queue order <id>...`, `hopper queue gate <auto-accept|review> [--per-hour <n>|none]` (without
-  `--per-hour` the throttle stays), `hopper question answer <id> <text>`, `hopper question close|dismiss <id>`.
+  `--per-hour` the throttle stays), `hopper question list [--reason <reason>]` (issue #679: the open questions, each with why it came to a person), `hopper question answer <id> <text>`, `hopper question close|dismiss <id>`.
   `--user <id>` as on `config` (default the one user). Each prints the daemon's answer as JSON.
 - **Through the daemon, never around it.** Each command is the UI's own route on the running daemon, so its
   checks, its events (`job.accepted` by `user`, `queue.gate_changed`, `question.answered` by `human`, …) and

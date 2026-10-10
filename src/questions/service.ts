@@ -11,10 +11,12 @@ import type { AnswerByHumanResult, Clock, ConfigRecords, EscalationLevel, Questi
 import type { Logins } from '../logins/index.ts';
 import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { answerHold, correctAutoAnswer } from './auto-answer.ts';
+import { escalationOf, type Climb, type ToHuman } from './escalation.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { answerFixed, FIXED } from './fixed-answers.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
 import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
+import { callLevel } from './level-call.ts';
 import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
 import { tldrData } from '../tldr/service.ts';
@@ -132,12 +134,15 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     timers.set(id, t);
   }
 
-  /** Inside a tx. Moves the question to the human stage and announces it. `kept`: a risk rule or the guard sent it (issue #650). */
-  function toHuman(q: Question, reason: string, kept?: Question['keptBy']) {
+  /**
+   * Inside a tx. Moves the question to the human stage and announces it. `to`: why, for the person (issue #679); `kept`: a
+   * risk rule or the guard sent it (issue #650).
+   */
+  function toHuman(q: Question, reason: string, to: ToHuman) {
     const now = clock.now();
     const updated = store.questions.update(q.id, {
-      tier: HUMAN, escalatedToHumanAt: now.toISOString(), lastNotifiedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + o.humanTimeoutMs).toISOString(), notifyCount: 1, ...(kept ? { keptBy: kept } : {}),
+      tier: HUMAN, escalatedToHumanAt: now.toISOString(), lastNotifiedAt: now.toISOString(), expiresAt: new Date(now.getTime() + o.humanTimeoutMs).toISOString(),
+      notifyCount: 1, escalation: escalationOf(store.questions.get(q.id) ?? q, to), ...(to.kept ? { keptBy: to.kept } : {}),
     });
     const data = escalationData(updated, HUMAN, reason);
     emit(updated, 'question.escalated', data);
@@ -170,71 +175,55 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
   }
 
   /** One level's call: aborted by cancel, a human answer, shutdown, or the stage timeout; a throw is an error. */
-  async function call<T>(id: string, fn: (signal: AbortSignal) => Promise<T>): Promise<T | { error: string }> {
-    const ac = new AbortController();
-    inflight.set(id, ac);
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<{ error: string }>((resolve) => {
-      timer = setTimeout(() => {
-        ac.abort('timeout');
-        resolve({ error: `timeout after ${o.stageTimeoutMs}ms` });
-      }, o.stageTimeoutMs);
-    });
-    try {
-      return await Promise.race([fn(ac.signal).catch((e: unknown) => ({ error: `threw: ${e instanceof Error ? e.message : String(e)}` })), timeout]);
-    } finally {
-      clearTimeout(timer);
-      if (inflight.get(id) === ac) inflight.delete(id);
-    }
-  }
+  const call = <T>(id: string, fn: (signal: AbortSignal) => Promise<T>) => callLevel(inflight, id, o.stageTimeoutMs, fn);
 
   /**
    * One level holds the question: its reply is recorded, then the question is answered, goes to the
    * human (a risk rule hit), or climbs on. Returns why it climbs, or undefined when it does not
    * (answered, at the human stage, or taken from this level meanwhile).
    */
-  async function ask(id: string, level: EscalationLevel, number: number, of: number, reason: string): Promise<string | undefined> {
+  async function ask(id: string, level: EscalationLevel, number: number, of: number, reason: string): Promise<Climb | undefined> {
     const entered = store.tx((): Question | undefined => {
       const q = store.questions.get(id);
       return q && q.status === 'open' ? enter(q, level.name, reason) : undefined;
     });
     if (!entered) return undefined;
-    const { req, rulesNote } = levelRequest(o, entered, number, of, level.name, () => !stopped);
+    const req = levelRequest(o, entered, number, of, level.name, () => !stopped);
     const startedAt = iso();
     const replied = await call(id, (signal) => level.answer(req, signal));
     if (stopped) return undefined;
     const reply = check(REPLY, 'reply', replied);
-    return store.tx((): string | undefined => {
+    return store.tx((): Climb | undefined => {
       const q = stillAt(id, level.name);
       if (!q) return void superseded(id, level, startedAt);
       const model = (reply.ok ? reply.value.model : undefined) ?? level.model;
       const machine = reply.ok ? reply.value.machine : undefined;
       const base: QuestionAttempt = { tier: level.name, role: 'level', ...(model ? { model } : {}), ...(machine ? { machine } : {}), startedAt, finishedAt: iso(), outcome: 'escalated' };
       if (!reply.ok) {
-        store.questions.addAttempt(id, { ...base, error: reply.error, reason: `error${rulesNote}` });
-        return `${level.name} failed: ${reply.error}`;
+        store.questions.addAttempt(id, { ...base, error: reply.error, reason: 'error' });
+        return { why: `${level.name} failed: ${reply.error}`, reason: 'no_answer' };
       }
       const { answer, escalate, reason: why, suggest, confidence } = reply.value;
-      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}`, ...(confidence ? { confidence } : {}), ...(suggest ? { suggest } : {}) };
+      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: why, ...(confidence ? { confidence } : {}), ...(suggest ? { suggest } : {}) };
       // A suggested phase shift (issue #548): made by the level where the settings allow it, else shown to the person.
       // A fork leaves the question open for its result, with a person, who may still answer it first.
       const mode = suggest && o.onShift?.(q, suggest, level.name);
       if (mode) {
         store.questions.addAttempt(id, { ...base, ...replyFields, outcome: 'accepted' });
-        if (mode === 'fork') toHuman(store.questions.get(id)!, `${level.name} forked ${suggest.to === 'research' ? 'research' : 'a proposal'}: the question waits for its result`);
+        if (mode === 'fork') toHuman(store.questions.get(id)!, `${level.name} forked ${suggest.to === 'research' ? 'research' : 'a proposal'}: the question waits for its result`, { reason: 'fork' });
         return undefined;
       }
       if (suggest && !q.suggestion) store.questions.update(id, { suggestion: { ...suggest, by: level.name } });
       if (escalate || answer === undefined) {
         store.questions.addAttempt(id, { ...base, ...replyFields });
-        return `${level.name}: ${why}`;
+        return { why: `${level.name}: ${why}`, reason: escalate ? 'frontier_escalated' : 'no_answer' };
       }
       // The level answers. The risk rules run on the question and the answer to be typed; a hit goes to the owner, past
       // every level above: no model approves what the rules guard. Then auto-answer (issue #632) may hold it for a person,
       // or, below the threshold, for the next level.
       const { riskRules, hold } = answerHold({ store, q, answer, level: level.name, top: number >= of, confidence, gated: o.minorDecisions?.gated });
       store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, ...(hold ? {} : { outcome: 'accepted' as const }) });
-      if (hold) return hold.to === 'next' ? hold.why : void toHuman(q, hold.why, hold.kept);
+      if (hold) return hold.to === 'next' ? { why: hold.why, reason: hold.reason } : void toHuman(q, hold.why, hold);
       const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
       emit(updated, 'question.answered', { by: level.name, answer, auto: true, ...(confidence ? { confidence } : {}) });
       o.onAnswered(updated);
@@ -250,15 +239,16 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     if (stopped) return;
     if (answerFixed({ store, iso, human: HUMAN, toHuman, answered: answeredBy(FIXED) }, id) || await jevFirst(id)) return;
     const levels = [...o.levels()];
-    let why: string | undefined = reason;
+    let climb: Climb = { why: reason, reason: 'no_answer' };
     for (const [i, level] of levels.entries()) {
-      why = await ask(id, level, i + 1, levels.length, why);
-      if (why === undefined) return;
+      const next = await ask(id, level, i + 1, levels.length, climb.why);
+      if (next === undefined) return;
+      climb = next;
     }
-    // Past the top level (or no levels at all): the owner.
+    // Past the top level (or no levels at all): the owner, told why the top level let it go.
     store.tx(() => {
       const q = store.questions.get(id);
-      if (q && q.status === 'open') toHuman(q, levels.length === 0 ? 'no escalation levels configured' : why);
+      if (q && q.status === 'open') toHuman(q, levels.length === 0 ? 'no escalation levels configured' : climb.why, { reason: climb.reason });
     });
   }
 
@@ -389,7 +379,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         if (q.tier !== HUMAN) start(q.id, 'restarted after a daemon restart');
         else if (q.expiresAt) armHuman(q.id);
         // Created at the human stage (no levels), the daemon stopped before it was announced.
-        else store.tx(() => toHuman(q, 'no escalation levels configured'));
+        else store.tx(() => toHuman(q, 'no escalation levels configured', { reason: 'no_answer' }));
       }
     },
 
