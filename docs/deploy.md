@@ -127,8 +127,8 @@ There is no bootstrap login: a new hopper creates no user, no password and no lo
   #359). Claude Code: `podman compose exec hopper claude` (`/login`), once, kept in the home volume. No
   `-it`: `podman compose exec` is interactive with a terminal by default, and podman-compose refuses the
   flag. Or, for Claude Code, `CLAUDE_CODE_OAUTH_TOKEN` in `.env`: every job's Claude gets it, and the hopper seeds
-  Claude's config in an empty home, so a job starts with no first-run screen. A job gets its GitHub token from the
-  connected account (`GH_TOKEN`) on the machine that runs it. Who jobs commit as: `git config --global` in the container, or the
+  Claude's config in an empty home, so a job starts with no first-run screen. A job gets no GitHub token: its git
+  and GitHub steps go through the hopper, with the connected account (docs/design.md "Git through the hopper"). Who jobs commit as: `git config --global` in the container, or the
   `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables in `.env`.
 - **Settings and secrets: `.env` beside `compose.yaml`**, optional (`.env.example`, mode 600). Compose
   reads it for the file's own variables and passes all of it to the hopper.

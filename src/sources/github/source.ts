@@ -16,7 +16,7 @@ import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState } from './completion.ts';
 import { followPullRequest } from './follow.ts';
-import { contextBlock, contextComments, issueEnv, issuePrompt } from './context.ts';
+import { contextBlock, contextComments, issueEnv, issuePrompt, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
 import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
@@ -112,10 +112,11 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
     const comments = (known.has(issue.url) && !rerun.has(issue.url)) || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
-    const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false, contextComments(comments, assignee, config.recentComments, bot), config.recentComments, mode);
+    const untrusted = untrustedBlock(issue, contextComments(comments, assignee, config.recentComments, bot), config.recentComments, mode);
+    const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false);
     return {
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
-      prompt: issuePrompt(issue, context), env: issueEnv(issue),
+      prompt: issuePrompt(untrusted, context), env: issueEnv(issue),
       author: issue.author, ...(assignee !== undefined ? { assignee } : {}), priority: p.priority, priorityReason: p.reason,
       labels: issue.labels, repo: issue.repo, number: issue.number,
       executor: config.executor,

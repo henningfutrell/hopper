@@ -7,7 +7,7 @@ import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { mintLinkKey } from '../../src/client/link.ts';
 
 const proxy = createUserGitHubProxy({
-  user: { id: 'u1', name: 'u1' } as never, store: {} as never, linkPrivateKey: mintLinkKey().privateKey, accounts: {} as never,
+  user: { id: 'u1', name: 'u1' } as never, store: {} as never, linkPrivateKey: mintLinkKey().privateKey, accounts: { endpoints: () => ({ url: 'https://github.com', apiUrl: 'https://api.github.com' }) } as never,
   url: () => 'http://hopper:4790',
 });
 const job = { id: 'j1' } as Job;

@@ -69,8 +69,8 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     const token = await app.login();
     expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
 
-    const off = await waiting(gh, app, OTHER);
-    const on = await waiting(gh, app, REPO);
+    const off = await waiting(gh, app, OTHER, { checks: 'passing' });
+    const on = await waiting(gh, app, REPO, { checks: 'passing' });
     await app.sync();
     await waitFor(() => gh.issue(REPO, on.issue.number).state === 'closed', { what: 'the yolo pull request merged' });
     const merged = await waitFor(async () => (await app.events('types=job.pull_request_merged')).find((e) => e.jobId === on.job.id), { what: 'job.pull_request_merged' });
@@ -84,6 +84,22 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     expect(await cardOf(app, off.job.id)).toMatchObject({ repo: OTHER, state: 'open', yolo: false, waits: 'yolo off', pullRequest: { url: off.url } });
     expect(gh.issue(OTHER, off.issue.number).state).toBe('open');
     expect((await app.job(on.job.id)).status).toBe('finished');
+  });
+
+  it('yolo on, a pull request with no checks is not merged (issue #652): its card waits on "no checks" until a check passed', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    await app.ui('/ui/api/yolo-mode', { on: true }, { token });
+    const w = await waiting(gh, app, REPO);
+    await app.sync();
+    await waitFor(async () => (await cardOf(app, w.job.id))?.waits === 'no checks', { what: 'waits on a check' });
+    expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+    expect(gh.issue(REPO, w.issue.number).state).toBe('open');
+
+    gh.setChecks(w.url, 'passing');
+    await app.sync();
+    await waitFor(() => gh.issue(REPO, w.issue.number).state === 'closed', { what: 'merged once a check passed' });
   });
 
   it('test 9 — yolo on, the merge waits or fails: the job stays done, no failure record, the pull request stays in the list', async () => {
@@ -120,8 +136,8 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     const token = await app.login();
     await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true, [THIRD]: true } }, { token });
     const pending = await waiting(gh, app, REPO, { checks: 'pending' });
-    const off1 = await waiting(gh, app, OTHER);
-    const off2 = await waiting(gh, app, OTHER);
+    const off1 = await waiting(gh, app, OTHER, { checks: 'passing' });
+    const off2 = await waiting(gh, app, OTHER, { checks: 'passing' });
     const shut = await waiting(gh, app, THIRD, { checks: 'pending' });
     gh.closePullRequest(shut.url);
     await app.sync();

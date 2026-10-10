@@ -50,9 +50,9 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
  * are on. Prints its outcome last. The worktree is made after a fetch (never prompting), detached at the
  * remote's default branch, else the current branch's upstream, else HEAD; one an earlier run of the job
  * left is used as it is, nothing fetched. A checkout is `<name>` in the work tree, whose origin must be the
- * repository; a missing one is cloned beside it and moved in, so two jobs cloning at once leave one. Git asks
- * for github.com credentials only `GH_TOKEN` (the job's connection, issue #214), else `gh`, by name: the
- * token is never on a command line. One line (issue #518): an interactive shell whose start-up files were
+ * repository; a missing one is cloned beside it and moved in, so two jobs cloning at once leave one. Git reaches
+ * GitHub through the hopper, by the variables the job runs with (issue #652): no GitHub token is on the machine or
+ * a command line. One line (issue #518): an interactive shell whose start-up files were
  * busy lost or mangled a command of many lines typed into it, so every statement ends in `;` or a keyword.
  */
 const SCRIPT = [
@@ -66,9 +66,6 @@ const SCRIPT = [
   'fi;',
   '[ -n "$r" ] || { echo none; exit 0; };',
   'n=${r##*/};',
-  'if [ -n "$GH_TOKEN" ]; then h=\'!f() { echo username=x-access-token; echo "password=$GH_TOKEN"; }; f\';',
-  "elif command -v gh >/dev/null 2>&1; then h='!gh auth git-credential'; else h=; fi;",
-  '[ -z "$h" ] || export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0= GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="$h";',
   'if [ -e "$n/.git" ]; then',
   '  case "$(git -C "$n" remote get-url origin 2>/dev/null)" in',
   '    *[:/]"$r"|*[:/]"$r".git|*[:/]"$r"/) ;;',

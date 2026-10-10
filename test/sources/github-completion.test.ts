@@ -273,6 +273,7 @@ describe('a pull request the job left in conflict or as a draft (issue #626)', (
     const ready = finishBrief({ pullRequest: url, step: 'mark_ready' });
     expect(ready).toContain(url);
     expect(ready).toMatch(/ready for review/i);
+    expect(ready).toContain('sh "$HOPPER_GH" pr ready 1001 --repo'); // through the hopper: the job holds no GitHub token (issue #652)
     expect(ready).not.toBe(rebase);
   });
 });

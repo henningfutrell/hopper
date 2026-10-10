@@ -20,11 +20,15 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" issue view N    --repo OWNER/NAME
+  sh "$HOPPER_GH" issue close N   --repo OWNER/NAME      (this job's own issue only, as completed)
   sh "$HOPPER_GH" pr create      --repo OWNER/NAME --head BRANCH [--base BRANCH] --title TITLE (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" pr view N       --repo OWNER/NAME
+  sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
 
 Prints the answer as JSON, with the url. A refusal prints why and exits 1: do not try another way around it.
 An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
+git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
+pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
 A pull request: push the branch first (git push), on this job's own repository.`;
 
 /** The script. Arguments become form fields, rebuilt in place (no eval); a body file is read by curl itself, the token from stdin. */
@@ -35,7 +39,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'pr create'|'pr view') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

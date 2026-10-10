@@ -4,12 +4,13 @@
 // The hopper acts with its own GitHub connection — its oldest user's, the one that set it up — so who asks
 // decides what it does with it:
 // - a job of that same user (**its own job**) may file and read issues, comment, open a pull request from
-//   its pushed branch on its own repository, and read pull requests, on the hopper's job repositories;
+//   its pushed branch on its own repository, mark one ready for review there, close its own issue as completed
+//   (issue #652: it holds no GitHub token of its own), and read pull requests, on the hopper's job repositories;
 // - a job of any other user (**another user's job**, treated as untrusted) may only file an issue there.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
 import { z } from 'zod';
 
-export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'pr.create', 'pr.view'] as const;
+export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'issue.close', 'pr.create', 'pr.view', 'pr.ready'] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
 const repo = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'repo must be owner/name');
@@ -22,8 +23,10 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000) }),
   z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000) }),
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
+  z.strictObject({ op: z.literal('issue.close'), repo, number }),
   z.strictObject({ op: z.literal('pr.create'), repo, head: branch, base: branch.optional(), title: text(256), body: text(60_000) }),
   z.strictObject({ op: z.literal('pr.view'), repo, number }),
+  z.strictObject({ op: z.literal('pr.ready'), repo, number }),
 ]);
 export type ProxyRequest = z.infer<typeof proxyRequest>;
 
@@ -34,6 +37,8 @@ export interface ProxyAsker {
   own: boolean;
   /** The job's own repository (its source's, or its parent's for a fork); absent: none. */
   repo?: string;
+  /** The number of the job's own issue in that repository; absent: none. */
+  issue?: number;
 }
 
 /** What a job of another user may ask: filing an issue. Everything else reads or writes as the hopper's user. */
@@ -49,8 +54,15 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   if (!jobRepositories.some((r) => same(r, req.repo))) {
     return { ok: false, reason: `${req.repo} is not one of the repositories the hopper works on, so it does nothing there for a job` };
   }
-  if (req.op === 'pr.create' && !(asker.repo && same(asker.repo, req.repo))) {
+  const ownRepo = asker.repo !== undefined && same(asker.repo, req.repo);
+  if (req.op === 'pr.create' && !ownRepo) {
     return { ok: false, reason: `a job opens a pull request only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
+  }
+  if (req.op === 'pr.ready' && !ownRepo) {
+    return { ok: false, reason: `a job marks a pull request ready only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
+  }
+  if (req.op === 'issue.close' && !(ownRepo && asker.issue === req.number)) {
+    return { ok: false, reason: `a job closes only its own issue${asker.repo && asker.issue !== undefined ? ` (${asker.repo}#${asker.issue})` : ', and this job has none'}` };
   }
   return { ok: true };
 }

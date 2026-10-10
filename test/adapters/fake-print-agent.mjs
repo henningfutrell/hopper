@@ -19,7 +19,7 @@ const argv = process.argv.slice(2);
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
 appendFileSync(log, JSON.stringify({
   argv, cwd: process.cwd(),
-  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, GH_TOKEN: process.env.GH_TOKEN },
+  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
 }) + '\n');
 const kind = process.env.FAKE_AGENT_KIND;
 const mode = process.env.FAKE_AGENT_MODE ?? 'ok';

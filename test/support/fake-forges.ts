@@ -17,6 +17,7 @@
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { serveGit } from './fake-git.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -28,10 +29,12 @@ export interface FakeIssue {
   /** Default: the author (issue #387: intake is by label and assignee). */
   assignees?: string[];
   state?: 'open' | 'closed';
+  /** Why it was closed (issue #652: a job closes its own issue as completed). */
+  stateReason?: string;
 }
 
-/** A pull request opened on the fake (issue #563). */
-interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string }
+/** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
+interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
 
 export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string }
 
@@ -64,6 +67,12 @@ export interface FakeForge {
   onRevoke?: (credentials: string[]) => void;
   /** GitHub: the revoke endpoint answers this status, revoking nothing. */
   revokeDown?: number;
+  /**
+   * GitHub's git over HTTP (issue #652), when made with `gitRoot`: the bare repositories `<gitRoot>/<owner>/<name>.git`,
+   * served by git's own `git-http-backend`. A read without credentials is answered as for a public repository; a push
+   * needs a token the forge accepts, as the password of Basic auth. Each request is recorded with its auth.
+   */
+  gitRequests: ForgeRequest[];
   /** Mint a pair as the device flow grants it (issue #441), for tests that start with an account already connected. */
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
@@ -85,14 +94,16 @@ const send = (res: ServerResponse, status: number, body: unknown) => {
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
-async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][] }): Promise<FakeForge> {
+async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
+  const gitRequests: ForgeRequest[] = [];
   let base = '';
   let handle: Handler = () => ({ status: 500 });
   const server = createServer((req, res) => {
     void (async () => {
       const u = new URL(req.url ?? '/', base);
       const auth = req.headers.authorization ?? '';
+      if (extra.gitRoot && serveGit(extra.gitRoot, extra.tokens, req, res, u, (r) => gitRequests.push(r))) return;
       const r: ForgeRequest = { method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: await readBody(req), auth };
       requests.push(r);
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
@@ -106,7 +117,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
   handle = handler(base);
   const pending = () => extra.devices.filter((d) => d.state === 'pending').at(-1);
   return {
-    url: base, requests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked,
+    url: base, requests, gitRequests, issues: extra.issues, tokens: extra.tokens, refreshTokens: extra.refreshTokens, mint: extra.mint, revoked: extra.revoked,
     approve(login) { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'approved'; d.login = login; },
     deny() { const d = pending(); if (!d) throw new Error('no pending device code'); d.state = 'denied'; },
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); }),
@@ -125,7 +136,7 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string }): Promise<FakeForge> {
   const issues = o.issues ?? [];
   const pulls: FakePull[] = [];
   const tokens = new Map<string, string>();
@@ -170,7 +181,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
-      number: p.number, title: p.title, body: p.body, state: 'open', draft: false, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
+      number: p.number, node_id: `PR_${p.repo}_${p.number}`, title: p.title, body: p.body, state: 'open', draft: p.draft === true, merged: false, html_url: `${base}/${p.repo}/pull/${p.number}`,
       head: { ref: p.head }, base: { ref: p.base },
     });
     return (r, login) => {
@@ -264,6 +275,13 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author)));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
+      if (r.method === 'POST' && path === '/graphql') {
+        const id = String((r.body.variables as Record<string, unknown> | undefined)?.id ?? '');
+        const pull = pulls.find((p) => `PR_${p.repo}_${p.number}` === id);
+        if (!String(r.body.query).includes('markPullRequestReadyForReview') || !pull) return { status: 200, body: { errors: [{ message: `Could not resolve to a node with the global id of '${id}'` }] } };
+        pull.draft = false;
+        return { status: 200, body: { data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false, url: `${base}/${pull.repo}/pull/${pull.number}` } } } } };
+      }
       const m = /^\/repos\/([^/]+\/[^/]+)(?:\/(.*))?$/.exec(path);
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
@@ -296,6 +314,10 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
+      if (r.method === 'PATCH' && !im[2]) {
+        if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
+        return { status: 200, body: restIssue(issue) };
+      }
       if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: [] };
       if (r.method === 'POST' && im[2] === 'comments' && !im[3]) {
         const id = ++n;
@@ -314,7 +336,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       return { status: 404, body: { message: 'Not Found' } };
     };
   }, {
-    issues, tokens, refreshTokens, devices, revoked,
+    issues, tokens, refreshTokens, devices, revoked, ...(o.gitRoot ? { gitRoot: o.gitRoot } : {}),
     mint: (login, web = false) => { const g = grant(login, web, ''); return { accessToken: g.access_token, refreshToken: g.refresh_token! }; },
   }).then((f) => (forge = f));
 }

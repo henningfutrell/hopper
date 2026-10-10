@@ -26,7 +26,7 @@ beforeAll(() => {
   work = join(dir, 'work');
   process.env.FAKE_AGENT_DIR = dir;
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
-  delete process.env.GH_TOKEN;
+  delete process.env.HOPPER_URL;
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {
@@ -86,13 +86,13 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
   const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, sshAuth: noSsh });
   beforeEach(() => { process.env.FAKE_AGENT_KIND = agent; });
 
-  it('runs the CLI in print mode in the job\'s work tree, with the protocol after the prompt and the job\'s GitHub credential, and finishes on HOPPER_DONE', async () => {
+  it('runs the CLI in print mode in the job\'s work tree, with the protocol after the prompt and the job\'s way to the hopper, and finishes on HOPPER_DONE', async () => {
     reply('I wrote greeting.txt.\n\nHOPPER_DONE');
-    const out = await ex.run(ctxFor({ prompt: 'Write a greeting', cwd: work, env: { HOPPER_REPO: 'o/r' }, model: 'm-1' }, { credentials: { GH_TOKEN: 'gho_job' } }).ctx);
+    const out = await ex.run(ctxFor({ prompt: 'Write a greeting', cwd: work, env: { HOPPER_REPO: 'o/r' }, model: 'm-1' }, { credentials: { HOPPER_URL: 'http://hopper.test' } }).ctx);
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: session } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
+    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });

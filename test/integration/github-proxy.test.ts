@@ -179,6 +179,24 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.failed')).toHaveLength(1);
   });
 
+  it('closes the job\'s own issue as completed, and marks its pull request ready for review; another issue is refused (issue #652)', async () => {
+    const t = await start();
+    t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Nothing to change', body: 'Check it.', author: 'someone', labels: ['hopper'] });
+    t.github.issues.push({ repo: 'octo/tools', number: 9, title: 'Someone else\'s', body: 'x', author: 'someone', labels: [] });
+    const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools', number: 7, url: `${t.github.url}/octo/tools/issues/7` });
+    const env = await waitFor(async () => t.held.get(job.id)?.env, { what: 'the job to run' });
+
+    expect((await hopperGh(t.root, env, ['issue', 'close', '9', '--repo', 'octo/tools'])).stdout).toContain('refused: a job closes only its own issue (octo/tools#7)');
+    expect(t.github.issues.find((i) => i.number === 9)!.state ?? 'open').toBe('open');
+    const closed = await hopperGh(t.root, env, ['issue', 'close', '7', '--repo', 'octo/tools']);
+    expect(json(closed)).toMatchObject({ ok: true, op: 'issue.close', number: 7, state: 'closed' });
+    expect(t.github.issues.find((i) => i.number === 7)).toMatchObject({ state: 'closed', stateReason: 'completed' });
+
+    const pr = json(await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-x', '--title', 'X', '--body', 'Closes #7']));
+    const ready = await hopperGh(t.root, env, ['pr', 'ready', String(pr.number), '--repo', 'octo/tools']);
+    expect(json(ready)).toMatchObject({ ok: true, op: 'pr.ready', number: pr.number, draft: false });
+  });
+
   it('opens a pull request only on the job\'s own repository', async () => {
     const t = await start();
     const { env } = await running(t, 'octo/tools');

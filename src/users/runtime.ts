@@ -213,8 +213,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     installations: (token) => installations(config.hopperApps.github, token),
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
     ...accountEvents(store.events),
-    // Running jobs get every new token on their machines at once (issues #441, #647); after `engine` exists.
-    onToken: () => { void engine.renewCredentials(); },
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {
@@ -323,10 +321,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     verdict: (job) => judge(sourceOf(job), job),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
     overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [],
-    // A job of a connected account acts through it (issue #214); any other job runs with nothing added.
-    // A fork (issue #548) acts through its parent's source's connection.
-    credentials: async (job) => (sourceOf(job) ?? sync.source(job.forkOf?.source?.source ?? ''))?.credentials?.(job),
-    // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL.
+    // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and
+    // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
     jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
     // Read at each Decision; reached only after `failures` exists.

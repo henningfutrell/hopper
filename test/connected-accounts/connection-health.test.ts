@@ -9,7 +9,7 @@
 //   Scenario: a 401 skips the renewal backoff at most once a minute
 //   Scenario: the status says how and when the connection was made, renewed, will renew, and its last error
 //   Scenario: a sign-in while the connection is healthy is held until the person confirms it
-//   Scenario: a sign-in while the connection is not healthy replaces it at once, and running jobs get the token
+//   Scenario: a sign-in while the connection is not healthy replaces it at once
 //   Scenario: a token sealed under a key the runtime does not give says which key is missing, at start
 import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -60,7 +60,6 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
   const logs: string[] = [];
   const renewed: unknown[] = [];
   const failures: unknown[] = [];
-  const handed: string[] = [];
   const deleted: string[] = [];
   const service = createConnectedAccounts({
     store: s, apps, clock,
@@ -76,11 +75,10 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     flows: { github: approvedAs(github, 'octo-user', clock) },
     onRenewed: (_p, r) => { renewed.push(r); },
     onRenewalFailed: (_p, r) => { failures.push(r); },
-    onToken: (p) => { handed.push(p); },
     ...o,
   });
   cleanups.push(() => service.stop());
-  return { service, logs, renewed, failures, handed, deleted };
+  return { service, logs, renewed, failures, deleted };
 }
 
 async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore) {
@@ -209,18 +207,16 @@ describe('the status says how the connection was made and how it renews (#647)',
 });
 
 describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
-  it('holds the sign-in\'s grant until the person confirms it, then hands it to running jobs', async () => {
+  it('holds the sign-in\'s grant until the person confirms it, then uses it', async () => {
     const gh = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
     const h = hopper(gh, s, clock);
     const first = await connect(h.service, s);
-    h.handed.length = 0;
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
     expect(s.connectedAccounts.get('github')!.accessToken).toBe(first.accessToken);
-    expect(h.handed).toEqual([]);
     expect(await github(h.service)).toMatchObject({ state: 'connected', held: { account: 'octo-user', at: T0 } });
     expect(h.logs.some((l) => /held/.test(l))).toBe(true);
 
@@ -228,7 +224,6 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     const now = s.connectedAccounts.get('github')!;
     expect(now.accessToken).toBe(signIn.accessToken);
     expect(now.connectedBy).toBe('sign-in');
-    expect(h.handed).toEqual(['github']);
     expect(await github(h.service)).not.toHaveProperty('held');
   });
 
@@ -260,7 +255,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     expect(await github(h.service)).not.toHaveProperty('held');
   });
 
-  it('a sign-in while the connection is not healthy replaces it at once, and running jobs get the token', async () => {
+  it('a sign-in while the connection is not healthy replaces it at once', async () => {
     const gh = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
@@ -269,25 +264,21 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     gh.refreshTokens.clear();
     await h.service.renew('github', first.accessToken).catch(() => undefined); // GitHub refuses the refresh token: ended
     expect((await github(h.service)).state).toBe('expired');
-    h.handed.length = 0;
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
     expect(s.connectedAccounts.get('github')!.accessToken).toBe(signIn.accessToken);
-    expect(h.handed).toEqual(['github']);
     expect((await github(h.service)).state).toBe('connected');
   });
 
-  it('connecting again from Sources is the person\'s own act: it replaces at once and hands the token on', async () => {
+  it('connecting again from Sources is the person\'s own act: it replaces at once', async () => {
     const gh = await forge();
     const clock = fixedClock(T0);
     const s = store(temp.url(), clock);
     const h = hopper(gh, s, clock);
     const first = await connect(h.service, s);
-    h.handed.length = 0;
     const second = await connect(h.service, s);
     expect(second.accessToken).not.toBe(first.accessToken);
-    expect(h.handed).toEqual(['github']);
   });
 });
 

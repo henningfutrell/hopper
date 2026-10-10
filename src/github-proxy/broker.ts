@@ -90,7 +90,8 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       }
       const req = parsed.data;
       if (!hopper) return refuse(503, 'the hopper has no user yet, so no GitHub connection', req);
-      const allowed = checkRequest(req, { jobId: job.id, own, ...(repoOf(job) ? { repo: repoOf(job)! } : {}) }, hopper.connection.jobRepositories());
+      const issue = job.source?.number;
+      const allowed = checkRequest(req, { jobId: job.id, own, ...(repoOf(job) ? { repo: repoOf(job)! } : {}), ...(issue !== undefined ? { issue } : {}) }, hopper.connection.jobRepositories());
       if (!allowed.ok) return refuse(403, allowed.reason, req);
       const api = hopper.connection.api();
       if ('problem' in api) return refuse(503, api.problem, req);

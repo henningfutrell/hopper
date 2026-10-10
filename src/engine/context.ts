@@ -1,5 +1,5 @@
 import type {
-  Clock, ExecutorRegistry, IdGen, JobCredentials, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
+  Clock, ExecutorRegistry, IdGen, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
 import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
@@ -49,8 +49,6 @@ export interface EngineOptions {
   overAtSource?: (job: Job) => Promise<string | undefined>;
   /** The credential requests open for a person (issue #583), each with the jobs that wait on it. Asked before a nudge (issue #627). Absent: none. */
   credentialRequests?: () => readonly CredentialRequest[];
-  /** What a job's processes act with, from its source's connection (JobSource.credentials, issues #214, #441). */
-  credentials: (job: Job) => Promise<JobCredentials | undefined>;
   /** What a job on this machine asks the hopper's GitHub proxy with (issue #563); undefined: the machine cannot reach the hopper. Absent: none. */
   jobProxy?: (job: Job, machine: MachineSnapshot) => JobProxyCredentials | undefined;
   /** A box's template and its rating now (issue #605): the box's blast radius includes it. Absent: no machine is a box. */

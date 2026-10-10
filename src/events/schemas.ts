@@ -330,9 +330,13 @@ export const EVENT_SCHEMAS = {
   'vault.credential_declined': strict({ request: z.string(), skill: z.string(), template: z.string(), reason: z.string(), by: z.string(), jobs: z.array(z.string()) }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
-  'github_proxy.done': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
-  'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), reason: z.string() }),
-  'github_proxy.failed': strict({ ...proxyAsked, op: proxyOp, repo: z.string(), error: z.string() }),
+  // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url.
+  'github_proxy.done': z.union([
+    strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
+    strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
+  ]),
+  'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string() }),
+  'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }),
   // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
   // `decision` names Access's decision (issue #559) when a link was checked.
   'skill.listed': strict(skillAsked),

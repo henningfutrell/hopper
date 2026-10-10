@@ -58,11 +58,26 @@ describe('who may ask what', () => {
       .toEqual({ ok: false, reason: 'a job opens a pull request only on its own repository, and this job has none' });
   });
 
+  it('the hopper\'s own job closes only its own issue, and marks a pull request ready only on its own repository (issue #652)', () => {
+    const mine = { ...own, issue: 7 };
+    expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, mine, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 8 }, mine, repos))
+      .toEqual({ ok: false, reason: 'a job closes only its own issue (octo/tools#7)' });
+    expect(checkRequest({ op: 'issue.close', repo: 'octo/site', number: 7 }, mine, repos)).toMatchObject({ ok: false });
+    expect(checkRequest({ op: 'issue.close', repo: 'octo/tools', number: 7 }, own, repos))
+      .toEqual({ ok: false, reason: 'a job closes only its own issue, and this job has none' });
+    expect(checkRequest({ op: 'pr.ready', repo: 'octo/tools', number: 9 }, mine, repos)).toEqual({ ok: true });
+    expect(checkRequest({ op: 'pr.ready', repo: 'octo/site', number: 9 }, mine, repos))
+      .toEqual({ ok: false, reason: 'a job marks a pull request ready only on its own repository (octo/tools)' });
+    expect(proxyRequest.safeParse({ op: 'issue.close', repo: 'o/r', number: 1, reason: 'not_planned' }).success).toBe(false);
+  });
+
   it('another user\'s job: filing an issue only', () => {
     expect(checkRequest(create, other, repos)).toEqual({ ok: true });
     for (const req of [
       { op: 'issue.view', repo: 'octo/tools', number: 1 }, { op: 'pr.view', repo: 'octo/tools', number: 1 },
-      { op: 'issue.comment', repo: 'octo/tools', number: 1, body: 'b' },
+      { op: 'issue.comment', repo: 'octo/tools', number: 1, body: 'b' }, { op: 'issue.close', repo: 'octo/tools', number: 1 },
+      { op: 'pr.ready', repo: 'octo/tools', number: 1 },
     ] as ProxyRequest[]) expect(checkRequest(req, other, repos)).toMatchObject({ ok: false, reason: expect.stringContaining('may only file an issue') });
   });
 
@@ -111,7 +126,7 @@ describe('the broker when the hopper cannot act', () => {
     let asked = 0;
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => 'over' }, log: () => {},
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; } }) } }),
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; }, defaultBranch: async () => 'dev' }) } }),
     });
     expect(await proxy.handle(bearer, create)).toMatchObject({ status: 429, body: { error: 'refused: over' } });
     expect(asked).toBe(0);

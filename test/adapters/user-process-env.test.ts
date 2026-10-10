@@ -3,7 +3,7 @@
 // later user's gh, claude, herdr server and panes must not inherit them. Admin's processes are unchanged.
 import { afterEach, describe, expect, it } from 'vitest';
 import { run } from '../../src/executors/command.ts';
-import { userProcessEnv } from '../../src/executors/env.ts';
+import { scrubbedEnv, userProcessEnv } from '../../src/executors/env.ts';
 
 const SECRET = 'HOPPER_TEST_ADMIN_SECRET';
 afterEach(() => { delete process.env[SECRET]; });
@@ -23,6 +23,12 @@ describe('userProcessEnv', () => {
   it("keeps the machine's variables and the user's own for a user added later, never the daemon's secrets", () => {
     const env = { PATH: '/bin', HOME: '/h', LANG: 'C.UTF-8', LC_ALL: 'C', TERM: 'xterm', GITHUB_APP_PRIVATE_KEY: 'k', GH_TOKEN: 't', SSH_AUTH_SOCK: '/s', HOPPER_DATABASE_URL: 'postgres://x' };
     expect(userProcessEnv({ GH_CONFIG_DIR: '/u/gh' }, env)).toEqual({ PATH: '/bin', HOME: '/h', LANG: 'C.UTF-8', LC_ALL: 'C', TERM: 'xterm', GH_CONFIG_DIR: '/u/gh' });
+  });
+});
+
+describe('scrubbedEnv (issue #652)', () => {
+  it('drops the ssh agent, so no job reaches the host\'s keys through it', () => {
+    expect(scrubbedEnv({ PATH: '/bin', SSH_AUTH_SOCK: '/run/agent.sock', SSH_AGENT_PID: '42', CLAUDECODE: '1', CLAUDE_CODE_OAUTH_TOKEN: 'c' })).toEqual({ PATH: '/bin', CLAUDE_CODE_OAUTH_TOKEN: 'c' });
   });
 });
 

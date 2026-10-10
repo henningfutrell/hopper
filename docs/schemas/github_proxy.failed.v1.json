@@ -18,17 +18,33 @@
       "type": "string"
     },
     "op": {
-      "type": "string",
-      "enum": [
-        "issue.create",
-        "issue.comment",
-        "issue.view",
-        "pr.create",
-        "pr.view"
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "issue.create",
+            "issue.comment",
+            "issue.view",
+            "issue.close",
+            "pr.create",
+            "pr.view",
+            "pr.ready"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "git.push"
+        }
       ]
     },
     "repo": {
       "type": "string"
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     },
     "error": {
       "type": "string"

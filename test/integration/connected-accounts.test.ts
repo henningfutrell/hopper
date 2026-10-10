@@ -23,7 +23,7 @@
 //     And the choice is changed without disconnecting, and outlives a disconnect
 //   Scenario: the app installed on two accounts, one with chosen repositories: each with the repositories it reaches, every page of them
 //   Scenario: GitHub cannot say where the app is installed: the status says why and where to see it, never that it is not installed
-//   Scenario: a job of the connected account runs with its token (GH_TOKEN), never stored on the job
+//   Scenario: a job of the connected account runs with no GitHub token where its machine keeps no credential files (issue #652)
 //   Scenario: disconnect
 //     Then GitHub reads as not connected, its source says so, and no issue becomes a job
 //   Scenario: a denied code fails, and connecting again starts over
@@ -200,7 +200,7 @@ describe('a user connects their own GitHub', () => {
     expect(await account(app, 'github')).toMatchObject({ jobRepositories: ['octo-user/tools', 'octo-user/other'] });
   });
 
-  it('runs a job of the connected account with its token as GH_TOKEN where its machine keeps no credential files, and never stores it on the job', async () => {
+  it('runs a job of the connected account with no GitHub token where its machine keeps no credential files (issue #652), and never stores one on the job', async () => {
     const f = await forges({ github: [{ repo: 'octo-user/tools', number: 9, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }] });
     const seen: Record<string, string>[] = [];
     const recorder: Executor = {
@@ -213,7 +213,7 @@ describe('a user connects their own GitHub', () => {
     await connect(app, f.github, 'github', 'octo-user', token);
     await choose(app, token, ['octo-user/tools']);
     await waitFor(async () => seen.length > 0, { what: 'the job to run' });
-    expect(seen[0]).toEqual({ GH_TOKEN: expect.stringMatching(/^gho_octo-user_/) });
+    expect(seen[0]).toEqual({});
     const job = (await jobs(app))[0]!;
     expect(JSON.stringify(job)).not.toMatch(/gho_/);
   });
