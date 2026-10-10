@@ -3,8 +3,7 @@
 // surface: whether OpenFGA can be asked, and why not; each template's approvals with the relationship chain from the
 // template to the asset, each with Revoke (asked once, then POST /ui/api/access); a check tried for a template, an
 // operation and an asset, with its answer and path; the newest decisions; and the model, saved against its version.
-// Issue #581: each requester — a user, a live job, a box — is a row of the permission matrix, each asset a column, each
-// cell the operations it may do, with the path.
+// Who may do what is the permission matrix's (issues #559, #581, test/ui/permission-matrix.test.ts): Access links to it.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -139,18 +138,10 @@ describe('Settings → Access', () => {
     expect(decisions[1]!.textContent).toContain('this job runs from template kubectl-diag');
   });
 
-  it('shows each requester as a row of the permission matrix: each asset a column, each cell what it may do, with the path (issue #581)', async () => {
+  it('points to the permission matrix for who may do what (issues #559, #581), and names a decision\'s requester', async () => {
     await boot();
-    const matrix = panel()!.querySelector('[data-slot="access-matrix"]')!;
-    expect([...matrix.querySelectorAll('th[data-asset]')].map((h) => h.textContent)).toEqual(['cluster x']);
-    const rows = [...matrix.querySelectorAll('[data-requester]')];
-    expect(rows.map((r) => r.getAttribute('data-requester'))).toEqual(['user:admin', 'job:admin/j1', 'machine:admin/kbox', 'user:bob']);
-    expect(rows[1]!.textContent).toContain('job j1');
-    expect(rows[1]!.textContent).toContain('on kbox, template kubectl-diag');
-    const cell = rows[1]!.querySelector('[data-cell="cluster/x"]')!;
-    expect(cell.textContent).toBe('read');
-    expect(cell.getAttribute('title')).toBe('user admin owns job j1 → job j1 runs on machine kbox → machine kbox is an instance of template kubectl-diag → template kubectl-diag is approved for read on cluster x → read on cluster x grants read on cluster x');
-    expect(rows[3]!.querySelector('[data-cell="cluster/x"]')!.textContent).toBe('—');
+    expect(panel()!.querySelector('[data-slot="access-matrix"]')).toBeNull();
+    expect(panel()!.querySelector('a[href="#settings/permissions"]')?.textContent).toBe('Permission matrix');
     expect(panel()!.querySelector('[data-decision="d2"]')!.textContent).toContain('job j1');
   });
 
