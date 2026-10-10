@@ -383,8 +383,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined),
     },
     async start() {
-      if (started) return;
-      started = true;
+      if (started) return; started = true;
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
