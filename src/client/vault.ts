@@ -38,15 +38,30 @@ const MAX_ASK = 4096;
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const isSecretName = (v: unknown): v is string => typeof v === 'string' && NAME.test(v);
 
-/** What a machine asks: one secret, for the job whose proxy token it shows. */
-export interface VaultAsk { name: string; token: string }
+/** What the vault mints (issue #580): an AWS role session or a Kubernetes token. */
+export const MINT_FORMS = ['aws', 'kube'] as const;
+export type MintForm = (typeof MINT_FORMS)[number];
+const OPERATION = /^[a-z]{1,16}$/;
+const ASSET = /^[a-z][a-z-]{0,39}\/[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
+
+/**
+ * What a machine asks, for the job whose proxy token it shows: one vault secret, or a credential minted for an
+ * operation on an asset (`kube read namespace/lab/web`, issue #580).
+ */
+export type VaultAsk = { name: string; token: string } | { mint: MintForm; operation: string; asset: string; token: string };
+
+/** The ask in words, for a log line: the secret's name, or what is minted. */
+export const askInWords = (a: VaultAsk): string => ('name' in a ? a.name : `${a.mint} ${a.operation} ${a.asset}`);
 
 /** The ask in a body, or why it is none. */
 export function askOf(v: unknown): VaultAsk | string {
-  const b = (typeof v === 'object' && v !== null ? v : {}) as { name?: unknown; token?: unknown };
-  if (!isSecretName(b.name)) return 'name must be a vault secret\'s name';
+  const b = (typeof v === 'object' && v !== null ? v : {}) as { name?: unknown; token?: unknown; mint?: unknown; operation?: unknown; asset?: unknown };
   if (typeof b.token !== 'string' || !JOB_TOKEN.test(b.token)) return 'token must be the job\'s proxy token (HOPPER_TOKEN_FILE)';
-  return { name: b.name, token: b.token };
+  if (b.mint === undefined) return isSecretName(b.name) ? { name: b.name, token: b.token } : 'name must be a vault secret\'s name';
+  if (!(MINT_FORMS as readonly unknown[]).includes(b.mint)) return `mint must be one of ${MINT_FORMS.join(', ')}`;
+  if (typeof b.operation !== 'string' || !OPERATION.test(b.operation)) return 'operation must be an operation: read, write, sync or apply';
+  if (typeof b.asset !== 'string' || !ASSET.test(b.asset)) return 'asset must be KIND/NAME, as cluster/prod or namespace/prod/web';
+  return { mint: b.mint as MintForm, operation: b.operation, asset: b.asset, token: b.token };
 }
 
 /** The hopper's answer: the value sealed to the request, base64url. */
@@ -54,7 +69,8 @@ export interface SealedAnswer { salt: string; nonce: string; body: string }
 
 const answerKey = (token: string, salt: Buffer, requestNonce: string): Buffer =>
   Buffer.from(hkdfSync('sha256', Buffer.from(token, 'utf8'), salt, `hopper vault answer v1\0${requestNonce}`, 32));
-const aad = (ask: VaultAsk): Buffer => Buffer.from(`${ask.name}\0${ask.token}`, 'utf8');
+const aad = (ask: VaultAsk): Buffer =>
+  Buffer.from('name' in ask ? `${ask.name}\0${ask.token}` : `mint\0${ask.mint}\0${ask.operation}\0${ask.asset}\0${ask.token}`, 'utf8');
 
 /** `value` sealed to the request whose nonce is `requestNonce`, under the client token. */
 export function sealAnswer(token: string, requestNonce: string, ask: VaultAsk, value: string): SealedAnswer {
@@ -162,7 +178,7 @@ export function startVault(o: VaultOptions): Promise<Vault> {
       const ask = askOf(parsed);
       if (typeof ask === 'string') return reply({ error: ask });
       o.ask(ask).then((value) => reply({ value }), (e: unknown) => {
-        o.log?.(`hopper-client: vault: ${ask.name}: ${(e as Error).message}`);
+        o.log?.(`hopper-client: vault: ${askInWords(ask)}: ${(e as Error).message}`);
         reply({ error: (e as Error).message });
       });
     });

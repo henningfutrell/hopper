@@ -170,6 +170,20 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(VALUE);
   });
 
+  it('with a minting credential for the cluster, the link is a token the vault mints, short-lived, asked of Access again at each run (issue #580)', async () => {
+    const { a, session } = await boot();
+    await a.ui('/ui/api/vault', { action: 'set', name: 'PROD_MINTS', mints: { kind: 'cluster', name: 'prod' }, value: JSON.stringify({ server: 'https://prod.example:6443', token: VALUE }) }, { token: session });
+    await joinMachine(a, session, 'hopper-sandbox-kube', 'kube');
+    const job = await runningJob(a, 'hopper-sandbox-kube');
+    await a.ui('/ui/api/access', { action: 'approve', template: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'prod/web' } }, { token: session });
+    const allowed = await skill(a, job, ['kube-diagnostics', 'namespace/prod/web']);
+    expect(allowed).toMatchObject({ code: 0 });
+    expect(allowed.stdout).toMatch(/args: \[kube, read, namespace\/prod\/web\]/);
+    expect(allowed.stdout).toContain('short-lived');
+    expect(allowed.stdout).not.toContain('KUBE_TOKEN');
+    expect(allowed.stdout).not.toContain(VALUE);
+  });
+
   it('says no, with the reason, to a machine of no template, a skill named with no asset or a wrong one, and a token that is no job\'s', async () => {
     const { a, session } = await boot();
     await joinMachine(a, session, 'desk');

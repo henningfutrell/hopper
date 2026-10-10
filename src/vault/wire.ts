@@ -2,6 +2,7 @@
 // vault server, and the names both sides read. One POST per edit or ask, JSON, with the preshared key as a bearer token.
 import { z } from 'zod';
 import { VAULT_VALUE_MAX } from '../domain/vault.ts';
+import { ASSET_KINDS } from '../domain/access.ts';
 
 /** The preshared key the hopper shows and the vault checks: a runtime secret (also `_FILE`). */
 export const VAULT_KEY_VARIABLE = 'HOPPER_VAULT_KEY';
@@ -19,14 +20,15 @@ export const DEFAULT_KMS_KEY = 'alias/hopper-vault';
 const user = z.string().min(1).max(100);
 const by = z.string().max(200);
 const name = z.string().max(64);
+const mintsFor = z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) });
 
 /**
  * Each op's body; the answer is `{ result, events }`. Only what needs the vault's key crosses: whether it can be used
- * (`status`), a secret set or removed, a delivery. The templates and their approvals stay in the hopper, with access.
+ * (`status`), a secret set or removed, a delivery, a mint. The templates and their approvals stay in the hopper, with access.
  */
 export const vaultOps = {
   status: z.strictObject({ user }),
-  set: z.strictObject({ user, by, secret: z.strictObject({ name, scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX) }) }),
+  set: z.strictObject({ user, by, secret: z.strictObject({ name, scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX), mints: mintsFor.nullable().optional() }) }),
   remove: z.strictObject({ user, by, name }),
   deliver: z.strictObject({
     user,
@@ -35,6 +37,19 @@ export const vaultOps = {
     machine: z.strictObject({ name: z.string().max(200), key: z.string().max(200), template: z.string().max(64).optional() }).optional(),
     /** Whether the job's token is one the user's link key gives (issue #563): only the hopper holds that key. */
     holds: z.boolean(),
+  }),
+  /**
+   * A mint from a minting credential (issue #580), asked only after the hopper's Access allowed it: the vault opens the
+   * minting credential and calls STS or the Kubernetes API; the minted credential crosses back, the minting one never.
+   */
+  mint: z.strictObject({
+    user,
+    credential: name,
+    target: z.discriminatedUnion('kind', [
+      z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), durationSeconds: z.number().int().min(900).max(43200) }),
+      z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400) }),
+    ]),
+    sessionName: z.string().max(64),
   }),
 } as const;
 

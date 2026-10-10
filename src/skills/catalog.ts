@@ -108,6 +108,17 @@ export function catalogText(): string {
 /** "a cluster or namespace": the asset kinds a link takes, in words. */
 export const kindsInWords = (kinds: readonly string[]): string => `a ${kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} or ${kinds.at(-1)}` : kinds[0]}`;
 
+/**
+ * What the box writes for its tool when the vault mints the credential (issue #580): the helper asks for a short-lived
+ * one for the operation on the asset, and Access decides again each time the tool runs it.
+ */
+export function mintedLinkText(form: LinkForm, operation: Operation, asset: string): string {
+  const stanza = form === 'kube'
+    ? `users:\n- name: hopper\n  user:\n    exec:\n      apiVersion: client.authentication.k8s.io/v1\n      interactiveMode: Never\n      command: <the value of $HOPPER_SECRET>\n      args: [kube, ${operation}, ${asset}]`
+    : `[profile hopper]\ncredential_process = <the value of $HOPPER_SECRET> aws ${operation} ${asset}`;
+  return `The vault mints a short-lived credential for ${operation} on ${asset} each time the tool asks. Access decides each one.\n${stanza}`;
+}
+
 /** What the box writes for its tool to get the credential from the vault's helper, for each secret it may use. */
 export function linkText(form: LinkForm, secrets: readonly { name: string; scope?: string }[]): string {
   const list = secrets.map((s) => `${s.name}${s.scope ? ` (${s.scope})` : ''}`).join(', ');

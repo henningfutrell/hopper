@@ -10,8 +10,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createNonceCache, mintToken, nonceOf, signRequest, signVault, verifyRequest, verifyVault } from '../../src/client/signature.ts';
-import { isSecretName, openAnswer, sealAnswer, startVault, type Vault, type VaultAsk } from '../../src/client/vault.ts';
-import { credentialOutput } from '../../src/client/secret.ts';
+import { askOf, isSecretName, openAnswer, sealAnswer, startVault, type Vault, type VaultAsk } from '../../src/client/vault.ts';
+import { credentialOutput, mintedOutput } from '../../src/client/secret.ts';
 
 const TOKEN = mintToken();
 const JOB_TOKEN = 'dTE.job-1.bWFjLW9mLWpvYi0x';
@@ -64,6 +64,35 @@ describe('a vault answer', () => {
     expect(() => openAnswer(TOKEN, nonce, { ...ASK, token: 'dTE.job-2.bWFjLW9mLWpvYi0y' }, a)).toThrow(/cannot be opened/);
     expect(() => openAnswer(mintToken(), nonce, ASK, a)).toThrow(/cannot be opened/);
     expect(() => openAnswer(TOKEN, nonce, ASK, { salt: 'x' })).toThrow(/not a sealed answer/);
+  });
+});
+
+describe('a mint ask (issue #580)', () => {
+  const token = 'dTE.job-1.bWFjLW9mLWpvYi0x';
+  const nonce = nonceOf(signVault(TOKEN, 'u1', 'machine-key', BODY, T0));
+  const mint: VaultAsk = { mint: 'kube', operation: 'read', asset: 'namespace/lab/web', token };
+
+  it('names the form, the operation and the asset; anything else is refused before it is sent', () => {
+    expect(askOf({ mint: 'kube', operation: 'read', asset: 'namespace/lab/web', token })).toEqual(mint);
+    expect(askOf({ mint: 'gcp', operation: 'read', asset: 'cluster/x', token })).toMatch(/mint must be one of aws, kube/);
+    expect(askOf({ mint: 'aws', operation: 'READ', asset: 'aws-role/1/r', token })).toMatch(/operation/);
+    expect(askOf({ mint: 'aws', operation: 'read', asset: 'no-slash', token })).toMatch(/asset must be KIND\/NAME/);
+  });
+
+  it('its answer opens only for that operation and asset: never for a secret ask, nor another asset', () => {
+    const a = sealAnswer(TOKEN, nonce, mint, '{"token":"t"}');
+    expect(openAnswer(TOKEN, nonce, mint, a)).toBe('{"token":"t"}');
+    expect(() => openAnswer(TOKEN, nonce, { ...mint, asset: 'namespace/lab/other' } as VaultAsk, a)).toThrow(/cannot be opened/);
+    expect(() => openAnswer(TOKEN, nonce, { ...mint, operation: 'write' } as VaultAsk, a)).toThrow(/cannot be opened/);
+    expect(() => openAnswer(TOKEN, nonce, { name: 'mint', token }, a)).toThrow(/cannot be opened/);
+  });
+
+  it('a minted token keeps its expiry for kubectl; a minted AWS session is a credential_process answer', () => {
+    expect(JSON.parse(mintedOutput('kube', JSON.stringify({ token: 't', expirationTimestamp: '2030-01-01T00:00:00Z' }))))
+      .toEqual({ apiVersion: 'client.authentication.k8s.io/v1', kind: 'ExecCredential', status: { token: 't', expirationTimestamp: '2030-01-01T00:00:00Z' } });
+    expect(JSON.parse(mintedOutput('aws', JSON.stringify({ AccessKeyId: 'ASIA', SecretAccessKey: 's', SessionToken: 't', Expiration: '2030-01-01T00:00:00Z' }))))
+      .toEqual({ Version: 1, AccessKeyId: 'ASIA', SecretAccessKey: 's', SessionToken: 't', Expiration: '2030-01-01T00:00:00Z' });
+    expect(() => mintedOutput('kube', JSON.stringify({ token: 't' }))).toThrow(/not one kubectl can take/);
   });
 });
 

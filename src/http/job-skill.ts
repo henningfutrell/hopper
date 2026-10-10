@@ -11,6 +11,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
 import { createSkillBroker, createSkillWaits, SKILL_PATH, type SkillUser, type SkillWaits } from '../skills/index.ts';
+import { mintTarget } from '../domain/minting.ts';
 import type { Tenants } from './tenants.ts';
 
 /** A user's side, from their GitHub proxy's (their jobs, the token check, their log) and their vault (a box's template). */
@@ -20,6 +21,10 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
   const { holds, job, record } = parts.githubProxy.user;
   return {
     id, holds, job, record,
+    mintsFor(form, asset) {
+      const target = mintTarget(form, { operation: 'read', asset });
+      return typeof target !== 'string' && parts.vault.view().secrets.some((s) => s.mints?.kind === target.mintsFor.kind && s.mints.name === target.mintsFor.name);
+    },
     box(machine) {
       const { template, secrets } = parts.vault.scopeOf(machine);
       const all = parts.vault.view().secrets;

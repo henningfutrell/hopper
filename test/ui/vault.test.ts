@@ -1,7 +1,7 @@
 // Issue #558: the Vault settings page's pure model. A secret is only its metadata: the page says what it is, who set
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
-import { approvalText, explicitApprovals, giveProblem, kindChoices, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -78,6 +78,22 @@ describe('a delivered secret on the page', () => {
     expect(facts.map((f) => f.label)).toEqual(['Set by', 'Last delivered']);
     expect(facts[1]!.value).toContain('hopper-sandbox-kube');
     expect(facts[1]!.value).toContain('f3b1c2d4');
+  });
+});
+
+describe('a minting credential on the page (issue #580)', () => {
+  it('says what it mints for, and when it last minted', () => {
+    const facts = secretFacts({ id: 'a', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, setBy: 'Ada', createdAt: '2026-10-09T10:00:00Z', changedBy: 'Ada', changedAt: '2026-10-09T10:00:00Z', lastUsed: { at: '2026-10-09T12:00:00Z', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' } });
+    expect(facts.map((f) => f.label)).toEqual(['Mints for', 'Set by', 'Last minted']);
+    expect(facts[0]!.value).toBe('cluster lab');
+  });
+
+  it('reads "mints for" as an AWS account or a cluster, or says why not; empty is a plain secret', () => {
+    expect(mintsOf('')).toBeUndefined();
+    expect(mintsOf(' cluster/lab ')).toEqual({ kind: 'cluster', name: 'lab' });
+    expect(mintsOf('aws-account/123456789012')).toEqual({ kind: 'aws-account', name: '123456789012' });
+    expect(mintsOf('namespace/lab/web')).toMatch(/cluster\/NAME or aws-account\/ID/);
+    expect(mintsOf('cluster/')).toMatch(/cluster\/NAME or aws-account\/ID/);
   });
 });
 

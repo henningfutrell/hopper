@@ -4,9 +4,10 @@
 // approved once by a person and again for a new secret or a new image. A template's operation profiles (issue #584)
 // rate its blast radius with its secrets, shown next to it: approving the template approves its read profiles; a write,
 // sync or apply profile takes its own explicit approval. Editing is an admin's. A secret may instead be kept in a vault
-// backend (issue #585): the person names the backend and where the value is there, never the value. Asked for (issue #583):
-// the credentials jobs on boxes asked for and the vault does not give; an admin gives one — of the kind suggested, or
-// another — or declines.
+// backend (issue #585): the person names the backend and where the value is there, never the value. A minting
+// credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
+// never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
+// vault does not give; an admin gives one — of the kind suggested, or another — or declines.
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -17,15 +18,15 @@ import { FIELD } from '@/components/plugin-form';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
-import type { AssetKind, Operation, OperationProfile, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
+import type { Asset, AssetKind, Operation, OperationProfile, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
 import { AskedFor } from './vault-requests';
 import { useCanAdmin } from '@/store/selectors';
 
-type Edit = { action: 'set'; name: string; scope?: string; value: string } | { action: 'remove'; name: string }
-  | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string }
+type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
+  | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
   | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template' | 'revoke-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
@@ -50,17 +51,20 @@ function KeptIn({ backends, kept, local, onChange }: { backends: VaultBackendVie
 function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: VaultSecret; backends: VaultBackendView[]; local: boolean; busy: boolean; send: Send; onDone: () => void }) {
   const [name, setName] = useState(secret?.name ?? '');
   const [scope, setScope] = useState(secret?.scope ?? '');
+  const [mintsSaid, setMintsSaid] = useState(secret?.mints ? `${secret.mints.kind}/${secret.mints.name}` : '');
   const [value, setValue] = useState('');
   const [kept, setKept] = useState(secret?.backend?.name ?? (local ? '' : backends[0]?.name ?? ''));
   const [reference, setReference] = useState(secret?.backend?.reference ?? '');
   const backend = backends.find((b) => b.name === kept);
   const problem = name ? nameProblem(name.trim()) : undefined;
   const ready = backend ? reference.trim() !== '' : value !== '';
+  const mints = mintsOf(mintsSaid);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
       const n = name.trim();
-      const edit: Edit = backend ? { action: 'set-in-backend', name: n, scope: scope.trim(), backend: backend.name, reference: reference.trim() } : { action: 'set', name: n, scope: scope.trim(), value };
+      const minting = { mints: typeof mints === 'object' ? mints : null };
+      const edit: Edit = backend ? { action: 'set-in-backend', name: n, scope: scope.trim(), backend: backend.name, reference: reference.trim(), ...minting } : { action: 'set', name: n, scope: scope.trim(), value, ...minting };
       const ok = await send(edit, secret ? `${n}: replaced` : `${n}: set`);
       setValue('');
       if (ok) onDone();
@@ -73,6 +77,10 @@ function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: Vau
       )}
       <label className="block space-y-1"><Label>Scope — what it reaches, in your words (optional)</Label>
         <Input className="h-9 text-sm" value={scope} maxLength={200} placeholder="k3s lab, namespace default, read-only" onChange={(e) => setScope(e.target.value)} /></label>
+      <label className="block space-y-1"><Label>Mints for — the hopper mints short-lived credentials from it and never gives it out (optional)</Label>
+        <Input className="h-9 font-mono text-sm" value={mintsSaid} maxLength={220} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          placeholder="cluster/lab or aws-account/123456789012" onChange={(e) => setMintsSaid(e.target.value)} />
+        {typeof mints === 'string' && <div className="text-xs text-bad">{mints}</div>}</label>
       {backends.length > 0 && <KeptIn backends={backends} kept={kept} local={local} onChange={setKept} />}
       {backend ? (
         <label className="block space-y-1"><Label>Where it is in {backend.name} — read there each time a job asks; the hopper keeps no copy</Label>
@@ -84,7 +92,7 @@ function SetForm({ secret, backends, local, busy, send, onDone }: { secret?: Vau
           <ValueInput value={value} onChange={setValue} /></label>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !ready || !name.trim() || problem !== undefined}>{secret ? 'Replace' : 'Set secret'}</Button>
+        <Button type="submit" disabled={busy || !ready || !name.trim() || problem !== undefined || typeof mints === 'string'}>{secret ? 'Replace' : 'Set secret'}</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
       </div>
     </form>
@@ -158,7 +166,9 @@ function ProfilesInput({ profiles, busy, onChange }: { profiles: OperationProfil
 }
 
 /** A template's form: its name (fixed once saved), its image, the vault secrets and the operation profiles its boxes may ask for. */
-function TemplateForm({ t, secrets, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
+function TemplateForm({ t, secrets: all, busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; busy: boolean; send: Send; onDone: () => void }) {
+  // A minting credential is never given to a box: no template's scope lists it.
+  const secrets = all.filter((s) => !s.mints);
   const [name, setName] = useState(t?.name ?? '');
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);

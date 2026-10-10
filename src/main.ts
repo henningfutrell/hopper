@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
+import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, InstanceStore, Restarter, SandboxEngine, UpdateBuilder, Updater } from './domain/ports.ts';
@@ -156,10 +157,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     })),
     templates: () => runtimes.all().flatMap((rt) => rt.vault.templateScopes()),
   });
+  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it.
+  const minter = createCredentialMinter();
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl, access,
+      config, seams: seamsOf(seams, user.id), env, clock, logger, clientRelease, links, proxyUrl, access, minter,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.

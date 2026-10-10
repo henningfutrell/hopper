@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "aws",
+        "kube"
+      ]
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "sync",
+        "apply"
+      ]
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cluster",
+            "namespace",
+            "argocd-app",
+            "terraform-workspace",
+            "aws-account",
+            "aws-role"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "template": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "credential": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "renewal": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "kind",
+    "operation",
+    "asset",
+    "template",
+    "machine",
+    "job",
+    "credential",
+    "decision",
+    "expiresAt",
+    "renewal"
+  ],
+  "additionalProperties": false
+}

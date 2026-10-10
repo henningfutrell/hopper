@@ -191,6 +191,25 @@ every credential is denied, and Settings → Access says why.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
   filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
 
+### Minting short-lived credentials
+
+The vault mints short-lived credentials for a box's job from a **minting credential** (issue #580, docs/design.md
+"Minting: short-lived credentials"), and asks access before each one. It needs nothing beyond the stack above: the
+hopper calls the AWS STS or the Kubernetes API that the minting credential names.
+
+- **Kubernetes.** In the cluster, make a service account `hopper-<operation>` (`hopper-read`, `hopper-write`) in
+  each namespace a template may reach, and in the namespace `hopper` for a whole cluster; bind each to the role you
+  want for that operation (for `hopper-read`, the `view` cluster role). Make an identity whose token may only
+  `create` on `serviceaccounts/token` for those service accounts. In Settings → Vault, set a secret with *Mints for*
+  `cluster/<name>` and the value `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`.
+  Each token the hopper mints lives 10 minutes.
+- **AWS.** Make an IAM user (or role) that may only `sts:AssumeRole` the roles templates may reach. In Settings →
+  Vault, set a secret with *Mints for* `aws-account/<id>` and the value `{"AccessKeyId": "…", "SecretAccessKey": "…"}`
+  (optional `Region`, and `Endpoint` for an STS other than AWS's). Each session lives 15 minutes; a `read` session
+  carries the `ReadOnlyAccess` session policy.
+- **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
+  `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
+  and no template lists it in its scope.
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mint": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "aws",
+            "kube"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        },
+        "asset": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "cluster",
+                    "namespace",
+                    "argocd-app",
+                    "terraform-workspace",
+                    "aws-account",
+                    "aws-role"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "asset"
+      ],
+      "additionalProperties": false
+    },
+    "machine": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "mint",
+    "machine",
+    "reason"
+  ],
+  "additionalProperties": false
+}

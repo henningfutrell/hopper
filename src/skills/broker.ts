@@ -11,7 +11,7 @@ import { ASSET_KINDS, ASSET_NAME, type Asset, type AssetKind, type MintDecision,
 import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
-import { askedSkill, catalogText, credentialText, kindsInWords, linkText, skillOf, SKILLS, type Skill, type SkillCredential } from './catalog.ts';
+import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer'];
@@ -24,6 +24,8 @@ export interface SkillUser {
   record(event: NewEvent): void;
   /** The template `machine` joined as, and the vault secrets it may be given now (metadata, never a value). */
   box(machine: string): { template?: string; secrets: BoxSecret[] };
+  /** Whether the vault holds a minting credential for the account or cluster `asset` is in (issue #580): then the link is minted. */
+  mintsFor(form: LinkForm, asset: Asset): boolean;
   /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
 }
@@ -159,6 +161,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       }
       const decision = await o.decide({ requester: { kind: 'job', userId: user.id, jobId: job.id }, operation: l.operation, asset });
       if (!decision.allowed) return no(403, `Access denied it: ${decision.reason}. A person approves it in Settings → Access; until then, find another way.`, decision);
+      if (user.mintsFor(l.form, asset)) return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${mintedLinkText(l.form, l.operation, said)}`, decision);
       // The secrets given for this skill (issue #583); else, as before it, every secret of the template given for none.
       const tagged = box.secrets.filter((x) => x.skill === s.name);
       const secrets = tagged.length > 0 ? tagged : box.secrets.filter((x) => x.skill === undefined);

@@ -129,6 +129,8 @@
         "template.profile_approved",
         "vault.delivered",
         "vault.refused",
+        "vault.minted",
+        "vault.mint_refused",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.credential_declined",

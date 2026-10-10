@@ -4,13 +4,16 @@
 // operation profiles (issue #584) are approved in access, the one record of them: a read profile with the template, a
 // write, sync or apply profile only by its own explicit approval; a narrowing or a removal revokes what it dropped.
 // A secret may instead be kept in a vault backend (issue #585): the hopper keeps only where, and reads it there at delivery.
+// A minting credential (issue #580) is never delivered: the vault mints short-lived credentials from it (mint.ts).
 import { randomUUID } from 'node:crypto';
 import type { AttachedMachine } from '../domain/machines.ts';
-import { machineOfLane } from '../domain/raised-by.ts';
-import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
+import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { SecretUnreadable } from '../secrets/sealer.ts';
-import type { Clock, UserStore } from '../domain/ports.ts';
-import { profileProblem, TEMPLATE_NAME, type OperationProfile, type TemplateApprovals } from '../domain/access.ts';
+import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
+import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
+import { mintsForProblem } from '../domain/minting.ts';
+import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
+import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
@@ -60,24 +63,30 @@ export interface VaultService {
    * proxy token it shows. The value, or why not; every outcome recorded, never with the value.
    */
   deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
+  /**
+   * A machine's ask for a credential minted (issue #580): the same checks as a delivery, then Access decides, every time;
+   * the minted credential as JSON, or why not. `from` mints from the minting credential: by default here (mintFrom).
+   */
+  mint(ask: MintAsk, machineKey: string, from?: MintFrom): Promise<{ value: string } | { refused: string }>;
+  /** Mints from the minting credential `name` for `target`, here: its value opened or read in its backend, then STS or the Kubernetes API. */
+  mintFrom: MintFrom;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
   resealAll(): number;
 }
 
-/** An attached machine as the vault knows it (issue #558): a client target's name, its machine key, its template. */
-export interface ClientTarget { name: string; key: string; template?: string }
+export type { ClientTarget } from './box.ts';
 
 /** The client targets among the attached machines. */
 export const clientTargets = (machines: readonly AttachedMachine[]): ClientTarget[] =>
   machines.flatMap((m) => ('client' in m ? [{ name: m.name, key: m.client.key, ...(m.client.template !== undefined ? { template: m.client.template } : {}) }] : []));
 
-/** A secret to set: its value, or (issue #585) the vault backend that keeps it and where. */
-export type SetSecret = { name: string; scope?: string } & ({ value: string } | { backend: string; reference: string });
-
-/** The statuses a job is given vault secrets in: it holds its pane. Ended, failed or parked: nothing. */
-const AT_WORK = ['running', 'waiting_answer'];
+/**
+ * A secret to set: its value, or (issue #585) the vault backend that keeps it and where. `mints` (issue #580): the
+ * account or cluster it is a minting credential for; null makes it a plain secret again; absent keeps it.
+ */
+export type SetSecret = { name: string; scope?: string; mints?: Asset | null } & ({ value: string } | { backend: string; reference: string });
 
 const fail = (code: 'invalid' | 'not_found' | 'conflict' | 'unavailable', error: string): VaultResult => ({ ok: false, code, error });
 
@@ -86,8 +95,12 @@ export function createVaultService(o: {
   keys: SealerState;
   clock: Clock;
   idGen: () => string;
-  /** Access, where a template's operation profiles are approved (issue #584). Absent: no profile can be approved. */
-  access?: TemplateApprovals;
+  /** Access, where a template's operation profiles are approved (issue #584) and every mint is decided (issue #580). Absent: none is. */
+  access?: VaultAccess;
+  /** The vault's user: Access names a job by its user and id. */
+  userId?: string;
+  /** Mints short-lived credentials (issue #580). Absent: the vault mints nothing. */
+  minter?: CredentialMinter;
   logger: { warn(line: string): void };
   /** The client targets now: each one's key and the template it joined as (its join line named it). */
   targets?: () => ClientTarget[];
@@ -96,7 +109,6 @@ export function createVaultService(o: {
   /** The vault backends the plugins config names now (issue #585); none when absent. */
   backends?: () => ConfiguredBackend[];
 }): VaultService {
-  const clientOf = (match: (m: ClientTarget) => boolean): ClientTarget | undefined => (o.targets?.() ?? []).find(match);
   const { vault, events } = o.store;
   const { sealer } = o.keys;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -133,8 +145,29 @@ export function createVaultService(o: {
     }
   }
 
+  /** A secret's value now: opened by the key provider, or read in its vault backend; or why not. */
+  async function valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> {
+    const { backend } = secret;
+    if (backend) return readBackend({ ...secret, backend });
+    if (!sealer) return { refused: unavailable() };
+    try {
+      return { value: sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id)) };
+    } catch (e) {
+      if (!(e instanceof SecretUnreadable)) throw e;
+      o.logger.warn(`hopper: vault secret ${secret.name}: ${e.message}`);
+      return { refused: `the vault secret ${secret.name} cannot be opened: set it again` };
+    }
+  }
+
+  const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
+
+  const mint = createMinting({
+    store: o.store, userId: o.userId ?? '', clock: o.clock,
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
+  });
+
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
-    const name = clientOf((m) => m.name === machine)?.template;
+    const name = clientOf(o.targets, (m) => m.name === machine)?.template;
     const t = name === undefined ? undefined : vault.template(name);
     return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t) : [] };
   }
@@ -165,10 +198,13 @@ export function createVaultService(o: {
     }),
 
     set(s, by) {
-      const { name, scope } = s;
+      const { name, scope, mints } = s;
       if (!VAULT_SECRET_NAME.test(name)) return fail('invalid', 'name must be a letter, then letters, digits, `_`, `.` or `-`, at most 64');
       const said = scope?.trim();
       if (said !== undefined && (said.length > VAULT_SCOPE_MAX || /[\n\r]/.test(said))) return fail('invalid', `scope must be one line of at most ${VAULT_SCOPE_MAX} characters`);
+      const mintsProblem = mints ? mintsForProblem(mints) : undefined;
+      if (mintsProblem) return fail('invalid', mintsProblem);
+      if (mints && vault.templates().some((t) => t.secrets.includes(name))) return fail('invalid', `${name} is in a template's scope: take it out first, since a minting credential is never given out`);
       const at = o.clock.now().toISOString();
       return o.store.tx(() => {
         const was = vault.get(name);
@@ -176,13 +212,15 @@ export function createVaultService(o: {
         if ('ok' in kept) return kept;
         const scoped = said ? { scope: said } : {};
         const where = kept.backend ? { backend: kept.backend } : {};
+        const mintsNow = mints === undefined ? was?.mints : mints ?? undefined;
+        const minting = mintsNow ? { mints: { kind: mintsNow.kind, name: mintsNow.name } } : {};
         if (was) {
-          const { scope: _old, backend: _was, ...rest } = was;
-          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), ...where, changedBy: by, changedAt: at }, kept.sealed);
+          const { scope: _old, backend: _was, mints: _mints, ...rest } = was;
+          vault.replace({ ...rest, ...(scope === undefined && was.scope ? { scope: was.scope } : scoped), ...where, ...minting, changedBy: by, changedAt: at }, kept.sealed);
         } else {
-          vault.add({ id: kept.id, name, ...scoped, ...where, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
+          vault.add({ id: kept.id, name, ...scoped, ...where, ...minting, setBy: by, createdAt: at, changedBy: by, changedAt: at }, kept.sealed);
         }
-        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}) } });
+        events.append({ type: 'vault.secret_set', data: { name, by, replaced: was !== undefined, ...(kept.backend ? { backend: kept.backend.name } : {}), ...minting } });
         return { ok: true } as const;
       });
     },
@@ -201,6 +239,8 @@ export function createVaultService(o: {
       const scope = [...new Set(secrets)];
       const missing = scope.filter((n) => !vault.get(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
+      const minting = scope.filter((n) => vault.get(n)?.mints);
+      if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
       const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined);
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
@@ -274,53 +314,40 @@ export function createVaultService(o: {
     templateScopes: () => vault.templates().map((t) => ({ name: t.name, scope: scopeOfTemplate(t), rules: rules() })),
 
     async deliver(ask, machineKey) {
-      const m = clientOf((x) => x.key === machineKey);
-      const parts = parseProxyToken(ask.token);
-      const job = parts && parts.userId !== undefined ? o.store.jobs.get(parts.jobId) : undefined;
+      const box = boxAsk({ ...o, job: (id) => o.store.jobs.get(id), holdsTemplate: (t) => vault.template(t) !== undefined }, ask.token, machineKey);
       const at = o.clock.now().toISOString();
-      const machine = m?.name ?? 'a machine that is gone';
       const refuse = (reason: string, backend?: string): { refused: string } => {
+        const { machine: m, job } = box;
         events.append({
           type: 'vault.refused', ...(job ? { jobId: job.id } : {}), ...(m ? { machineId: m.name } : {}),
-          data: { name: ask.name, machine, ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), ...(backend ? { backend } : {}), reason },
+          data: { name: ask.name, machine: m?.name ?? 'a machine that is gone', ...(m?.template ? { template: m.template } : {}), ...(job ? { job: job.id } : {}), ...(backend ? { backend } : {}), reason },
         });
         return { refused: reason };
       };
-      if (!m) return refuse('no joined machine holds that key');
-      if (!parts || !o.holds?.(parts)) return refuse('not a token the hopper gave a job of this user');
-      if (!job || !AT_WORK.includes(job.status)) return refuse(`the job is not at work (${job?.status ?? 'no such job'}): a vault secret is given only while it runs`);
-      if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return refuse(`the job does not run on ${m.name}`);
-      if (!m.template) return refuse(`${m.name} is no box of a template: only a box joined with a template's line gets vault secrets`);
-      if (!vault.template(m.template)) return refuse(`${m.name} is a box of ${m.template}, a template that is not there: a person removes the box`);
+      if ('refused' in box) return refuse(box.refused);
+      const { machine: m, job } = box;
+      if (vault.get(ask.name)?.mints) return refuse(`${ask.name} is a minting credential: the hopper mints from it and never gives it out`);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
-      let value: string;
       const { backend } = secret;
+      const r = await valueOf(secret);
+      if ('refused' in r) return refuse(r.refused, backend?.name);
       if (backend) {
-        const r = await readBackend({ ...secret, backend });
-        if ('refused' in r) return refuse(r.refused, backend.name);
         // The read took a while: the job must still be at work now.
         const still = o.store.jobs.get(job.id)?.status;
         if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): a vault secret is given only while it runs`, backend.name);
-        value = r.value;
-      } else {
-        if (!sealer) return refuse(unavailable());
-        try {
-          value = sealer.open(vault.sealed(secret.id) ?? '', vaultContext(secret.id));
-        } catch (e) {
-          if (!(e instanceof SecretUnreadable)) throw e;
-          o.logger.warn(`hopper: vault secret ${ask.name}: ${e.message}`);
-          return refuse(`the vault secret ${ask.name} cannot be opened: set it again`);
-        }
       }
       o.store.tx(() => {
         const now = vault.get(ask.name);
         if (now?.id === secret.id) vault.replace({ ...now, lastUsed: { at, machine: m.name, job: job.id } }, vault.sealed(secret.id) ?? null);
-        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template!, machine: m.name, job: job.id, ...(backend ? { backend: backend.name } : {}) } });
+        events.append({ type: 'vault.delivered', jobId: job.id, machineId: m.name, data: { name: ask.name, template: m.template, machine: m.name, job: job.id, ...(backend ? { backend: backend.name } : {}) } });
       });
-      return { value };
+      return { value: r.value };
     },
+
+    mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
+    mintFrom,
 
     resealAll() {
       if (!sealer) return 0;
@@ -342,7 +369,7 @@ export function createVaultService(o: {
 
 /** A user's vault at start: every secret an older key sealed is sealed again under the current one now, said as a count. */
 export function openVault(o: {
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: TemplateApprovals; keys: SealerState; clock: Clock;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; userId?: string; access?: VaultAccess; minter?: CredentialMinter; keys: SealerState; clock: Clock;
   logger: { info(line: string): void; warn(line: string): void }; targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
   backends: () => ConfiguredBackend[];
 }): VaultService {

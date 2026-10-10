@@ -1,6 +1,6 @@
 // The vault (issue #558, design.md "The vault"): a user's secrets, set once in the UI and never read back, kept sealed
 // in the user's store under the token key. The types every part shares: a secret is only ever its metadata.
-import type { OperationProfile } from './access.ts';
+import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
@@ -29,7 +29,12 @@ export interface VaultSecret {
    * reads. Absent: the hopper keeps the value itself, sealed.
    */
   backend?: { name: string; reference: string };
-  /** When it was last delivered, to which machine, for which job (issue #558, slice 3). */
+  /**
+   * A **minting credential** (issue #580): the AWS account or Kubernetes cluster the hopper mints short-lived
+   * credentials for from it. Never delivered and never in a template's scope. Absent: a plain secret.
+   */
+  mints?: Asset;
+  /** When it was last delivered, to which machine, for which job (issue #558, slice 3); for a minting credential, when it last minted. */
   lastUsed?: { at: string; machine: string; job: string };
   /**
    * What it is for (issue #583): the skill a credential request gave it to, the kind of credential the user gave,

@@ -62,7 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandboxes/` | sandbox boxes the hopper starts (issue #603, "Sandbox boxes the hopper launches"): the launch, the keeping in step with the machines and the cleanup problems (`service.ts`); rootless Podman at the `SandboxEngine` port (`podman.ts`, its libpod API over node:http). The machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -9176,8 +9176,9 @@ second one refused, no reminders while it runs, a direct answer told to the pare
 The vault (issue #558) will hand jobs short-lived credentials. Before it mints or renews one, it asks **access**
 (`src/authz/`) whether the job may have it: a relationship check in [OpenFGA](https://openfga.dev/), evaluated at
 request time, instead of permissions baked into a token. Revoking an approval bites on the next request; nothing
-already minted is widened, and minted credentials are short-lived. This builds the decision point only: no
-minting and no first-time human gate (both #558's). The dependency runs #558 → #559.
+already minted is widened, and minted credentials are short-lived. This builds the decision point; the vault's
+first-time gate is #584's ("A template's blast radius") and the minting is #580's ("Minting: short-lived
+credentials"), which calls it.
 
 **The entry point** — `Access.decideMint(request)` (`src/authz/service.ts`, the app's `access`), with
 `MintRequest` (`src/domain/access.ts`): the **requester** (issue #581: a job, a machine or a user), the operation and the
@@ -9291,8 +9292,8 @@ denied; a job's tuples gone when it ends and a box's when it leaves, each next c
 an edited one kept and denied until saved again), `test/authz/model.test.ts`, `test/store/migration-31.test.ts`
 (a decision recorded for a job names it as its requester), `test/ui/access-view.test.ts`.
 
-Not yet: retention of `access_decisions` (they grow like the event log); the issue's audit beside #558's issuance
-audit is that table until the vault adds its own.
+Not yet: retention of `access_decisions` (they grow like the event log). The vault's issuance audit is its
+`vault.minted` event, which names the decision's id (issue #580).
 ## Machine resources over time (issue #560, 2026-10-09)
 
 Owner request: the same kind of over-time graph the usage history has, for machine conditions — CPU and memory as well
@@ -9496,7 +9497,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); since issue #580 whose ask a box's ask is (`box.ts`), minting through Access (`mint.ts`) and the minting adapters, STS and the Kubernetes API (`minter.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9556,12 +9557,16 @@ migration 29, a table only), the last approval in its body.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved`, `vault.revoked` — names,
   never a value.
 
-**Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
-would *mint*; v1 mints nothing, so a vault secret's delivery is decided by the template's approval above, rows in the
-hopper's database. When minting comes, it asks `Access.decideMint` before each mint, as #559 says. A template's vault
-approval of its image and secrets is not an access approval (`approved_for` an operation profile on an asset). A
-template's **operation profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their
-access approvals, and access is the one record of which are approved.
+**The vault mints only through Access** (issue #580, "Minting: short-lived credentials" below). It calls
+`Access.decideMint` before every mint and every renewal, and mints nothing on a deny: the request goes to the
+first-time gate (the profile waits for a person on Settings → Vault) or is refused, and the reason is on the job's
+timeline. When a person approves a template at the gate, the vault writes the `approved_for` tuples through
+`Access.approve`; a widening needs a new approval and new tuples. The issuance audit (`vault.minted`) records the
+decision's id beside each mint. A vault secret's *delivery* (slice 3) is not a mint: the template's approval of its
+image and secrets above decides it, rows in the hopper's database. A template's vault approval of its image and
+secrets is not an access approval (`approved_for` an operation profile on an asset). A template's **operation
+profiles** are (issue #584, "A template's blast radius" below): the vault's gate writes their access approvals, and
+access is the one record of which are approved.
 
 **Not built** (owner: keep the vault minimal; deferred): a template per agent CLI (a box of a template runs the template's image, whose agent is the one
 that image carries — `claude` for the published `box-claude`).
@@ -9609,7 +9614,7 @@ ask for, and a high-radius operation profile takes its own explicit approval.
   the highest.
 
 **Not built.** A box's machine rating does not include its template's yet: the gate (#544) holds jobs by the machine's
-discovered rating only. The permission matrix (#559, Settings → Permission matrix) shows each template's rating next to its row. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which already denies what the gate has not approved.
+discovered rating only. The permission matrix (#559, Settings → Permission matrix) shows each template's rating next to its row. `GET /api/access` carries each template's `radius`. Minting (#580) asks `decideMint`, which denies what the gate has not approved.
 
 Tests: `test/blast-radius/template-rate.test.ts` (each operation's level, approved or waiting, a profile approved but
 not declared, a vault secret by the rules), `test/integration/template-radius.test.ts` (the real daemon and access: a
@@ -9635,6 +9640,7 @@ ssh target, this machine, a client from before) gets none.
 | `$HOPPER_SECRET kube NAME` | a kubeconfig `exec` credential plugin's `ExecCredential` (the API version kubectl asked for), the secret as the token |
 | `$HOPPER_SECRET git NAME [USER] get` | a git credential helper's answer, the secret as the password (user `x-access-token` unless named); `store`, `erase` ignored |
 | `$HOPPER_SECRET aws NAME` | an AWS `credential_process` answer; the secret holds the key pair as JSON (`AccessKeyId`, `SecretAccessKey`, optional `SessionToken`, `Expiration`) |
+| `$HOPPER_SECRET kube\|aws OPERATION ASSET` | a credential the vault mints for the operation on the asset, short-lived, after Access allows it ("Minting" below) |
 
 **The ask.** The helper reads the job's proxy token from `HOPPER_TOKEN_FILE` and asks the socket `{name, token}`; the
 client posts it to the hopper's `POST /client/vault` (at the URL it joined), signed with the client token over the
@@ -9656,8 +9662,8 @@ recorded: `vault.delivered` (secret, template, machine, job) and the secret's `l
 never the value.
 
 **What a job can still do.** A tool, or the agent, that receives a secret can keep it for the rest of its job: the
-value delivered is the stored one. The scope per template and the audit bound this; minting short-lived credentials
-would close it, and is not built. Several jobs on one box share its user and its socket: a job can ask only with its
+value delivered is the stored one. The scope per template and the audit bound this; for AWS and Kubernetes, a
+minted short-lived credential closes it (issue #580, below). Several jobs on one box share its user and its socket: a job can ask only with its
 own token, but a box of a template with secrets is best run one job at a time (one lane).
 
 Tests: `test/integration/vault-delivery.test.ts` (a real joined box of a template and the real helper: refused until
@@ -9665,6 +9671,80 @@ the template is approved, then `get` and `kube`; a secret outside the scope, an 
 give, a computer of no template and an ask not signed by the machine refused; the value in no event, log line or file
 of the client dir), `test/client/vault.test.ts` (the signature, the sealed answer, the socket and the helper's forms),
 `test/vault/job-secret.test.ts` (HOPPER_SECRET given only where the client serves a helper), `test/ui/vault.test.ts`.
+
+### Minting: short-lived credentials (issue #580)
+
+Owner direction (issue #559, split into #580): the vault mints short-lived credentials — AWS STS sessions and
+Kubernetes TokenRequest tokens — and asks Access (`decideMint`) before every mint and every renewal. OpenFGA is part
+of the hopper's compose stack, as Postgres is, so this needs nothing outside it.
+
+**A minting credential** is a vault secret marked with what it mints for (`VaultSecret.mints`: an `aws-account` or a
+`cluster` asset; `set` with `mints`, *Mints for* on Settings → Vault; in its JSON body, so no migration). It is sealed
+like any vault secret (or kept in a vault backend, issue #585), and it never leaves the vault: `deliver` refuses it, no template may list it in its scope, and
+the page leaves it out of a template's secrets. Its value is JSON (`mintingCredentialOf`, `src/domain/minting.ts`):
+for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
+`token`, optional `certificateAuthorityData`.
+
+**What is minted** for an operation profile (`mintTarget`, pure):
+
+| form | asset | minted |
+|------|-------|--------|
+| `aws` | `aws-role/<account>/<role>` | STS `AssumeRole` on `arn:aws:iam::<account>:role/<role>`, 900 s (STS's floor), session `hopper-<job id>`; a `read` session carries the session policy `arn:aws:iam::aws:policy/ReadOnlyAccess`. From the minting credential for `aws-account/<account>`. |
+| `kube` | `namespace/<cluster>/<ns>` | a TokenRequest for the service account `hopper-<operation>` in `<ns>`, 600 s (TokenRequest's floor). From the minting credential for `cluster/<cluster>`. |
+| `kube` | `cluster/<name>` | the same, in the namespace `hopper`. |
+
+What a service account or a role may do is the cluster's RBAC and the account's IAM: the hopper decides *whether* a
+job gets a credential for the profile, the outside system *what* it allows. `docs/deploy.md` "Minting short-lived
+credentials" says how to set them up.
+
+**On the box.** `$HOPPER_SECRET kube OPERATION ASSET` (an exec credential plugin: the token and its
+`expirationTimestamp`) and `$HOPPER_SECRET aws OPERATION ASSET` (a `credential_process` answer with `Expiration`).
+kubectl and the AWS CLI run the helper again when the last credential expires: each run is a new mint, so each renewal
+asks Access again. The ask (`{mint, operation, asset, token}`, `src/client/vault.ts`) goes the delivery's way —
+socket, signed `POST /client/vault`, the answer sealed to that request with the form, operation and asset bound as
+authenticated data.
+
+**The mint** (`src/vault/mint.ts`), in order; the first that fails is the job's answer (**403**) and a
+`vault.mint_refused` event on its timeline:
+
+1. the box and the job (`src/vault/box.ts`, the same checks as a delivery): a client target holds the key, the proxy
+   token is the job's, the job is at work on that machine, the machine is a box of a template;
+2. the profile is one the model can hold, and of an asset kind the form mints for;
+3. **Access**: `decideMint({ requester: { kind: 'job', … }, operation, asset })` — Access finds the template from the
+   job's box (issue #581). A deny mints nothing. When the template declares
+   the profile and access does not approve it, the reason says it waits for a person's approval on Settings → Vault
+   (the first-time gate: `approve-template` for a read profile, `approve-profile` for a high-radius one); when the
+   template does not declare it, that a person adds it first;
+4. a minting credential for the account or cluster, opened by the key provider;
+5. STS or the Kubernetes API (`src/vault/minter.ts`, at the `CredentialMinter` port: `@aws-sdk/client-sts`, and one
+   POST with node's https and the cluster's CA — a Kubernetes client library would cost more than the call). A
+   refusal there is said, without the minting credential.
+
+**With the vault in a container of its own** (issue #586). Steps 1 to 4 and Access run in the hopper; only step 5
+crosses: `POST /vault/mint` (`credential`, the target, the session name), and the vault container opens the minting
+credential and calls STS or the Kubernetes API itself, so it must reach them; the minted credential crosses back, the
+minting one never. One kept in a vault backend is minted in the hopper, which runs the backends.
+
+**Audit.** `vault.minted`: the form, the profile, the template, the machine, the job, the minting credential's name,
+the expiry, `renewal` (the job had one for that profile before; kept in memory, so a restart counts the next as a
+first), and `decision` — the id of Access's decision, the row Settings → Access shows. The minting credential's
+`lastUsed` says when it last minted. Never a credential, minted or minting.
+
+**Skills.** When the vault holds a minting credential for the asset's account or cluster, a link skill (#582) answers
+the minted stanza (`args: [kube, read, namespace/prod/web]`, `credential_process = … aws read aws-role/…`) in place of
+the vault secrets.
+
+**Not built.** GitHub installation tokens (the GitHub proxy, #563, already keeps tokens off boxes). Minting for an
+`aws-account` asset with no role, an Argo CD app or a Terraform workspace. Revoking a credential already minted: it
+lives out its 10 or 15 minutes; a revoke bites on the next mint.
+
+Tests: `test/integration/vault-mint.test.ts` (a real joined box, the real helper and the real minting adapters against
+an STS and a Kubernetes API faked on loopback, OpenFGA as a double: waits at the gate and mints nothing; after approval a
+token with its expiry, the audit naming the allowing decision; a write denied, nothing asked of the API; an AWS read
+session with the read-only policy, its renewal recorded; a revoke denies the next renewal; a minting credential never
+given out nor in a template's scope; an undeclared profile and a wrong asset kind refused; the minting credentials in
+no event, log line or file of the box), `test/client/vault.test.ts` (the mint ask, its sealed answer, the minted
+output), `test/integration/skills.test.ts` (the minted link), `test/ui/vault.test.ts` (*Mints for*).
 
 ### The KMS: an optional key provider (issue #586, 2026-10-09)
 
@@ -9785,7 +9865,10 @@ The catalog stays under 800 characters.
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
 same row Settings → Access shows.
 
-**Not built.** Minting (#580): the link uses the vault secret as it is, delivered just in time. Skills a user or a plugin
+**Minting** (#580): when the vault holds a minting credential for the asset's account or cluster, the link is the
+minted stanza ("Minting: short-lived credentials"); else the vault secret as it is, delivered just in time.
+
+**Not built.** Skills a user or a plugin
 adds. A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
 link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
 their approvals. Access checks the job (issue #581): its box's template comes from the job's relations.

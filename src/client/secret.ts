@@ -9,14 +9,20 @@
 //   $HOPPER_SECRET aws NAME                an AWS credential_process: the secret holds the key pair as JSON
 //                                          {AccessKeyId, SecretAccessKey[, SessionToken, Expiration]}
 //   $HOPPER_SECRET kube NAME               a kubeconfig exec credential plugin: the secret is the token
+//   $HOPPER_SECRET aws OPERATION ASSET     a credential_process: an AWS role session the hopper mints for the
+//                                          operation on the role (aws-role/<account>/<role>), short-lived (issue #580)
+//   $HOPPER_SECRET kube OPERATION ASSET    an exec credential plugin: a Kubernetes token the hopper mints for the
+//                                          operation on the cluster or namespace, short-lived, with its expiry
 //
+// A minted credential is asked again at each run: the tool runs the helper again when the last one expires, and the
+// hopper asks Access before each one.
 // It holds the value only in memory and writes it only to its standard output, for the tool that ran it.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
-import { isSecretName, SOCKET_VARIABLE } from './vault.ts';
+import { isSecretName, SOCKET_VARIABLE, type MintForm, type VaultAsk } from './vault.ts';
 
-const USAGE = 'usage: hopper-secret get NAME | git NAME [USER] get|store|erase | aws NAME | kube NAME';
+const USAGE = 'usage: hopper-secret get NAME | git NAME [USER] get|store|erase | aws NAME | kube NAME | aws OPERATION ASSET | kube OPERATION ASSET';
 
 export type Form = 'get' | 'aws' | 'kube';
 
@@ -43,13 +49,24 @@ export function credentialOutput(form: Form, value: string, env: Record<string, 
   return JSON.stringify({ apiVersion, kind: 'ExecCredential', status: { token: value } });
 }
 
-/** Asks the client's socket for `name` for `job`. */
-function ask(socket: string, name: string, token: string): Promise<string> {
+/** A minted credential (the hopper's JSON) in the form a tool reads it, its expiry kept: kubectl and the AWS CLI ask again after it. */
+export function mintedOutput(form: 'aws' | 'kube', value: string, env: Record<string, string | undefined> = {}): string {
+  if (form === 'aws') return credentialOutput('aws', value);
+  let minted: { token?: unknown; expirationTimestamp?: unknown } = {};
+  try { minted = JSON.parse(value) as typeof minted; } catch { /* below */ }
+  if (typeof minted.token !== 'string' || typeof minted.expirationTimestamp !== 'string') throw new Error('the hopper\'s minted token is not one kubectl can take');
+  const out = JSON.parse(credentialOutput('kube', minted.token, env)) as { status: Record<string, string> };
+  out.status.expirationTimestamp = minted.expirationTimestamp;
+  return JSON.stringify(out);
+}
+
+/** Asks the client's socket: a secret by name, or a credential minted. */
+function ask(socket: string, request: VaultAsk): Promise<string> {
   return new Promise((resolve, reject) => {
     const conn = connect(socket);
     let text = '';
     conn.setEncoding('utf8');
-    conn.on('connect', () => conn.write(`${JSON.stringify({ name, token })}\n`));
+    conn.on('connect', () => conn.write(`${JSON.stringify(request)}\n`));
     conn.on('data', (c: string) => { text += c; });
     conn.on('error', (e) => reject(new Error(`the hopper client's vault is not reachable at ${socket}: ${e.message}`)));
     conn.on('end', () => {
@@ -72,7 +89,9 @@ const readStdin = (): Promise<string> => new Promise((resolve) => {
 async function run(argv: string[]): Promise<string> {
   const [mode, name, ...rest] = argv;
   if (!mode || !name || !['get', 'git', 'aws', 'kube'].includes(mode)) throw new Error(USAGE);
-  if (!isSecretName(name)) throw new Error(`${JSON.stringify(name)} is not a vault secret's name`);
+  // `aws|kube OPERATION ASSET`: minted. An asset always has a `/`, a secret's name never.
+  const mint = (mode === 'aws' || mode === 'kube') && rest.length === 1 ? { mint: mode as MintForm, operation: name, asset: rest[0]! } : undefined;
+  if (!mint && !isSecretName(name)) throw new Error(`${JSON.stringify(name)} is not a vault secret's name`);
   let user = 'x-access-token';
   if (mode === 'git') {
     const op = rest.at(-1);
@@ -80,14 +99,15 @@ async function run(argv: string[]): Promise<string> {
     if (!op || rest.length > 2) throw new Error(USAGE);
     await readStdin();
     if (op !== 'get') return '';
-  } else if (rest.length) throw new Error(USAGE);
+  } else if (rest.length && !mint) throw new Error(USAGE);
   const file = process.env.HOPPER_TOKEN_FILE;
   if (!file) throw new Error('HOPPER_TOKEN_FILE is not set: a vault secret is given only to a job the hopper runs on this machine');
   let token: string;
   try { token = readFileSync(file, 'utf8').trim(); } catch (e) { throw new Error(`the job's token cannot be read (${(e as NodeJS.ErrnoException).code ?? 'error'}): a vault secret is given only to a job the hopper runs on this machine`, { cause: e }); }
   const socket = process.env[SOCKET_VARIABLE];
   if (!socket) throw new Error(`${SOCKET_VARIABLE} is not set: run the hopper-secret the client wrote ($HOPPER_SECRET)`);
-  const value = await ask(socket, name, token);
+  if (mint) return mintedOutput(mint.mint, await ask(socket, { ...mint, token }), process.env);
+  const value = await ask(socket, { name, token });
   if (mode === 'git') return `username=${user}\npassword=${value}\n`;
   return credentialOutput(mode as Form, value, process.env);
 }

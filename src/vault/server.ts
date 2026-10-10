@@ -15,6 +15,8 @@ import { openInstanceStore, type InstanceStore } from '../store/index.ts';
 import { vaultKeys } from './keys.ts';
 import { kmsOf } from './kms.ts';
 import { createVaultService, type VaultService } from './service.ts';
+import { createCredentialMinter } from './minter.ts';
+import type { MintTarget } from '../domain/minting.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wire.ts';
 
 const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
@@ -28,6 +30,8 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   const kms = kmsOf(o.env);
   const clock = o.clock ?? { now: () => new Date() };
   const logger = { warn: (line: string) => console.warn(line) };
+  // The vault holds the minting credentials, so it mints (issue #580): STS and the Kubernetes API are asked from here.
+  const minter = createCredentialMinter();
   // Opened at the first request, once the hopper has made and migrated the database.
   let instance: InstanceStore | undefined;
   const keys = new Map<string, SealerState>();
@@ -68,7 +72,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
       const deliver = op === 'deliver' ? vaultOps.deliver.parse(body) : undefined;
       const vault = createVaultService({
         store: { vault: store.vault, jobs: store.jobs, settings: store.settings, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; } } as never },
-        keys: await keysOf(user.id, store), clock, idGen: randomUUID, logger,
+        keys: await keysOf(user.id, store), clock, idGen: randomUUID, logger, minter,
         targets: () => (deliver?.machine ? [deliver.machine] : []),
         holds: () => deliver?.holds === true,
       });
@@ -97,11 +101,15 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
 
 /** One op on the vault service, its body already parsed. `status`: why no secret can be stored now, or nothing. */
 function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unknown {
-  const body = b as never as { by: string; name: string; secret: { name: string; scope?: string; value: string }; ask: { name: string; token: string }; machine?: { key: string } };
+  const body = b as never as {
+    by: string; name: string; secret: { name: string; scope?: string; value: string; mints?: { kind: 'aws-account' | 'cluster'; name: string } | null }; ask: { name: string; token: string }; machine?: { key: string };
+    credential: string; target: MintTarget; sessionName: string;
+  };
   switch (op) {
     case 'status': return vault.view().problem;
     case 'set': return vault.set(body.secret, body.by);
     case 'remove': return vault.remove(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
+    case 'mint': return vault.mintFrom(body.credential, body.target, body.sessionName);
   }
 }

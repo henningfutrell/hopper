@@ -8,7 +8,7 @@
 // container that cannot be reached, or that refuses the key, is said so: its status is the problem, a set or a removal
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
 import type { UserStore } from '../domain/ports.ts';
-import type { NewEvent } from '../domain/types.ts';
+import type { Minted, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
 import type { ClientTarget, VaultResult, VaultService } from './service.ts';
@@ -65,7 +65,7 @@ export function remoteVault(o: {
       return 'problem' in r ? r.problem : r.result ?? undefined;
     },
     set: async (s, by) => ('value' in s
-      ? edit('set', { secret: { name: s.name, value: s.value, ...(s.scope !== undefined ? { scope: s.scope } : {}) }, by })
+      ? edit('set', { secret: { name: s.name, value: s.value, ...(s.scope !== undefined ? { scope: s.scope } : {}), ...(s.mints !== undefined ? { mints: s.mints } : {}) }, by })
       : o.local.set(s, by)),
     remove: (name, by) => edit('remove', { name, by }),
     async deliver(ask, machineKey) {
@@ -82,6 +82,13 @@ export function remoteVault(o: {
       });
       return { refused: r.problem };
     },
+    // Every check and Access's decision run here, in the hopper (issue #580); only the mint itself crosses, to the vault
+    // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
+    mint: (ask, machineKey) => o.local.mint(ask, machineKey, async (name, target, sessionName) => {
+      if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, sessionName);
+      const r = await call<{ minted: Minted } | { refused: string }>('mint', { credential: name, target, sessionName });
+      return 'problem' in r ? { refused: r.problem } : r.result;
+    }),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),
