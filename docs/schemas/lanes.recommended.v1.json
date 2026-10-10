@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "lanes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "configured": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "headroom": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "reason": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "usage": {
+      "type": "string",
+      "enum": [
+        "free",
+        "near",
+        "soft",
+        "hard"
+      ]
+    },
+    "mode": {
+      "type": "string",
+      "const": "shadow"
+    }
+  },
+  "required": [
+    "machineId",
+    "lanes",
+    "configured",
+    "reason",
+    "confidence",
+    "usage",
+    "mode"
+  ],
+  "additionalProperties": false
+}

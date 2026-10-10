@@ -153,6 +153,8 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'item.changed_since_snapshot': 'A job was held because its item\'s text changed since the snapshot (issue #662): at Run again, an assessor or problem-release rerun, a rediscovered item, or while it waited. `editors`: who edited the title or body since, from the timeline; `newComments`: how many assignee comments are new. Never the text.',
   'item.original_kept': 'A person kept the original text of a changed item (Rerun the original, issue #662): the job runs the snapshot\'s text, and that live text holds it no more.',
   'item.new_text_accepted': 'The owner accepted an item\'s new text (issue #662), allowed by Access: the job runs it, and it is the item\'s new snapshot. The hashes before and after, and who edited it.',
+  'lanes.recommended': 'A machine\'s lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane\'s cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. `mode` `shadow`: recorded, not applied. Recorded when the recommended or the configured lanes change.',
+  'lanes.tuning_changed': 'An admin changed a machine\'s lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`.',
 };
 
 type Prop = Record<string, unknown>;

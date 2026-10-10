@@ -9,6 +9,7 @@ import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
+import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
@@ -348,6 +349,8 @@ export const EVENT_SCHEMAS = {
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
   ...ARTIFACT_EVENT_SCHEMAS,
   ...ITEM_EVENT_SCHEMAS,
+  // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
+  ...LANE_TUNING_EVENT_SCHEMAS,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

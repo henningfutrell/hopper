@@ -3289,3 +3289,59 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
   "via": "ui"
 }
 ```
+
+## `lanes.recommended`
+
+Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. `mode` `shadow`: recorded, not applied. Recorded when the recommended or the configured lanes change.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `lanes` | integer | yes |
+| `configured` | integer | yes |
+| `headroom` | integer | no |
+| `reason` | string | yes |
+| `confidence` | number | yes |
+| `usage` | `free` \| `near` \| `soft` \| `hard` | yes |
+| `mode` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "lanes": 4,
+  "configured": 2,
+  "headroom": 4,
+  "confidence": 1,
+  "usage": "free",
+  "mode": "shadow",
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more"
+}
+```
+
+## `lanes.tuning_changed`
+
+Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "from": {
+    "autoTune": true,
+    "minLanes": 1,
+    "maxLanes": 8
+  },
+  "to": {
+    "autoTune": true,
+    "minLanes": 1,
+    "maxLanes": 3
+  },
+  "by": "admin"
+}
+```

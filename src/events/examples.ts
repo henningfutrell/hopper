@@ -189,4 +189,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     key: 'https://github.com/octo-org/hello/issues/7', fromHash: '6db7d803e74f1ffa7d8f5adc0bf95b3e15bf4c8373fffadf546227cc6c6742cb',
     toHash: 'f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8', editors: ['octocat'], person: 'octocat', via: 'ui',
   },
+  'lanes.recommended': {
+    machineId: 'laptop', lanes: 4, configured: 2, headroom: 4, confidence: 1, usage: 'free', mode: 'shadow',
+    reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more',
+  },
+  'lanes.tuning_changed': { machineId: 'laptop', from: { autoTune: true, minLanes: 1, maxLanes: 8 }, to: { autoTune: true, minLanes: 1, maxLanes: 3 }, by: 'admin' },
 };

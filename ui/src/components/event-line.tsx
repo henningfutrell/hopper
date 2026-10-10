@@ -22,6 +22,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
+  'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 

@@ -40,6 +40,7 @@ const ALL: Record<EventType, true> = {
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
+  'lanes.recommended': true, 'lanes.tuning_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

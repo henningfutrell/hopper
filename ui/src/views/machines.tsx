@@ -9,7 +9,8 @@
 // new machine starts with — are edited here too (POST /ui/api/machines/defaults, issue #142). Below the machines, the
 // priority lanes: every lane's reliability and why it is or is not one (issue #535, priority-lanes.tsx); and each machine's
 // blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
-// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). A sandbox box the
+// draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). Each machine's lane
+// recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box the
 // hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -31,6 +32,7 @@ import { useCanAdmin } from '@/store/selectors';
 import { JoinMachineForm } from './machine-join';
 import { PriorityLanesPanel } from './priority-lanes';
 import { BlastRadiusPanel } from './blast-radius';
+import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 
 const REFRESH_MS = 15000;
@@ -229,6 +231,7 @@ export function Machines() {
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
         : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
+      {machines.length > 0 && <LaneTuningPanel />}
       {machines.length > 0 && <PriorityLanesPanel />}
       {machines.length > 0 && <BlastRadiusPanel />}
     </div>
