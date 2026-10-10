@@ -12,10 +12,10 @@ import {
   DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
   type RadiusRules, type TemplateApprovals, type TemplateRadius,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type AccessView, type Approval, type MintDecision, type MintRequest,
-  type OperationProfile, type RevokedApproval, type Asset,
+  type OperationProfile, type RevokedApproval, type Asset, type SystemSecretAsk,
 } from '../domain/types.ts';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, type ModelJson } from './model.ts';
-import { approvalTuples, artifactObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, userObject } from './objects.ts';
+import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, systemSecretGaps, type ModelJson } from './model.ts';
+import { approvalTuples, artifactObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, shareTuples, systemSecretCheck, userObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -48,6 +48,8 @@ export interface Access extends TemplateApprovals {
   decideView(viewer: ArtifactViewer, artifact: { userId: string; id: string }): Promise<{ allowed: boolean; reason: string }>;
   /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
+  /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */
+  decideSystemSecret(ask: SystemSecretAsk): Promise<{ allowed: boolean; reason: string }>;
   /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
   tryCheck(request: Omit<MintRequest, 'requester'> & { template: string }, by: string): Promise<AccessDecisionRecord>;
   /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */
@@ -106,12 +108,13 @@ export function createAccess(o: AccessOptions): Access {
   let watch: NodeJS.Timeout | undefined;
   // Who is live, as last pushed: a check asks OpenFGA only once it holds who is live now.
   let pushedRequesters: string | undefined;
-  // What the model lacks for artifacts, by its text: asked every 2 s, compiled once per model.
-  let artifactGapsMemo: { dsl: string; gaps: string[] } | undefined;
-  const artifactGapsOf = (dsl: string): string[] => {
-    if (artifactGapsMemo?.dsl !== dsl) artifactGapsMemo = { dsl, gaps: artifactGaps(compileAccessModel(dsl)) };
-    return artifactGapsMemo.gaps;
+  // What the model lacks for artifacts, and for system secrets (issue #657), by its text: asked every 2 s, compiled once per model.
+  const gapsMemo = (gapsIn: (m: ModelJson) => string[]): ((dsl: string) => string[]) => {
+    let memo: { dsl: string; gaps: string[] } | undefined;
+    return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
+  const artifactGapsOf = gapsMemo(artifactGaps);
+  const systemGapsOf = gapsMemo(systemSecretGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -120,7 +123,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -233,25 +236,32 @@ export function createAccess(o: AccessOptions): Access {
     return rated.reduce((a, b) => (rank(b) > rank(a) ? b : a));
   };
 
+  /** OpenFGA's answer to one check apart from mints (an artifact, a system secret), once everything is pushed; a deny when it cannot be had. Not recorded. */
+  const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<{ allowed: boolean; reason: string }> => {
+    const server = o.server;
+    if (!server) return { allowed: false, reason: NOT_CONFIGURED };
+    if (gaps.length > 0) return { allowed: false, reason: `the access model lacks what ${what} need: ${gaps.join(', ')}: add it in Settings → Access` };
+    if (liveKey() !== pushedRequesters) dirty = true;
+    if (dirty) { await running; await sync(); }
+    if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
+    const pushed = pushedModel()!;
+    try {
+      const allowed = await server.check(pushed.storeId, pushed.modelId, tuple, contextual);
+      return { allowed, reason: why(allowed) };
+    } catch (e) {
+      dirty = true;
+      down((e as Error).message);
+      return { allowed: false, reason: `OpenFGA cannot be asked: ${(e as Error).message}` };
+    }
+  };
+
   return {
-    async decideView(viewer, artifact) {
-      const server = o.server;
-      if (!server) return { allowed: false, reason: NOT_CONFIGURED };
-      const gaps = artifactGapsOf(model().dsl);
-      if (gaps.length > 0) return { allowed: false, reason: `the access model lacks what artifacts need: ${gaps.join(', ')}: add it in Settings → Access` };
-      if (liveKey() !== pushedRequesters) dirty = true;
-      if (dirty) { await running; await sync(); }
-      if (dirty) return { allowed: false, reason: `OpenFGA cannot be asked: ${status.why ?? 'unknown'}` };
-      const pushed = pushedModel()!;
-      const subject = viewer.kind === 'user' ? userObject(viewer.userId) : linkObject({ userId: viewer.userId, shareId: viewer.shareId });
-      try {
-        const allowed = await server.check(pushed.storeId, pushed.modelId, { subject, relation: 'can_view', object: artifactObject(artifact) }, []);
-        return { allowed, reason: allowed ? 'it is shared with them' : 'it is not shared with them, or the share was revoked or expired' };
-      } catch (e) {
-        dirty = true;
-        down((e as Error).message);
-        return { allowed: false, reason: `OpenFGA cannot be asked: ${(e as Error).message}` };
-      }
+    decideView: (viewer, artifact) => checkOnce('artifacts', artifactGapsOf(model().dsl), {
+      subject: viewer.kind === 'user' ? userObject(viewer.userId) : linkObject({ userId: viewer.userId, shareId: viewer.shareId }), relation: 'can_view', object: artifactObject(artifact),
+    }, [], (allowed) => (allowed ? 'it is shared with them' : 'it is not shared with them, or the share was revoked or expired')),
+    decideSystemSecret(ask) {
+      const { tuple, contextual } = systemSecretCheck(ask);
+      return checkOnce('system secrets', systemGapsOf(model().dsl), tuple, contextual, (allowed) => `${tuple.subject} may${allowed ? '' : ' not'} ${ask.action} ${tuple.object}`);
     },
     approvedProfiles: (template) => approvals().filter((a) => a.template === template).map((a) => a.profile),
     async revokeProfile(template, profile, by) {

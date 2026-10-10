@@ -82,7 +82,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Secrets"). A credential the hopper is *given* for an outside service comes from the runtime: the variable
   `NAME` or the mounted file `NAME_FILE` names (`src/secrets/runtime.ts`), named by a command-bearing
   option. A secret the hopper *owns* — one made by or for the hopper (a webhook signing secret), or one
-  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs) — is kept in the database, **sealed** under
+  only it holds (a **connected account**'s token, issue #214; a **vault secret**, issue #558, set in the UI for jobs; a **system secret**, issue #657, the hopper's own use for one user — their TypeSafe API key —, in the vault's system scope, which no job may read) — is kept in the database, **sealed** under
   the runtime's token key `HOPPER_TOKEN_KEY` (`src/secrets/sealer.ts`: a key per value from the token key
   and a salt, AES-256-GCM, bound to its place, a key id for rotation; the connected account's tokens by the
   token box of issue #441, which keeps them in clear while the runtime gives no key), never logged, never

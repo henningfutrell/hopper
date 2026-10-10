@@ -101,9 +101,25 @@ export interface DecisionPointView extends DecisionPointSettings {
   overridden: number;
 }
 
+/**
+ * The user's TypeSafe API key (issue #657), as the Jev page shows it: set or not, its last 4 characters, who set it and
+ * when. Never the key. `environment`: the runtime variable that still gives one, which the hopper no longer reads (the
+ * key was imported from it once). `problem`: why no key can be stored or opened now.
+ */
+export interface TypesafeKeyView {
+  set: boolean;
+  last4?: string;
+  setAt?: string;
+  setBy?: string;
+  environment?: { variable: string };
+  problem?: string;
+}
+
 export interface MinorDecisionsView {
-  /** Whether Jev can be asked now; `why` when it cannot (no TypeSafe key, no typesafe_sdk). */
+  /** Whether Jev can be asked now; `why` when it cannot (no TypeSafe API key). */
   jev: { available: boolean; why?: string };
+  /** The TypeSafe API key Jev asks TypeSafe with (issue #657): set on this page, kept in the vault's system scope. */
+  typesafeKey: TypesafeKeyView;
   windowDays: number;
   points: DecisionPointView[];
   /** The newest picks, newest first. */
@@ -122,6 +138,8 @@ export interface JevChooser {
   /** Whether Jev can be asked now, and why not: read on every call, so a key set later is used at once. */
   available(): { available: boolean; why?: string };
   pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick>;
+  /** One cheap TypeSafe call with `key`, whatever key is stored (issue #657): whether TypeSafe takes it. Never throws; `why` never carries the key. */
+  check(key: string): Promise<{ ok: true } | { ok: false; why: string }>;
 }
 
 /** A decider call as a decision point hands it to Jev first. */

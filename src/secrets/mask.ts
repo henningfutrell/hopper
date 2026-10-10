@@ -22,3 +22,12 @@ export function maskGitHubTokens(text: string): string {
   }
   return result;
 }
+
+/**
+ * `text` with every occurrence of `secret` replaced by `[<name>, masked]` (issue #657): a secret the hopper holds, which a
+ * service it hands the secret to may repeat in an error. An empty secret masks nothing.
+ */
+export function maskSecret(text: string, secret: string | undefined, name: string): string {
+  if (!secret) return text;
+  return text.split(secret).join(`[${name}, masked]`);
+}

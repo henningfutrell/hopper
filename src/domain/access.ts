@@ -150,9 +150,23 @@ export interface TemplateApprovals {
   revokeProfile(template: string, profile: OperationProfile, by: string): Promise<void>;
 }
 
+/**
+ * An ask about a secret in the vault's system scope (issue #657): `change` — set or remove it —, or `read` it. `owner`:
+ * the user it is kept for; `admin`: the requester signed in as an admin.
+ */
+export interface SystemSecretAsk {
+  requester: Requester;
+  owner: string;
+  name: string;
+  action: 'change' | 'read';
+  admin?: boolean;
+}
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
+  /** Whether a requester may change or read a system secret (issue #657): OpenFGA's answer, asked each time; a deny when it cannot be had. */
+  decideSystemSecret(ask: SystemSecretAsk): Promise<{ allowed: boolean; reason: string }>;
 }
 
 // ---- Ports ---------------------------------------------------------------------------

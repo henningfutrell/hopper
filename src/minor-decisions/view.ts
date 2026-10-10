@@ -3,7 +3,7 @@
 // picks with what was decided. A person's override replaces what was compared. Pure.
 import {
   DECISION_POINTS, DECISION_POINT_TEXT, type DecisionPoint, type DomainEvent, type MinorDecisionPickView, type MinorDecisionSettings,
-  type MinorDecisionsView, MINOR_DECISION_WINDOW_DAYS,
+  type MinorDecisionsView, MINOR_DECISION_WINDOW_DAYS, type TypesafeKeyView,
 } from '../domain/types.ts';
 
 export const RECENT_PICKS = 50;
@@ -38,7 +38,7 @@ export function picksOf(events: readonly DomainEvent[]): MinorDecisionPickView[]
   return [...picks.values()];
 }
 
-export function viewOf(events: readonly DomainEvent[], settings: MinorDecisionSettings, jev: MinorDecisionsView['jev']): MinorDecisionsView {
+export function viewOf(events: readonly DomainEvent[], settings: MinorDecisionSettings, jev: MinorDecisionsView['jev'], typesafeKey: TypesafeKeyView): MinorDecisionsView {
   const picks = picksOf(events);
   const points = DECISION_POINTS.map((point) => {
     const mine = picks.filter((p) => p.point === point);
@@ -51,5 +51,5 @@ export function viewOf(events: readonly DomainEvent[], settings: MinorDecisionSe
       overridden: mine.filter((p) => p.overridden).length,
     };
   });
-  return { jev, windowDays: MINOR_DECISION_WINDOW_DAYS, points, recent: picks.slice(-RECENT_PICKS).reverse() };
+  return { jev, typesafeKey, windowDays: MINOR_DECISION_WINDOW_DAYS, points, recent: picks.slice(-RECENT_PICKS).reverse() };
 }

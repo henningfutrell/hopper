@@ -30,7 +30,8 @@ import { splitSources } from './job-sources.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
 import { createLogins, type Logins } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
-import { createJev, createMinorDecisions, type MinorDecisions } from '../minor-decisions/index.ts';
+import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
+import { userTypesafeKey } from './typesafe-key.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
@@ -124,6 +125,8 @@ export interface UserRuntime {
   failures: Failures;
   /** Decider calls, Jev first (issue #550). */
   minorDecisions: MinorDecisions;
+  /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
+  typesafeKey: TypesafeKey;
   dispatcher: WebhookDispatcher;
   executors: ExecutorRegistry;
   /** The user's connected GitHub account (issue #214). */
@@ -159,8 +162,13 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const { user, store, config, seams, clock, logger } = o;
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
   ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
-  // Every secret comes from the runtime, under the user's prefix (issue #56, #158).
-  const secret = userSecrets(o.env, user);
+  // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
+  // hopper's own (issue #657), kept in the vault's system scope.
+  const keys = sealerOf(runtimeSecrets(o.env));
+  const { jev, typesafeKey, secret } = userTypesafeKey({
+    user, store, env: o.env, runtime: userSecrets(o.env, user), keys, ...(o.access ? { access: o.access } : {}),
+    ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
+  });
   const dataDir = userWorkDir(config.workDir, user);
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
@@ -262,7 +270,6 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
   // The webhook signing secrets (issue #451): sealed in the user's store under the runtime's token key; one
   // an older key sealed is sealed again under the current one now. A subscription from before reads its variable.
-  const keys = sealerOf(runtimeSecrets(o.env));
   if (keys.problem) logger.warn(`hopper: ${keys.problem}: webhook signing secrets cannot be stored, and a stored one is not opened`);
   const webhookSecrets = createWebhookSecrets({ store, keys, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix, logger });
   const resealed = webhookSecrets.resealAll();
@@ -273,14 +280,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
   const logins = createLogins({ store, clock });
-  // Decider calls (issue #550) go through Jev first, through TypeSafe with the runtime's key.
-  const minorDecisions: MinorDecisions = createMinorDecisions({
-    store, clock, logger, timeoutMs: JEV_TIMEOUT_MS,
-    jev: seams.jev ?? createJev({
-      python: 'python3', timeoutMs: JEV_TIMEOUT_MS, secret, secretName: (n) => `${user.secretPrefix}${n}`,
-      env: { PATH: o.env.PATH, HOME: o.env.HOME, PYTHONPATH: o.env.PYTHONPATH },
-    }),
-  });
+  // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
+  const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
@@ -356,7 +357,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

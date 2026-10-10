@@ -1,5 +1,6 @@
 // Running grok-bot-jev's router once per job through gate_shim.py (design.md "Gate router"). Any
 // failure is advice with `source: fallback` — the router's own documented safe fallback — never a throw.
+import { maskSecret } from '../../../secrets/mask.ts';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,7 +47,7 @@ export interface GateRouterShimOptions {
   python: string;
   /** The Claude model, for the `claude` on PATH. */
   model: string;
-  /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: Jev off. */
+  /** The user's TypeSafe API key (issue #657: kept in the vault's system scope), asked on every call; undefined: Jev off. */
   typesafeKey(): string | undefined;
   dataDir: string;
   clock: Clock;
@@ -151,7 +152,8 @@ export function createGateRouter(o: GateRouterShimOptions): Router {
           at: at(),
         };
       } catch (e) {
-        const why = e instanceof Error ? e.message : String(e);
+        // The key is the user's (issue #657): an error that repeats it is masked.
+        const why = maskSecret(e instanceof Error ? e.message : String(e), o.typesafeKey(), 'TypeSafe API key');
         return { action: 'proceed_full', reason: `gate router unavailable: ${why}`, details: { gatesAsked: false }, source: 'fallback', at: at() };
       }
     },

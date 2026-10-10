@@ -1,6 +1,6 @@
 // Issue #657, through the real composition root, the real HTTP server and the real Jev (jev_pick.py, with the fake
 // typesafe_sdk on PYTHONPATH): the TypeSafe API key is the hopper's own secret. It is set on the Jev page (Settings →
-// Minor decisions) or by the operator CLI, checked once against TypeSafe, and kept in the vault's system scope — sealed
+// Decider) or by the operator CLI, checked once against TypeSafe, and kept in the vault's system scope — sealed
 // under the token key, never listed, never answered back, never given to a job —; Jev reads it at each decision, so
 // a set, a replace or a removal applies without a restart. A key still in the environment is imported once, with a note.
 //
@@ -112,7 +112,7 @@ describe('the TypeSafe API key, set in the UI', () => {
     const { a, session } = await boot();
     const r = await setKey(a, session, BAD);
     expect(r.status).toBe(400);
-    expect(r.body.error).toMatch(/TypeSafe refused the key: .*401 invalid api key/);
+    expect(r.body.error).toMatch(/the check against TypeSafe failed: .*401 invalid api key/);
     expect(r.body.error).not.toContain(BAD);
     expect((await view(a)).jev.available).toBe(false);
     expect((await view(a)).typesafeKey).toEqual({ set: false });
@@ -190,7 +190,7 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect((await hopper(a, ['typesafe-key', 'set'], '')).code).toBe(2);
     const bad = await hopper(a, ['typesafe-key', 'set'], BAD);
     expect(bad.code).toBe(2);
-    expect(bad.err).toMatch(/TypeSafe refused the key/);
+    expect(bad.err).toMatch(/the check against TypeSafe failed/);
     expect(bad.err).not.toContain(BAD);
     const removed = await hopper(a, ['typesafe-key', 'remove']);
     expect(JSON.parse(removed.out)).toEqual({ set: false });
