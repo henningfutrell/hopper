@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
-import type { Sandboxes } from '../sandboxes/service.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';

@@ -5,6 +5,7 @@ import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
+import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
@@ -288,6 +289,16 @@ export interface JoinCodeRepository {
   waiting(now: string): string[];
 }
 
+/** The sandbox records (issue #708, instance migration 34): one per sandbox box the hopper launched, by id; names are unique. */
+export interface SandboxRepository {
+  list(): SandboxRecord[];
+  get(id: string): SandboxRecord | undefined;
+  /** False when a record of that id or name exists. */
+  add(record: SandboxRecord): boolean;
+  update(record: SandboxRecord): void;
+  remove(id: string): boolean;
+}
+
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
  * `plugins`, `rules` and `job-rules`, and the instance's `sign-in`. No config lives in a file.
@@ -479,6 +490,8 @@ export interface InstanceStore {
   uiSessions: UiSessionRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
+  /** The sandbox records (issue #708). */
+  sandboxes: SandboxRepository;
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */
