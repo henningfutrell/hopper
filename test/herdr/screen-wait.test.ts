@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { PROTOCOL_LINES } from '../../src/job-rules/index.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, readTurn } from '../../src/executors/herdr/screen.ts';
+import { outcomeOf } from '../../src/executors/print-agent.ts';
 
 const ECHO = ['❯ Push the branch.', `  ${FOOTER_ANCHOR}`];
 const WAIT = [
@@ -53,5 +54,16 @@ describe('the wait marker', () => {
     expect(after.lastLine).toBe('The poll ended: access is granted. Pushed the branch.');
     const done = readTurn(screen(ECHO, WAIT, ['● Pushed.', '  HOPPER_DONE'], END), FOOTER_ANCHOR, before.outputLines);
     expect(done.lastMarker).toBe('done');
+  });
+});
+
+describe('the wait marker in a print-mode agent\'s answer', () => {
+  it('is a wait, with what it waits for, never a status note', () => {
+    const text = 'The push needs write access.\nHOPPER_WAITING\nfor: write access to the repository\nuntil: a person grants it';
+    expect(outcomeOf(text, 'm', 'c')).toEqual({ kind: 'wait', wait: { for: 'write access to the repository', until: 'a person grants it' } });
+  });
+
+  it('without for: it is a status note', () => {
+    expect(outcomeOf('Blocked.\nHOPPER_WAITING', 'm', 'c')).toEqual({ statusNote: 'Blocked.\nHOPPER_WAITING' });
   });
 });
