@@ -7,6 +7,7 @@
 // `token_key`) is read only to move an install to HOPPER_MASTER_KEY, and not once that is set.
 import { createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { logMask, type LogMask } from './log-mask.ts';
 import { createSealer } from './sealer.ts';
 import { createTokenBox, decodeKey, MASTER_KEY_VARIABLE, PREVIOUS_KEYS_VARIABLE } from './token-box.ts';
 
@@ -197,19 +198,25 @@ export function mismatchOf(key: { key: string; previous: readonly string[] }, re
   return `the master key does not match this database: it was set up with the key of fingerprint ${shortFingerprint(recorded)}, and this one has fingerprint ${shortFingerprint(fingerprintOf(key.key))}`;
 }
 
-/** The start's lines about the master key: the key itself once, to save now; a limited start, loud; the notes. */
-export function logMasterKey(key: MasterKey, saved: boolean, logger: { info(line: string): void; warn(line: string): void }): void {
+const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE}`, generated: 'made for this new hopper', 'old-token-key': 'read from the old token key' } as const;
+
+/**
+ * The start's lines about the master key: where it came from and its fingerprint, never the key (issue #685: a log goes
+ * to the host's journal and stays there; the UI shows a key this start made once, to the hopper's admin); a limited
+ * start, loud; the notes. The log mask holds the key and its previous keys from here on, so no later line carries them.
+ */
+export function logMasterKey(key: MasterKey, saved: boolean, logger: { info(line: string): void; warn(line: string): void }, mask: Pick<LogMask, 'hold'> = logMask): void {
+  if (key.source !== 'missing') mask.hold(key.key, ...key.previous);
   if (key.source === 'missing') {
     logger.warn(`hopper: LIMITED: ${key.problem}. Nothing is deleted, and what needs a secret stays off until then`);
     return;
   }
+  const fingerprint = shortFingerprint(key.fingerprint);
+  logger.info(`hopper: master key: ${SOURCE_WORDS[key.source]} (${key.source}), fingerprint ${fingerprint}${key.previous.length ? `; ${key.previous.length} previous key(s) given` : ''}`);
   for (const note of key.notes) logger.info(`hopper: ${note}`);
   if (key.source === 'given') return;
-  const fingerprint = shortFingerprint(key.fingerprint);
   if (!saved) {
-    const what = key.source === 'generated' ? 'made for this new hopper' : 'read from the old token key';
-    logger.warn(`hopper: SAVE THIS NOW: the master key, ${what} (fingerprint ${fingerprint}): ${key.key}`);
-    logger.warn('hopper: keep it in a password manager: every secret the hopper keeps is sealed under it, and without it a new container opens none of them');
+    logger.warn('hopper: save the master key now: the hopper\'s admin shows it once in the UI (Show the key (once)), never in the log. Keep it in a password manager: every secret the hopper keeps is sealed under it, and without it a new container opens none of them');
   }
   logger.warn(`hopper: give the master key as ${MASTER_KEY_VARIABLE} at each launch (docs/deploy.md "The master key"): ${key.source === 'generated'
     ? 'a start without it is limited'

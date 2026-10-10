@@ -7,7 +7,7 @@
 #   then open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 #
 # The master key (issue #659, docs/deploy.md "The master key"): every secret the hopper keeps is sealed under it, and
-# it is kept in no volume. The first start makes one and shows it once — in the UI and in `podman compose logs hopper`.
+# it is kept in no volume. The first start makes one and shows it once, in the UI only: never in the log (issue #685).
 # Save it in a password manager, then put it in .env and recreate the hopper:
 #   HOPPER_MASTER_KEY=<the 64 hex digits>
 #   podman compose up -d --force-recreate --no-deps hopper

@@ -31,3 +31,31 @@ export function maskSecret(text: string, secret: string | undefined, name: strin
   if (!secret) return text;
   return text.split(secret).join(`[${name}, masked]`);
 }
+
+/**
+ * The key patterns to mask in a log line (issue #685). A 32-byte key as 64 hex digits: the master key's form, and that
+ * of every hex key the hopper makes (webhook signing secrets, sign-in secrets, join codes). A 32-byte key as base64 or
+ * base64url, 43 characters and an optional `=`, with upper case, lower case and a digit, as random bytes nearly always
+ * have: the master key's other form, and the hopper's client and artifact tokens. A digest after `sha256:` is no key.
+ */
+const KEY_PATTERNS = [
+  /(?<![0-9A-Fa-f]|sha256:)[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/g,
+  /(?<![A-Za-z0-9+/_=-])(?=[A-Za-z0-9+/_-]{0,42}[A-Z])(?=[A-Za-z0-9+/_-]{0,42}[a-z])(?=[A-Za-z0-9+/_-]{0,42}[0-9])[A-Za-z0-9+/_-]{43}=?(?![A-Za-z0-9+/_=-])/g,
+];
+
+/** `text` with each 32-byte key, as hex, base64 or base64url, replaced by `[key, masked]`. */
+export function maskKeys(text: string): string {
+  let result = text;
+  for (const pattern of KEY_PATTERNS) result = result.replace(pattern, '[key, masked]');
+  return result;
+}
+
+/**
+ * A log line as it may be written (issue #685): each secret in `held` (the master key and its previous keys, in the form
+ * they were given) masked by value, then GitHub tokens and the key patterns.
+ */
+export function maskLogLine(text: string, held: Iterable<string>): string {
+  let result = text;
+  for (const secret of held) result = maskSecret(result, secret, 'secret');
+  return maskKeys(maskGitHubTokens(result));
+}

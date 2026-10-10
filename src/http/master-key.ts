@@ -23,6 +23,7 @@ export function createMasterKeyStatus(key: MasterKey, settings: Pick<InstanceSet
   const view = (): MasterKeyView => ({
     source: key.source,
     ...(key.fingerprint ? { fingerprint: shortFingerprint(key.fingerprint) } : {}),
+    previous: key.source !== 'missing' && key.previous.length > 0,
     saved: key.source === 'given' || isSaved(),
     revealable: shown !== undefined,
     ...(key.source === 'missing' ? { problem: key.problem } : {}),

@@ -63,7 +63,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
-| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key") | everything |
+| `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandboxes/` | sandbox boxes the hopper starts (issue #603, "Sandbox boxes the hopper launches"): the launch, the keeping in step with the machines and the cleanup problems (`service.ts`); rootless Podman at the `SandboxEngine` port (`podman.ts`, its libpod API over node:http). The machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -77,7 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
-| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it | engine, executors, store |
+| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
 
 ## The decider
 
@@ -6378,8 +6378,9 @@ process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HO
   key only when it seals some of them: a sealed value's key id, or a token the token box opens with it
   (`src/store/kept-secrets.ts`, every user's schema; a vault a KMS data key seals is left out).
 - **First start.** No key, no fingerprint and no kept secret: the hopper makes a key, records its fingerprint, and
-  shows the key once in the start log (`SAVE THIS NOW`) and once in the UI (`POST /ui/api/master-key` `reveal`, the
-  hopper's admin alone, then 409). The banner stays until the admin says it is saved (`saved`: `masterKeySaved`
+  shows the key once in the UI (`POST /ui/api/master-key` `reveal`, the hopper's admin alone, then 409). Never in the
+  log (issue #685): a container's log goes to the host's journal and stays there. The start log says only where the key
+  came from and its fingerprint (`master key: <how> (<source>), fingerprint <16 hex digits>`). The banner stays until the admin says it is saved (`saved`: `masterKeySaved`
   records the fingerprint saved). The key lives only in the process: the next start without it is limited.
 - **Limited.** No key while a fingerprint or a kept secret exists: the daemon starts, says so loudly at start and
   in a banner (`GET /api/master-key` `source: missing`, its `problem` naming the key by its fingerprint), and keeps
@@ -6388,10 +6389,16 @@ process gets it (`src/executors/env.ts` drops every `HOPPER_MASTER_KEY*` and `HO
   refresh token it could not keep. Nothing is deleted, and no new secret is made in place of one it cannot open.
 - **The old token key.** While `HOPPER_MASTER_KEY` is unset, `HOPPER_TOKEN_KEY` (or the file
   `HOPPER_TOKEN_KEY_FILE` names; a file that is not there is no key) is read to move an install: checked as a
-  given key is, shown once to be saved, and the log says to give it as `HOPPER_MASTER_KEY`. Once that is set,
+  given key is, shown once in the UI to be saved, and the log says to give it as `HOPPER_MASTER_KEY`. Once that is set,
   the old key is not read, and the log says it can be removed. One that matches nothing kept: limited, saying so.
 - **The vault container** (issue #586) reads the same `HOPPER_MASTER_KEY` (or the old token key) and checks it
   against the recorded fingerprint at each user's first request: a wrong key seals and opens nothing.
+- **The log mask** (issue #685). The master key, or any part of it beyond its fingerprint, never goes to a log, an
+  event, an error or the API; the one exception is `reveal` above, once, to the admin. Every line the daemon and the
+  vault container write to stdout and stderr goes through the secret mask (`src/secrets/log-mask.ts`): the master key
+  and its previous keys, held by value; GitHub tokens; and the key patterns (`maskKeys`): 32 bytes as 64 hex digits,
+  or as base64 or base64url — the master key's forms, and those of every key the hopper makes. A `sha256:` digest is no
+  key. `hopper master-key status` (operator CLI) answers `source`, `fingerprint` and `previous`, never the key.
 
 The compose file makes no `token_key`, and Postgres sets the database password again at each start, so a lost
 `secrets` volume costs nothing: a new one gets a new password, and the database keeps working. Recreating the

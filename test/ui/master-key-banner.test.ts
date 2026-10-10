@@ -27,12 +27,12 @@ const button = (el: Element, text: string) => [...el.querySelectorAll('button')]
 
 describe('the master key banner (#659)', () => {
   it('a key given at launch: nothing', async () => {
-    const { el } = await render({ view: { source: 'given', fingerprint: '0123456789abcdef', saved: true, revealable: false } });
+    const { el } = await render({ view: { source: 'given', previous: false, fingerprint: '0123456789abcdef', saved: true, revealable: false } });
     expect(el.querySelector('[data-master-key]')).toBeNull();
   });
 
   it('a key made at the first start: save it now; the admin may show it once and say it is saved', async () => {
-    const { el, props } = await render({ view: { source: 'generated', fingerprint: '0123456789abcdef', saved: false, revealable: true } });
+    const { el, props } = await render({ view: { source: 'generated', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: true } });
     const banner = el.querySelector('[data-master-key]')!;
     expect(banner.textContent).toContain('Save the master key now');
     expect(banner.textContent).toContain('HOPPER_MASTER_KEY');
@@ -44,20 +44,20 @@ describe('the master key banner (#659)', () => {
   });
 
   it('the key shown once: in the banner, with no second Show', async () => {
-    const { el } = await render({ view: { source: 'generated', fingerprint: '0123456789abcdef', saved: false, revealable: false }, revealed: KEY });
+    const { el } = await render({ view: { source: 'generated', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: false }, revealed: KEY });
     expect(el.querySelector('[data-master-key-value]')?.textContent).toBe(KEY);
     expect(button(el, 'Show the key')).toBeUndefined();
   });
 
   it('not the admin: no Show and no I saved it, and who can', async () => {
-    const { el } = await render({ admin: false, view: { source: 'generated', fingerprint: '0123456789abcdef', saved: false, revealable: true } });
+    const { el } = await render({ admin: false, view: { source: 'generated', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: true } });
     expect(button(el, 'Show the key')).toBeUndefined();
     expect(button(el, 'I saved it')).toBeUndefined();
     expect(el.textContent).toContain('the hopper\'s admin');
   });
 
   it('saved, but not given at launch yet: says to give it, by its fingerprint', async () => {
-    const { el } = await render({ view: { source: 'old-token-key', fingerprint: '0123456789abcdef', saved: true, revealable: false } });
+    const { el } = await render({ view: { source: 'old-token-key', previous: false, fingerprint: '0123456789abcdef', saved: true, revealable: false } });
     const banner = el.querySelector('[data-master-key]')!;
     expect(banner.textContent).toContain('HOPPER_MASTER_KEY');
     expect(banner.textContent).toContain('0123456789abcdef');
@@ -67,7 +67,7 @@ describe('the master key banner (#659)', () => {
 
   it('limited: which key is missing and how to give it; nothing deleted', async () => {
     const problem = 'the master key is missing: this database was set up with the key of fingerprint 0123456789abcdef; give it as HOPPER_MASTER_KEY at launch and restart';
-    const { el } = await render({ view: { source: 'missing', fingerprint: '0123456789abcdef', saved: false, revealable: false, problem } });
+    const { el } = await render({ view: { source: 'missing', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: false, problem } });
     const banner = el.querySelector('[data-master-key]')!;
     expect(banner.textContent).toContain('Limited');
     expect(banner.textContent).toContain(problem);

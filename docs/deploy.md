@@ -65,8 +65,9 @@ kept beside it is lost with it.
 of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
 
 - **First start.** With no key and a database that keeps no secret, the hopper makes a key. It shows the key
-  once in the start log (`SAVE THIS NOW`) and once in the UI, to the hopper's admin (**Show the key (once)**).
-  The banner stays until the admin clicks **I saved it**. Then give the key at each launch:
+  once in the UI, to the hopper's admin (**Show the key (once)**). The key never goes to the log: the start log
+  says only where the key came from and its fingerprint (`master key: made for this new hopper (generated),
+  fingerprint <16 hex digits>`). The banner stays until the admin clicks **I saved it**. Then give the key at each launch:
   - compose: add `HOPPER_MASTER_KEY=<the 64 hex digits>` to `.env`, then
     `podman compose up -d --force-recreate --no-deps hopper`;
   - host install: add `HOPPER_MASTER_KEY=<the 64 hex digits>` to `~/.config/hopper/daemon.env`, then
@@ -80,9 +81,20 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   restart.
 - **Moving from the old token key.** An install from before kept its key in the compose secrets volume
   (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, the hopper reads
-  that key, checks it against the secrets it keeps, and shows it once to be saved. Give it as
+  that key, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
   `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
   `HOPPER_TOKEN_KEY` line, or the `token_key` file. The compose file makes no `token_key` any more.
+
+**The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
+every log line goes through a mask that removes the key in any form. To see the key's status without the key:
+`hopper master-key status` (JSON: `source`, `fingerprint`, and `previous`, whether `HOPPER_MASTER_KEY_PREVIOUS` is
+set). In compose: `podman compose exec hopper hopper master-key status`.
+
+**If the key was ever logged, rotate it.** Hoppers from before issue #685 wrote a key they made, or read from the old
+token key, to the start log (`SAVE THIS NOW`). A container's log goes to the host's journal and stays there, and
+anyone who can read that journal or a copy of it has the key. Search for the line:
+`podman compose logs hopper | grep -c 'SAVE THIS NOW'` (and the host's journal: `journalctl --user | grep -c 'SAVE THIS NOW'`).
+If either count is not 0, rotate the key now (below). Deleting the log lines is not enough: rotate.
 
 ### Rotating the master key
 
@@ -92,6 +104,27 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
 3. Restart the hopper. Every secret the hopper keeps for itself is sealed again under the new key; the log says how
    many (`system secret(s) sealed again under the current HOPPER_MASTER_KEY`, and the same for the sign-in realms').
 4. Remove `HOPPER_MASTER_KEY_PREVIOUS` and restart again.
+
+With compose (`podman compose`, or `podman-compose` directly: the commands are the same), in the directory of
+`compose.yaml` and `.env`:
+
+```sh
+# 1. The current key's fingerprint, to compare at the end.
+podman-compose exec hopper hopper master-key status
+# 2. The new key, with the old one as the previous key. Keep the new key in your password manager first.
+#    Edit .env: set HOPPER_MASTER_KEY=<the new 64 hex digits>, and add HOPPER_MASTER_KEY_PREVIOUS=<the old key>.
+# 3. Recreate the hopper (and the vault container, when the hopper-vault profile is on) with the new .env.
+podman-compose up -d --force-recreate --no-deps hopper
+podman-compose up -d --force-recreate --no-deps hopper-vault   # only with COMPOSE_PROFILES=hopper-vault
+podman-compose logs hopper | grep 'sealed again'
+podman-compose exec hopper hopper master-key status            # the new fingerprint, "previous": true
+# 4. Remove the HOPPER_MASTER_KEY_PREVIOUS line from .env, then recreate again.
+podman-compose up -d --force-recreate --no-deps hopper
+podman-compose exec hopper hopper master-key status            # "previous": false
+```
+
+Then delete the old key from your password manager, and from every place it was written. A `.env` edit does not reach
+a running container: `--force-recreate` does. A plain `restart` keeps the old environment.
 
 The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
 start (`start check: system secret <name> cannot be opened: …`) and on Settings → Vault.
@@ -126,9 +159,9 @@ podman compose up -d
 Then open `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 There is no bootstrap login: a new hopper creates no user, no password and no login code (issue #238).
 
-**Save the master key now.** The first start makes the master key and shows it once: in
-`podman compose logs hopper` (`SAVE THIS NOW`) and in the UI banner, to the admin. Put it in your password
-manager. Then add it to `.env` beside `compose.yaml` and recreate the hopper:
+**Save the master key now.** The first start makes the master key and shows it once, in the UI banner, to the admin
+(**Show the key (once)**). It is never in `podman compose logs hopper`: the log has only its fingerprint. Put it in
+your password manager. Then add it to `.env` beside `compose.yaml` and recreate the hopper:
 
 ```sh
 echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env
