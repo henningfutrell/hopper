@@ -20,6 +20,7 @@ import type {
   CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
+  MasterKeyView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -41,6 +42,7 @@ export type {
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, Confidence,
   CredentialRequest, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
+  MasterKeyView,
   Artifact, ArtifactKind, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
 };
 

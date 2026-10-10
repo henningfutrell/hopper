@@ -13,7 +13,7 @@
 // Each renewal and each failed renewal is told (`onRenewed`, `onRenewalFailed`: recorded as events, never a token).
 import type { ConnectedAccount, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, type ConnectedAccountProvider } from '../domain/types.ts';
-import { PROVIDER_NAME, recordOf, type AtRest } from './at-rest.ts';
+import { NO_KEY, PROVIDER_NAME, recordOf, type AtRest } from './at-rest.ts';
 import { oauthError, type Grant } from './device-flow.ts';
 import { CLIENT_ID_VARIABLE } from './hopper-app.ts';
 import { RenewalBlocked } from './renewal.ts';
@@ -178,6 +178,8 @@ export function createRenewer(o: RenewerOptions): Renewer {
     const { account: a, stored } = o.live(provider);
     if (refused !== undefined ? a.accessToken !== refused : !due(a)) return a.accessToken; // renewed elsewhere meanwhile
     const used = stored.refreshToken!;
+    // Without the master key the new pair could not be kept, and GitHub ends the old one at the trade (issue #659).
+    if (!o.atRest.keeps) throw new Error(NO_KEY);
     let g: Grant;
     try {
       g = await o.refresh(provider, a.refreshToken!, a.grantedBy);
@@ -244,6 +246,7 @@ export function createRenewer(o: RenewerOptions): Renewer {
       for (const p of CONNECTED_ACCOUNT_PROVIDERS) {
         const l = o.lookable(p);
         if (!l) continue;
+        if (!o.atRest.keeps) continue;
         if (o.atRest.stale(l.stored)) seal(l);
         if (!l.account.refreshToken || !due(l.account) || (troubles.get(p)?.retryAt ?? 0) > now()) continue;
         await renew(p).catch(() => undefined); // logged where it failed

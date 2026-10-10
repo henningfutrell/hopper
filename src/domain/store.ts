@@ -399,7 +399,7 @@ export interface ConnectedAccount {
 }
 
 export interface ConnectedAccountRepository {
-  /** The account as stored: its tokens sealed when the runtime gives a token key (issue #441). */
+  /** The account as stored: its tokens sealed when the runtime gives a master key (issue #441). */
   get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
   /** Insert or replace the provider's account. */
   put(account: ConnectedAccount): void;
@@ -450,6 +450,12 @@ export interface UserStore {
 }
 
 /** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */
+/** What every user's schema keeps sealed under the master key (issue #659): the sealed values' key ids, and the sealed tokens. */
+export interface KeptSecrets {
+  keyIds: readonly string[];
+  tokens: readonly string[];
+}
+
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
@@ -465,6 +471,8 @@ export interface InstanceStore {
   access: AccessRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
+  /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
+  keptSecrets(): KeptSecrets;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
   holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;

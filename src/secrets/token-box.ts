@@ -1,15 +1,15 @@
 // The token box (issue #441, design.md "Secrets"): a connected account's access and refresh tokens are the
 // one GitHub credential the hopper keeps, so they are sealed at rest with AES-256-GCM (node:crypto) under
-// the runtime's HOPPER_TOKEN_KEY: a dump or backup of the database holds no usable token. The key comes
-// from the runtime like every other secret; without one the tokens are kept in clear and the daemon says
-// so at start. `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext), a fresh 12-byte nonce per seal. Older
-// keys (HOPPER_TOKEN_KEY_PREVIOUS) still open what they sealed (issue #514): the GCM tag tells which key
+// the master key HOPPER_MASTER_KEY (src/secrets/master-key.ts, issue #659): a dump or backup of the database holds
+// no usable token. Without the key no new token is kept (the hopper is limited: issue #659); one kept in clear
+// before #441 still reads. `sealed:v1:` + base64url(nonce ‖ tag ‖ ciphertext), a fresh 12-byte nonce per seal. Older
+// keys (HOPPER_MASTER_KEY_PREVIOUS) still open what they sealed (issue #514): the GCM tag tells which key
 // sealed a token, so a key rotation never asks for a new GitHub sign-in — the renewer seals it again.
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-export const TOKEN_KEY_VARIABLE = 'HOPPER_TOKEN_KEY';
+export const MASTER_KEY_VARIABLE = 'HOPPER_MASTER_KEY';
 /** The runtime's older master keys (also `_FILE`): one per line, or separated by commas or spaces. They only open. */
-export const PREVIOUS_KEYS_VARIABLE = `${TOKEN_KEY_VARIABLE}_PREVIOUS`;
+export const PREVIOUS_KEYS_VARIABLE = `${MASTER_KEY_VARIABLE}_PREVIOUS`;
 
 const PREFIX = 'sealed:v1:';
 const NONCE = 12;
@@ -31,7 +31,7 @@ export const decodeKey = (key: string): Buffer | undefined => {
   return bytes?.length === 32 ? bytes : undefined;
 };
 
-/** Why `key` is no HOPPER_TOKEN_KEY, or undefined. */
+/** Why `key` is no HOPPER_MASTER_KEY, or undefined. */
 export const tokenKeyProblem = (key: string): string | undefined =>
   decodeKey(key) ? undefined : 'must be 32 bytes, as 64 hex digits or base64 (openssl rand -hex 32)';
 
@@ -51,7 +51,7 @@ function openWith(k: Buffer, sealed: string): string | undefined {
 
 export function createTokenBox(key: string, previous: readonly string[] = []): TokenBox {
   const k = decodeKey(key);
-  if (!k) throw new Error(`${TOKEN_KEY_VARIABLE} ${tokenKeyProblem(key)}`);
+  if (!k) throw new Error(`${MASTER_KEY_VARIABLE} ${tokenKeyProblem(key)}`);
   const older = previous.map((p) => {
     const b = decodeKey(p);
     if (!b) throw new Error(`${PREVIOUS_KEYS_VARIABLE} ${tokenKeyProblem(p)}`);
@@ -70,19 +70,17 @@ export function createTokenBox(key: string, previous: readonly string[] = []): T
         const token = openWith(key, sealed);
         if (token !== undefined) return token;
       }
-      throw new Error(`a stored token cannot be opened: it was altered, or sealed under another ${TOKEN_KEY_VARIABLE}`);
+      throw new Error(`a stored token cannot be opened: it was altered, or sealed under another ${MASTER_KEY_VARIABLE}`);
     },
     current: (sealed) => openWith(k, sealed) !== undefined,
   };
 }
 
 /**
- * The box under the runtime's HOPPER_TOKEN_KEY: a key that is no key throws (the runtime fails closed);
- * none answers undefined, and the tokens are kept in clear, said once in the log.
+ * The box under the master key HOPPER_MASTER_KEY: a key that is no key throws (the runtime fails closed); none
+ * answers undefined: the hopper is limited (issue #659, said at start), and no new token is kept.
  */
-export function tokenBoxOf(secret: (name: string) => string | undefined, logger: { warn(line: string): void }): TokenBox | undefined {
-  const key = secret(TOKEN_KEY_VARIABLE);
-  if (key) return createTokenBox(key, (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean));
-  logger.warn(`hopper: ${TOKEN_KEY_VARIABLE} is not set: the connected account's tokens are kept in the database in clear (docs/deploy.md)`);
-  return undefined;
+export function tokenBoxOf(secret: (name: string) => string | undefined): TokenBox | undefined {
+  const key = secret(MASTER_KEY_VARIABLE);
+  return key ? createTokenBox(key, (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean)) : undefined;
 }

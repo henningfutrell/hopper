@@ -58,15 +58,15 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-/** `container`: the vault in a container of its own (issue #586), holding the token key; the hopper holds none. */
+/** `container`: the vault in a container of its own (issue #586), holding the master key; the hopper holds none. */
 async function boot(o: { container?: boolean } = {}): Promise<{ a: TestApp; session: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
-  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_TOKEN_KEY: KEY }) : undefined;
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: KEY }) : undefined;
   if (vault) stops.push(() => vault.stop());
-  const keys = vault ? { secrets: { HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_TOKEN_KEY: KEY } };
+  const keys = vault ? { secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_MASTER_KEY: KEY } };
   t = await startTestApp({ dbPath: db.dbPath, ...keys, plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } } });
   const session = await t.login();
   const edit = (body: Record<string, unknown>) => t!.ui('/ui/api/vault', body, { token: session });

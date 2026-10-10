@@ -1,5 +1,5 @@
 // The vault server (issue #586, design.md "The vault in a container of its own"): the vault in a process — a container
-// — of its own, run by `node src/vault/main.ts` from the hopper's image. It holds the vault's key (the token key, or the
+// — of its own, run by `node src/vault/main.ts` from the hopper's image. It holds the vault's key (the master key, or the
 // data key a KMS opens), reads and writes the vault's tables in each user's schema, and answers the hopper's edits and
 // asks with the same vault service the hopper runs in-process: the write-only rule and every check of a delivery stay
 // in it. The templates and their approvals stay in the hopper, with access (issue #584); a delivery reads a template's
@@ -9,6 +9,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
+import { launchKey, mismatchOf, withMasterKey } from '../secrets/master-key.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { openInstanceStore, type InstanceStore } from '../store/index.ts';
@@ -23,7 +24,10 @@ const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').dig
 
 /** Starts the vault server on `host`:`port` (0: any free one). Its database, keys and KMS come from `env`. */
 export async function startVaultServer(o: { env: Record<string, string | undefined>; host: string; port: number; clock?: Clock }): Promise<{ url: string; stop(): Promise<void> }> {
-  const secret = runtimeSecrets(o.env);
+  // The master key (issue #659): HOPPER_MASTER_KEY, else the old token key while the install is moved from it. Checked
+  // against the database's fingerprint at each user's first request: a wrong key seals nothing and opens nothing.
+  const masterKey = launchKey(o.env);
+  const secret = runtimeSecrets(withMasterKey(o.env, masterKey));
   const databaseUrl = secret('HOPPER_DATABASE_URL');
   if (!databaseUrl) throw new Error('HOPPER_DATABASE_URL is not set: the vault keeps its secrets in the hopper\'s database');
   if (!secret(VAULT_KEY_VARIABLE)) throw new Error(`${VAULT_KEY_VARIABLE} is not set: the vault answers only the hopper, which shows it`);
@@ -38,9 +42,14 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   const resealed = new Set<string>();
 
   /** The user's keys: kept once a sealer is made; a KMS that gave none is asked again at the next request. */
-  async function keysOf(userId: string, store: UserStore): Promise<SealerState> {
+  async function keysOf(userId: string, store: UserStore, recorded: string | undefined): Promise<SealerState> {
     const kept = keys.get(userId);
     if (kept) return kept;
+    const mismatch = masterKey && mismatchOf(masterKey, recorded);
+    if (mismatch) {
+      logger.warn(`hopper vault: ${mismatch}`);
+      return { problem: mismatch };
+    }
     const made = await vaultKeys({ secret, ...(kms ? { kms } : {}), store: store.vault });
     if (made.sealer) keys.set(userId, made);
     else logger.warn(`hopper vault: ${made.problem}`);
@@ -72,7 +81,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
       const deliver = op === 'deliver' ? vaultOps.deliver.parse(body) : undefined;
       const vault = createVaultService({
         store: { vault: store.vault, jobs: store.jobs, settings: store.settings, tx: store.tx, events: { append: (e: NewEvent) => { events.push(e); return e as DomainEvent; } } as never },
-        keys: await keysOf(user.id, store), clock, idGen: randomUUID, logger, minter,
+        keys: await keysOf(user.id, store, instance.settings.masterKeyFingerprint()), clock, idGen: randomUUID, logger, minter,
         targets: () => (deliver?.machine ? [deliver.machine] : []),
         holds: () => deliver?.holds === true,
       });

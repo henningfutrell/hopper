@@ -1,10 +1,10 @@
 // Issue #558, slice 1, through the real composition root and the real HTTP server: write-only vault secrets. A secret
 // is set once in the UI and never read back — by no route, to no role —, kept sealed in the user's store under the
-// token key, and its value never reaches an event, a log line or an error (design.md "The vault").
+// master key, and its value never reaches an event, a log line or an error (design.md "The vault").
 //
 // Feature: write-only vault secrets
 //   Scenario: a secret set in the UI is never answered back
-//     Given a hopper with a token key and an admin signed in
+//     Given a hopper with a master key and an admin signed in
 //     When the admin sets the vault secret DEPLOY_KEY with its scope
 //     Then the vault lists DEPLOY_KEY with its scope, who set it and when — and no value
 //     And the database holds it only sealed
@@ -12,8 +12,8 @@
 //   Scenario: replace keeps the secret and changes its value; remove deletes it
 //   Scenario: a name that is no secret name, or an empty value, is refused, saying why, without the value
 //   Scenario: no UI session, or no admin: refused
-//   Scenario: no token key: nothing is stored, and the answer says why
-//   Scenario: a new token key with the old one as previous seals every vault secret again at start
+//   Scenario: no master key: nothing is stored, and the answer says why
+//   Scenario: a new master key with the old one as previous seals every vault secret again at start
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { openApiDocument } from '../../src/http/openapi.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
@@ -44,7 +44,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function boot(secrets: Record<string, string> = { HOPPER_TOKEN_KEY: KEY }, dbPath?: string): Promise<{ a: TestApp; session: string }> {
+async function boot(secrets: Record<string, string | undefined> = { HOPPER_MASTER_KEY: KEY }, dbPath?: string): Promise<{ a: TestApp; session: string }> {
   if (!dbPath) {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
@@ -140,22 +140,26 @@ describe('write-only vault secrets', () => {
     expect(rows(a)).toEqual([]);
   });
 
-  it('no token key: nothing is stored, and the answer says why', async () => {
-    const { a, session } = await boot({});
+  it('no master key (limited, issue #659): nothing is stored, and the answer says why', async () => {
+    const { a: first } = await boot();
+    const dbPath = first.dbPath;
+    await first.stop();
+    t = undefined;
+    const { a, session } = await boot({ HOPPER_MASTER_KEY: undefined }, dbPath);
     const r = await edit(a, session, { action: 'set', name: 'DEPLOY_KEY', value: VALUE });
     expect(r.status).toBe(503);
-    expect(r.body.error).toContain('HOPPER_TOKEN_KEY is not set');
-    expect((await vault(a)).problem).toContain('HOPPER_TOKEN_KEY is not set');
+    expect(r.body.error).toContain('the master key is missing');
+    expect((await vault(a)).problem).toContain('HOPPER_MASTER_KEY');
     expect(rows(a)).toEqual([]);
   });
 
-  it('a new token key with the old one as previous seals every vault secret again at start', async () => {
+  it('a new master key with the old one as previous seals every vault secret again at start', async () => {
     const { a: first, session } = await boot();
     await edit(first, session, { action: 'set', name: 'DEPLOY_KEY', value: VALUE });
     const dbPath = first.dbPath;
     await first.stop();
     t = undefined;
-    const { a } = await boot({ HOPPER_TOKEN_KEY: NEW_KEY, HOPPER_TOKEN_KEY_PREVIOUS: KEY }, dbPath);
+    const { a } = await boot({ HOPPER_MASTER_KEY: NEW_KEY, HOPPER_MASTER_KEY_PREVIOUS: KEY }, dbPath);
     const [row] = rows(a);
     expect(String(row!.sealed).split('.')[1]).toBe(createSealer(NEW_KEY).keyId);
     expect(createSealer(NEW_KEY).open(String(row!.sealed), `vault:${String(row!.id)}/value`)).toBe(VALUE);

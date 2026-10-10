@@ -1,5 +1,5 @@
 // The vault (issue #558, design.md "The vault"): a user's secrets, set in the UI and never read back, sealed in the
-// user's store under the token key (src/secrets/sealer.ts, bound to `vault:<id>/value`). Nothing here logs, answers or
+// user's store under the master key (src/secrets/sealer.ts, bound to `vault:<id>/value`). Nothing here logs, answers or
 // appends a value: a set or a removal is an event naming the secret and who did it, never what it holds. A template's
 // operation profiles (issue #584) are approved in access, the one record of them: a read profile with the template, a
 // write, sync or apply profile only by its own explicit approval; a narrowing or a removal revokes what it dropped.
@@ -21,7 +21,7 @@ import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } 
 import { givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import type { SealerState } from '../secrets/sealer.ts';
-import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
+import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
 /** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
 export const vaultContext = (id: string): string => `vault:${id}/value`;
@@ -383,6 +383,6 @@ export function openVault(o: {
 }): VaultService {
   const vault = createVaultService({ ...o, idGen: randomUUID });
   const n = vault.resealAll();
-  if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${TOKEN_KEY_VARIABLE}`);
+  if (n > 0) o.logger.info(`hopper: ${n} vault secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
   return vault;
 }

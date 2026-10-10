@@ -1,5 +1,5 @@
 // The vault (issue #558, design.md "The vault"): a user's secrets, set once in the UI and never read back, kept sealed
-// in the user's store under the token key. The types every part shares: a secret is only ever its metadata.
+// in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
 
@@ -67,7 +67,7 @@ export interface VaultView {
   backends: VaultBackendView[];
   /** The credential requests that wait for a person (issue #583): what jobs on boxes asked for and the vault does not give. Absent: none. */
   requests?: CredentialRequest[];
-  /** Why no secret can be stored now (no token key); absent when one can. */
+  /** Why no secret can be stored now (no master key); absent when one can. */
   problem?: string;
 }
 

@@ -1,5 +1,5 @@
 // Issue #558, owner constraint: the vault reaches its key through one small seam, the key provider (`Sealer`), whose
-// default is local — the runtime's HOPPER_TOKEN_KEY — so a key service could stand behind it later without a rewrite.
+// default is local — the runtime's HOPPER_MASTER_KEY — so a key service could stand behind it later without a rewrite.
 // The vault works with any key provider: here a fake one that only marks what it sealed.
 import { describe, expect, it } from 'vitest';
 import type { Sealer } from '../../src/secrets/sealer.ts';

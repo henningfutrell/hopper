@@ -7,6 +7,8 @@ import type { ConnectedAccount } from '../../src/domain/ports.ts';
 import { createConnectedAccounts } from '../../src/connected-accounts/service.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { createAccountSource } from '../../src/sources/compose.ts';
+import { TEST_BOX } from '../support/sealed-tokens.ts';
+
 
 const NOW = Date.parse('2026-10-07T21:00:00Z');
 
@@ -14,6 +16,7 @@ function service(record: ConnectedAccount | undefined, refresh = async (): Promi
   let kept = record;
   const told: string[] = [];
   const s = createConnectedAccounts({
+    box: TEST_BOX,
     store: {
       connectedAccounts: {
         get: () => kept, put: (a: ConnectedAccount) => { kept = a; }, delete: () => { const had = kept !== undefined; kept = undefined; return had; },

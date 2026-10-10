@@ -11,6 +11,8 @@ import type { UserStore } from '../../src/domain/ports.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { waitFor } from '../support/wait.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
+import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
+
 
 const EIGHT_HOURS_S = 8 * 3600;
 const T0 = '2026-10-09T10:00:00.000Z';
@@ -49,6 +51,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
   const logs: string[] = [];
   const told: string[] = [];
   const service = createConnectedAccounts({
+    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async (_, token) => {
@@ -68,10 +71,10 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
 }
 
 async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore) {
-  const before = s.connectedAccounts.get('github')?.accessToken;
+  const before = openedRow(s)?.accessToken;
   await service.connect('github');
-  await waitFor(async () => { const now = s.connectedAccounts.get('github'); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
-  return s.connectedAccounts.get('github')!;
+  await waitFor(async () => { const now = openedRow(s); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
+  return openedRow(s)!;
 }
 
 describe('token revocation fixes (#597)', () => {
@@ -98,6 +101,7 @@ describe('token revocation fixes (#597)', () => {
     const logs: string[] = [];
     const told: string[] = [];
     const service = createConnectedAccounts({
+      box: TEST_BOX,
       store: s, apps, clock,
       logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
       whoIs: async (_, token) => {
@@ -124,7 +128,7 @@ describe('token revocation fixes (#597)', () => {
     refuseWhoIs = true;
     const signIn = github.mint('octo-user');
     await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(s.connectedAccounts.get('github')?.ended).toMatch(/refused the new token/);
+    expect(openedRow(s)?.ended).toMatch(/refused the new token/);
     expect(service.expired('github')).toBe(true);
 
     const status2 = (await service.status())[0]!;

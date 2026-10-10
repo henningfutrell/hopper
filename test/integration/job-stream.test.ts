@@ -69,7 +69,7 @@ interface Booted { a: TestApp; session: string; edit: Edit }
 /** A hopper over `dbPath`: the template web, approved, with nothing in its scope, made on its first start. */
 async function start(dbPath: string, o: { port?: number; seams?: AppSeams; first?: boolean } = {}): Promise<Booted> {
   const a = await startTestApp({
-    dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, ...(o.port ? { env: { HOPPER_PORT: String(o.port) } } : {}),
+    dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, ...(o.port ? { env: { HOPPER_PORT: String(o.port) } } : {}),
     // Started again, the plugins config is the database's: it holds the box joined before.
     plugins: o.first === false ? false : { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
     seams: { authorizationServer: createFakeAuthorizationServer(), ...o.seams },

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import type { UsagePacing } from './domain/types.ts';
+import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
 import { DEFAULT_KMS_KEY } from './vault/wire.ts';
@@ -67,7 +68,7 @@ export interface Config {
   openFgaUrl?: string;
   /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
   vaultUrl?: string;
-  /** The KMS the vault's data key is wrapped by (issue #586); unset: the vault seals under the token key. */
+  /** The KMS the vault's data key is wrapped by (issue #586); unset: the vault seals under the master key. */
   kms?: { url: string; key: string };
   /** The rootless Podman API socket the hopper starts sandbox boxes through (issue #603); unset: it starts none. */
   podmanSocket?: string;
@@ -176,7 +177,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
   HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
   HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
-  HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_TOKEN_KEY',
+  HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
   HOPPER_SANDBOX_NETWORK: 'the Podman network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
@@ -213,12 +214,14 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
   HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
                                           back in the browser on the sign-in origin. Unset: the device code only
-  HOPPER_TOKEN_KEY                        the key the secrets the hopper keeps are sealed under in the database: the
-                                          GitHub connection's tokens and the webhook signing secrets (32 bytes,
-                                          openssl rand -hex 32). Unset: tokens kept in clear and no webhook secret
-                                          stored, said at start
-  HOPPER_TOKEN_KEY_PREVIOUS               older keys, one per line: they still open what they sealed, and the
-                                          webhook signing secrets are sealed again under HOPPER_TOKEN_KEY at start
+  HOPPER_MASTER_KEY                       the master key every secret the hopper keeps is sealed under in the database
+                                          (32 bytes, openssl rand -hex 32). Given at launch, never read from a file:
+                                          keep it in a password manager. Unset on a fresh database: one is made and
+                                          shown once; unset on one that keeps secrets: the hopper starts limited
+  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line: they still open what they sealed, and what they
+                                          sealed is sealed again under HOPPER_MASTER_KEY at start
+  HOPPER_TOKEN_KEY                        the old token key (also _FILE: the compose secrets volume's token_key): read
+                                          only while HOPPER_MASTER_KEY is unset, to move an install to it
   HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
                                           each call. Unset: none sent
   HOPPER_VAULT_KEY                        the preshared key of the vault container HOPPER_VAULT_URL names, read at
@@ -241,8 +244,8 @@ const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
  */
 const PART_SETTINGS = [
   'HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE',
-  // Read by each user's runtime (src/secrets/token-box.ts, issue #441; src/secrets/sealer.ts, issue #451).
-  'HOPPER_TOKEN_KEY', 'HOPPER_TOKEN_KEY_FILE', 'HOPPER_TOKEN_KEY_PREVIOUS', 'HOPPER_TOKEN_KEY_PREVIOUS_FILE',
+  // The master key and the old token key, read at start (src/secrets/master-key.ts, issue #659).
+  ...MASTER_KEY_VARIABLES,
   // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).
   'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
   // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586).

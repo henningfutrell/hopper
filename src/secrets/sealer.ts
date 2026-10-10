@@ -1,16 +1,16 @@
 // The sealer (issue #451, design.md "Secrets"): a secret the hopper owns is kept in the database sealed, and
-// opened only where it is used. The master key is the runtime's HOPPER_TOKEN_KEY (the token key): it never
+// opened only where it is used. The master key is the runtime's HOPPER_MASTER_KEY (the master key): it never
 // reaches the database, so a dump or backup of it holds no usable secret. Each value is sealed under a key
 // of its own, derived from the master key and a fresh 32-byte salt (HKDF-SHA256), with AES-256-GCM and a
 // fresh 12-byte nonce. The context — where the value is kept, e.g. `webhook:<id>/signing-secret` — is bound
 // to it twice, in the derivation and as authenticated data: a value copied to another place does not open.
 // The value is padded to a block of 64 bytes, so its length does not show. Each sealed text names the
 // master key's id (a fingerprint, never the key), so a new key can be given while the old one, as
-// HOPPER_TOKEN_KEY_PREVIOUS, still opens what it sealed until it is sealed again.
+// HOPPER_MASTER_KEY_PREVIOUS, still opens what it sealed until it is sealed again.
 //
 //   hs1.<key id>.<salt>.<nonce>.<ciphertext ‖ tag>     (base64url)
 import { createCipheriv, createDecipheriv, createHmac, hkdfSync, randomBytes } from 'node:crypto';
-import { decodeKey, PREVIOUS_KEYS_VARIABLE, TOKEN_KEY_VARIABLE } from './token-box.ts';
+import { decodeKey, PREVIOUS_KEYS_VARIABLE, MASTER_KEY_VARIABLE } from './token-box.ts';
 import type { RuntimeSecrets } from './runtime.ts';
 
 export { PREVIOUS_KEYS_VARIABLE };
@@ -32,7 +32,7 @@ export class SecretUnreadable extends Error {
 
 /**
  * The key provider (issue #558): the one seam a vault secret, a webhook signing secret and anything else sealed reach
- * their key through. The sealer below, under the runtime's token key, is the local default and the only one built; a key
+ * their key through. The sealer below, under the runtime's master key, is the local default and the only one built; a key
  * service (KMS) would be another implementation, never a requirement (design.md "The key provider").
  */
 export interface Sealer {
@@ -78,7 +78,7 @@ function keyOf(text: string, variable: string): Buffer {
 
 /** A sealer under `key` (64 hex digits or base64 of 32 bytes); `previous` keys only open. Throws on a key that is no key. */
 export function createSealer(key: string, previous: readonly string[] = []): Sealer {
-  const master = keyOf(key, TOKEN_KEY_VARIABLE);
+  const master = keyOf(key, MASTER_KEY_VARIABLE);
   const keyId = idOf(master);
   const keys = new Map<string, Buffer>([[keyId, master]]);
   for (const p of previous) {
@@ -109,7 +109,7 @@ export function createSealer(key: string, previous: readonly string[] = []): Sea
       const [, id, salt64, nonce64, body64] = parts as [string, string, string, string, string];
       const master = keys.get(id);
       if (!master) {
-        throw new SecretUnreadable(`a stored secret cannot be opened: it was sealed under key ${id}, which neither ${TOKEN_KEY_VARIABLE} nor ${PREVIOUS_KEYS_VARIABLE} gives`);
+        throw new SecretUnreadable(`a stored secret cannot be opened: it was sealed under key ${id}, which neither ${MASTER_KEY_VARIABLE} nor ${PREVIOUS_KEYS_VARIABLE} gives`);
       }
       const salt = Buffer.from(salt64, 'base64url');
       const nonce = Buffer.from(nonce64, 'base64url');
@@ -145,13 +145,13 @@ export interface SealerState {
 }
 
 /**
- * The sealer under the runtime's HOPPER_TOKEN_KEY and HOPPER_TOKEN_KEY_PREVIOUS (each also `_FILE`). No key:
+ * The sealer under the runtime's HOPPER_MASTER_KEY and HOPPER_MASTER_KEY_PREVIOUS (each also `_FILE`). No key:
  * no sealer, and a problem saying so — nothing the hopper owns is then stored, and a stored one is not opened.
  * A key that is no key throws, so the daemon does not start on it (fails closed).
  */
 export function sealerOf(secret: RuntimeSecrets): SealerState {
-  const key = secret(TOKEN_KEY_VARIABLE);
-  if (!key) return { problem: `${TOKEN_KEY_VARIABLE} is not set (docs/deploy.md "What every deploy needs")` };
+  const key = secret(MASTER_KEY_VARIABLE);
+  if (!key) return { problem: `the master key is missing: the hopper is limited until it is given as ${MASTER_KEY_VARIABLE} at launch (docs/deploy.md "The master key")` };
   const previous = (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean);
   return { sealer: createSealer(key, previous) };
 }
