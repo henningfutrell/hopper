@@ -68,12 +68,12 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     const b = parseWith(joinBody, req.body);
     const taken = useJoinCode(o.instance, o.clock, b.code);
     if (taken === undefined) throw new HttpError(403, 'the join code is not valid: it was used, it expired, or it was never minted. Add machine shows a fresh line');
-    const { userId, template } = taken;
+    const { userId, template, container } = taken;
     const tenant = o.tenants.user(userId);
     if (!tenant) throw new HttpError(404, `no user ${userId}`);
     // The template may have been removed since the code was minted (issue #604): no box joins as one that is not there.
     if (template && !holdsTemplate(tenant.vault, template)) throw new HttpError(409, `no template ${template}: it was removed after the join line was made. Add machine shows a fresh line`);
-    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}) });
+    const r = await tenant.machineLink.join({ key: b.key, name: b.name, ...(template ? { template } : {}), ...(container ? { container } : {}) });
     if (!r.ok) throw new HttpError(409, r.error);
     return { user: userId, machine: r.machine, hopperKey: tenant.machineLink.hopperKey };
   });

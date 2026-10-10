@@ -19,7 +19,7 @@ import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
 import { SESSION_HEADER, mutationRefusal } from './guard.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { mintJoinCode } from '../../machines/join-code.ts';
+import { registerMachineJoinRoutes } from './machine-join.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
@@ -29,7 +29,7 @@ import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerAccessRoutes } from './access.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
-import { knownTemplate, joinTemplate } from './vault.ts';
+import { knownTemplate } from './vault.ts';
 
 export interface UiRouteOptions {
   /** The request's user's parts (the session's user). */
@@ -50,6 +50,8 @@ export interface UiRouteOptions {
   instanceAdmin: InstanceAdmin;
   /** Access (issue #559): the instance's. */
   access: Access;
+  /** The sandbox boxes the hopper starts (issue #603). */
+  sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -160,7 +162,6 @@ const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: U
 
 
 /** Add machine's join code: for a sandbox box of a template, the template (issue #558). */
-export const machineJoinBody = z.strictObject({ template: z.string().min(1).max(64).optional() });
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
@@ -313,14 +314,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.offer;
   });
 
-  // Issue #308: Add machine's one-time join code, for the session's user: the line the machine runs carries it
-  // (design.md "Joining a machine"). Writes only the code's hash; the machine's join adds it.
-  app.post('/ui/api/machines/join', admin, async (req) => {
-    const id = userIdOf(req);
-    if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
-    // A sandbox box of a template (issue #558): the code names it, so the box joins as an instance of it.
-    return mintJoinCode(o.instance, o.clock, id, joinTemplate(o.tenant(req).vault, parseWith(machineJoinBody, req.body ?? {}).template));
-  });
+  // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes });
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {

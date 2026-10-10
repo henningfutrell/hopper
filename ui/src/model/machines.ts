@@ -292,6 +292,9 @@ export function boxPlace(config: MachinesConfig, port: string): BoxPlace {
     : { boxUrl: `http://127.0.0.1:${port}`, boxNetwork: 'host', boxImage: BOX_IMAGE };
 }
 
+/** How a person signs in the agent of a box the hopper started (issue #603): once, in the box, on the computer. */
+export const boxSignInLine = (container: string, agent: BoxAgent): string => `podman exec -it ${container} ${agent}`;
+
 /**
  * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper
  * serves, from the URL this page is open at. A box is a locked-down container: every capability dropped,

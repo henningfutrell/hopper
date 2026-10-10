@@ -349,7 +349,9 @@ line carries a one-time join code: it works once, for 10 minutes.
   nothing of the computer mounted. Sign its agent in once:
   `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
   so a recreated box is the same machine. The join code is used once: after the join, nothing in the box
-  holds it, and a restart does not need it.
+  holds it, and a restart does not need it. Given your rootless Podman socket, the hopper starts the box itself:
+  Add machine → *A sandbox box* → **Start the box**, no line to run; removing the machine then stops the box
+  and removes it with its volume (`docs/deploy.md` "Sandbox boxes the hopper starts").
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working

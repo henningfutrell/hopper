@@ -6,9 +6,11 @@ import type { ClientMachine } from '../../../domain/types.ts';
 import type { PluginDefinition } from '../../sdk.ts';
 import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, type AttachedOptions } from '../attached.ts';
 
-export interface ClientOptions extends AttachedOptions { key: string; template?: string }
+export interface ClientOptions extends AttachedOptions { key: string; template?: string; container?: string }
 
-export const clientMachine = (name: string, o: ClientOptions): ClientMachine => ({ ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}) } });
+export const clientMachine = (name: string, o: ClientOptions): ClientMachine => ({
+  ...attachedBase(name, o), client: { key: o.key, ...(o.template ? { template: o.template } : {}), ...(o.container ? { container: o.container } : {}) },
+});
 
 const client: PluginDefinition<'machine-source', ClientOptions> = {
   id: 'client',
@@ -19,6 +21,8 @@ const client: PluginDefinition<'machine-source', ClientOptions> = {
       .meta({ commandBearing: true, description: 'its machine key, recorded when it joined: the public half of its link key — the one machine its jobs go to' }),
     template: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/).optional()
       .meta({ commandBearing: true, description: 'the template it joined as (issue #558): its join line named it; what of the vault its jobs may ask for' }),
+    container: z.string().regex(/^hopper-sandbox-[a-z0-9][a-z0-9._-]{0,80}$/).optional()
+      .meta({ commandBearing: true, description: 'the sandbox box the hopper started for it (issue #603): removing the machine stops and removes that box' }),
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
     ...diskLowShape(z),

@@ -247,6 +247,50 @@ first ask. Its keys are in the `kms` volume.
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
 - local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
 
+## Sandbox boxes the hopper starts
+
+Optional (issue #603). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox boxes
+itself. Without it, Add machine → *A sandbox box* shows a line that you run.
+
+**Requirement: rootless Podman.** The hopper refuses a rootful Podman socket (root on the computer) and has no Docker
+path for this.
+
+Turn it on, in the directory of `compose.yaml`:
+
+```sh
+systemctl --user enable --now podman.socket
+curl -fsSL https://henningfutrell.github.io/hopper/compose.sandboxes.yaml -o compose.override.yaml
+podman compose up -d
+```
+
+Saved as `compose.override.yaml` beside `compose.yaml`, it is read with `compose.yaml` by every compose command
+(`podman compose`, `podman-compose`, `docker compose`), with no flag. It mounts `$XDG_RUNTIME_DIR/podman/podman.sock` into the hopper at `/run/podman/podman.sock`,
+sets `HOPPER_PODMAN_SOCKET` to that path, and adds group 0 to the hopper's user: in a rootless container, group 0 is
+your own group, which may open the socket (`podman.socket` makes it mode 0660). A hopper on this host (not in a
+container) needs only `HOPPER_PODMAN_SOCKET=$XDG_RUNTIME_DIR/podman/podman.sock` in its environment.
+
+What the hopper then does:
+
+| When | The hopper |
+|---|---|
+| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the box line's sandbox flags, its home the volume `<name>-home`, and a join code minted for it. The box joins as that machine. A template's box runs only once its image is approved (Settings → Vault). |
+| A person removes that machine | stops the container and removes it, with its volume, within about 20 seconds. `/tmp` in the box is a tmpfs: it goes with the container. |
+| The hopper starts | finds the boxes it started (label `io.hopper.box` = its instance id) and removes each one that no machine names and no live join code waits for. A box another hopper started is left alone. |
+| It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
+
+The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
+`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). A box reaches the
+hopper as `http://<first HOPPER_LAN_NAMES name>:<port>` on that network, or `http://127.0.0.1:<port>` on the host.
+
+**Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
+The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
+nothing of the computer mounted — from the published box image or an approved template's image, and a request to it
+can name only an agent or a template, never an image, a mount or a flag. An admin UI session can start and remove
+boxes, as it can add and remove any machine.
+
+Turn it off: remove `compose.override.yaml` and run `podman compose up -d`. The boxes it started keep
+running; remove their machines in the Machines view first if you want them gone.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,

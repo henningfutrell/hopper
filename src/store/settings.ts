@@ -221,5 +221,11 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setPluginStoreSource(source) {
       write('pluginStore', JSON.stringify(source.kind === 'repo' ? { kind: 'repo', repo: source.repo } : { kind: source.kind }));
     },
+    instanceId() {
+      return c.tx(() => {
+        c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', 'instanceId', randomBytes(8).toString('hex'));
+        return read('instanceId')!;
+      });
+    },
   };
 }
