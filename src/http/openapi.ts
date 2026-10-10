@@ -34,11 +34,12 @@ import { autoAnswerBody } from './ui/auto-answer.ts';
 import { autoParkBody } from './ui/auto-park.ts';
 import { LANE_TUNING_OPERATIONS } from './ui/lane-tuning.ts';
 import { ACCESS_OPERATIONS } from './access.ts';
+import { BUG_REPORT_OPERATIONS } from './ui/bug-reports.ts';
 import { tldrBody } from './ui/tldr.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { ACCESS_EDIT_OPERATIONS } from './ui/access.ts';
 import { usageHistoryQuery } from './usage-history.ts';
-import type { Operation, Tag } from './openapi-operation.ts';
+import { TAGS, type Operation, type Tag } from './openapi-operation.ts';
 
 const id = (what: string) => ({ name: 'id', in: 'path', required: true, description: `the ${what}'s id`, schema: { type: 'string' } });
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
@@ -150,7 +151,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/blast-radius/discover', tag: 'Machines and usage', summary: 'Discover a machine now', description: 'Runs the discovery on `machineId`, or on every online machine, through its own connection, and answers when it is done. Discovery only reads: identities, configuration, IAM policy simulation, `kubectl auth can-i`.', role: 'operator', body: discoverBody, returns: '`BlastRadiusView`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/gate-pass', tag: 'Jobs', summary: 'Let a job held at the blast-radius gate through', description: 'The job may then run on a gated machine (`gatePass`, `job.gate_passed`). 409: the job is not held at the gate.', role: 'admin', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/usage/limits', tag: 'Machines and usage', summary: 'Set the usage limits', description: 'The soft limit, past which a machine\'s lane cap scales down, and the hard limit, at which it starts nothing: fractions from 0 to 1, soft below hard. Stored for the user: they win over `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT` from now on, and the next Decision uses them.', role: 'admin', body: usageLimitsBody, returns: '`{ limits: UsageLimits }`' },
-  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS,
+  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS, ...BUG_REPORT_OPERATIONS,
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
   { method: 'post', path: '/ui/api/plugin-store', tag: 'Plugins and routing', summary: 'Set the plugin store; install, update or remove a plugin from it', description: 'Only the instance admin (issue #240). Read the plugin store again, set the plugin store (the default plugin store, none, or a git repository; issue #445) and read it, install a plugin its catalogue lists into the plugin dir (again: an update to the store\'s head), or remove a store install that the plugins config does not name.', role: 'admin', body: pluginStoreBody, returns: 'the new `PluginStoreReport`', errors: [404, 409] },
@@ -212,26 +213,6 @@ const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/realms', tag: 'Sign-in', summary: 'The realms, in order, with their settings', description: 'Only the instance admin (issue #240). Each realm\'s settings (never a secret: `secrets` names the ones set), whether it is on, whether the environment set it up, and for OIDC and SAML the URLs to register with the identity provider; the first GitHub admin and the user they sign in as; everyone who has signed in, with their role and whether they are a super admin (`people`); local sign-in, no sign-in, and the version of it all. Loopback, or a UI session with role **admin**.', returns: '`RealmsView`', errors: [403] },
   { method: 'post', path: '/ui/api/realms', tag: 'Sign-in', summary: 'Change sign-in: the realms, the login code and no sign-in', description: 'Only the instance admin (issue #240). Add or replace a realm from its fields (a secret — `clientSecret`, `bindPassword` — is stored; left out it keeps the stored one, `null` removes it), remove, move, or turn one on or off; set local sign-in and no sign-in; make someone who has signed in admin (`admin`), or — a super admin only, else 403 — super admin, or hand your own over (`super-admin`, `transfer`) — against the `version` read. A regular admin\'s change that would change who is super admin is refused (403); naming someone who never signed in, 404. Applies at once: sign-in and the stored sessions follow it. Refused (400) when the result would not load, naming the field; (409) when the sign-in config moved, when the change would end the acting session\'s admin role, or when it would turn no sign-in on while the hopper has more than one user.', role: 'admin', body: realmsEditBody, returns: 'the new view, as GET /api/realms', errors: [403, 404, 409] },
 ];
-
-const TAGS: Record<Tag, string> = {
-  State: 'What the hopper is doing: health, the queue, decisions, the router.',
-  Jobs: 'Jobs and the job sources they are pulled from.',
-  Questions: 'Questions a running job asks, and the gates they pass.',
-  Proposals: 'Proposals a job wrote instead of doing the work: reviewed by the reviewer levels, signed off by a person. A review section, as Research is. Never a question.',
-  Research: 'Research reports a job wrote instead of doing the work: accepted, dug deeper on or steered by a person, each round kept. A review section, as Proposals is. Never a question.',
-  Logins: 'Logins a job or run waits on (a CLI showing a device code): never a question.',
-  Failures: 'What the failure assessor made of the failed jobs: problems grouped from shared causes, assessed failures, the failure profile, and its settings.',
-  'Decider': 'Bounded choices Jev makes first, before a model or a person: each decision point\'s mode, threshold and agreement rate, and every pick.',
-  'Machines and usage': 'Where jobs run, and the usage that throttles lanes.',
-  'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
-  Webhooks: 'Subscribers to the event log, kept in the database.',
-  Vault: 'Write-only secrets for jobs: set once, never read back. The master key every kept secret is sealed under: given at launch, never from a file or a volume.',
-  Events: 'The event log, read back or streamed.',
-  'Self-update': 'The install and the update repository.',
-  Users: 'The people one hopper works for, each with their own work, kept apart.',
-  'Sign-in': 'UI sessions: sign-in, the session, logout.',
-  Access: 'OpenFGA decides each credential a job is given: the approvals, the access model, and every decision.',
-};
 
 const DESCRIPTION = `The hopper daemon's HTTP API.
 
