@@ -11,7 +11,7 @@ import { vaultKeys } from './keys.ts';
 import { localKms } from './kms.ts';
 import { remoteVault } from './remote.ts';
 import { randomUUID } from 'node:crypto';
-import { createVaultService, localVault, openVault, type ClientTarget, type Vault } from './service.ts';
+import { createVaultService, localVault, openVault, withCredentialRequests, type ClientTarget, type Vault } from './service.ts';
 
 export { clientTargets, vaultView, type Vault } from './service.ts';
 
@@ -27,9 +27,9 @@ export async function openUserVault(o: {
   const shared = { store: o.store, ...(o.access ? { access: o.access } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, backends: o.backends };
   if (o.vaultUrl) {
     const local = createVaultService({ ...shared, keys: { problem: `the vault's key is in its container, at ${o.vaultUrl}` }, idGen: randomUUID });
-    return remoteVault({ url: o.vaultUrl, secret, user: o.user, store: o.store, local, targets: o.targets, holds: o.holds });
+    return withCredentialRequests(remoteVault({ url: o.vaultUrl, secret, user: o.user, store: o.store, local, targets: o.targets, holds: o.holds }), { store: o.store, clock: o.clock, idGen: randomUUID });
   }
   const keys = await vaultKeys({ secret, ...(o.kms ? { kms: localKms(o.kms) } : {}), store: o.store.vault });
   if (o.kms && keys.problem) o.logger.warn(`hopper: ${keys.problem}: no vault secret is stored or delivered until a restart opens it`);
-  return localVault(openVault({ ...shared, keys }));
+  return withCredentialRequests(localVault(openVault({ ...shared, keys })), { store: o.store, clock: o.clock, idGen: randomUUID });
 }

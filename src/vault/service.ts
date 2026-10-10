@@ -17,6 +17,7 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { RadiusRules } from '../domain/blast-radius.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
+import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 
 /** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
 export const vaultContext = (id: string): string => `vault:${id}/value`;
@@ -70,10 +71,28 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   set(s: SetSecret, by: string): Promise<VaultResult>;
   remove(name: string, by: string): Promise<VaultResult>;
   deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
+  /**
+   * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
+   * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.
+   */
+  need(ask: CredentialAsk, asker: Asker): NeedAnswer;
+  /** A person gives a credential for a request: a vault secret (set as any other), added to its template's scope. */
+  give(id: string, g: Give, by: string): Promise<VaultResult>;
+  /** A person declines a request: each job that waits on it is told why. */
+  decline(id: string, reason: string, by: string): VaultResult;
+}
+
+/**
+ * The credential requests (issue #583, src/vault/requests.ts) over a vault, wherever it runs: kept in the hopper's memory,
+ * shown in the vault's view; a credential given is set through the vault itself.
+ */
+export function withCredentialRequests(v: Omit<Vault, 'need' | 'give' | 'decline'>, o: { store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>; clock: Clock; idGen: () => string }): Vault {
+  const requests = createCredentialRequests({ ...o, set: (s, by) => v.set(s, by) });
+  return { ...v, view: () => ({ ...v.view(), requests: requests.list() }), need: requests.need, give: requests.give, decline: requests.decline };
 }
 
 /** The vault in the hopper's own process. */
-export const localVault = (v: VaultService): Vault => ({
+export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decline'> => ({
   view: () => v.view(),
   status: async () => v.view().problem,
   set: async (s, by) => v.set(s, by),

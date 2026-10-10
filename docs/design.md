@@ -59,7 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog and a link's text (`catalog.ts`, pure), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_TOKEN_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database") | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the token key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
@@ -9393,7 +9393,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`) | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault: its secrets set, removed, listed as metadata, sealed again on a key rotation; its templates saved, approved and asked what a machine may be given (`scopeOf`); since issue #586 its key provider chosen (`keys.ts`), the KMS at the `KeyService` port (`kms.ts`, @aws-sdk/client-kms), and the vault in a container of its own: its server (`server.ts`, `main.ts`), the hopper's client of it (`remote.ts`), their wire (`wire.ts`); the credential requests a skill load opens (`requests.ts`, issue #583, "The dynamic vault") | engine, http, plugins, decider, executors |
 
 Tests: `test/integration/vault.test.ts` (the real daemon: set and replace never answered back, sealed in the database;
 every read route the API reference documents asked with an admin session, none carrying the value; no value in an event,
@@ -9621,6 +9621,7 @@ no with a reason when the hopper cannot or may not — never a silent failure, n
 | `sh "$HOPPER_SKILL"` | the **skill catalog**: `name: one line` per skill, then `Load one: sh "$HOPPER_SKILL" NAME [ASSET]` |
 | `sh "$HOPPER_SKILL" NAME` | the skill's full text, when it needs no asset |
 | `sh "$HOPPER_SKILL" NAME ASSET` | the skill's text and its **link** for this box, when Access allows it |
+| a skill whose credential the box's template does not give (issue #583) | `waiting: …` (202), exit 3: the vault asks a person ("The dynamic vault"); `--wait` asks again every 5 s (`HOPPER_SKILL_POLL`) until ready or declined; `--why TEXT` says what for, `--credential TEXT` names what a service the hopper has no skill for takes |
 | any no | `no: <reason>`, exit 1 |
 
 **`POST /job/skill`** (`src/http/job-skill.ts`): outside the UI session, behind the Host guard, like `POST /job/github`
@@ -9629,8 +9630,10 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 
 1. the token: its user, its link key, its job, at work — else **401**, logged only;
 2. no `name`: the catalog — **200**, `skill.listed`;
-3. a skill the hopper has — else **404** `no: the hopper has no skill NAME. It has: … Find another way.`;
-4. a skill with no link: its text — **200**, `skill.loaded`;
+3. a skill the hopper has, or a `credential` the job names for one it has not (issue #583) — else **404** `no: the
+   hopper has no skill NAME. It has: … For another service, say what credential it takes: … Else find another way.`;
+4. a skill with no link: its text — **200**, `skill.loaded`; one that needs a credential (issue #583): with the vault
+   secret given for it ("The dynamic vault"), else the credential request's **202**;
 5. a link: the `asset` (`kind/name`, as Access names assets: `cluster/prod`, `namespace/prod/web`, `aws-account/ID`,
    `aws-role/ID/ROLE`) of a kind the skill takes — else **400** with how to name it;
 6. the box's identity: the job's machine (its lane's, else where it resumes) and the **template** that machine joined as
@@ -9638,21 +9641,22 @@ JSON. The broker (`src/skills/broker.ts`), in order:
 7. Access (issue #559): `decideMint({ job, template, operation, asset })`, the skill's operation (`read` for both
    diagnostics skills). Recorded in Access's decisions, so it feeds the permission matrix — a deny: **403**
    `no: Access denied it: <Access's reason>`, `skill.refused` with `decision`;
-8. the vault secrets the template may be given now (its approved scope, issue #558) — none: **403** saying a person adds
-   one; else **200**: the text, Access's reason, and the link — the secrets by name and scope line, and the stanza the
+8. the vault secrets the template may be given now (its approved scope, issue #558): those given for this skill (issue
+   #583), else those given for no skill — none: the credential request's **202** for a skill that says its credential,
+   else **403** saying a person adds one; else **200**: the text, Access's reason, and the link — the secrets by name and scope line, and the stanza the
    tool runs (`exec: … args: [kube, NAME]`, `credential_process = … aws NAME`) through `$HOPPER_SECRET`. Never a value:
    the vault gives it just in time, with its own checks, when the tool runs.
 
 **The skills** (`src/skills/catalog.ts`, baked in): `github` (the text is `hopper-gh`'s help), `kube-diagnostics` (read
-on a cluster or namespace) and `aws-diagnostics` (read on an AWS account or role). The catalog stays under 800
-characters.
+on a cluster or namespace), `aws-diagnostics` (read on an AWS account or role) and `render` (issue #583). The catalog
+stays under 800 characters.
 
 **Audit.** On the job's timeline: `skill.listed`, `skill.loaded` (`skill`, `asset`, `decision`) and `skill.refused`
 (`reason`, `decision` when Access answered), each with `requestId`, `machine` and `template`. Access's decision is the
 same row Settings → Access shows.
 
 **Not built.** Minting (#580): the link uses the vault secret as it is, delivered just in time. Skills a user or a plugin
-adds; a skill the hopper learns (#583, Render). A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
+adds. A link between boxes, a tunnel. Rate limits: the catalog is cheap and a
 link costs one Access check. A template is named in Access by its name alone, so two users' templates of one name share
 their approvals. Access checks the job (issue #581): its box's template comes from the job's relations.
 
@@ -9734,3 +9738,79 @@ the backend removed the hopper's own secret is still delivered and the one kept 
 read refuses; a backend or reference it does not have refused when set), `test/plugins/vault-backends.test.ts` (each
 built-in plugin: HashiCorp Vault against a real server; 1Password and Bitwarden through a fake of their SDK),
 `test/ui/vault.test.ts`.
+
+## The dynamic vault (issue #583, 2026-10-09)
+
+Owner direction (#559, "a dynamic vault that grows as it's needed"): the vault keeps no fixed list of keys. It grows from
+what work asks for. A job that needs a credential the hopper does not have makes the hopper find out what the work
+needs — which skill, which credential —, ask the user for it, take whatever kind the user gives, and hand it to the job
+just in time. A user who has no tool set up yet (no kubeconfig) is told how to set it up. Render is a skill, next to
+the Kubernetes and AWS ones. It uses the skill system of issue #582: no second way in.
+
+**A skill's credential** (`SkillCredential`, `src/skills/catalog.ts`). A skill that needs one says the kinds it takes —
+the first is the one the hopper suggests — and how a person gets one or sets the tool up (`setup`). Each kind may say
+how a job uses it (`use`, `NAME` for the vault secret's name); a link skill's link says it instead.
+
+| skill | suggested, then other kinds | setup says |
+|---|---|---|
+| `render` (no link, no Access check: Access has no asset kind for Render yet) | a Render API key; a deploy hook URL of one service | Account Settings → API Keys; or a service's deploy hook, which only starts a deploy |
+| `kube-diagnostics` | a read-only bearer token (a service account's) | with no kubeconfig: a service account with the view role and `kubectl create token` |
+| `aws-diagnostics` | an access key pair, read-only, as JSON | an IAM user with ReadOnlyAccess and an access key |
+
+A person may always give **something else**, in their own words (`other`, a line the job reads; never the value). A
+service the hopper has no skill for is asked in the job's own words: `sh "$HOPPER_SKILL" NAME --credential "<what it
+takes>"` (`askedSkill`), and that is the suggested kind.
+
+**Asking.** The broker ("Skills", step 4 or 8) finds no vault secret given for the skill among what the box's template
+gives. On a machine of no template it says no: the vault gives credentials only to boxes of a template. Else it asks the
+vault (`Vault.need`), which answers. The requests sit over the vault wherever it runs — in the hopper, or in a container
+of its own (issue #586) — in the hopper's process (`withCredentialRequests`, `src/vault/service.ts`; the requests
+themselves `src/vault/requests.ts`):
+
+- **declined**: a person declined the request this job waited on — **403** `no: the user declined …: <reason>`, told
+  once to each job that waited;
+- **waiting**: the template's scope holds a secret given for the skill that waits for approval; or no such secret, and
+  a **credential request** is opened (or joined) — **202** `waiting: …`. `hopper-skill` exits 3, or with `--wait` asks
+  again every 5 s, saying it once on stderr, until the answer is 200 or a no. A wait is no `skill.*` event.
+
+**Credential requests** (`CredentialRequest`, `src/domain/vault.ts`): one open per template and skill; a second job
+asking joins it (`asked`: each job, its box, its `why`). `vault.credential_asked` once per job and request, on the job's
+timeline. Kept in the hopper's memory only: a request no job at work waits on is dropped, and a restart drops them all —
+a job that still waits asks again within seconds, and that opens it again. No table and no migration: the build before
+runs on this store unchanged.
+
+**The person's answer** (Settings → Vault, panel **Asked for**, while any request is open; a toast says when a job asks;
+`POST /ui/api/vault` `give-credential` / `decline-credential`, admin). The card shows who waits and why, and how to get
+the credential. The admin picks the kind — the suggestions first, or something else with a line saying what it is —, a
+vault secret name (the skill's by default, or one the vault holds that was given for the skill or has its name: then
+the value may stay empty), and the value. **Give**: the value is set through the vault's own set, as any vault secret
+(sealed where the vault keeps its key, write-only); its metadata keeps `skill`, `kind` and `note`; it joins the
+template's scope; and when the template is approved and its
+image unchanged, the giving approves the widening by that one secret — the person gives it for that template's boxes,
+and nothing else is approved. A template never approved, or with a new image, still waits on its card, and the job is
+told so. A credential the person keeps in a vault backend (issue #585) is given by name: set it on the Vault page as kept
+in the backend, then give that name with no value. An `access-key` must be the key pair as JSON, as the helper's `aws`
+form reads it. `vault.credential_given`
+names the secret, the kind, the template, whether it approved, and the jobs; never the value. **Decline**, with a
+reason: `vault.credential_declined`.
+
+**Ready.** The job loads the skill again (or its `--wait` does): **200** with the skill's text and, for a skill with no
+link, `Vault secret: NAME — <kind> (the user says: …)` and how to use it; for a link, the link names the secrets given
+for that skill. **Delivery** is the vault's, unchanged ("Delivery to the box"): `$HOPPER_SECRET get|kube|git|aws NAME`,
+only in the template's approved scope, to a job at work on the box, sealed to the request.
+
+**Access.** A link skill's credential is asked for only after Access allows the link. Render has no asset kind in the
+access model, so it is loaded as `github` is, with no Access check; the vault's template gate decides who gets the
+credential. Minting through `decideMint` is #580's; an asset kind for Render would come with it or with #581.
+
+Taken conservatively, each one place to change: requests in memory (a table if they must outlive a restart); the
+request on Settings → Vault and a toast (no section badge); the giving approves only an approved template's widening by
+the one secret; five seconds between asks; Helm, GitOps and Argo CD skills not built (a job asks for them in its own
+words until they are).
+
+Tests: `test/integration/vault-requests.test.ts` (the real daemon, a joined box, the real `hopper-skill` and
+`hopper-secret`: a Render load opens a request, given as an API key the `--wait` ends with how to use it and `get`
+delivers it, the value in no answer, event, log or file; another kind in the user's words; declined; a service with no
+skill; a template never approved; a machine of no template; a Kubernetes link Access allows, with no token: asked, with
+how to make one), `test/skills/credentials.test.ts`, `test/ui/vault.test.ts` (the request card's model),
+`test/integration/skills.test.ts`, `test/herdr/screen.test.ts` (the protocol line).

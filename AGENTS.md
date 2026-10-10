@@ -42,7 +42,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
   sealed to that request; it records only the delivery or refusal. A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
-  with its reason, after Access for a link; it records only the request and its answer. Every other mutation is the UI's
+  with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
+  credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
+  request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and

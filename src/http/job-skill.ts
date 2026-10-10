@@ -4,7 +4,9 @@
 //
 //   POST /job/skill   `Authorization: Bearer <the job's proxy token>`; no fields for the catalog, else `name` and
 //                     `asset`, as a form (what `hopper-skill` sends, src/skills/script.ts) or JSON. Plain text back:
-//                     the catalog, the skill, or `no: <reason>`. It changes no job, question, webhook or setting.
+//                     the catalog, the skill, or `no: <reason>`; 202 `waiting: …` while a person is asked for the
+//                     credential a skill needs (issue #583: a credential request, kept in memory). It changes no job,
+//                     question, webhook or setting.
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
 import { createSkillBroker, SKILL_PATH, type SkillUser } from '../skills/index.ts';
@@ -21,10 +23,12 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
       const { template, secrets } = parts.vault.scopeOf(machine);
       const all = parts.vault.view().secrets;
       return { ...(template ? { template } : {}), secrets: secrets.map((name) => {
-        const scope = all.find((s) => s.name === name)?.scope;
-        return { name, ...(scope ? { scope } : {}) };
+        const s = all.find((x) => x.name === name);
+        // What it is for (issue #583): the skill a person gave it for, the kind, their words. Never a value.
+        return { name, ...(s?.scope ? { scope: s.scope } : {}), ...(s?.skill ? { skill: s.skill } : {}), ...(s?.kind ? { kind: s.kind } : {}), ...(s?.note ? { note: s.note } : {}) };
       }) };
     },
+    need: (ask, asker) => parts.vault.need(ask, asker),
   };
 }
 
