@@ -39,7 +39,7 @@ export function registerWebhookAndNotifierRoutes(app: FastifyInstance, o: {
     return { ...webhooksView(t.store, t.secretProblem), ...(r.generatedSecret !== undefined ? { generatedSecret: r.generatedSecret } : {}) };
   });
 
-  // One signed `webhook.test` event to the subscription, one attempt.
+  // One signed test event to the subscription (the first type it names, or `webhook.test`), one attempt.
   app.post('/ui/api/webhooks/test', o.admin, async (req) => {
     const { name } = parseWith(webhookTestBody, req.body);
     const r = await o.tenant(req).dispatcher.test(name);

@@ -359,7 +359,8 @@ export interface WebhookDispatcher {
   /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
   onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
   /**
-   * POST /ui/api/webhooks/test (issue #378): one signed `webhook.test` event to the subscription now,
+   * POST /ui/api/webhooks/test (issue #378): one signed test event to the subscription now — the first
+   * type it names, `data.test: true` (issue #481), or `webhook.test` for `*` only —
    * one attempt, no delivery stored and nothing appended; undefined for no such subscription.
    */
   test(name: string): Promise<NotifierActionResult | undefined>;

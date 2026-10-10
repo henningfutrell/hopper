@@ -423,7 +423,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.escalated_to_human`
 
-Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer: the Grok Bot routine webhook listens to it and to no `question.escalated` (issue #481). `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
 
 | field | type | required |
 |---|---|---|

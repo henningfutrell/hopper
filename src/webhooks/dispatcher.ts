@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
+import { EVENT_EXAMPLES } from '../events/examples.ts';
 import { sign } from './signer.ts';
 
 export interface WebhookDispatcherOptions {
@@ -146,9 +147,13 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
       if (!sub) return undefined;
       try { o.secretOf(sub); } catch (e) { return { ok: false, detail: (e as Error).message }; }
       // Shaped like a delivered event, so a receiver's parser takes it; never appended to the event log.
+      // Issue #481: typed as the first event type the subscription names, with that type's example data,
+      // so the receiver's routing matches real events; `webhook.test` for `*` only.
       const at = clock.now().toISOString();
       const id = `test-${randomUUID()}`;
-      const event = { seq: 0, schemaVersion: 1, id, type: 'webhook.test', at, data: { test: true, subscription: sub.name } };
+      const type = sub.events.find((t) => t !== '*') ?? 'webhook.test';
+      const example = (EVENT_EXAMPLES as Record<string, Record<string, unknown> | undefined>)[type] ?? {};
+      const event = { seq: 0, schemaVersion: 1, id, type, at, data: { ...example, test: true, subscription: sub.name } };
       const r = await send(sub, event, id);
       return { ok: r.error === undefined, ...(r.statusCode !== undefined ? { status: r.statusCode } : {}), detail: r.error ?? `HTTP ${r.statusCode}` };
     },

@@ -26,7 +26,7 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
   const { question: q, job } = b;
   const raised = q.raisedBy;
   return {
-    ...base('question.escalated', b.at, job, q.jobId),
+    ...base('question.escalated_to_human', b.at, job, q.jobId),
     question: q.text, questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
     machineId: raised?.machineId ?? null, machineName: raised?.name ?? null, laneId: raised?.laneId ?? null, priority: job?.priority ?? null,
     high: job && b.highPriority !== undefined ? job.priority >= b.highPriority : null,
@@ -47,7 +47,10 @@ export function intakePayload(e: DomainEvent, job: Job | undefined): Record<stri
   return b;
 }
 
-/** Send test event (issue #378): marked, so a receiver can tell it from a question. */
+/**
+ * Send test event (issue #378): marked `test: true`, so a receiver can tell it from a question. Its kind is a
+ * question's (issue #481), so the receiver's routing takes the same path as for a real one.
+ */
 export function testPayload(at: string): Record<string, unknown> {
-  return { source: 'hopper', kind: 'test', test: true, at, message: 'Test event from the hopper: the routine URL and key work.' };
+  return { source: 'hopper', kind: 'question.escalated_to_human', test: true, at, message: 'Test event from the hopper: the routine URL and key work.' };
 }

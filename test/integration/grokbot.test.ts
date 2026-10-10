@@ -76,7 +76,7 @@ describe('Grok Bot routine webhook', () => {
     secrets.GROKBOT_WEBHOOK_URL = r.url;
     secrets.GROKBOT_WEBHOOK_KEY_FILE = file;
     await humanQuestion(a);
-    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
+    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated_to_human'), { what: 'escalation post' });
     expect(hit.headers.authorization).toBe('Bearer from-file');
   });
 
@@ -115,7 +115,7 @@ describe('Grok Bot routine webhook', () => {
     const hard = await a.pull(ask('Which colour?'), { title: 'one' });
     await a.waitForStatus(hard.id, 'finished'); // opus drafts, fable lets it through: escalated to opus and fable only
     const { job: human, q } = await humanQuestion(a);
-    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
+    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated_to_human'), { what: 'escalation post' });
     await settle();
     expect(hit.headers.authorization).toBe('Bearer sekrit');
     expect(hit.headers['content-type']).toMatch(/application\/json/);
@@ -135,7 +135,7 @@ describe('Grok Bot routine webhook', () => {
     const events = (await a.events()).filter((e) => e.jobId === job.id && e.type === 'question.escalated' && e.data.target === 'human');
     expect(events.length).toBeGreaterThanOrEqual(3);
     await settle();
-    expect(r.hits.filter((h) => h.body.kind === 'question.escalated')).toHaveLength(1);
+    expect(r.hits.filter((h) => h.body.kind === 'question.escalated_to_human')).toHaveLength(1);
     expect(r.hits).toHaveLength(1);
   });
 

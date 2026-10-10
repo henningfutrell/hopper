@@ -1,5 +1,5 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human, and per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), and per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), the URL and key read from the runtime at each use.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
 // configured (a question escalated while it was not is not lost); Send test event and Send open
 // questions are the UI's actions. In memory only: no store row, no event.
@@ -28,7 +28,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired') return true;
-  return e.type === 'question.escalated' && e.data.target === 'human' && !e.data.renotify;
+  return e.type === 'question.escalated_to_human';
 }
 
 export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
@@ -87,7 +87,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   function sendQuestion(q: Question, offered: boolean, at: string): Promise<boolean> {
     sent.add(q.id);
     const payload = questionPayload({ question: q, job: feed?.job(q.jobId), answerUrl: feed?.answerUrl(q.id), at, now: clock.now(), offered, highPriority: feed?.highPriority?.() });
-    return deliver(`grokbot: question.escalated ${q.jobId}${offered ? ' (open question)' : ''}`, payload);
+    return deliver(`grokbot: question.escalated_to_human ${q.jobId}${offered ? ' (open question)' : ''}`, payload);
   }
 
   function track<T>(p: Promise<T>, what: string): void {
@@ -99,7 +99,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     if (!wanted(e)) return;
     // Listeners must not re-enter synchronously (ports.ts): defer the work.
     track(new Promise<void>((r) => setImmediate(r)).then(() => {
-      if (e.type !== 'question.escalated') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, e.jobId ? feed?.job(e.jobId) : undefined));
+      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, e.jobId ? feed?.job(e.jobId) : undefined));
       const q = feed?.question(e.data.questionId as string);
       if (!q || sent.has(q.id) || 'problem' in routine()) return false;
       return sendQuestion(q, false, e.at);

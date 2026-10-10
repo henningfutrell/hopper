@@ -958,7 +958,7 @@ device-code component's optional `machine`) carry the same shape.
 refreshes both on `question.asked` and shows the answer box at every stage, not only `human`.
 The owner may answer while a level works on it: their answer wins, the in-flight level call is
 aborted (`superseded`), no level above is called, and nothing is pushed. **Push is gated:** the
-Grok Bot routine webhook fire only on `question.escalated {target: "human"}` — after every level
+Grok Bot routine webhook fire only on `question.escalated_to_human` (issue #481) — after every level
 escalates, or a risk rule hits. Worst case between ask and push: every level's stage timeout back
 to back (`levels × HOPPER_ANSWER_TIMEOUT_MS`; 6 min with the two built-in levels). Then
 `QuestionService.handle(questionId)` runs the pipeline off the decision path (issue #134 replaced
@@ -1509,7 +1509,7 @@ token and send any `Origin`. Cookies are no better here: they ignore ports, so a
 | POST | `/ui/api/plugins` | `{ action, … }` | edit plugins.yaml: one instance's options, select a plugin, add or remove a list role's instance, rescan (phase 5 slice 7, issue #4; "Settled in slice 7") |
 | POST | `/ui/api/rules-file` | `{ text, version }` | replace the rules file whole (issue #18, "Question gates"): 400 over 64 KiB, 409 stale `version` |
 | POST | `/ui/api/webhooks` | `{ action, name, … }` | edit the webhook subscriptions (rows in the store, issue #78): add (with a `secret` typed in, or none: the hopper makes one), edit (url, events, active), replace (`secret`), rotate, remove one; answers `GET /api/webhooks`, never a secret but one the hopper made, once (`generatedSecret`); `cache-control: no-store` (issues #18, #451) ("Webhook signing secrets") |
-| POST | `/ui/api/webhooks/test` | `{ name }` | Send test event (issue #378): one signed `webhook.test` event to the subscription, one attempt; answers `{ ok, status?, detail }`. No delivery row, nothing appended |
+| POST | `/ui/api/webhooks/test` | `{ name }` | Send test event (issue #378): one signed test event to the subscription, one attempt — typed as the first event type it names, with that type's example data plus `test: true` and `subscription` (issue #481), or `webhook.test` for `*` only; answers `{ ok, status?, detail }`. No delivery row, nothing appended |
 | POST | `/ui/api/notifiers` | `{ action: test \| send-open, name }` | a running notifier's action (issue #378): a marked test payload, or every question open at the human now; answers `{ ok, status?, detail, sent?, failed? }` ("Grok Bot routine webhook") |
 | POST | `/ui/api/machines` | `{ action, … }` | add, edit or remove one attached machine in plugins.yaml, applied without a restart (issue #18; "Machines from the UI") |
 | POST | `/ui/api/device-link` | `{ keep? }` | `{ links }`: `keep`'s code again while it is live, else a fresh login code, as `http://<LAN name>:<port>/#login=<code>`, one per LAN name; 409 without LAN names ("Reaching the UI across the LAN") |
@@ -2418,9 +2418,12 @@ phase 5 slice 5) POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/r
 question reaches the owner (questions never go onto the issue), and when intake stops (issue #358). Not a
 **Webhook subscription**: no store row, no schema change, no domain event; in-memory only.
 
-- Events: `question.escalated` with `data.target === 'human'` and not `data.renotify`; `source.stalled`
+- Events: `question.escalated_to_human` (issue #481: once per question that reaches the human; never a level
+  hop or a re-notification, so never `question.escalated`, which other consumers keep); `source.stalled`
   (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
   `account`, `reason`). Never `job.finished` or `job.failed`.
+  A Grok Bot routine reached through a **Webhook subscription** instead subscribes to
+  `question.escalated_to_human` only, by name, for the same one post per question.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
   `GROKBOT_WEBHOOK_KEY`) name two runtime secrets ("Secrets"): the variable, or the mounted file the
   variable `<name>_FILE` names, both with the user's **secret prefix** (`HOPPER_USER_<ID>_` for every user
@@ -2435,14 +2438,16 @@ question reaches the owner (questions never go onto the issue), and when intake 
   the human, once each (`offered: true`). Configured already at start: nothing is re-sent on a restart.
   The UI's **Send open questions** sends every open one again, on each press.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
-  issueUrl }` (title/url from the job's source ref, else null); a question adds `question, questionId,
+  issueUrl }` (title/url from the job's source ref, else null); a question's `kind` is
+  `question.escalated_to_human` (issue #481; `question.escalated` before) and it adds `question, questionId,
   answerUrl?` and what the job already knows, so a receiver can route and rank it without calling back
   (issue #378): `machineId`, `machineName`, `laneId` (the question's raising machine, issue #485; null when it has
   none), `priority`, `labels` (the item's labels at intake; null for jobs
   taken before), `repo`, `issueNumber`, `detectedBy`, `askedAt`, `escalatedAt`, `openSeconds`,
   `offered`. 200 = a run started.
 - Test event (issue #378): **Send test event** in the UI (`POST /ui/api/notifiers`, `action: test`)
-  posts `{ source: 'hopper', kind: 'test', test: true, at, message }` once, no retry, and answers the
+  posts `{ source: 'hopper', kind: 'question.escalated_to_human', test: true, at, message }` once (issue #481:
+  a question's kind, so the receiver routes it as a real one; `test: true` marks it), no retry, and answers the
   HTTP status. A notifier offers its actions in GET /api/plugins (`actions`); a custom notifier offers
   one by having the optional `test` or `sendOpen` member (`Notifier`, ports.ts).
 - Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
