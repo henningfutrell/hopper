@@ -244,7 +244,7 @@ describe('POST /ui/api/webhooks/test — Send test event', () => {
   it('posts one signed test event to the subscription and answers the HTTP result; no delivery is stored', async () => {
     const r = await receiver();
     const { a, token } = await start();
-    await edit(a, token, { action: 'add', name: 'hook', url: r.url, events: ['job.finished'], secret: ENTERED });
+    await edit(a, token, { action: 'add', name: 'hook', url: r.url, events: ['*'], secret: ENTERED });
     const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, status: 200 });
@@ -253,6 +253,20 @@ describe('POST /ui/api/webhooks/test — Send test event', () => {
     expect(got.headers['x-hopper-event']).toBe('webhook.test');
     expect(got.headers['x-hopper-signature']).toBe(signatureOf(ENTERED, got));
     expect(JSON.parse(got.body)).toMatchObject({ type: 'webhook.test', data: { test: true, subscription: 'hook' } });
+    expect(a.user().store.webhooks.listDeliveries({ limit: 10 })).toEqual([]);
+  });
+
+  // Issue #481: the test event has the type the subscription names, so the receiver's routing matches real events.
+  it('a subscription to question.escalated_to_human: the test event has that type, marked test, shaped like the real data', async () => {
+    const r = await receiver();
+    const { a, token } = await start();
+    await edit(a, token, { action: 'add', name: 'grok', url: r.url, events: ['question.escalated_to_human'], secret: ENTERED });
+    const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'grok' }, { token });
+    expect(res.body).toMatchObject({ ok: true, status: 200 });
+    const got = r.received[0]!;
+    expect(got.headers['x-hopper-event']).toBe('question.escalated_to_human');
+    expect(got.headers['x-hopper-signature']).toBe(signatureOf(ENTERED, got));
+    expect(JSON.parse(got.body)).toMatchObject({ type: 'question.escalated_to_human', data: { test: true, subscription: 'grok', questionId: expect.any(String) } });
     expect(a.user().store.webhooks.listDeliveries({ limit: 10 })).toEqual([]);
   });
 
