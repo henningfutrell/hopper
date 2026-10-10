@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- When reviewer levels check proposals or research reports, an item with a part left out, no summary, a broken link, or no change since it was sent back now goes straight back to its job with a list of what to fix, and no model is asked. Complete items go through the levels as before.
 - A sandbox box can now get a short-lived AWS or Kubernetes credential made for it on the spot, only for what its template is approved to do. Revoking the approval stops the next one.
 - A job that only has to bring an existing pull request up to date, for example rebase it or fix its conflicts, now ends done when it has pushed to that pull request and it has no conflicts. It no longer has to open a new pull request, and it no longer goes to Needs a person.
 - Failures now shows only what still waits on you. A hand-off that was continued, run again or resolved, or whose issue closed or whose job finished, and a failure that ran again or ended, move to Ended in the last day. They no longer show in Needs a person or Recent failures.

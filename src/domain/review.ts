@@ -62,9 +62,9 @@ export interface ReviewVersion {
 export interface ReviewEntry {
   /** The version it reviewed. */
   version: number;
-  /** Who: the reviewer level's instance name, or `human`. */
+  /** Who: the reviewer level's instance name, `human`, or the structural pre-check (`PRE_CHECK`). */
   stage: string;
-  role: 'level' | 'human';
+  role: 'level' | 'human' | 'check';
   /** A level's verdict (an error escalates), or a person's decision. */
   verdict: ReviewVerdict | ReviewDecisionId;
   /** Why; for a decision that sends it back, what the job is told. */
@@ -139,6 +139,16 @@ export type ReviewSignOffBy = typeof REVIEW_SIGN_OFF[number];
 export const MAX_LEVEL_REVISIONS = 5;
 
 /**
+ * The structural pre-check's stage (issue #631): before the reviewer levels, it checks a review item's structure with no
+ * model call, and sends an item with gaps back to its job with the gap list. It is no reviewer level: its send-backs do
+ * not count against `levelRevisions`.
+ */
+export const PRE_CHECK = 'pre-check';
+
+/** The most times the pre-check sends one item back; the next time it still has gaps, a person decides. */
+export const PRE_CHECK_RETURNS = 2;
+
+/**
  * A review section's settings, the user's, read at each review so a change applies without a restart. `reviewers`:
  * the escalation levels that review, lowest first, by instance name; none: a person reviews. `signOff`: who may
  * accept. `levelRevisions`: how often the levels may send one item back before it goes to a person.
@@ -201,7 +211,7 @@ const RESEARCH_PARTS: readonly ReviewPart[] = [
   { id: 'confidence', label: 'Confidence' }, { id: 'openThreads', label: 'Open threads' }, { id: 'nextStep', label: 'Next step', aliases: ['Suggested next step'] },
 ];
 const labelled = (parts: readonly ReviewPart[]): string => parts.map((p) => `${p.label}:`).join(', ');
-const whoOf = (from: string): string => (from === 'human' ? 'a person' : `the reviewer level ${from}`);
+const whoOf = (from: string): string => (from === 'human' ? 'a person' : from === PRE_CHECK ? 'the structural pre-check' : `the reviewer level ${from}`);
 
 export const REVIEW_SECTIONS: Readonly<Record<ReviewKind, ReviewSectionType>> = {
   research: {
