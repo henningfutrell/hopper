@@ -182,6 +182,19 @@ describe('a failed job no rule explains', () => {
     expect(picked!.data).toMatchObject({ applied: true, pick: 'retry' });
   });
 
+  it('a done-check miss (issue #637): its source not done again, Jev picks run it again or a person; active and sure, it runs again', async () => {
+    const jev = fakeJev(RETRY);
+    const a = await start({ jev });
+    await setPoint(a, await a.login(), 'failure-assessment', { mode: 'active' });
+    const job = await a.pull(fail('not complete: the issue https://github.com/o/r/issues/1 is open, and no pull request in o/r closes or references it'));
+    await a.waitForStatus(job.id, 'failed');
+    const rerun = await waitFor(async () => (await ofType(a, 'job.rerun', job.id))[0], { what: 'run again by Jev' });
+    expect(rerun.data).toMatchObject({ by: 'assessor' });
+    expect(jev.asks[0]!.options.map((o) => o.id)).toEqual(['retry', 'person']);
+    expect(jev.asks[0]!.instructions).toMatch(/said it was done/);
+    expect(jev.asks[0]!.state).toMatchObject({ error: expect.stringMatching(/^not complete:/) });
+  });
+
   it('a known cause is the rules\' decision: Jev is not asked', async () => {
     const jev = fakeJev(RETRY);
     const a = await start({ jev });

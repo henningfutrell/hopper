@@ -113,4 +113,17 @@ describe('the pull request after done', () => {
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
     await waitFor(async () => (await failures()).handoffs.every((h) => h.jobId !== job!.id || h.status === 'closed'), { what: 'the hand-off closed' });
   });
+  it('a done-check miss whose source is done when the assessor looks (issue #637): finished, its record resolved, no hand-off', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message: 'not complete: GitHub did not list the pull request yet', ms: 0 }), labels: ['hopper'] });
+    gh.openPullRequest(REPO, issue.number, { createdAt: new Date().toISOString() });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    const failures = (await app.api<FailuresView>('GET', '/api/failures')).body;
+    expect(failures.recent.filter((r) => r.jobId === job!.id).map((r) => [r.outcome, r.decision])).toEqual([['resolved', 'person']]);
+    expect(failures.handoffs.filter((h) => h.jobId === job!.id)).toEqual([]);
+    await labelled(gh, issue.number, 'hopper:pr-ready');
+  });
 });

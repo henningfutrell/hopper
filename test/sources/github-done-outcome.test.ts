@@ -129,3 +129,22 @@ describe('an issue that asks to update pull requests it names (issue #637)', () 
     expect(await s.source.notComplete!(jobForIssue(2))).toBeDefined();
   });
 });
+
+describe('a pull request that names the issue only in its branch name (issue #637)', () => {
+  it('open and ready on a branch named for the issue (issue-N-…, N-…): done', async () => {
+    for (const headRef of ['issue-1-fix-the-thing', '1-fix-the-thing', 'fix/issue-1']) {
+      const { gh, source, job } = withIssue();
+      gh.openUnlinkedPullRequest(REPO, { createdAt: BEFORE, headRef });
+      expect(await source.notComplete!(job)).toBeUndefined();
+    }
+  });
+
+  it('a branch named for another issue, or a draft on this one\'s: not done, and the miss names the draft', async () => {
+    const { gh, source, job } = withIssue();
+    gh.openUnlinkedPullRequest(REPO, { createdAt: BEFORE, headRef: 'issue-12-other' });
+    gh.openUnlinkedPullRequest(REPO, { createdAt: BEFORE, headRef: 'fix-1234' });
+    expect(await source.notComplete!(job)).toMatch(/no pull request in .* closes or references it$/);
+    const draft = gh.openUnlinkedPullRequest(REPO, { createdAt: BEFORE, headRef: 'issue-1-wip', isDraft: true });
+    expect(await source.notComplete!(job)).toContain(`#${draft.url.split('/').at(-1)} (open, draft)`);
+  });
+});
