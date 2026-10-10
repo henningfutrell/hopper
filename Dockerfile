@@ -50,6 +50,8 @@ COPY src ./src
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./
+# The compose file of this release (issue #697): `hopper update` puts it in, so an update never keeps an old one.
+COPY compose.yaml ./
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 # What this image is built from (issue #409): install.json, as an install has, and the OCI labels — so Settings →

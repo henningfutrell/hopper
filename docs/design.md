@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`) — and the one place a runtime is selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/update/` | self-update ("Self-update"): install.json, the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
+| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697), the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
@@ -79,6 +79,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 | `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
+| `src/cli-update.ts` | the operator CLI's `hopper update` (issue #697): the update script of a container install, its carry step, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
 
 ## The decider
 
@@ -5965,15 +5966,42 @@ lacks a field → `unavailable`, the reason naming the missing field.
 **A container install is updated by its user (issue #494).** Auto-update does not apply to an image: the
 updater reports `autoUpdate: false` for it whatever is stored, so a check never applies; a settings patch turning
 it on is ignored, not stored; the UI shows no Auto-update switch, only the one-line reason. The update notice and
-Settings → Version give the commands instead (`imageUpdate`, `ui/src/model/update.ts`): `HOPPER_IMAGE=` the
-selected channel's tag in `.env` (the image tag is the channel; `latest` is `stable`), pull and recreate the
-`hopper` service alone (`--no-deps`, so Postgres and the volumes are untouched; `--force-recreate`, which
-podman-compose needs to take a newly pulled image), and the optional prune — for one **container tool** at a
+Settings → Version give the commands instead (`imageUpdate`, `ui/src/model/update.ts`) — for one **container tool** at a
 time, Podman or Docker, the one this browser chose last (`localStorage` `jh_container_tool`, Podman until Docker
 is chosen; issue #521): the hopper cannot see which tool runs it from inside the container, so the viewer picks.
 When the running image's branch is not the selected channel, pulling the same tag can never clear the notice, so
 it says to switch the image tag. `UpdateStatus.restartBlockers` is the restart-blocker count now, the one an apply
 waits on; the commands show it, and ask to wait until it is zero.
+
+**The shipped compose file (issue #697).** Until then the commands pulled and recreated the `hopper` service alone
+(`--no-deps`): the install kept its old `compose.yaml`, so a version that added a required service (OpenFGA) or a
+setting never reached it, installs drifted apart, and features failed in confusing ways. Now every image carries the
+`compose.yaml` of its commit (`Dockerfile`, `/app/compose.yaml`); `src/update/shipped-compose.ts` reads it, stamped on
+its first line `# hopper version: <branch> <commit>` from install.json (`unknown` when the build does not know them),
+and `GET /api/update/compose` answers it (`ShippedCompose`; 404 with the reason for a build that ships none). The one
+update is **the update script**: `hopper update <podman|podman-compose|docker> [--image <ref>]` (`src/cli-update.ts`,
+no database) prints it (`src/update/update-script.ts`); it is run from the image to update to —
+`podman run --rm --pull=always <image> hopper update podman > hopper-update.sh`, then `sh hopper-update.sh` in the folder
+of `compose.yaml` — so the compose file it puts in is always the target's. `--image` defaults to the published image
+of install.json's branch. The script, POSIX `sh`, in order: refuses a folder with no `compose.yaml`; stops when `.env`
+lacks `HOPPER_MASTER_KEY` and `hopper master-key status` of the running hopper says the key was made at this start
+(`generated`, `old-token-key`: a recreate would lose it), and says so when the status cannot be read; backs up the
+database (`pg_dump -Fc` to `hopper-backup-<time>.dump`), `compose.yaml` (`compose.yaml.bak-<the old stamp's commit, else
+the time>`) and `.env`, under `umask 077`; pulls the image; runs `hopper update carry` in it (`--network none`, the old
+`compose.yaml` on stdin; `src/update/compose-carry.ts`), which answers the `.env` lines that keep what the install
+changed in the file — the first published port's address as `HOPPER_BIND` (none: every interface, `0.0.0.0`), a fixed
+published port as `HOPPER_PORT`, and each hopper setting written in place or under another default than the
+new compose file's — and notes what it cannot move (a service the new file lacks: for `compose.override.yaml`); appends each line
+whose name `.env` lacks, and sets `HOPPER_IMAGE` to the image; writes the image's `compose.yaml` and shows the
+`diff -u`; then `compose pull` and `compose up -d --force-recreate` for the whole stack (never `--no-deps`); and checks
+that the hopper answers `/api/health` and OpenFGA `/healthz`, from inside the hopper's container. A failing step after
+the backups says how to go back (the backups, then `up -d --force-recreate`). The compose file's own settings, so it can
+be replaced whole: the published port's address is `HOPPER_BIND` (default `127.0.0.1`), beside `HOPPER_PORT`. The
+notice's commands are the script's two lines and the prune. **The agent update skill** (`src/update/update-skill.ts`):
+the same update as steps for an agent — the compose file of the image updated to, always; never the hopper service alone; settings in
+`.env` or `compose.override.yaml`, never in `compose.yaml` — served as Markdown at `GET /api/update/skill` and printed by
+`hopper update skill`. Still to come (issue #697): the hopper comparing the running stack with its own compose file at
+start.
 
 **The notice is one line (issue #521).** Above the overview it holds the headline, *What's new*, *How to update*
 (an image install) or *Update now* (an install), and Dismiss. What's new and How to update open below the line,
@@ -6176,7 +6204,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 **compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
-`HOPPER_IMAGE=localhost/hopper`. Upgrade (since issue #494: `podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper`, then `podman image prune -f --filter label=org.opencontainers.image.title=hopper`; "Self-update" above) — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
+`HOPPER_IMAGE=localhost/hopper`. Upgrade (since issue #697: the update script the target image makes, `hopper update podman`, on the compose file that image ships with and the whole stack; then `podman image prune -f --filter label=org.opencontainers.image.title=hopper`; "Self-update" above) — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
 still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
