@@ -294,6 +294,14 @@ configured. Its advice is always applied: there is no router mode (issue #211).
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
+- **Facts first, no model** (issue #628, `facts.ts`): before it spawns the shim, the gate router checks
+  verdicts the job's own facts fix. In order: a non-empty `meta.cached_artifact` → `reuse_cache`; a
+  non-empty `meta.prior_error` with `meta.same_error_count` ≥ `STOP_RETRY_SAME_ERRORS` (1) → `stop_retry`;
+  none of the `META_KEYS` above in `spec.meta` (every GitHub issue job today: the gates would judge the goal
+  alone) → `proceed_full`. Each is advice with `source: "gate-router"` and `details: { gatesAsked: false,
+  decidedBy: "facts", rule }` (`rule`: `cached_artifact` | `same_error_count` | `no_meta_keys`), given at
+  once, so the job waits no `timeoutSeconds` on "awaiting router advice". Any other job goes to the gates:
+  Jev keeps `intent`.
 - `fake` router (test double): deterministic, no network, mirrors grok-bot-jev's precedence from job
   metadata: bypass marker → `proceed_full` (gatesAsked false); `meta.cached_artifact` →
   `reuse_cache`; `meta.prior_error` and `same_error_count >= 1` → `stop_retry`; kind

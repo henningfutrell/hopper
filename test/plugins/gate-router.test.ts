@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Job, JobSpec } from '../../src/domain/types.ts';
 import gateRouter from '../../src/plugins/router/gate-router/index.ts';
 import { optionsJsonSchema, parseOptions } from '../../src/plugins/options.ts';
+import { META_KEYS, STOP_RETRY_SAME_ERRORS } from '../../src/plugins/router/gate-router/facts.ts';
 import { fakeKit, fixedClock } from './support.ts';
 
 const CHECKOUT = join(import.meta.dirname, 'fixtures', 'grok-bot-jev');
@@ -52,6 +53,9 @@ function jevOn() {
   process.env.TYPESAFE_API_KEY = 'ts-test';
   process.env.PYTHONPATH = FAKE_TYPESAFE;
 }
+
+/** A fact the gates read that fixes no verdict by itself: the shim runs and the gates are asked. */
+const ASKS_GATES = { sources_found: 2 };
 
 function makeJob(spec: Partial<JobSpec> = {}): Job {
   return {
@@ -147,14 +151,14 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
     scratch.push(copy);
     cpSync(CHECKOUT, copy, { recursive: true });
     writeFileSync(join(copy, 'config.json'), '{"enabled": false}');
-    const advice = await (await router({ jevPath: copy })).advise(makeJob({ goal: 'check status' }));
+    const advice = await (await router({ jevPath: copy })).advise(makeJob({ goal: 'check status', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'gate-router', details: { gatesAsked: false } });
     expect(existsSync(process.env.FAKE_CLAUDE_OUT!)).toBe(false);
   });
 
   it('Jev off: Haiku answers every gate, locked down, and the router routes on its answers', async () => {
     const before = snapshot(CHECKOUT);
-    const advice = await (await router()).advise(makeJob({ goal: 'check the deploy status', kind: 'lookup' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'check the deploy status', kind: 'lookup', meta: ASKS_GATES }));
     expect(advice).toMatchObject({
       action: 'run_deterministic', source: 'gate-router', at: '2026-10-03T12:00:00.000Z',
       details: {
@@ -178,7 +182,7 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
   it('Jev on: it answers intent, reuse_cache and stop_retry, Haiku the rest', async () => {
     jevOn();
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ choices: {}, nouls: { needs_subagent: 0.2 }, scores: { complexity: 2 } });
-    const advice = await (await router()).advise(makeJob({ goal: 'fix the login form' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'fix the login form', meta: ASKS_GATES }));
     expect(typesafeCall()).toEqual({ questions: ['intent', 'reuse_cache', 'stop_retry'], model: 'jev-latest', state: { goal: 'fix the login form' }, key: 'ts-test' });
     expect(claudeCall().stdin).not.toContain('reuse_cache');
     expect(claudeCall().stdin).toContain('needs_subagent');
@@ -194,13 +198,13 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
   it('setting the key switches Jev on for the next call, no restart', async () => {
     process.env.PYTHONPATH = FAKE_TYPESAFE;
     const jev = await router();
-    const before = await jev.advise(makeJob({ goal: 'g' }));
+    const before = await jev.advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(before.details).toMatchObject({ gatesBy: { intent: 'claude', reuse_cache: 'claude', stop_retry: 'claude' } });
     expect(before.details).not.toHaveProperty('jevError');
     expect(existsSync(process.env.FAKE_TYPESAFE_OUT!)).toBe(false);
 
     process.env.TYPESAFE_API_KEY = 'ts-later';
-    const after = await jev.advise(makeJob({ goal: 'g' }));
+    const after = await jev.advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(after.details).toMatchObject({ gatesBy: { intent: 'jev', reuse_cache: 'jev', stop_retry: 'jev', needs_subagent: 'claude' } });
     expect(typesafeCall().key).toBe('ts-later');
   });
@@ -208,7 +212,7 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
   it('an empty key leaves Jev off', async () => {
     process.env.PYTHONPATH = FAKE_TYPESAFE;
     process.env.TYPESAFE_API_KEY = '';
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice.details).toMatchObject({ gatesBy: { intent: 'claude' } });
     expect(advice.details).not.toHaveProperty('jevError');
   });
@@ -216,13 +220,13 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
   it('Jev failing: Haiku answers its gates too, and the error is in the advice', async () => {
     jevOn();
     process.env.FAKE_TYPESAFE_MODE = 'error';
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ source: 'gate-router', details: { gatesBy: { intent: 'claude', reuse_cache: 'claude' }, jevError: expect.stringContaining('401 invalid api key') } });
   });
 
   it('key set but no typesafe_sdk: Haiku answers, Jev is skipped', async () => {
     process.env.TYPESAFE_API_KEY = 'ts-test';
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ source: 'gate-router', details: { gatesBy: { intent: 'claude' }, jevError: expect.stringContaining('typesafe_sdk not installed') } });
   });
 });
@@ -230,27 +234,27 @@ describe('gate-router asks grok-bot-jev\'s gates', () => {
 describe('gate-router failures fall back', () => {
   it('Haiku choosing a label the gate did not offer falls back', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ ...HAIKU_ALL, choices: { intent: { choice: 'dance', probabilities: { dance: 1 } } } });
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'fallback', details: { gatesAsked: false } });
     expect(advice.reason).toContain('dance');
   });
 
   it('Haiku leaving a gate unanswered falls back', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ ...HAIKU_ALL, nouls: { reuse_cache: 0.1 } });
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ source: 'fallback' });
     expect(advice.reason).toContain('needs_subagent');
   });
 
   it('claude failing falls back with its stderr', async () => {
     process.env.FAKE_CLAUDE_MODE = 'exit1';
-    const advice = await (await router()).advise(makeJob({ goal: 'g' }));
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: ASKS_GATES }));
     expect(advice).toMatchObject({ source: 'fallback' });
     expect(advice.reason).toContain('auth failed');
   });
 
   it('missing python binary falls back', async () => {
-    const advice = await (await router({ python: '/nonexistent/python' })).advise(makeJob());
+    const advice = await (await router({ python: '/nonexistent/python' })).advise(makeJob({ meta: ASKS_GATES }));
     expect(advice).toMatchObject({ action: 'proceed_full', source: 'fallback', details: { gatesAsked: false } });
     expect(advice.reason).toMatch(/^gate router unavailable: /);
   });
@@ -261,7 +265,7 @@ describe('gate-router failures fall back', () => {
     writeFileSync(slow, `#!/bin/sh\nsleep 30 &\necho $! > ${pidFile}\nwait\n`);
     chmodSync(slow, 0o755);
     const started = Date.now();
-    const advice = await (await router({ python: slow, timeoutSeconds: 0.5 })).advise(makeJob());
+    const advice = await (await router({ python: slow, timeoutSeconds: 0.5 })).advise(makeJob({ meta: ASKS_GATES }));
     expect(Date.now() - started).toBeLessThan(3000);
     expect(advice).toMatchObject({ source: 'fallback', details: { gatesAsked: false } });
     expect(advice.reason).toContain('timed out');
@@ -274,7 +278,68 @@ describe('gate-router failures fall back', () => {
     const junk = join(dataDir, 'junk-python');
     writeFileSync(junk, '#!/bin/sh\necho not-json\n');
     chmodSync(junk, 0o755);
-    const advice = await (await router({ python: junk })).advise(makeJob());
+    const advice = await (await router({ python: junk })).advise(makeJob({ meta: ASKS_GATES }));
     expect(advice.source).toBe('fallback');
+  });
+});
+
+describe('gate-router: verdicts fixed by the job\'s facts need no model (issue #628)', () => {
+  // No python at all: a shim run would fall back. Each of these must not reach it.
+  const noShim = () => router({ python: '/nonexistent/python' });
+
+  it('a cached artifact: reuse_cache, without the shim or a model', async () => {
+    const advice = await (await noShim()).advise(makeJob({ goal: 'g', meta: { cached_artifact: 'build/out.tgz', sources_found: 1 } }));
+    expect(advice).toEqual({
+      action: 'reuse_cache', reason: 'a cached artifact is present: build/out.tgz', source: 'gate-router',
+      details: { gatesAsked: false, decidedBy: 'facts', rule: 'cached_artifact' }, at: '2026-10-03T12:00:00.000Z',
+    });
+    expect(existsSync(process.env.FAKE_CLAUDE_OUT!)).toBe(false);
+  });
+
+  it('the same error repeated: stop_retry, without the shim or a model', async () => {
+    const advice = await (await noShim()).advise(makeJob({ goal: 'g', meta: { prior_error: 'ENOSPC: no space left', same_error_count: 2 } }));
+    expect(advice).toMatchObject({
+      action: 'stop_retry', reason: 'the same error 2 times: ENOSPC: no space left', source: 'gate-router',
+      details: { gatesAsked: false, decidedBy: 'facts', rule: 'same_error_count' },
+    });
+    expect(existsSync(process.env.FAKE_CLAUDE_OUT!)).toBe(false);
+  });
+
+  it('a cached artifact wins over a repeated error', async () => {
+    const advice = await (await noShim()).advise(makeJob({ meta: { cached_artifact: 'a', prior_error: 'e', same_error_count: 3 } }));
+    expect(advice.action).toBe('reuse_cache');
+  });
+
+  it(`stop_retry needs the prior error and at least ${STOP_RETRY_SAME_ERRORS} repeat of it; else the gates are asked`, async () => {
+    for (const meta of [{ same_error_count: 4 }, { prior_error: 'e', same_error_count: 0 }, { prior_error: '', same_error_count: 4 }, { prior_error: 'e', same_error_count: 'many' }]) {
+      const advice = await (await router()).advise(makeJob({ goal: 'g', meta }));
+      expect(advice, JSON.stringify(meta)).toMatchObject({ source: 'gate-router', details: { gatesAsked: true } });
+    }
+  });
+
+  it('an empty cached artifact is no artifact: the gates are asked', async () => {
+    const advice = await (await router()).advise(makeJob({ goal: 'g', meta: { cached_artifact: '' } }));
+    expect(advice).toMatchObject({ source: 'gate-router', details: { gatesAsked: true } });
+  });
+
+  it('a job with none of the facts the gates read (a GitHub issue job): proceed_full at once, no shim', async () => {
+    const started = Date.now();
+    const advice = await (await noShim()).advise(makeJob({ goal: 'fix #12', kind: 'github-issue', meta: { repo: 'o/r', issue: 12 } }));
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(advice).toEqual({
+      action: 'proceed_full', reason: 'no job facts for the gates to judge', source: 'gate-router',
+      details: { gatesAsked: false, decidedBy: 'facts', rule: 'no_meta_keys' }, at: '2026-10-03T12:00:00.000Z',
+    });
+    expect((await (await noShim()).advise(makeJob({ goal: 'g' }))).details).toMatchObject({ rule: 'no_meta_keys' });
+  });
+
+  it('a job with any of the facts still goes to the gates: Jev keeps intent', async () => {
+    for (const key of META_KEYS) {
+      if (key === 'cached_artifact') continue;
+      jevOn();
+      process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ choices: {}, nouls: { needs_subagent: 0.2 }, scores: { complexity: 2 } });
+      const advice = await (await router()).advise(makeJob({ goal: 'g', meta: { [key]: 'x' } }));
+      expect(advice, key).toMatchObject({ source: 'gate-router', details: { gatesAsked: true, gatesBy: { intent: 'jev' } } });
+    }
   });
 });
