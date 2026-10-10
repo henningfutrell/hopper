@@ -1,6 +1,6 @@
 // The key a user's content URLs are signed under (issue #673, design.md "Artifacts"): kept in the user's vault system
-// scope as `system/artifact-content-key` (issue #657), sealed under the token key, made on the first read that signs a
-// URL; a restart opens it again, so a URL a viewer holds works until its own expiry. With no token key, or a stored key
+// scope as `system/artifact-content-key` (issue #657), sealed under the master key, made on the first read that signs a
+// URL; a restart opens it again, so a URL a viewer holds works until its own expiry. With no master key, or a stored key
 // that cannot be opened, the key lives only in this process — said once in the log, and the stored one is left as it is.
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';

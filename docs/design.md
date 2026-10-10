@@ -10704,9 +10704,9 @@ still only ever the public URL's (below). Its content is never under `/api/` and
 `x-hopper-session`, so the read that checked the viewer signs a **content URL** (`/artifact-content/<name>?v=<token>`,
 `src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under the owner's
 **content URL key** — the owner named in the token picks the key that checks it. The key is a system secret
-(`system/artifact-content-key`, "The TypeSafe API key in the vault's system scope"), sealed under the token key, made on
+(`system/artifact-content-key`, "The TypeSafe API key in the vault's system scope"), sealed under the master key, made on
 the first read that signs a URL (`src/users/artifact-key.ts`, issue #673): a restart opens it again, so a URL a viewer
-holds works until its own expiry. With no token key, or a stored key that cannot be opened, the key lives only in the
+holds works until its own expiry. With no master key, or a stored key that cannot be opened, the key lives only in the
 process (the log says so once, and a stored key is left as it is): a restart then ends every URL, and the next read
 signs a new one. The UI reads again every half hour and on every artifact event. The route checks the signature and, for a viewer who is not the owner, Access again, at each load.
 The token rides in the query because Fastify caps a path parameter at 100 characters.

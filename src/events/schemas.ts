@@ -12,9 +12,7 @@ import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobSta
 const strict = z.strictObject;
 const artifactSettings = z.strictObject({
   maxBytes: z.number().int().min(1), userBytes: z.number().int().min(1), retentionDays: z.number().int().min(1),
-  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1),
-  // Issue #673; absent in an event from before it.
-  linkBase: z.string().optional(),
+  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1), linkBase: z.string().optional(), // linkBase: issue #673, absent before it
 });
 const decisionPoint = z.enum(DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });

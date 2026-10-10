@@ -4,7 +4,7 @@
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
-// the artifacts (issue #673): list, get, share, revoke, remove.
+// the artifacts (issue #673, cli-operator-artifact.ts).
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -62,7 +62,6 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
 ${ARTIFACT_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
-export { OperatorRefusal };
 
 export interface OperatorIo {
   env: Record<string, string | undefined>;
