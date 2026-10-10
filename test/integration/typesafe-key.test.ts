@@ -1,7 +1,7 @@
 // Issue #657, through the real composition root, the real HTTP server and the real Jev (jev_pick.py, with the fake
 // typesafe_sdk on PYTHONPATH): the TypeSafe API key is the hopper's own secret. It is set on the Jev page (Settings →
 // Decider) or by the operator CLI, checked once against TypeSafe, and kept in the vault's system scope — sealed
-// under the token key, never listed, never answered back, never given to a job —; Jev reads it at each decision, so
+// under the master key, never listed, never answered back, never given to a job —; Jev reads it at each decision, so
 // a set, a replace or a removal applies without a restart. A key still in the environment is imported once, with a note.
 //
 // Feature: the TypeSafe API key, set in the UI
@@ -56,7 +56,7 @@ async function boot(o: { secrets?: Record<string, string>; dbPath?: string; fga?
   const fga = o.fga ?? createFakeAuthorizationServer();
   t = await startTestApp({
     dbPath, plugins: { machines: lanes(1) }, seams: { authorizationServer: fga },
-    secrets: { HOPPER_TOKEN_KEY: KEY, PYTHONPATH: FAKE_TYPESAFE, ...o.secrets },
+    secrets: { HOPPER_MASTER_KEY: KEY, PYTHONPATH: FAKE_TYPESAFE, ...o.secrets },
   });
   return { a: t, session: await t.login(), fga };
 }
