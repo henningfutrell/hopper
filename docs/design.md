@@ -499,7 +499,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (the escalation levels, lowest first → risk rules on an answer → auto-answer, issue #632 → accepted or human; timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), Jev first (`jev-first.ts`), the escalation levels, lowest first → risk rules on an answer → auto-answer, issue #632 → accepted or human; timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -2433,6 +2433,22 @@ rules, given to every escalation level), and the human as the last question stop
 A question climbs the escalation levels (plugins.yaml `escalationLevels`, lowest first), and only
 as far as it needs: a simple question is settled at the first level; the more complex it is, the
 higher it climbs; above the top level is the owner.
+
+**Fixed answers first** (issue #629, `src/questions/fixed-answers.ts`). Before Jev first and the levels, a question whose
+answer the facts fix is answered without a model, and Jev and the levels are not asked:
+
+- **Allowed dialogs.** A permission dialog read off the screen (`detectedBy: blocked`) that asks to edit
+  (`Edit file`, `Create file`, `Write file`, `Overwrite file`) or read (`Read file`) one file, where the file is inside the
+  job's work tree (`job.workTree`; a relative path is taken from it; `..` is resolved; a path under `~` never is) and a
+  file the dialog's question names is that file: answered with the number of its `Yes` option — never a "Yes, allow all
+  … during this session" option. No work tree reported, or anything the parser does not recognise: not answered here.
+- **Reused answers.** A question a person already answered (`answeredBy: human`, status `answered`) on the same item —
+  this job, then each job it runs again by `rerunOf`, up to 20 — with the same text, case and spacing aside and a
+  countdown (`1:59`) aside: answered with that person's newest answer.
+
+The risk rules run on the question and the fixed answer, as on a level's: a hit sends the question to the owner, the
+fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `role: fixed`; `question.answered` names
+`by: fixed`. A question no fixed answer fits goes on to Jev first and the levels as before.
 
 1. Each level gets the full request — question, job prompt, goal, rules file, the trail so far
    (earlier runs, and the levels below with their recommendations) and its place,

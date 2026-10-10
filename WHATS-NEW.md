@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A job that asks to edit or read a file inside its own work tree now goes on without waiting, and a question a person already answered for the same issue gets that same answer again. Anything risky still comes to you.
 - A question now goes straight to Fable, and when Fable is sure of its answer the job gets it at once, with no action from you. Risky questions, consequential actions and high-priority jobs still come to you. Settings → Question gates turns this off or sets how sure Fable must be, and shows how often you corrected it. In Settings → Question history you can correct an answer Fable gave: the job gets your correction with its next answer. Opus is no longer asked first.
 - When reviewer levels check proposals or research reports, an item with a part left out, no summary, a broken link, or no change since it was sent back now goes straight back to its job with a list of what to fix, and no model is asked. Complete items go through the levels as before.
 - A sandbox box can now get a short-lived AWS or Kubernetes credential made for it on the spot, only for what its template is approved to do. Revoking the approval stops the next one.
