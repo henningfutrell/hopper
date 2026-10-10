@@ -134,7 +134,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
-  jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
+  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
   jobGitRoutes(app, { tenants: o.tenants });
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
@@ -142,8 +142,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobStreamRoutes(app, { tenants: o.tenants, subscribed: (userId, jobId) => { void skillWaits.redrive(userId, jobId); } });
   // Artifacts (issue #624): a running job puts them with the same token; a person reads them, and their content is
   // served off /api/ under the policy of its kind, by a signed URL or a public link.
-  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port });
-  jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge });
+  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
+  jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {

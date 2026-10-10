@@ -36,7 +36,8 @@ import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
-import { OPERATOR_COMMANDS, OPERATOR_USAGE, OperatorRefusal, runOperatorAction } from './cli-operator.ts';
+import { OPERATOR_COMMANDS, OPERATOR_USAGE, runOperatorAction } from './cli-operator.ts';
+import { OperatorRefusal } from './cli-operator-call.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;

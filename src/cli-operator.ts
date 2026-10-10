@@ -3,19 +3,22 @@
 // question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
-// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all.
+// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
+// the artifacts (issue #673, cli-operator-artifact.ts).
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';
-import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type UiRole, type User } from './domain/types.ts';
+import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
+import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
+import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -56,10 +59,9 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
+${ARTIFACT_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
-/** A refusal: the message, exit 2. */
-export class OperatorRefusal extends Error {}
 
 export interface OperatorIo {
   env: Record<string, string | undefined>;
@@ -68,16 +70,12 @@ export interface OperatorIo {
   out(text: string): void;
 }
 
-/** A POST of `body`, or, without one, a GET whose answer `pick` narrows. */
-interface Call { role: UiRole; path: string; body?: (get: Getter) => Promise<unknown>; pick?: (answer: unknown) => unknown }
-type Getter = (path: string) => Promise<unknown>;
 
 /** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
 const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
 const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operator CLI', groups: [] };
 
-const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usage: hopper ${line}`);
 
 function jobCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
@@ -278,6 +276,7 @@ function typesafeKeyCall(args: string[], stdin: () => string): Call {
 }
 
 function callOf(command: string, args: string[], stdin: () => string): Call {
+  if (command === 'artifact') return artifactCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
@@ -319,7 +318,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

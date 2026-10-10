@@ -10,10 +10,10 @@
 // the oldest user's (src/users/runtimes.ts).
 import type { FastifyInstance } from 'fastify';
 import type { Clock } from '../domain/ports.ts';
-import { createGitHubProxy, createProxyLimiter, PROXY_PATH } from '../github-proxy/index.ts';
+import { createGitHubProxy, createProxyLimiter, PROXY_PATH, type GitHubProxy } from '../github-proxy/index.ts';
 import type { Tenants } from './tenants.ts';
 
-export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock }): void {
+export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clock: Clock }): GitHubProxy {
   const proxy = createGitHubProxy({
     user: (id) => o.tenants.user(id)?.githubProxy.user,
     hopper: () => {
@@ -34,4 +34,5 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
       return reply.code(answer.status).send(answer.body);
     });
   });
+  return proxy;
 }

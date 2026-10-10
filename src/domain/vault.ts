@@ -17,7 +17,8 @@ export const VAULT_REFERENCE_MAX = 500;
  * API key. Each is a row of the vault's table named `system/<name>` — a name no vault secret can take —, sealed as any
  * other; but it is none of the vault's own secrets: not listed, in no template, never given to a job or minted from.
  */
-export const SYSTEM_SECRETS = ['typesafe-api-key'] as const;
+/** The TypeSafe API key (issue #657); the key a user's artifact content URLs are signed under (issue #673). */
+export const SYSTEM_SECRETS = ['typesafe-api-key', 'artifact-content-key'] as const;
 export type SystemSecretName = (typeof SYSTEM_SECRETS)[number];
 const SYSTEM_PREFIX = 'system/';
 /** The vault row's name of a system secret. */

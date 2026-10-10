@@ -1,10 +1,10 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), and per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), and per new artifact (issue #673: `artifact.created`, with its link), the URL and key read from the runtime at each use.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
 // configured (a question escalated while it was not is not lost); Send test event and Send open
 // questions are the UI's actions. In memory only: no store row, no event.
 import type { Clock, DomainEvent, Notifier, NotifierActionResult, NotifierEvents, PluginLogger, Question } from '../../sdk.ts';
-import { intakePayload, questionPayload, testPayload } from './payload.ts';
+import { artifactPayload, intakePayload, questionPayload, testPayload } from './payload.ts';
 
 /** The routine's URL and bearer key now, or why there are none. */
 export type Routine = { url: string; key: string } | { problem: string };
@@ -27,7 +27,7 @@ const retriable = (status: number) => status === 429 || status >= 500;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function wanted(e: DomainEvent): boolean {
-  if (e.type === 'source.stalled' || e.type === 'connected_account.expired') return true;
+  if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created') return true;
   return e.type === 'question.escalated_to_human';
 }
 
@@ -99,7 +99,9 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     if (!wanted(e)) return;
     // Listeners must not re-enter synchronously (ports.ts): defer the work.
     track(new Promise<void>((r) => setImmediate(r)).then(() => {
-      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, e.jobId ? feed?.job(e.jobId) : undefined));
+      const job = e.jobId ? feed?.job(e.jobId) : undefined;
+      if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
+      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job));
       const q = feed?.question(e.data.questionId as string);
       if (!q || sent.has(q.id) || 'problem' in routine()) return false;
       return sendQuestion(q, false, e.at);
