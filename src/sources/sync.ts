@@ -135,7 +135,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   async function finishedIfClosedAsComplete(slot: Slot, job: Job): Promise<boolean> {
     if (!slot.source.closedAsComplete) return true;
     try {
-      if (await slot.source.closedAsComplete(job)) host.finishClosedAsComplete(job.id);
+      if (await slot.source.closedAsComplete(job)) host.finishShipped(job.id);
       return true;
     } catch (e) {
       slot.retrying.set(job.id, message(e));

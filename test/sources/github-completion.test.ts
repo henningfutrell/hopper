@@ -169,16 +169,67 @@ describe('closed as complete (issue #350)', () => {
     await expect(source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).rejects.toThrow('Bad Gateway');
   });
 
-  it('itemClosed (issue #529): an issue closed any way, or gone, is closed; an open one is not; a transient error throws', async () => {
+  it('workState (issues #529, #621): an issue closed as completed is done, closed any other way is closed, deleted is gone; a transient error throws', async () => {
     const { gh, source } = setup();
     for (let n = 1; n <= 4; n++) gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.closeIssue(REPO, 1, 'owner', { at: AFTER });
     gh.closeIssue(REPO, 2, 'owner', { at: AFTER, reason: 'not_planned' });
     gh.deleteIssue(REPO, 4);
     const failed = (n: number) => jobForIssue(n, { status: 'failed' });
-    expect(await Promise.all([1, 2, 3, 4].map((n) => source.itemClosed!(failed(n))))).toEqual([true, true, false, true]);
+    expect((await Promise.all([1, 2, 3, 4].map((n) => source.workState!(failed(n))))).map((w) => w?.item)).toEqual(['done', 'closed', 'open', 'gone']);
     gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
-    await expect(source.itemClosed!(failed(3))).rejects.toThrow('Bad Gateway');
+    await expect(source.workState!(failed(3))).rejects.toThrow('Bad Gateway');
+  });
+});
+
+describe('what a failed job\'s work shows on GitHub (issue #621)', () => {
+  const failed = (n: number) => jobForIssue(n, { status: 'failed' });
+  const numberOf = (url: string) => Number(url.split('/').at(-1));
+
+  it('no pull request: the issue open, none listed', async () => {
+    const { source } = withIssue();
+    expect(await source.workState!(failed(1))).toEqual({ item: 'open', pullRequests: [] });
+  });
+
+  it('the job\'s own pull request, a draft: opened, open, a draft', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
+    expect(await source.workState!(failed(1))).toEqual({
+      item: 'open', pullRequests: [{ url: pr.url, number: numberOf(pr.url), by: 'opened', state: 'open', draft: true, conflicting: false }],
+    });
+  });
+
+  it('the job\'s own pull request merged: opened and merged, the issue done', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: AFTER });
+    expect(await source.workState!(failed(1))).toEqual({
+      item: 'done', pullRequests: [{ url: pr.url, number: numberOf(pr.url), by: 'opened', state: 'merged', draft: false, conflicting: false }],
+    });
+  });
+
+  it('a pull request the issue names, pushed to by the job and merged: updated and merged (the #613 case)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const older = gh.openPullRequest(REPO, 1, { createdAt: BEFORE });
+    gh.createIssue({ repo: REPO, labels: ['hopper'], body: `Rebase #${numberOf(older.url)} onto dev.` });
+    gh.pushToPullRequest(older.url, AFTER);
+    gh.mergePullRequest(older.url, AFTER);
+    expect(await source.workState!(failed(2))).toEqual({
+      item: 'open', pullRequests: [{ url: older.url, number: numberOf(older.url), by: 'updated', state: 'merged', draft: false, conflicting: false }],
+    });
+  });
+
+  it('an older pull request nobody pushed to since the job began is not the job\'s work', async () => {
+    const { gh, source } = withIssue();
+    gh.openPullRequest(REPO, 1, { createdAt: BEFORE });
+    expect(await source.workState!(failed(1))).toEqual({ item: 'open', pullRequests: [] });
+  });
+
+  it('the job\'s own pull request closed without a merge: opened and closed', async () => {
+    const { gh, source } = withIssue();
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER });
+    gh.closePullRequest(pr.url);
+    expect((await source.workState!(failed(1)))?.pullRequests).toEqual([{ url: pr.url, number: numberOf(pr.url), by: 'opened', state: 'closed', draft: false, conflicting: false }]);
   });
 });
 

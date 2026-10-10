@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -1872,7 +1872,7 @@ merge is never a failure.
 after its work landed: its pane ends on a restart after its own pull request merged, a credential
 expires while it waits on a question, or it closes its issue with a commit and then trips. Before
 the sync loop reports a failed job, it asks the source `closedAsComplete(job)` (GitHub: closed as complete,
-above, `src/sources/github/completion.ts`); true → `SourceHost.finishClosedAsComplete`
+above, `src/sources/github/completion.ts`); true → `SourceHost.finishShipped`
 ends the job `finished` (its `error` cleared; `job.finished` with result `issue closed as complete`,
 after the `job.failed` already logged), and the report labels the issue `hopper:done`, never
 `hopper:failed`. Any failure path is covered — the runner's outcome, restart recovery, an expired
@@ -8050,7 +8050,7 @@ commands, on the same footing as issue #374's.
 - **Who acted** (the **acting person**). Each person's action on Failures keeps who and the way in its event:
   `person` (the session's identity name; `operator CLI` for the CLI) and `via` (`ui`, or `cli` when the session's
   realm is `cli`). On `failure.resolved` (with the `note`), the new `failure.released`, `handoff.closed` (and
-  `via` on the hand-off's resolution) and `job.rerun` (a failure's Retry, a hand-off's I fixed it or Continue in a
+  `via` on the hand-off's resolution) and `job.rerun` (a failure's Retry, a hand-off's Run again or Continue in a
   new job). Additive fields: the event versions stay. The check's resolution and the assessor's runs again carry
   none.
 - **A note on a problem.** `POST /ui/api/failures/problems/:id/resolve` takes an optional `{ note }`, kept in
@@ -8521,7 +8521,7 @@ job ends finished (`finished`: its issue closed as complete). A failure whose
 item already ran again when it is assessed is **superseded** (issue #517) and opens none; one whose item runs again
 later, by a way that records no run again on it (the Queue's Run again, the source), turns `superseded` by the sweep,
 `nextJobId` the newer job. Run again from
-Needs a person (I fixed it, Continue) runs the item again past the retry limit and past its problem's hold (Release /
+Needs a person (Run again, Continue) runs the item again past the retry limit and past its problem's hold (Release /
 Retry with override: one action), and marks the record `retried`.
 
 **It never goes by itself.** The prune deletes closed hand-offs older than `handoffRetentionDays` (default 30) and
@@ -8529,14 +8529,15 @@ never an open one; the failure records' prune does not touch them.
 
 **Stale data clears itself (issue #529, 2026-10-09).** A hand-off nothing waits on any more closes without a person,
 by the same rule at start and on every sweep, so one recorded before the rule existed clears on the upgrade. Closed,
-never deleted, with why (`handoffs.ts` `settle`, `itemClosed`):
+never deleted, with why (`handoffs.ts` `settle`, `checked`):
 
 - a newer job of its item exists that no `job.queued` closed it for — a store from the build before, or a newer job
   made while nothing followed the events (`superseded`, `nextJobId` the newer job); its record turns `superseded`;
 - its job ended finished (`finished`) or is gone (`job_gone`);
-- its item is closed at its source, by any means, or gone (`item_closed`): the sweep asks the source
-  (`JobSource.itemClosed`; GitHub: the issue's state, 404/410 gone) for each open hand-off at most every 10 minutes,
-  and at start; its record turns `item_closed`. A source that cannot tell leaves it open.
+- its item is closed at its source any way but as completed, or gone (`item_closed`): the sweep's work check
+  (`work-check.ts`, below "What happened, from the work") asks the source (`JobSource.workState`; GitHub: the issue's
+  state, 404/410 gone) for each open hand-off, at once for a new one and then at most every 10 minutes; its record
+  turns `item_closed`. A source that cannot tell leaves it open. Closed as completed, the work shipped: below.
 
 A record nothing waits on (`superseded`, `item_closed`: `SETTLED`, `handoff.ts`) leaves Recent failures; the profile
 and the history still count it. The badge and `counts` follow the open hand-offs.
@@ -8550,12 +8551,14 @@ day** (`handoffs` with `status: closed`, `ended` in `GET /api/failures`), out of
 logins: an open question whose job ended or is gone is cancelled at `recover` and on each tick (`QuestionService.sweep`),
 and a login, below in "Logins".
 
-**Events.** `handoff.opened` (reason, summary, `notify`) and `handoff.closed` (end, `nextJobId`). `notify` is the
+**Events.** `handoff.opened` (reason, summary, `notify`), `handoff.closed` (end, `nextJobId`) and `handoff.checked`
+(its work state changed, issue #621: `item`, how many `pullRequests`, `shipped`). `notify` is the
 setting `handoffNotify` (default on); off, the event is still recorded and streamed, but no webhook delivers it — the
 dispatcher delivers no event whose data says `notify: false`.
 
-**Failures view.** Needs a person first, its own count, then the open problems: each hand-off with its reason, the
-assessment summary (its reasons and error behind Assessment), and its resolution (below, issue #551). The Failures nav
+**Failures view.** Needs a person first, its own count, then the open problems: each hand-off with its reason, what
+happened in one plain sentence and the recommended resolution (its **card**, issue #621, below), its resolutions
+(below, issue #551), and behind **Details** the assessment summary, the known cause, the reasons and the raw error. The Failures nav
 badge counts open problems plus open hand-offs, read again on each `handoff.*` event: still open means still counted.
 
 ### Resolving a hand-off (issue #551, 2026-10-09)
@@ -8564,8 +8567,8 @@ Run again (a cold job, told nothing) and Clear (closed, nothing recorded) left a
 doing it would lead to, or where to say what they did; the issue stayed `hopper:failed`. Now a card says it and takes
 the answer.
 
-**What to do.** Each card says the next step for its reason (`HANDOFF_NEXT_STEP`, `ui/src/model/failures.ts`) and, by
-each resolution, what it leads to — for Continue whether the job's own session resumes (`continueResumes`) or a new
+**What to do.** Each card says what happened and recommends one resolution (its **card**, issue #621, below) and, by
+each other resolution, what it leads to — for Continue whether the job's own session resumes (`continueResumes`) or a new
 job runs. A resolution the daemon does not take now is said with its reason (`actions[*].why`), never offered.
 
 **One place to answer.** A note box and four resolutions (`POST /ui/api/failures/handoffs/:id/resolve`, operator;
@@ -8580,8 +8583,9 @@ job runs. A resolution the daemon does not take now is said with its reason (`ac
   finds the session), `--resume <session>`, the brief typed in. Its new failure is assessed on its own (the record
   continued is `retried`, `nextJobId` its own id). Otherwise a new job of its item runs (Run again with the brief after
   its prompt: the earlier error, the assessment and the note).
-- **I fixed it** — the cause was outside the job; Run again with the note.
-- **Done by hand** — its job ends finished (`result` the link); its record `resolved`.
+- **Run again** (`fixed`; *I fixed it* before #621) — the cause was outside the job; Run again with the note.
+- **Done** (`done_by_hand`; *Done by hand* before #621) — the work is done, by the job's pull request or by a
+  person; its job ends finished (`result` the link); its record `resolved`.
 - **Won't do** — the note (required) says why; its locked entry is dismissed; its record `resolved`.
 
 A run again a resolution makes closes the hand-off with the resolution, not by the new job's `job.queued` (the
@@ -8591,8 +8595,8 @@ hand-offs being resolved are skipped there).
 here and never written out —, when, note, link, `resumed`) and `handoff.closed` carries its action. The sync loop tells
 the job's source (`JobSource.resolved`) on the job's report chain, after the job's own end is reported, at once on
 the event and again at each sync while `writeBack` is `pending` (a transient error is kept as `writeBackError`; a
-permanent one ends `failed`). On GitHub (`writeResolution`): Done by hand `hopper:done`, Won't do `hopper:rejected`,
-in place of `hopper:failed`, so the issue is not taken again; Continue and I fixed it took it back already; then one
+permanent one ends `failed`). On GitHub (`writeResolution`): Done `hopper:done`, Won't do `hopper:rejected`,
+in place of `hopper:failed`, so the issue is not taken again; Continue and Run again took it back already; then one
 comment — what was done, the note quoted, the link — naming no person. It is the hopper's one comment (AGENTS.md
 "GitHub text is neutral").
 
@@ -8600,6 +8604,46 @@ comment — what was done, the note quoted, the link — naming no person. It is
 known causes (`POST /ui/api/failures/causes`, keyed by the record's signature): the next failure with it follows that.
 
 **Follow it.** The card links the job that follows (`nextJobId`): the same job continued, or the new one.
+
+### What happened, from the work (issue #621, 2026-10-10)
+
+A card that repeated the raw error — "not complete: no pull request opened by this job…" — with a next step chosen by
+the hand-off's reason left a person unable to tell what happened: the #613 job had updated a pull request that was
+already merged, and the card still said the job hit a problem of its own. Now the hopper checks the real state first,
+and the card says it.
+
+**The work check** (`work-check.ts`, in the failure sweep). For each open hand-off, at once for a new one and then at
+most every 10 minutes, the sweep asks the job's source what its work shows (`JobSource.workState`): its item — `open`,
+`done` (closed as completed), `closed` (any other way), `gone` — and the pull requests the job opened or pushed to,
+each with its number, `by` (`opened`: created at or after the job; `updated`: its head commit made at or after the job,
+issue #618), its state (open, merged, closed), draft and merge conflicts. GitHub (`completion.ts` `workState`) reads the
+issue, the merged pull request that closed it, the open pull requests that close it, the pull requests that mention it
+in its own repo, and those the issue's text names (as the done-check does, at most 10). The answer is kept on the
+hand-off (`work`, with `checkedAt`; JSON in its row: no migration, the build before ignores it); `handoff.checked` says
+when it changed. A source that cannot tell, or fails to, leaves the hand-off as it was, asked again later.
+
+**The work shipped** (`workShipped`, glossary **Shipped**): a pull request of the job's merged, or its item closed as completed. Nothing is left
+to do, so the hopper closes the hand-off itself (`finished`) and the job ends finished (`SourceHost.finishShipped`,
+`job.finished`, `result` what happened and the merged pull request's link); its end is reported to its source again, so
+on GitHub its issue loses `hopper:failed` (`hopper:done` once closed, else `hopper:pr-ready`). A job whose pull request
+merged never stays a failure. Its item closed any other way, or gone: the hand-off closes `item_closed`, as before.
+
+**The card** (`card.ts` `handoffCard`, pure; `HandoffView.card`). `whatHappened`: short ASD-STE100 sentences from the
+work, never from the error — "The job updated PR #616. #616 is merged. The issue is done.", "The job stopped before it
+opened or updated a PR." — naming at most two pull requests (merged first, then open and ready, open otherwise, closed),
+counting the rest. Before the first answer: "The job stopped with an error. The hopper is checking its PRs and its
+issue." `recommended` and `why`, in order: the work shipped → Done ("The work is done."); the item closed or gone → Won't
+do; the first pull request open and ready → Done, with its link ("The PR is ready. Review and merge it."); with merge
+conflicts or a draft → Continue; closed without a merge → Run again; no pull request → by the reason (job-specific:
+Continue; retries used up, automatic action off, run again refused: Run again; dismissed: Won't do). `link`: the pull
+request Done points at, put in the Link box.
+
+**The view.** The card's sentence first, then the recommended resolution as the main button with its why, the others
+after it, smaller, each with what it leads to; the assessment summary, the known cause, the reasons and the raw error
+behind **Details**. A viewer sees the recommendation without buttons. The buttons read Done, Continue, Run again,
+Won't do; the actions (`done_by_hand`, `continue`, `fixed`, `wont_do`) and the API are unchanged.
+
+Not built: a model's one-line summary of a complex cause (issue #569's TL;DR), which #621 left optional.
 
 Not done here, carried: Park, ask a question, or send to another machine or model as resolutions; a model-written
 diagnosis of the failure on the card (issue #550).

@@ -221,6 +221,37 @@ export interface HandoffResolution {
 }
 
 /**
+ * Where a job's item is at its source (issue #621): `open`; `done` — closed as completed, by any means; `closed` —
+ * closed any other way (not planned, a duplicate); `gone` — deleted, or no longer there.
+ */
+export const WORK_ITEM_STATES = ['open', 'done', 'closed', 'gone'] as const;
+export type WorkItemState = typeof WORK_ITEM_STATES[number];
+
+/** A pull request of a job's work (issue #621): one it opened, or one it pushed to (an updated pull request, issue #618). */
+export interface WorkPullRequest {
+  url: string;
+  number: number;
+  by: 'opened' | 'updated';
+  state: 'open' | 'merged' | 'closed';
+  draft: boolean;
+  conflicting: boolean;
+}
+
+/**
+ * What a failed job's work shows at its source (issue #621): its item and the pull requests it opened or pushed to. The
+ * source says it (`JobSource.workState`); the hand-off keeps the last answer with when it was asked (`checkedAt`).
+ */
+export interface WorkState {
+  item: WorkItemState;
+  pullRequests: WorkPullRequest[];
+  checkedAt: string;
+}
+
+/** The work shipped (issue #621): a pull request of the job's merged, or its item closed as completed. Nothing is left to do. */
+export const workShipped = (w: Pick<WorkState, 'item' | 'pullRequests'>): boolean =>
+  w.item === 'done' || w.pullRequests.some((pr) => pr.state === 'merged');
+
+/**
  * A hand-off (issue #516): a failed job automatic handling ended for, waiting on a person — Failures, Needs a person.
  * Open until a person resolves it (issue #551) or its item runs again; never dropped by age. It keeps what the assessment said, so it
  * outlives the failure record's retention.
@@ -245,6 +276,8 @@ export interface Handoff {
   nextJobId?: string;
   /** What a person did about it (issue #551); absent for one closed by anything else. */
   resolution?: HandoffResolution;
+  /** What its job's work showed at its source when last asked (issue #621); absent until asked, or when it cannot tell. */
+  work?: WorkState;
 }
 
 /** Whether the daemon takes an action now, and why not. */
@@ -262,8 +295,20 @@ export interface ProblemView extends Problem {
  * job's own agent session; false, it runs a new job. `signature`, `causeName`: its failure record's, while the
  * record is kept, so a person can name its cause from the card.
  */
+/**
+ * What a hand-off's card says first (issue #621): `whatHappened`, one plain sentence or a few, from its work state —
+ * never the raw error —; the resolution to take (`recommended`) and why, in a few words; for Done, the link to the work.
+ */
+export interface HandoffCard {
+  whatHappened: string;
+  recommended: HandoffResolutionAction;
+  why: string;
+  link?: string;
+}
+
 export interface HandoffView extends Handoff {
   actions: { continue: Allowed; fixed: Allowed; doneByHand: Allowed; wontDo: Allowed };
+  card: HandoffCard;
   continueResumes: boolean;
   signature?: string;
   causeName?: string;

@@ -27,9 +27,9 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper problem resolve <id> [--note <text>]        resolve a problem: its held jobs run again, new jobs are no longer held
   hopper handoff list                                the open hand-offs (Needs a person)
   hopper handoff continue <id> [--note <text>]       Continue: the job goes on, told the note
-  hopper handoff fixed <id> [--note <text>]          I fixed it: a new job of its item runs, told the note
+  hopper handoff fixed <id> [--note <text>]          Run again: a new job of its item runs, told the note
   hopper handoff done-by-hand <id> [--note <text>] [--link <url>]
-                                                     Done by hand: its job ends finished; the link is the work (a pull request)
+                                                     Done: its job ends finished; the link is the work (a pull request)
   hopper handoff wont-do <id> --note <why>           Won't do: no more work on it; the note says why
   hopper failure list                                the open failures
   hopper failure retry <id>                          run a failure's job again`;

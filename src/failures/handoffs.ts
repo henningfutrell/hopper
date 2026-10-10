@@ -11,11 +11,14 @@
 // source is told (the sync loop, `handoff.closed` with `resolution`). Stale data clears itself (issue
 // #529): the sweep, and the start, close an open hand-off nothing waits on any more — a newer job of its item that no
 // `job.queued` closed it for (a store from the build before), its job finished or gone, its item closed at its source.
+// What its job's work shows at its source (issue #621, the work check) is kept on it for its card; work that shipped —
+// a pull request of the job's merged, its item closed as completed — closes it and finishes its job.
 import type { Clock, RerunBy, RerunResult, UserStore } from '../domain/ports.ts';
 import {
   jobPriorityTag, type ActingPerson, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
-  type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job,
+  type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job, type WorkState, workShipped,
 } from '../domain/types.ts';
+import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
 import { handoffView, newerOf, newestOfItem, RESOLUTION_TEXT } from './view.ts';
@@ -35,6 +38,8 @@ export interface HandoffsOptions {
   continueJob(jobId: string, brief: string, handoffId: string): Promise<RerunResult>;
   /** Whether the job's own agent session can resume: its executor parks, and it recorded one. */
   resumable(job: Job): boolean;
+  /** Finish a failed job whose work shipped (issue #621), its end told to its source again. false: it is no longer failed. */
+  finishShipped(jobId: string, result: { summary: string; link?: string }): boolean;
   /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too. Throws when it is not one. */
   dismiss(jobId: string): void;
   logger: { warn(line: string): void };
@@ -57,8 +62,12 @@ export interface Handoffs {
    * job finished (`finished`) or gone (`job_gone`). A store from the build before included.
    */
   settle(): void;
-  /** Its item is closed at its source (issue #529): the open hand-off closes, its record `item_closed`. */
-  itemClosed(id: string): void;
+  /**
+   * What the open hand-off's work showed at its source (issue #621), kept on it, with `handoff.checked` when it changed.
+   * The work shipped: it closes (`finished`) and its job ends finished. Its item closed any other way, or gone (issue
+   * #529): it closes (`item_closed`), its record `item_closed`.
+   */
+  checked(id: string, work: WorkState): void;
   /** Follow the job events that open or close a hand-off. */
   onEvent(e: DomainEvent): void;
   /** A person resolves an open hand-off (issue #551), `by` the person the UI session signed in, and the way (issue #623). */
@@ -241,13 +250,29 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
         });
       }
     },
-    itemClosed(id) {
-      store.tx(() => {
+    checked(id, work) {
+      const shipped = store.tx(() => {
         const h = store.handoffs.get(id);
-        if (h?.status !== 'open') return;
-        close(h, 'item_closed');
-        settleRecord(h, 'item_closed', 'its item is closed at its source');
+        if (h?.status !== 'open') return undefined;
+        const before = h.work ? JSON.stringify({ ...h.work, checkedAt: '' }) : undefined;
+        const cur = store.handoffs.update(id, { work });
+        const isShipped = workShipped(work);
+        if (before !== JSON.stringify({ ...work, checkedAt: '' })) {
+          store.events.append({ type: 'handoff.checked', jobId: h.jobId, data: { handoffId: h.id, item: work.item, pullRequests: work.pullRequests.length, shipped: isShipped } });
+        }
+        if (isShipped) {
+          close(cur, 'finished');
+          const card = handoffCard(cur, false);
+          return { jobId: cur.jobId, result: { summary: card.whatHappened, ...(card.link ? { link: card.link } : {}) } };
+        }
+        if (work.item === 'closed' || work.item === 'gone') {
+          close(cur, 'item_closed');
+          settleRecord(cur, 'item_closed', 'its item is closed at its source');
+        }
+        return undefined;
       });
+      // Its job ends finished, and its source is told so in place of the failure.
+      if (shipped) o.finishShipped(shipped.jobId, shipped.result);
     },
     onEvent(e) {
       const id = e.jobId;
