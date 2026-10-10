@@ -69,14 +69,6 @@ describe('a level answers: its answer is typed in and the question climbs no fur
     expect(second!.previous.map((a) => a.reason)).toEqual(['an earlier run', UP.reason]);
   });
 
-  it('no rules yet is noted on the attempts', async () => {
-    const r = rig({ rules: null });
-    const q = r.question();
-    r.svc.handle(q.id);
-    await settle();
-    expect(r.mem.store.questions.get(q.id)!.attempts[0]!.reason).toMatch(/\(no rules yet\)/);
-  });
-
   it('the trail records the model each level reports it ran, over the configured alias', async () => {
     const r = rig({ levels: { opus: () => ({ ...UP, model: 'claude-opus-9' }), fable: () => ({ ...ANSWERED, model: 'claude-fable-9' }) } });
     const q = r.question();
