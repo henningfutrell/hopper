@@ -48,6 +48,15 @@ export function intakePayload(e: DomainEvent, job: Job | undefined): Record<stri
   return b;
 }
 
+/** A new artifact (issue #673): what a job made for the person to see, and where they open it. */
+export function artifactPayload(e: DomainEvent, job: Job | undefined, url: string | undefined): Record<string, unknown> {
+  const d = e.data as { artifact: string; title: string; type: string; size: number; issue?: string };
+  return {
+    ...base(e.type, e.at, job, e.jobId), artifactId: d.artifact, title: d.title, type: d.type, size: d.size,
+    ...(d.issue ? { issueUrl: d.issue } : {}), ...(url ? { url } : {}),
+  };
+}
+
 /**
  * Send test event (issue #378): marked `test: true`, so a receiver can tell it from a question. Its kind is a
  * question's (issue #481), so the receiver's routing takes the same path as for a real one.

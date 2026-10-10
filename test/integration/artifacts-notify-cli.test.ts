@@ -41,7 +41,7 @@ async function hopper(a: TestApp, argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
   const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) };
-  const code = await runCli([...argv, '--url', a.url], io);
+  const code = await runCli([...argv, '--url', a.url, '--user', 'admin'], io);
   return { code, out: out.join(''), err: err.join('') };
 }
 
@@ -77,7 +77,7 @@ describe('artifacts: notify and CLI (issue #673)', () => {
     const got = await hopper(a, ['artifact', 'get', art.id]);
     expect(JSON.parse(got.out)).toMatchObject({ id: art.id, shares: [] });
 
-    const shared = await hopper(a, ['artifact', 'share', art.id, '--user', 'bob']);
+    const shared = await hopper(a, ['artifact', 'share', art.id, '--with', 'bob']);
     expect(shared.code).toBe(0);
     const share = (JSON.parse(shared.out) as { share: { id: string; userName: string } }).share;
     expect(share.userName).toBe('bob');

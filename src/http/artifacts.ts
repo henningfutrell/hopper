@@ -12,10 +12,9 @@
 //
 // Neither content route is under /api/: a browser loads it into an <img> or a sandboxed <iframe>, which carries no
 // session header. Each serves under the policy of its kind (src/artifacts/content.ts). Nothing here changes anything.
-import { isIPv4 } from 'node:net';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ArtifactViewer, Access } from '../authz/service.ts';
-import { CONTENT_PATH, contentHeaders, createContentSigner, LINK_PATH, type ContentSigner } from '../artifacts/index.ts';
+import { artifactBase, artifactUrl, CONTENT_PATH, contentHeaders, createContentSigner, LINK_PATH, type ContentSigner } from '../artifacts/index.ts';
 import { shareLive, type Artifact, type ArtifactView, type ArtifactsView } from '../domain/artifacts.ts';
 import type { Clock } from '../domain/ports.ts';
 import { HttpError } from './errors.ts';
@@ -43,20 +42,11 @@ export interface ArtifactEdge {
   view(t: TenantParts, a: Artifact, viewer: string, base: string, owner?: string): ArtifactView;
 }
 
-/** A LAN name a LAN client resolves without help: an IPv4 address, or a multicast DNS name. */
-const resolvable = (name: string): boolean => isIPv4(name) || name.endsWith('.local');
-
 export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => number; tenants: Pick<Tenants, 'user'> }): ArtifactEdge {
   const signer = createContentSigner({ now: () => o.clock.now().getTime(), key: (owner) => o.tenants.user(owner)?.artifacts.contentKey() });
-  const lanName = (): string | undefined => o.lan.names.find(resolvable) ?? o.lan.names[0];
   const edge: ArtifactEdge = {
     signer,
-    base(t) {
-      const set = t.artifacts.settings().linkBase;
-      if (set) return set;
-      const name = lanName();
-      return o.lan.publicUrl ? new URL(o.lan.publicUrl).origin : name ? `http://${name}:${o.port()}` : `http://127.0.0.1:${o.port()}`;
-    },
+    base: (t) => artifactBase({ linkBase: t.artifacts.settings().linkBase, publicUrl: o.lan.publicUrl, lanNames: o.lan.names, port: o.port() }),
     baseOf(req) {
       const host = (req.headers.host ?? '').toLowerCase();
       // The Host guard let it in: it is loopback, a LAN name or the public URL's host.
@@ -65,7 +55,7 @@ export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => numb
     },
     publicBase: () => (o.lan.publicUrl ? new URL(o.lan.publicUrl).origin : undefined),
     origins: () => uiOrigins(o.port(), o.lan).map((u) => new URL(u).origin),
-    url: (base, id) => `${base}/#artifacts/${id}`,
+    url: artifactUrl,
     view(t, a, viewer, base, owner) {
       const token = signer.sign({ owner: a.userId, id: a.id, viewer });
       return {

@@ -254,6 +254,8 @@ export interface NotifierEvents {
   answerUrl(questionId: string): string;
   /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
   highPriority?(): number;
+  /** Where a person opens an artifact (issue #673): its stable URL under the user's link base. Absent: not known. */
+  artifactUrl?(id: string): string;
 }
 
 /**

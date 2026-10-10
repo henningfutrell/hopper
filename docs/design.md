@@ -2431,7 +2431,9 @@ question reaches the owner (questions never go onto the issue), and when intake 
 - Events: `question.escalated_to_human` (issue #481: once per question that reaches the human; never a level
   hop or a re-notification, so never `question.escalated`, which other consumers keep); `source.stalled`
   (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
-  `account`, `reason`). Never `job.finished` or `job.failed`.
+  `account`, `reason`); `artifact.created` (issue #673: body adds `artifactId`, `title`, `type`, `size`, `issueUrl` and
+  `url`, the artifact's stable URL under the user's link base — `NotifierEvents.artifactUrl`). Never `job.finished` or
+  `job.failed`.
   A Grok Bot routine reached through a **Webhook subscription** instead subscribes to
   `question.escalated_to_human` only, by name, for the same one post per question.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
@@ -10769,6 +10771,12 @@ job, question, proposal, research report and failure cards, through `JobTitle` �
 research report embeds an artifact by putting its URL in its text: the review card previews each one it links.
 Settings → Artifacts (admin): the most one artifact and all of the user's may hold, the retention, public links on or
 off, and their default and most hours.
+
+**Notify and the CLI** (issue #673). A new artifact reaches the person through their notifier: the Grok Bot routine posts
+`artifact.created` with the artifact's link ("Grok Bot routine webhook"). The operator CLI (`src/cli-operator.ts`, issue
+#623: JSON out) has `hopper artifact list`, `get <id>`, `share <id> --with <name> | --public [--hours <n>]`, `revoke <id>
+<share>` and `rm <id>`, each the UI's own read or `POST /ui/api/artifacts/…`; `--with`, since `--user` names the user the
+CLI acts as.
 
 **GitHub.** A link to an artifact on GitHub is a link to the hopper, which the publishing rule allows only through the
 public URL: `list --markdown` gives links only when the hopper has one, else the titles, said to be on the hopper.
