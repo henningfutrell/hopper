@@ -49,6 +49,16 @@ type asset
     define can_write: requester from grants_write
     define can_sync: requester from grants_sync
     define can_apply: requester from grants_apply
+
+# A public link to an artifact (issue #624): anybody who holds it, while it is live.
+type link
+
+# A file a job made for a person to see (issue #624). Its owner sees it; the hopper writes each live share as a viewer.
+type artifact
+  relations
+    define owner: [user]
+    define viewer: [user, link]
+    define can_view: owner or viewer
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -73,16 +83,29 @@ const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
 ];
 const ASKED: readonly [type: string, relation: string][] = OPERATIONS.map((op) => ['asset', `can_${op}`]);
 
+/** What the hopper writes and asks for artifacts (issue #624): apart, so a model edited before them still decides mints. */
+const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
+const ARTIFACT_ASKED: readonly [type: string, relation: string][] = [['artifact', 'can_view']];
+
 /** Each relation the hopper needs that the model lacks (`type#relation`) or no longer lets it write (`… accepts type`); empty: none. */
 export function modelGaps(model: ModelJson): string[] {
+  return gapsIn(model, WRITTEN, ASKED);
+}
+
+/** What the model lacks for artifacts (issue #624); empty: shares are decided. A gap here denies every share, never a mint. */
+export function artifactGaps(model: ModelJson): string[] {
+  return gapsIn(model, ARTIFACT_WRITTEN, ARTIFACT_ASKED);
+}
+
+function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {
   const def = (type: string) => model.type_definitions.find((t) => t.type === type);
   const gaps: string[] = [];
-  for (const [type, relation, accepts] of WRITTEN) {
+  for (const [type, relation, accepts] of written) {
     const t = def(type);
     if (!t?.relations?.[relation]) { gaps.push(`${type}#${relation}`); continue; }
     const direct = t.metadata?.relations?.[relation]?.directly_related_user_types ?? [];
     if (!direct.some((d) => d.type === accepts)) gaps.push(`${type}#${relation} accepts ${accepts}`);
   }
-  for (const [type, relation] of ASKED) if (!def(type)?.relations?.[relation]) gaps.push(`${type}#${relation}`);
+  for (const [type, relation] of asked) if (!def(type)?.relations?.[relation]) gaps.push(`${type}#${relation}`);
   return gaps;
 }

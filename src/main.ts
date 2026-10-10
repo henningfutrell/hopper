@@ -156,6 +156,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       boxes: rt.vault.boxes(),
     })),
     templates: () => runtimes.all().flatMap((rt) => rt.vault.templateScopes()),
+    // Every live share of an artifact (issue #624): a viewer in OpenFGA while it lasts.
+    shares: () => {
+      const now = clock.now().toISOString();
+      return runtimes.all().flatMap((rt) => rt.store.artifacts.liveShares(now).map((s) => ({
+        ownerId: rt.user.id, artifactId: s.artifactId, shareId: s.id, ...(s.kind === 'user' && s.userId !== undefined ? { userId: s.userId } : {}),
+      })));
+    },
   });
   // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it.
   const minter = createCredentialMinter();

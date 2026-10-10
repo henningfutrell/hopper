@@ -1,7 +1,7 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-import { ChevronsUp, FileCheck, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+import { ChevronsUp, FileCheck, FolderOpen, Gauge, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -10,7 +10,7 @@ import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { SECTION_KINDS } from '@/model/sections';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'queue', ...SECTION_KINDS, 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', ...SECTION_KINDS, 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
@@ -21,6 +21,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   logins: { label: 'Logins', icon: KeyRound },
   failures: { label: 'Failures', icon: OctagonAlert },
   parked: { label: 'Parked', icon: CirclePause },
+  artifacts: { label: 'Artifacts', icon: FolderOpen },
   decisions: { label: 'Decisions', icon: Scale },
   events: { label: 'Events', icon: ListTree },
   sources: { label: 'Sources', icon: Inbox },

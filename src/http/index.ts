@@ -3,6 +3,8 @@
 // passes the Host guard (AGENTS.md).
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
+import { artifactRoutes, createArtifactEdge } from './artifacts.ts';
+import { jobArtifactRoutes } from './job-artifacts.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
 import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
@@ -132,10 +134,15 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
   // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
   jobStreamRoutes(app, { tenants: o.tenants, subscribed: (userId, jobId) => { void skillWaits.redrive(userId, jobId); } });
+  // Artifacts (issue #624): a running job puts them with the same token; a person reads them, and their content is
+  // served off /api/ under the policy of its kind, by a signed URL or a public link.
+  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port });
+  jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge });
+  artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge,
   });
   return app;
 }

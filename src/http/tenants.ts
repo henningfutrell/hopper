@@ -11,6 +11,7 @@
 // mutation stays behind a UI session (src/http/ui/guard.ts).
 import type { Vault } from '../vault/vault.ts';
 import type { JobStream } from '../job-stream/index.ts';
+import type { UserArtifacts } from '../artifacts/index.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
 import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
@@ -60,6 +61,8 @@ export interface TenantParts {
   vault: Vault;
   /** The job stream (issue #613): what the user's running jobs subscribe to. */
   jobStream: JobStream;
+  /** The artifacts (issue #624): what the user's jobs make for a person to see. */
+  artifacts: UserArtifacts;
   /** The usage history's recorder: new usage samples (SSE usage.recorded, issue #502). */
   usageHistory: Pick<UsageRecorder, 'onRecorded'>;
   /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */

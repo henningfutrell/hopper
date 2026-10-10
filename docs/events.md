@@ -2731,6 +2731,125 @@ Version 1 (`docs/schemas/skill.refused.v1.json`). A running job asked for a skil
   "requestId": "r6",
   "machine": "desk",
   "skill": "example-api",
-  "reason": "the hopper has no skill example-api. It has: github, kube-diagnostics, aws-diagnostics. For another service, say what credential it takes: sh \"$HOPPER_SKILL\" example-api --credential \"<what it takes>\". Else find another way."
+  "reason": "the hopper has no skill example-api. It has: github, kube-diagnostics, aws-diagnostics, artifacts. For another service, say what credential it takes: sh \"$HOPPER_SKILL\" example-api --credential \"<what it takes>\". Else find another way."
+}
+```
+
+## `artifact.created`
+
+Version 1 (`docs/schemas/artifact.created.v1.json`). A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). Also on the job's stream.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `title` | string | yes |
+| `name` | string | yes |
+| `type` | string | yes |
+| `size` | integer | yes |
+| `sha256` | string | yes |
+| `issue` | string | no |
+| `masked` | integer | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "title": "Queue wait by hour",
+  "name": "chart.html",
+  "type": "text/html",
+  "size": 18432,
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "issue": "https://github.com/octo-org/hello/issues/7"
+}
+```
+
+## `artifact.shared`
+
+Version 1 (`docs/schemas/artifact.shared.v1.json`). An artifact was shared (issue #624): with another user of the hopper (`user`, their name), or as a public link that works until `expiresAt`. `by`: the person, or `job <id>`. Never the link.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `share` | string | yes |
+| `with` | `user` \| `link` | yes |
+| `user` | string | no |
+| `expiresAt` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "share": "s1",
+  "with": "link",
+  "expiresAt": "2026-10-11T12:00:00.000Z",
+  "by": "github:octocat"
+}
+```
+
+## `artifact.share_revoked`
+
+Version 1 (`docs/schemas/artifact.share_revoked.v1.json`). A share of an artifact was revoked (issue #624): the user no longer sees it, or the link stops working at once.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `share` | string | yes |
+| `with` | `user` \| `link` | yes |
+| `by` | string | yes |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "share": "s1",
+  "with": "link",
+  "by": "github:octocat"
+}
+```
+
+## `artifact.removed`
+
+Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`).
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `reason` | `removed` \| `retention` | yes |
+| `by` | string | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "reason": "retention"
+}
+```
+
+## `artifact.settings_changed`
+
+Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "maxBytes": 10485760,
+    "userBytes": 524288000,
+    "retentionDays": 30,
+    "publicLinks": true,
+    "linkHours": 24,
+    "linkHoursMax": 168
+  },
+  "to": {
+    "maxBytes": 10485760,
+    "userBytes": 524288000,
+    "retentionDays": 30,
+    "publicLinks": false,
+    "linkHours": 24,
+    "linkHoursMax": 168
+  },
+  "by": "github:octocat"
 }
 ```

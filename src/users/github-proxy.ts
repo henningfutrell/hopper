@@ -6,6 +6,7 @@ import type { ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../
 import type { Job, MachineSnapshot, User } from '../domain/types.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
+import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import {
   createProxyApi, holdsProxyToken, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
@@ -34,9 +35,10 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       const url = o.url(machine);
       if (!url) return undefined;
       return {
-        // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box.
-        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT },
-        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE },
+        // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
+        // (issue #624) puts what the job makes for a person to see.
+        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT },
+        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE },
         // The vault's helper (issue #558), where the machine's client serves one: it asks with this job's proxy token.
         vars: { [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}) },
       };

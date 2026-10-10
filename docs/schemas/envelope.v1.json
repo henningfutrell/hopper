@@ -144,6 +144,11 @@
         "skill.listed",
         "skill.loaded",
         "skill.refused",
+        "artifact.created",
+        "artifact.shared",
+        "artifact.share_revoked",
+        "artifact.removed",
+        "artifact.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

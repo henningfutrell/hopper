@@ -23,6 +23,7 @@ import { machineWorkTrees } from './migration-machine-work-trees.ts';
 import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
+import { ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -337,6 +338,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 33: the default ladder goes straight to the frontier level (issue #632): the old built-in opus level goes. The build
   // before runs on the one level left.
   noOpusLevel,
+  // 34: Artifacts (issue #624): what jobs make for a person to see, their content, and their shares.
+  ARTIFACT_TABLES,
 ];
 
 /** A user schema's version once migrated. */

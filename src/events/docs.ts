@@ -129,6 +129,11 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'skill.listed': 'A running job asked the hopper what it can set up (issue #582) and was answered the catalog. `machine` and `template`: the job\'s machine and the template it joined as, when it has one.',
   'skill.loaded': 'A running job loaded a skill (issue #582): `skill`, and for a link the `asset` and Access\'s `decision` (issue #559) that allowed it. The answer names the vault secrets the box may use, never a value.',
   'skill.refused': 'A running job asked for a skill and was told no (issue #582), with `reason`: a skill the hopper does not have, no asset or a wrong one, a machine of no template, Access denied it (`decision`), or no vault secret to give.',
+  'artifact.created': 'A running job put a file on the hopper for a person to see (issue #624): its title, file name, media type, size and SHA-256, and the issue of the job. `masked`: how many GitHub tokens were masked in it before it was kept (issue #597). Also on the job\'s stream.',
+  'artifact.shared': 'An artifact was shared (issue #624): with another user of the hopper (`user`, their name), or as a public link that works until `expiresAt`. `by`: the person, or `job <id>`. Never the link.',
+  'artifact.share_revoked': 'A share of an artifact was revoked (issue #624): the user no longer sees it, or the link stops working at once.',
+  'artifact.removed': 'An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`).',
+  'artifact.settings_changed': 'Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.',
 };
 
 type Prop = Record<string, unknown>;

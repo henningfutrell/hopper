@@ -8,6 +8,7 @@ import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
+import { Artifacts } from '@/views/artifacts';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
@@ -27,7 +28,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  overview: Overview, queue: Queue, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
 };
 
 function Loading() {

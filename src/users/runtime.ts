@@ -47,6 +47,7 @@ import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index
 import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
+import type { UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
@@ -135,6 +136,8 @@ export interface UserRuntime {
   vault: Vault; // issue #558: write-only secrets; issue #586: in the hopper or in a container of its own
   /** The job stream (issue #613): what the user's running jobs subscribe to, and the sweep of its watches. */
   jobStream: JobStream;
+  /** The artifacts the user's jobs make for a person to see (issue #624); their sweep starts and stops with the job stream. */
+  artifacts: UserArtifacts;
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
   /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
@@ -348,11 +351,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const history = createHistoryRecorders({
     readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
   });
-  const jobStream = openJobStream({ store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false;
   let stopped: Promise<void> | undefined;
   return {
-    jobStream,
+    jobStream, artifacts,
     githubProxy: proxy.githubProxy,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,

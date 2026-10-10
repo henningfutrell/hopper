@@ -125,7 +125,7 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(catalog.code).toBe(0);
     const lines = catalog.stdout.trim().split('\n');
     expect(lines).toEqual(expect.arrayContaining([
-      expect.stringMatching(/^github: /), expect.stringMatching(/^kube-diagnostics: /), expect.stringMatching(/^aws-diagnostics: /),
+      expect.stringMatching(/^github: /), expect.stringMatching(/^kube-diagnostics: /), expect.stringMatching(/^aws-diagnostics: /), expect.stringMatching(/^artifacts: /),
     ]));
     expect(lines.at(-2)).toMatch(/sh "\$HOPPER_SKILL" NAME/);
     expect(lines.at(-1)).toMatch(/^A credential for any other service: sh "\$HOPPER_SKILL" SERVICE --credential/);
@@ -140,7 +140,7 @@ describe('the skill catalog and broker (issue #582)', () => {
 
     const other = await skill(a, job, ['example-api']);
     expect(other.code).toBe(1);
-    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
+    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, artifacts\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
     expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'example-api', reason: expect.stringContaining('no skill example-api') }) })]);
   });
 
