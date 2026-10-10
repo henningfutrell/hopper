@@ -47,7 +47,7 @@ async function boot(herdr: FakeHerdrClient, laneCount = 4, env: Record<string, s
  */
 async function runThenStop(herdr: FakeHerdrClient, o: { manual?: boolean } = {}): Promise<{ job: Job; paneId: string; agentName: string }> {
   const first = await boot(herdr);
-  if (o.manual) first.user().store.settings.setFailureSettings({ ...DEFAULT_FAILURE_SETTINGS, auto: { retry: false, hold: false, redirect: false } });
+  if (o.manual) first.user().store.settings.setFailureSettings({ ...DEFAULT_FAILURE_SETTINGS, auto: { retry: false, hold: false, redirect: false, continue: false } });
   const pulled = await first.pull({}, item);
   await waitFor(() => herdr.prompts.length === 1);
   const job = await first.waitForStatus(pulled.id, 'running');

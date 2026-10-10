@@ -1,6 +1,7 @@
 // The failures settings (issue #509), an admin's: the retry limit and backoff, the grouping threshold, which
 // decisions act by themselves, how long records are kept; whether a job handed off to a person tells the webhooks,
-// and how long a cleared hand-off is kept (issue #516). Saved to the daemon, applied without a restart.
+// and how long a cleared hand-off is kept (issue #516); how recent a timed-out job's output must be for it to count as
+// at work, and whether such a job goes on by itself (issue #630). Saved to the daemon, applied without a restart.
 // Keyed by the saved values, so a save starts the form from them again.
 import { Settings2 } from 'lucide-react';
 import { useState } from 'react';
@@ -18,6 +19,7 @@ const NUMBERS: { key: NumberKey; label: string; step?: string }[] = [
   { key: 'backoffMaxSec', label: 'Longest wait (s)' },
   { key: 'groupThreshold', label: 'Jobs to flag a cause' },
   { key: 'groupWindowMin', label: 'Within (min)' },
+  { key: 'activeWindowMin', label: 'Timed out: output within (min)' },
   { key: 'retentionDays', label: 'Keep records (days)' },
   { key: 'handoffRetentionDays', label: 'Keep cleared hand-offs (days)' },
 ];
@@ -25,6 +27,7 @@ const AUTO: { key: keyof FailureSettings['auto']; label: string }[] = [
   { key: 'retry', label: 'Retry transient failures' },
   { key: 'hold', label: 'Hold jobs for open problems' },
   { key: 'redirect', label: 'Redirect jobs to another machine' },
+  { key: 'continue', label: 'Continue timed-out jobs still at work' },
 ];
 
 function Form({ settings }: { settings: FailureSettings }) {
@@ -43,6 +46,7 @@ function Form({ settings }: { settings: FailureSettings }) {
       <p className="text-muted-foreground">
         A transient failure runs again up to {settings.maxAttempts} times, waiting {settings.backoffSec} s, then {settings.backoffFactor}× longer each time, at most {settings.backoffMaxSec} s.
         One signature on {settings.groupThreshold} jobs within {settings.groupWindowMin} min is flagged as a general cause.
+        A timed-out job with pane output in its last {settings.activeWindowMin} min, commits pushed or a pull request open goes on; a silent one runs again once.
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {NUMBERS.map((n) => (

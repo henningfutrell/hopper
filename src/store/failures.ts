@@ -24,6 +24,7 @@ export function createFailureRepository(c: StoreContext): FailureRepository {
     list(filter) {
       const conds: string[] = [];
       const args: (string | number)[] = [];
+      if (filter?.jobId !== undefined) { conds.push('job_id = ?'); args.push(filter.jobId); }
       if (filter?.since !== undefined) { conds.push('at >= ?'); args.push(filter.since); }
       if (filter?.signature !== undefined) { conds.push('signature = ?'); args.push(filter.signature); }
       if (filter?.problemId !== undefined) { conds.push("body::jsonb->>'problemId' = ?"); args.push(filter.problemId); }

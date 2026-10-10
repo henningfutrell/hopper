@@ -140,11 +140,12 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     }
     if (p.status !== 'working' || !p.turn) return;
     const t = p.turn;
-    if (t.end === 'working') return;
     if (p.step < (t.steps?.length ?? 0)) {
       p.lines.push(t.steps![p.step++]!);
       return;
     }
+    // Its steps shown, a turn that never ends works on, silent (issue #630).
+    if (t.end === 'working') return;
     if (t.hiddenUntilScrolled) p.hidden = [...t.output, '✻ Cooked for 1s'];
     else p.lines.push(...t.output, '✻ Cooked for 1s');
     p.turn = undefined;
@@ -311,10 +312,10 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       return fake.screen(paneId).includes(text);
     },
     // The machine's fixed scripts (issues #410, #441, #542): recorded, and refused while it cannot be reached.
-    async reap(jobId, scratch) {
+    async reap(jobId, scratch, keep) {
       onMachine('reap', jobId, scratch);
-      fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}) });
-      return { kept: [...(o.reapKeeps ?? [])] };
+      fake.reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}) });
+      return { kept: [...(o.reapKeeps ?? [])], ...(o.reapPushes?.length ? { pushed: [...o.reapPushes] } : {}) };
     },
     survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),
     discover: async () => (onMachine('discover'), o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } }),

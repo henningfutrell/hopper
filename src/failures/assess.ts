@@ -4,8 +4,10 @@
 // unless its cause is job-specific (issue #625); a transient cause runs
 // again with backoff within the retry limit; anything else goes to a person. Two cases act on nothing (issue #517):
 // a failure whose item already ran again is superseded, and one that failed more than a day before it was
-// assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others.
+// assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others. A
+// timed-out job (issue #630) is decided by its liveness first (`timed-out.ts`): its own, never grouped with others'.
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
+import { judgeTimeout, type LivenessFacts, type TimeoutKind } from './timed-out.ts';
 
 /** Another item's failure with the same signature, within the grouping window. */
 export interface RecentFailure { jobId: string; machineId?: string; executor: string }
@@ -28,6 +30,10 @@ export interface AssessInput {
   newer?: string | undefined;
   /** How long before this assessment it failed. */
   failedAgoMs?: number;
+  /** A timed-out job's liveness (issue #630). */
+  liveness?: LivenessFacts;
+  /** The timed-out runs of its chain just before this one, newest first (issue #630). */
+  earlierTimeouts?: TimeoutKind[];
 }
 
 /** A failure assessed longer than this after it failed takes no automatic action (issue #517). */
@@ -91,10 +97,11 @@ function placement(planned: 'hold' | 'redirect', i: AssessInput, scope: ProblemS
   return 'redirect';
 }
 
-const RECOMMENDED: Record<FailureDecision, string> = { retry: 'Retry', hold: 'Hold', redirect: 'Redirect', person: 'A person' };
+const RECOMMENDED: Record<FailureDecision, string> = { retry: 'Retry', hold: 'Hold', redirect: 'Redirect', person: 'A person', continue: 'Continue' };
 
 function summaryOf(i: AssessInput, decision: FailureDecision, auto: boolean, title: string | undefined, retryInMs: number | undefined, lead?: string): string {
   lead ??= decision === 'retry' ? (auto ? `Runs again in ${duration(retryInMs ?? 0)}` : 'Retry recommended')
+    : decision === 'continue' ? (auto ? 'Continues: it was at work' : 'Continue recommended')
     : decision === 'person' ? 'Needs a person'
       : !auto ? `Grouped: ${title}` : decision === 'redirect' ? `Redirected: ${title}` : `Held: ${title}`;
   const ran = `Ran ${i.attempt} ${i.attempt === 1 ? 'time' : 'times'}${i.job.machineId ? ` on ${i.job.machineId}` : ''}${i.ranMs !== undefined && i.attempt > 1 ? `, the last for ${duration(i.ranMs)}` : i.ranMs !== undefined && i.ranMs >= 1000 ? `, for ${duration(i.ranMs)}` : ''}`;
@@ -121,6 +128,11 @@ function judge(i: AssessInput): Assessment {
     };
   };
 
+  if (i.cause?.id === 'timed-out') {
+    const t = judgeTimeout(i.liveness ?? {}, i.earlierTimeouts ?? [], s);
+    reasons.push(...t.reasons);
+    return t.decision === 'retry' ? done('transient', 'retry', { retryInMs: backoffMs(1, s) }) : done('transient', t.decision);
+  }
   if (i.open) {
     reasons.push(`same signature as the open problem: ${i.open.title}`);
     return done('shared', placement(i.open.decision, i, undefined, reasons), { problem: { kind: 'join', id: i.open.id }, title: i.open.title });

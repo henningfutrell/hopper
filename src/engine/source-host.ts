@@ -252,7 +252,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
-    continueJob(jobId, brief, handoffId) {
+    continueJob(jobId, brief, by) {
       return store.tx((): RerunResult => {
         const job = store.jobs.get(jobId);
         if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
@@ -262,11 +262,11 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // Its end is told to its source again: the claim, then however this run ends.
         const sync = { ...(job.sourceState?.sync ?? {}), claimReported: false, finalReported: false };
         const next = store.jobs.update(jobId, {
-          status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), handoffId }, ...(machineId ? { resumeOn: machineId } : {}),
-          error: undefined, errorTail: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
+          status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), ...by }, ...(machineId ? { resumeOn: machineId } : {}),
+          error: undefined, errorTail: undefined, liveness: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
           holdReason: undefined, waitReason: undefined, laneId: undefined, sourceState: { ...job.sourceState, sync },
         });
-        store.events.append({ type: 'job.continued', jobId, data: { handoffId } });
+        store.events.append({ type: 'job.continued', jobId, data: { ...by } });
         return { ok: true, job: next };
       });
     },

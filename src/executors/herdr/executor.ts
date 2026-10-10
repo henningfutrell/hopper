@@ -15,7 +15,7 @@ import { readPaneAnswer } from './pane-answer.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { jobScratchOf, startInPane } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
-import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, type HeldPane, type PaneOn, type RemoteHerdr, type Where } from './panes.ts';
+import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type PaneOn, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
@@ -66,6 +66,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   const lanes = new Map<LaneId, HeldPane>();
   /** What the reap kept, by job, until cleanup answers it: a pane closed on cancel or timeout is reaped then. */
   const reaped = new Map<string, Reaped>();
+  /** When each running job's pane output last changed (issue #630): at a timeout, its liveness. */
+  const outputAt = new Map<string, number>();
 
   /** The herdr a pane lives on: this machine's, or the attached machine's over ssh. */
   function herdrOn(p: Where): HerdrClient {
@@ -77,13 +79,6 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     if (!o.remote || !p.session) throw new Error(`cannot reach attached machine ${p.ssh}: no herdr there`);
     return o.remote({ ssh: p.ssh, session: p.session });
   }
-
-  /** Where a job on the lane's machine runs. */
-  const whereOn = (m: ExecutionContext['machine']): Where => {
-    if (m.client) return { client: { machine: m.id } };
-    if (m.ssh) return { ssh: m.ssh, ...(m.herdr ? { session: m.herdr.session } : {}) };
-    return m.herdr ? { session: m.herdr.session } : {};
-  };
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false, unattended: o.unattended ?? false,
@@ -104,24 +99,25 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * is still up, and removes its scratch dir unless it holds work not pushed — or keeps it (`scratch` false: a
    * parked job's, issue #501). Undefined when the machine could not be reached: the sweep reaps it later.
    */
-  async function reap(herdr: HerdrClient, pane: HeldPane, scratch = true): Promise<Reaped | undefined> {
+  async function reap(herdr: HerdrClient, pane: HeldPane, scratch: Scratch = 'remove'): Promise<Reaped | undefined> {
     for (let waited = 0; waited < EXIT_WAIT_MS && await herdr.getAgent(pane.agentName).catch(() => null) !== null; waited += o.pollMs) {
       await sleep(o.pollMs, new AbortController().signal);
     }
-    return herdr.reap(pane.jobId, scratch ? jobScratchOf(pane.cwd, pane.jobId) : undefined);
+    return herdr.reap(pane.jobId, scratch !== 'none' ? jobScratchOf(pane.cwd, pane.jobId) : undefined, scratch === 'keep');
   }
 
   /**
    * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
    * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
-   * closed or gone (issue #371). `scratch` false: the scratch dir stays (a parked job's, issue #501).
+   * closed or gone (issue #371). `scratch` `none`: the reap does not look at the scratch dir (a parked job's, issue
+   * #501); `keep`: it says what is there and keeps it (a timed-out job's, issue #630).
    */
-  async function exitAndClose(pane: HeldPane, scratch = true): Promise<string | undefined> {
+  async function exitAndClose(pane: HeldPane, scratch: Scratch = 'remove'): Promise<string | undefined> {
     const close = async (herdr: HerdrClient): Promise<string | undefined> => {
       await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
       await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
       const said = await reap(herdr, pane, scratch).catch(() => undefined);
-      if (said && scratch) reaped.set(pane.jobId, said);
+      if (said && scratch !== 'none') reaped.set(pane.jobId, said);
       return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
     };
     const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
@@ -134,8 +130,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     if (result.interrupt === 'shutdown') return { kind: 'failed', error: 'shutdown' };
     // The engine parks the job, then asks `park` to end its pane: nothing of it is closed here.
     if (result.interrupt === 'park') return { kind: 'failed', error: 'parked' };
-    await exitAndClose(pane);
-    return { kind: 'failed', error: result.interrupt === 'timeout' ? 'timed out' : 'aborted' };
+    if (result.interrupt !== 'timeout') { await exitAndClose(pane); return { kind: 'failed', error: 'aborted' }; }
+    // A timeout (issue #630): its scratch dir kept, as a park keeps it — it may go on there —, and its liveness said.
+    await exitAndClose(pane, 'keep');
+    return { kind: 'failed', error: 'timed out', liveness: timeoutLiveness(outputAt.get(pane.jobId), reaped.get(pane.jobId)) };
   }
 
   /**
@@ -176,6 +174,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend,
       timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
       onQuestion: (seq, lapsesAt) => ctx.saveState({ ...s, turn, parkedSeq: seq, lapsesAt }),
+      onOutput: (at) => outputAt.set(ctx.job.id, at),
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
     });
     if ('authPending' in result) {
@@ -385,7 +384,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     // Claude exits as at a close, its scope and processes stop, its pane closes; its worktree and session stay.
     async park(job) {
       const state = paneStateOf(job);
-      const open = state ? await exitAndClose(heldOf(state, job.id), false) : undefined;
+      const open = state ? await exitAndClose(heldOf(state, job.id), 'none') : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
     },
 
@@ -393,10 +392,12 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const state = paneStateOf(job);
       // Parked (issue #501): its pane closed then, and its id may name another job's pane by now. Only the reap runs.
       if (state && job.parked) return reap(herdrOn(state), heldOf(state, job.id));
-      const open = state ? await exitAndClose(heldOf(state, job.id)) : undefined;
+      // Timed out (issue #630): its scratch dir stays, as a parked job's, until it goes on or the sweep removes it.
+      const open = state ? await exitAndClose(heldOf(state, job.id), job.liveness ? 'keep' : 'remove') : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
       const said = reaped.get(job.id);
       reaped.delete(job.id);
+      outputAt.delete(job.id);
       return said;
     },
 

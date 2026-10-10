@@ -48,7 +48,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
-| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
+| `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | minor decisions through Jev first (issue #550, "Minor decisions"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`); all but `jev.ts` and `service.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -769,7 +769,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      every branch). Then nothing is removed and each such repository is printed; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry.
-  It prints `hopper-reaped` last. What it kept is never removed silently: `cleanup` answers it
+  It also prints each repository whose `HEAD` holds a remote branch the default branch (`origin/HEAD`) does not,
+  `hopper-pushed <path>` (issue #630): the job pushed work. Asked with `keep` (`POST /reap {jobId, scratch, keep}`;
+  a timed-out job's, issue #630), it says what is there and removes nothing but the job's credentials: the scratch
+  dir stays, as a parked job's, so the job may go on there; its cleanup keeps it too (the job carries `liveness`),
+  and the sweep removes it as any ended job's once `scratchMaxAgeHours` old. A client of an older release ignores
+  `keep` and reaps as before. It prints `hopper-reaped` last. What it kept is never removed silently: `cleanup` answers it
   (`Executor.cleanup` → `Reaped`), and the engine records `job.work_kept { paths }` on the job; the
   sweep below tries it again. A machine the reap cannot reach leaves the job to the sweep.
   `HOPPER_KEEP_PANES` skips the reap with the close. A container a job starts with rootless podman runs
@@ -8434,6 +8439,8 @@ minute to its own `job.failed`.
 a cause a person named for that signature first, then the built-in ones by their text (`causes.ts`). In order
 (`assess.ts`, pure):
 
+0. A job that **timed out** (the built-in cause `timed-out`) is decided by its **liveness** alone (issue #630,
+   "A timed-out job" below): never grouped into a problem, nor joined to one.
 1. The open **problem** of the signature whose scope covers the job's machine takes it: held, or redirected.
 2. A known `shared` cause opens a problem, scoped by the cause to the job's machine (`machine`), its executor on
    that machine (`executor`: an expired login), or every machine.
@@ -8492,8 +8499,9 @@ held jobs released). Webhooks and notifiers take them as any event.
 recurring on `groupThreshold` jobs; breakdowns by machine, repo and executor.
 
 **Settings** (`failureSettings`, a user setting in the database; Failures view, admin): `maxAttempts`, the
-backoff, the grouping threshold and window, `auto.retry` / `auto.hold` / `auto.redirect` (default on: off, the
-decision is recorded and waits for a person), `retentionDays` (default 90: records and resolved problems older
+backoff, the grouping threshold and window, `activeWindowMin` (issue #630), `auto.retry` / `auto.hold` / `auto.redirect`
+/ `auto.continue` (default on: off, the decision is recorded and waits for a person; one saved before it existed takes
+its default), `retentionDays` (default 90: records and resolved problems older
 are deleted, a pending one never). Read at each assessment and sweep: no restart. Named causes: `failureCauses`.
 
 **Failures view** (its own nav entry, after Logins; the badge counts open problems and open hand-offs, "Needs a person"): first
@@ -8509,6 +8517,36 @@ under its error in the Queue and the Overview.
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
+
+## A timed-out job (issue #630, 2026-10-10)
+
+A job that ran out of its time (`timeoutMs`, error `timed out`) got no known cause and went to a person, though the
+facts that decide it were at hand: was it still at work? Its **liveness** (`JobLiveness` on the job, and in its failure
+record's evidence) says:
+
+- `outputAt` — when its pane output last changed. The herdr-claude monitor reports each change of the turn's output
+  (`TurnWatch.onOutput`); the executor keeps the last one per job and gives it with the failure.
+- `pushed` — the reap at the timeout (`keep`, "Work tree" → "The reap") found a repository in its scratch dir whose
+  `HEAD` holds a remote branch the default branch does not. The scratch dir is kept: the job may go on there.
+- `pullRequest` — its source says a pull request of its own is open (`JobSource.pullRequestOpen`; GitHub: an open
+  pull request closing its issue that it opened, or an older one it pushed to; a draft counts). The assessor asks
+  before it assesses (`timeouts.ts`), at most `PR_LOOKUP_MS` (10 s); a lookup that fails or takes longer leaves it
+  not known, and the other two decide.
+
+A fact absent is not known. The rules (`timed-out.ts`, pure: liveness and the chain in, decision out):
+
+- **Active** — output changed within `activeWindowMin` minutes (default 10, a failure setting) before the timeout, or
+  commits pushed, or a pull request open: **Continue** (decision `continue`, class `transient`, `auto.continue`).
+  The sweep makes it at once: its own agent session resumes in its kept work tree when it can (`continueResumes` as for
+  a hand-off: an executor that parks, a recorded session, a work tree) — `job.continued` with `recordId` —, else its item
+  runs again, `job.rerun` `by: "assessor"`. Either one is told it timed out while at work and to go on from its
+  branch or pull request (`timedOutBrief`). The third active timeout in a row of its chain (`MAX_ACTIVE_TIMEOUTS`)
+  goes to a person: an agent that keeps producing output is not continued for ever.
+- **Silent** — none of them: **Retry** once, after the first backoff. Silent again right after that retry: a person.
+
+The chain (`chain.ts`) is read from the failure records: a continued run is the same job, so its earlier records
+count as well as its earlier jobs'. Only timed-out runs the assessor ran again count, newest first, back to the first
+that was not one. A person names no cause with `continue`: it needs a timeout's liveness.
 
 ## Needs a person (issue #516, 2026-10-08)
 

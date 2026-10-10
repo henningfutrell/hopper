@@ -16,15 +16,15 @@ import { shellQuote, sshArgv, type SshTransport } from './ssh.ts';
 /** A reap waits up to 10 s per scope stop and 3 s for processes; a survey reads /proc once. */
 const TIMEOUT_MS = 60000;
 
-type Call = { reap: { jobId: string; scratch?: string } } | { survey: { roots: string[] } }
+type Call = { reap: { jobId: string; scratch?: string; keep?: boolean } } | { survey: { roots: string[] } }
   | { credential: { jobId: string; dir: string; file: string; content: string; make: boolean } } | { discover: true };
 
 function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): MachineShell {
   const unfinished = (what: string, r: ClientAnswer): Error =>
     new Error(`the ${what} on ${where} did not finish (exit ${r.code}): ${(r.stderr.trim() || r.stdout.trim()).slice(-500)}`);
   return {
-    async reap(jobId, scratch) {
-      const r = await run({ reap: { jobId, ...(scratch ? { scratch } : {}) } });
+    async reap(jobId, scratch, keep) {
+      const r = await run({ reap: { jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}) } });
       const said = readReap(r.stdout);
       if (!said) throw unfinished('reap', r);
       return said;
@@ -48,7 +48,7 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
   };
 }
 
-const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jobId, call.reap.scratch)
+const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jobId, call.reap.scratch, call.reap.keep)
   : 'survey' in call ? surveyArgv(call.survey.roots) : 'discover' in call ? discoverArgv()
     : credentialArgv(call.credential.jobId, call.credential.dir, call.credential.file, call.credential.make));
 /** A discovery asks each tool with a timeout of its own, so it may take longer than the other scripts. */

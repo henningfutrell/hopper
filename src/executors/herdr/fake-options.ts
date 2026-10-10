@@ -10,7 +10,7 @@ export interface FakeTurn {
   steps?: string[];
   /** Lines appended when the turn ends (assistant output, markers). */
   output: string[];
-  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends. */
+  /** State after the turn. Default `idle`. `exit`: Claude quits. `working`: never ends, once its steps are shown. */
   end?: 'idle' | 'blocked' | 'exit' | 'working';
   /** With `end: 'blocked'`: the dialog, shown below the output until it is answered or lapses, then gone, as Claude Code does. */
   dialog?: string[];
@@ -82,6 +82,8 @@ export interface FakeHerdrOptions {
   waitAnswersEarly?: 'matched' | 'timeout';
   /** What the reap at job end says it kept (issue #401): repositories with uncommitted or unpushed work. Default none. */
   reapKeeps?: string[];
+  /** What the reap says was pushed (issue #630): repositories whose branch is on a remote beyond the default branch. Default none. */
+  reapPushes?: string[];
   /** The machine cannot be reached for the reap or the survey (issue #410): both reject. */
   machineUnreachable?: boolean;
   /** What the survey finds on the machine (issue #410). Default nothing. */
@@ -139,7 +141,7 @@ export interface FakeHerdrClient extends HerdrClient {
   /** Each seed of Claude's config the shell ran (issue #533): its arguments, the work tree, trust and yolo. */
   readonly seeds: string[][];
   /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
-  readonly reaps: { jobId: string; scratch?: string }[];
+  readonly reaps: { jobId: string; scratch?: string; keep?: boolean }[];
   /** Each credential file kept on the machine through its connection (issue #441), in order. */
   readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
   addTurns(...turns: FakeTurn[]): void;

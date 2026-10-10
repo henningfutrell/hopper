@@ -269,6 +269,8 @@ describe('what a client takes in a /reap or /survey body (issue #410)', () => {
   it('a job id and its own scratch dir, or work trees: nothing else reaches the script', () => {
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}` })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`));
     expect(scriptArgvOf('/reap', { jobId: JOB })).toEqual(reapArgv(JOB));
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, keep: 'yes' })).toBe('keep must be true or false');
     expect(scriptArgvOf('/reap', { jobId: '-rf' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: 'a*' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: '/home/me' })).toBe('scratch must be the job\'s own scratch dir');
@@ -276,5 +278,50 @@ describe('what a client takes in a /reap or /survey body (issue #410)', () => {
     expect(scriptArgvOf('/survey', { roots: ['/w', '/x'] })).toEqual(surveyArgv(['/w', '/x']));
     expect(scriptArgvOf('/survey', { roots: ['relative'] })).toBe('roots must be at most 256 absolute paths');
     expect(scriptArgvOf('/survey', {})).toBe('roots must be at most 256 absolute paths');
+  });
+});
+
+describe('the reap at a timeout (issue #630): the scratch dir kept, and what the job pushed said', () => {
+  const keeping = (): string => { const [file, ...args] = reapArgv(JOB, scratch, true); return execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 }); };
+  const commit = (dir: string, name: string): void => { writeFileSync(join(dir, name), `${name}\n`); git(dir, 'add', '.'); git(dir, 'commit', '-q', '-m', name); };
+
+  it('keeps a clean scratch dir, and names each repository whose branch it pushed beyond the default branch', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    cloneAt(join(scratch, 'untouched'));
+    expect(readReap(keeping())).toEqual({ kept: [], pushed: [repo] });
+    expect(existsSync(join(repo, 'b.txt'))).toBe(true);
+  });
+
+  it('local commits on top of a pushed branch: kept, and pushed', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    commit(repo, 'c.txt');
+    expect(readReap(keeping())).toEqual({ kept: [repo], pushed: [repo] });
+  });
+
+  it('a branch with commits no remote has is not pushed', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    expect(readReap(keeping())).toEqual({ kept: [repo] });
+    expect(existsSync(scratch)).toBe(true);
+  });
+
+  it('the reap at a job\'s end says what was pushed too, and removes the clean scratch dir', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    expect(readReap(reap())).toEqual({ kept: [], pushed: [repo] });
+    expect(existsSync(scratch)).toBe(false);
   });
 });

@@ -30,3 +30,15 @@ export function handoffBrief(h: Pick<Handoff, 'summary' | 'reasons' | 'error'>, 
       : ['An earlier job of this item failed and was handed to a person. They looked at it and ask this job to go on from it. This is a new session: you have none of the earlier one\'s history; its branch or pull request may already exist, so look for them first.'];
   return [...opening, '', ...failureLines(h), ...noteLines(note)].join('\n');
 }
+
+/**
+ * What a timed-out job still at work is told when it goes on (issue #630). `resumes`: its own agent session, in its
+ * kept work tree; else a new job of its item, with none of the earlier session's history.
+ */
+export function timedOutBrief(resumes: boolean): string {
+  return resumes
+    ? ['This job timed out while it was at work. Go on from where you stopped, in this same session and work tree.',
+      'Look at what is there first (git status, git log, the branch on the remote, its pull request), then finish the work. Do not start over.'].join('\n')
+    : ['An earlier job of this item timed out while it was at work. This is a new session: you have none of the earlier one\'s history.',
+      'Go on from its pushed branch or its open pull request: look for them first, then finish the work. Do not start over.'].join('\n');
+}

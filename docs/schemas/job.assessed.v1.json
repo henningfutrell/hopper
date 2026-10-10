@@ -22,7 +22,8 @@
         "retry",
         "hold",
         "redirect",
-        "person"
+        "person",
+        "continue"
       ]
     },
     "reasons": {

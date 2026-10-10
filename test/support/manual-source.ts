@@ -19,6 +19,10 @@ export interface ManualSource extends JobSource {
   readonly reports: SourceReport[];
   /** The hand-off resolutions it was told (issue #551), in order. */
   readonly resolutions: { jobId: string; resolution: HandoffResolution }[];
+  /** A pull request of the item's own job is open (issue #630): `pullRequestOpen` answers true. */
+  openPullRequest(key: string): void;
+  /** From now on `pullRequestOpen` fails, as a source that is down. */
+  failPullRequestLookups(): void;
 }
 
 let counter = 0;
@@ -37,6 +41,8 @@ export function createManualSource(name = 'manual'): ManualSource {
   const ended = new Map<string, SourceItem>();
   const closed = new Set<string>();
   const work = new Map<string, { item?: 'open' | 'done'; pullRequests: WorkPullRequest[] }>();
+  const pullRequests = new Set<string>();
+  let lookupsFail = false;
   let signals: SourceSignal[] = [];
   const reports: SourceReport[] = [];
   const resolutions: { jobId: string; resolution: HandoffResolution }[] = [];
@@ -56,6 +62,12 @@ export function createManualSource(name = 'manual'): ManualSource {
       const key = job.source!.key;
       const w = work.get(key);
       return { item: closed.has(key) ? 'closed' : w?.item ?? 'open', pullRequests: w?.pullRequests ?? [] };
+    },
+    openPullRequest(key) { pullRequests.add(key); },
+    failPullRequestLookups() { lookupsFail = true; },
+    async pullRequestOpen(job) {
+      if (lookupsFail) throw new Error('the source is down');
+      return pullRequests.has(job.source!.key);
     },
     async discover() { return [...items.values()]; },
     async check(active) {

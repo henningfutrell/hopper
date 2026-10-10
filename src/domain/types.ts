@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobAssessment, ProblemBlock } from './failures.ts';
+import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { JobPhaseFields } from './phase.ts';
@@ -148,7 +148,7 @@ export interface Job extends JobPhaseFields {
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
-  continued?: { at: string; handoffId: string };
+  continued?: { at: string } & ContinuedBy;
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
   fromConfig?: SpecFromConfig;
   /** Where the job was pulled from. Absent only for jobs created before phase 3. */
@@ -165,6 +165,8 @@ export interface Job extends JobPhaseFields {
   cleanupDeferred?: { at: string; error: string };
   /** The output tail its executor gave when it failed (issue #509), codes hidden; the assessor's evidence. */
   errorTail?: string;
+  /** What it showed of its progress when it timed out (issue #630): its executor's facts, and its source's. The assessor's evidence. */
+  liveness?: JobLiveness;
   /** The failure assessor's judgement of this failed job (issue #509): its decision, summary and reasons. */
   assessment?: JobAssessment;
   /** Let through the blast-radius gate by a person (issue #542): it may run on a gated machine. */

@@ -4,10 +4,10 @@
   "properties": {
     "handoffId": {
       "type": "string"
+    },
+    "recordId": {
+      "type": "string"
     }
   },
-  "required": [
-    "handoffId"
-  ],
   "additionalProperties": false
 }

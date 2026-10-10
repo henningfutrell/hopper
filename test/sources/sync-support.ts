@@ -119,10 +119,10 @@ export function createWorld(): World {
       emit('job.rerun', id, { by: 'user' });
       return job;
     },
-    continueJob(id, brief, handoffId) {
+    continueJob(id, brief, by) {
       if (jobs.get(id)?.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${id} is not failed` };
-      const job = patchJob(id, { status: 'queued', pendingAnswer: brief, continued: { at: iso(), handoffId } });
-      emit('job.continued', id, { handoffId });
+      const job = patchJob(id, { status: 'queued', pendingAnswer: brief, continued: { at: iso(), ...by } });
+      emit('job.continued', id, { ...by });
       return { ok: true, job };
     },
   };
