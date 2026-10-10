@@ -35,6 +35,8 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     try {
       return await fn(renewed);
     } catch (err) {
+      // GitHub refusing the token it just renewed is GitHub refusing the connection (issue #647): the renewer ends it.
+      if (refused(err)) await o.renew(renewed).catch(() => undefined);
       throw accountError(err, what);
     }
   };

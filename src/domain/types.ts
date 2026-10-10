@@ -115,6 +115,11 @@ export interface Job extends JobPhaseFields {
   workTree?: string;
   /** Where its credential files are kept on its machine (issue #441): each renewal of its connection rewrites them there. Absent: none kept. */
   credentialsDir?: string;
+  /**
+   * Why its credential files on its machine could not be rewritten with its connection's new token (issue #647): it may
+   * work with a token GitHub no longer takes. Cleared when a later rewrite succeeds.
+   */
+  credentialsWarning?: string;
   /** Executor-owned state (e.g. herdr pane/agent ids), written via ExecutionContext.saveState. */
   executorState?: Record<string, unknown>;
   /** The open question this job waits on (status waiting_answer). */

@@ -36,7 +36,7 @@ import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
-import { createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
+import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink } from './link.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
@@ -211,8 +211,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env, logger),
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
     installations: (token) => installations(config.hopperApps.github, token),
-    onExpired: (provider, account, reason) => { store.events.append({ type: 'connected_account.expired', data: { provider, account, reason } }); },
-    onRenewed: () => { void engine.renewCredentials(); }, // running jobs get the new token on their machines (issue #441); after `engine` exists
+    // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
+    ...accountEvents(store.events),
+    // Running jobs get every new token on their machines at once (issues #441, #647); after `engine` exists.
+    onToken: () => { void engine.renewCredentials(); },
     ...(o.linkIdentity ? { link: o.linkIdentity } : {}),
     // Reached only after `sync` exists: a connection is made long after the runtime starts.
     onChange: (provider) => {

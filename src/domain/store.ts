@@ -388,6 +388,10 @@ export interface ConnectedAccount {
   connectedAt: string;
   /** How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant without; absent: kept before #441. */
   grantedBy?: 'device' | 'web';
+  /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
+  connectedBy?: 'sources' | 'sign-in';
+  /** When its token was last renewed (issue #647); absent: not renewed since it was connected. */
+  renewedAt?: string;
 }
 
 export interface ConnectedAccountRepository {

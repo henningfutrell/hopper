@@ -118,7 +118,9 @@ describe('token revocation fixes (#597)', () => {
     const status1 = (await service.status())[0]!;
     expect(status1).toMatchObject({ state: 'connected', account: 'octo-user' });
 
-    // A sign-in with GitHub hands over a token GitHub refuses: it is kept as ended, not as live.
+    // A sign-in with GitHub, with no healthy connection to keep (issue #647), hands over a token GitHub refuses: it is
+    // kept as ended, not as live.
+    await service.disconnect('github');
     refuseWhoIs = true;
     const signIn = github.mint('octo-user');
     await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });

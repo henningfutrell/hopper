@@ -717,12 +717,19 @@ export interface Connection {
 export interface ConnectedAccounts {
   /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
   status(): Promise<ConnectedAccountStatus[]>;
-  /** Keep the connection a GitHub sign-in made (it replaces the account there was, whose grant is revoked at GitHub first; issue #514). */
+  /**
+   * Keep the connection a GitHub sign-in made: it replaces the account there was, unless that one is healthy — then it is
+   * held until the person takes or drops it (issue #647).
+   */
   adopt(connection: Connection): Promise<void>;
   /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. */
+  takeHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  /** Drop the held grant of a sign-in (issue #647), its token deleted at GitHub (best effort); the connection stays. */
+  dropHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** Whether the account's sign-in ended (issue #513): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
   expired(provider: ConnectedAccountProvider): boolean;
   /** Revoke the account's grant at GitHub (best effort; issue #514), then forget the account and its token; its job repositories stay chosen. */
