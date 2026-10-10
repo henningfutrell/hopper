@@ -68,6 +68,7 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (used >= m.maxLanes) return undefined;
   if (!m.online) return 'machine offline';
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
+  if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);
   if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;

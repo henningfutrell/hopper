@@ -48,7 +48,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.accepted', 'job.rejected', 'queue.ordered', 'queue.gate_changed', 'job.claimed_by_operator', 'job.cleaned_up',
   'job.parked', 'job.unparked', 'job.continued', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
-  'machine.discovered', 'blast_radius.settings_changed', 'job.gate_passed', 'job.forked',
+  'machine.discovered', 'blast_radius.settings_changed', 'vault.approved', 'vault.revoked', 'job.gate_passed', 'job.forked',
   'template.saved', 'template.removed', 'template.profile_approved', 'vault.secret_set', 'vault.secret_removed',
 ]);
 

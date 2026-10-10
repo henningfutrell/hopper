@@ -5,7 +5,8 @@
 // environment or on the box's disk (design.md "The vault").
 //
 // Feature: a secret delivered to the box, just in time
-//   Scenario: a box of a template nobody approved is refused
+//   Scenario: a box whose template is not approved is refused (its approval revoked while a job runs there: a box of a
+//     template not approved takes no new job, issue #602)
 //     Given the vault secret KUBE_TOKEN, the template kube with KUBE_TOKEN in its scope, a box joined as kube
 //     And a job running on the box
 //     When the job runs `$HOPPER_SECRET get KUBE_TOKEN`
@@ -86,11 +87,14 @@ function nowhere(a: TestApp, dir: string, value: string): void {
 }
 
 describe('a secret delivered to the box, just in time', () => {
-  it('a box of a template nobody approved is refused; once approved, its job gets the value, recorded without it', async () => {
+  it('a box whose template is not approved is refused; approved again, its job gets the value, recorded without it', async () => {
     const { a, session } = await boot();
+    // A box of a template not approved takes no job (issue #602): the job starts on an approved box, then the approval is revoked.
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
     const dir = await joinMachine(a, session, 'hopper-sandbox-kube', 'kube');
     const job = await runningJob(a, 'hopper-sandbox-kube');
     const token = tokenFileOf(a, job);
+    await a.ui('/ui/api/vault', { action: 'revoke-template', name: 'kube' }, { token: session });
 
     const refused = await helper(dir, ['get', 'KUBE_TOKEN'], token);
     expect(refused.code).not.toBe(0);
@@ -170,9 +174,11 @@ describe('a secret delivered to the box, just in time', () => {
 describe('a secret delivered to the box, with the vault in a container of its own (issue #586)', () => {
   it('the approved box\'s job gets the value; the refusal and the delivery are in the hopper\'s event log, without it', async () => {
     const { a, session } = await boot({ container: true });
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
     const dir = await joinMachine(a, session, 'hopper-sandbox-kube', 'kube');
     const job = await runningJob(a, 'hopper-sandbox-kube');
     const token = tokenFileOf(a, job);
+    await a.ui('/ui/api/vault', { action: 'revoke-template', name: 'kube' }, { token: session });
 
     const refused = await helper(dir, ['get', 'KUBE_TOKEN'], token);
     expect(refused.stderr).toMatch(/kube is not approved for KUBE_TOKEN/);

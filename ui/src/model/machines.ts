@@ -68,6 +68,12 @@ export function workTreeText(m: MachineSnapshot): string | null {
   return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
 }
 
+/** A sandbox box's template the Machines view shows (issue #602): its name, and whether it takes jobs; null for a machine of no template. */
+export function templateText(m: MachineSnapshot): string | null {
+  if (!m.template) return null;
+  return m.template.waiting ? `${m.template.name}: takes no job, ${m.template.waiting}` : `${m.template.name}, approved: takes jobs`;
+}
+
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
 

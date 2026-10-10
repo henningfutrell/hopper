@@ -9505,6 +9505,17 @@ migration 29, a table only), the last approval in its body.
   scope — recording who and when (`vault.approved`). A scope widened since (a secret added) or a new image waits for a
   person again (`pending`); meanwhile its boxes are given what was approved, and nothing at all while the image is not
   the approved one. Narrowing needs no approval. `gives` says what its boxes may be given now.
+- **Approval gates job placement too** (issue #602). A box of a template that is not approved — not saved, never
+  approved, its approval revoked, or its image changed since — joins and shows on Machines, but takes no new job: its
+  snapshot carries `template: { name, waiting }` (`approvalWait`, src/domain/vault.ts, read at every machine list), and
+  the decider holds a job from it as from a machine whose work tree is not usable (`templateHolds`, src/decider/assign.ts).
+  A job that can run nowhere else is held with the reason (`job.held`, on its timeline); the box's lanes stay idle with
+  the reason (the Overview's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
+  next Decision places jobs there (`vault.approved` wakes the engine). A widened scope does not close it: its boxes keep
+  working on what was approved. A job resuming in its pane there returns to it; a job running there keeps running.
+- **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Settings → Vault → Revoke) drops the template's approval
+  and every access approval of its operation profiles (`vault.revoked`): the next Decision places no new job on its
+  boxes, and they are given no vault secret, until a person approves it again.
 - **The scope is the template's.** Never a job's: nothing a job sends can name a template or a secret beyond it.
 - **A box is an instance of a template.** Add machine → A sandbox box → a template: the join code names it (instance
   migration 29: `join_codes.template`, a column only), so the line carries no template the box could change. The box
@@ -9518,8 +9529,9 @@ migration 29, a table only), the last approval in its body.
   was removed after the line was made is refused (409, the join adds no machine), and a machine's options are not set to
   a template the vault does not hold (`POST /ui/api/plugins`, 404). A box record from before this rule, of a template
   that is not there, is an instance of nothing: `boxes()` leaves it out, so Access writes no tuple for it, and the
-  vault refuses it every secret. Placement is not changed: it is a machine as before, and a person removes it.
-- **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
+  vault refuses it every secret. It takes no new job: it waits for template approval (issue #602), and a person
+  removes it.
+- **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved`, `vault.revoked` — names,
   never a value.
 
 **Access (#559) is not asked for a delivery in v1.** #559's access check (OpenFGA) decides each credential the vault
@@ -9534,9 +9546,11 @@ that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
 secret the vault does not hold refused; the join line names the template and the box joins as its instance; a template
-with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template),
+with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template; a box of a template
+not approved takes no job until approved, and none after a revoke),
 `test/integration/access-requesters.test.ts` (the removed template's tuples gone), `test/vault/missing-template.test.ts`
 (a box of a template that is not there is no instance),
+`test/decider/template-approval.test.ts`, `test/ui/machine-template.test.ts`,
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
 
 ### A template's blast radius (issue #584)

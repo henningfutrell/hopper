@@ -102,7 +102,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           <span className="text-muted-foreground">template</span>
           <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(null)}>none</Button>
           {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
-          {template && <span className="text-muted-foreground">its boxes get {template.gives.join(', ') || 'nothing yet: approve the template in Settings → Vault'}</span>}
+          {template && <span className="text-muted-foreground">{!template.approval || template.pending.image ? 'its boxes take no job and get nothing until a person approves the template in Settings → Vault' : `its boxes get ${template.gives.join(', ') || 'no vault secret'}`}</span>}
         </div>
       )}
       {kind === 'box' && launch && !launch.available && (

@@ -2265,7 +2265,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
 
 | field | type | required |
 |---|---|---|
@@ -2281,6 +2281,22 @@ Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template 
   "secrets": [
     "KUBE_TOKEN"
   ],
+  "by": "Ada"
+}
+```
+
+## `vault.revoked`
+
+Version 1 (`docs/schemas/vault.revoked.v1.json`). A person revoked a template's approval (issue #602). Its boxes take no new job, and are given no vault secret, until a person approves it again (`vault.approved`). Every access approval of its operation profiles is revoked with it.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "template": "kube",
   "by": "Ada"
 }
 ```
