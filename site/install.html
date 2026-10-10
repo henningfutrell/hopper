@@ -269,6 +269,25 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 <code>/mnt/c</code>: it is much faster.</p>
 </details>
 
+<h3 id="windows-machine">A Windows computer as a machine</h3>
+<p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
+cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the
+machine inside WSL instead, with Podman for its sandbox boxes:</p>
+<ol class="steps">
+<li><p>On the Windows computer, install Ubuntu in WSL and Podman in it: <a href="#windows">On Windows</a>, steps 1 and 2.</p></li>
+<li><p>Turn systemd on in Ubuntu:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell and open Ubuntu again.</p></li>
+<li><p>Start the Podman socket, and keep your user's services running after you log out:</p>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket
+sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
+<li><p>In the hopper's UI, open <strong>Machines</strong> → <strong>Add machine</strong>, and run the line it shows in
+Ubuntu, not in PowerShell. For a computer, Ubuntu needs Node.js 24, herdr and a signed-in <code>claude</code> first,
+as for any Linux computer. The WSL distro then shows in Machines as one machine.</p></li>
+</ol>
+<p class="note">Not supported, and not planned: the client on Windows itself, Git Bash or MSYS, and Podman machine,
+Docker Desktop or Hyper-V virtual machines.</p>
+
 <h2 id="sign-in">Sign-in for a team</h2>
 <p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
 sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
@@ -321,7 +340,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
-<tr><td>A job fails with <code>… is PowerShell, and the hopper needs a POSIX shell</code></td><td>The machine is a Windows computer whose jobs open in PowerShell. Give its hopper session Git Bash as the shell: <a href="https://github.com/henningfutrell/hopper#a-computer-or-a-sandbox-box-one-line">A Windows computer</a>.</td></tr>
+<tr><td><code>Windows isn't supported natively. Run the client inside WSL.</code></td><td>The line ran on Windows itself. Run it inside WSL: <a href="#windows-machine">A Windows computer as a machine</a>.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of

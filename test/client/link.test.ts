@@ -4,7 +4,7 @@
 // wire (design.md "Joining a machine").
 import { describe, expect, it } from 'vitest';
 import { checkToken } from '../../src/client/signature.ts';
-import { linkToken, mintLinkKey, parseJoinLine, publicKeyOf } from '../../src/client/link.ts';
+import { linkToken, mintLinkKey, parseJoinLine, publicKeyOf, unsupportedPlatform } from '../../src/client/link.ts';
 
 describe('a link key', () => {
   it('is X25519: a PKCS#8 private half and a 43-character base64url public half', () => {
@@ -51,5 +51,16 @@ describe('the join line', () => {
     for (const bad of ['http://hopper:4790', `ftp://hopper#${code}`, `http://hopper:4790#short`, `hopper:4790#${code}`]) {
       expect(() => parseJoinLine(bad)).toThrow(/<hopper URL>#<join code>/);
     }
+  });
+});
+
+describe('the platforms a client runs on (issue #704)', () => {
+  it('refuses native Windows and says to run the client inside WSL', () => {
+    expect(unsupportedPlatform('win32')).toBe("Windows isn't supported natively. Run the client inside WSL.");
+  });
+
+  it('takes Linux (WSL included) and macOS', () => {
+    expect(unsupportedPlatform('linux')).toBeUndefined();
+    expect(unsupportedPlatform('darwin')).toBeUndefined();
   });
 });
