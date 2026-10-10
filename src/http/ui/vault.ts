@@ -8,7 +8,7 @@ import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
 import { MINTS_FOR_KINDS } from '../../domain/minting.ts';
 import { CREDENTIAL_NOTE_MAX, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { vaultView } from '../../vault/service.ts';
+import { holdsTemplate, vaultView, type Vault } from '../../vault/service.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
 
@@ -39,7 +39,7 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('decline-credential'), request: z.string().max(64), reason: z.string().max(CREDENTIAL_NOTE_MAX) }),
 ]);
 
-const STATUS = { invalid: 400, not_found: 404, unavailable: 503 } as const;
+const STATUS = { invalid: 400, not_found: 404, conflict: 409, unavailable: 503 } as const;
 
 type GiveEdit = Extract<z.infer<typeof vaultEditBody>, { action: 'give-credential' }>;
 /** The person's answer to a credential request: an empty value is none (the secret named is one the vault holds). */
@@ -69,4 +69,22 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
     return await vaultView(vault);
   });
+}
+
+/**
+ * A plugins edit (`POST /ui/api/plugins`) that sets a machine's template, refused unless the vault holds that template
+ * (issue #604): no box points at a template that is not there. Any other edit passes unchanged.
+ */
+export function knownTemplate<E extends { action: string; role?: string; options?: Record<string, unknown> }>(vault: Pick<Vault, 'view'>, edit: E): E {
+  const template = (edit.action === 'options' || edit.action === 'add') && edit.role === 'machine-source' ? edit.options?.template : undefined;
+  if (template !== undefined && !(typeof template === 'string' && holdsTemplate(vault, template))) {
+    throw new HttpError(404, `no template ${String(template)}: save it in Settings → Vault first`);
+  }
+  return edit;
+}
+
+/** The template a join line names (issue #558), refused unless the vault holds it. */
+export function joinTemplate(vault: Pick<Vault, 'view'>, template: string | undefined): string | undefined {
+  if (template !== undefined && !holdsTemplate(vault, template)) throw new HttpError(404, `no template ${template}`);
+  return template;
 }

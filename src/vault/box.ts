@@ -17,6 +17,8 @@ export interface BoxAskOptions {
   /** Whether a job's proxy token is one this user's link key gives it (issue #563). */
   holds?: (parts: ProxyTokenParts) => boolean;
   job(id: string): Job | undefined;
+  /** Whether the vault holds this template (issue #604): a box of one that is not there is refused. Absent: not checked. */
+  holdsTemplate?: (name: string) => boolean;
 }
 
 /** What is known of an ask, as far as the checks got: the machine, the job. With `refused`, why not; else all of it. */
@@ -38,5 +40,6 @@ export function boxAsk(o: BoxAskOptions, token: string, machineKey: string): Box
   if (!job || !AT_WORK.includes(job.status)) return { ...known, refused: `the job is not at work (${job?.status ?? 'no such job'}): the vault gives only while it runs` };
   if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return { ...known, refused: `the job does not run on ${m.name}` };
   if (m.template === undefined) return { ...known, refused: `${m.name} is no box of a template: only a box joined with a template's line gets vault secrets or minted credentials` };
+  if (o.holdsTemplate && !o.holdsTemplate(m.template)) return { ...known, refused: `${m.name} is a box of ${m.template}, a template that is not there: a person removes the box` };
   return { machine: { name: m.name, template: m.template }, job };
 }

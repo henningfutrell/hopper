@@ -3408,7 +3408,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
+| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
@@ -4091,7 +4091,12 @@ drives on a client target; cursor-agent runs only here and on ssh targets), herd
 client from `src/client`, user `agent`, Claude's first-run screens seeded, its auto-updater off (the root
 is read-only). Its entrypoint copies the client into the home volume once (a loaded release must persist),
 starts the herdr session, and runs the client — joining with `HOPPER_JOIN` the first time — again after
-each release load (exit 75). Its agent is signed in once, `<engine> exec -it hopper-sandbox-claude claude`,
+each release load (exit 75). The join line leaves the box's environment before anything starts (issue #606):
+the entrypoint writes `HOPPER_JOIN` to a file only `agent` can read, runs itself again without the variable,
+and gives the client the file's path (`HOPPER_JOIN_FILE`); the client reads it once and removes it, joined or
+not. A file, because a process's starting environment stays readable in `/proc/<pid>/environ` after it unsets
+a variable. So no process in the box — the entrypoint, herdr, the client, a job — holds the code, and a restart
+dials in with the link alone. Its agent is signed in once, `<engine> exec -it hopper-sandbox-claude claude`,
 and stays signed in in the volume. What the line confines: every capability dropped, no new privileges, a
 read-only root, nothing of the computer mounted, the compose network only (no published port). What it
 does not: its network reaches the internet (the agent's API, GitHub) — #315's open egress question.
@@ -9431,6 +9436,14 @@ migration 29, a table only), the last approval in its body.
   joins as a client target whose `template` option is the template's name; its line runs the template's image under
   the name `hopper-sandbox-<template>`. A computer's line names none. `scopeOf(machine)` answers what a machine's jobs
   may be given: its template's `gives`, else nothing.
+- **Removing a template** (issue #604). `remove-template` is refused (409) while a box of it is attached; the answer
+  names the boxes. A person removes them in Machines first, then the template. So no box points at a template that is
+  not there. The removal revokes the template's access approvals (`Access.revokeProfile`): its `approved_for` tuples go,
+  and its boxes' `instance_of` tuples went when the boxes left. Two more checks keep it so: a join line whose template
+  was removed after the line was made is refused (409, the join adds no machine), and a machine's options are not set to
+  a template the vault does not hold (`POST /ui/api/plugins`, 404). A box record from before this rule, of a template
+  that is not there, is an instance of nothing: `boxes()` leaves it out, so Access writes no tuple for it, and the
+  vault refuses it every secret. Placement is not changed: it is a machine as before, and a person removes it.
 - **Events**: `template.saved` (template, image, scope, who), `template.removed`, `vault.approved` — names,
   never a value.
 
@@ -9449,7 +9462,10 @@ access is the one record of which are approved.
 that image carries — `claude` for the published `box-claude`).
 
 Tests: `test/integration/templates.test.ts` (approve once; widening and a new image wait; narrowing does not; a
-secret the vault does not hold refused; the join line names the template and the box joins as its instance),
+secret the vault does not hold refused; the join line names the template and the box joins as its instance; a template
+with an attached box not removed, a join line of a removed template refused, a machine not set to a missing template),
+`test/integration/access-requesters.test.ts` (the removed template's tuples gone), `test/vault/missing-template.test.ts`
+(a box of a template that is not there is no instance),
 `test/ui/machines.test.ts` (the line of a template's box), `test/ui/vault.test.ts` (what a template's card says).
 
 ### A template's blast radius (issue #584)
