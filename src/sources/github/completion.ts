@@ -94,6 +94,26 @@ function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDra
   return `#${numberOf(pr.url)} (${[pr.state, ...why].join(', ')})`;
 }
 
+/** An issue whose deliverable is an artifact, not a code change (issue #673): a line of its body says `Deliverable: artifact`. */
+const DELIVERABLE_ARTIFACT = /^\s*deliverable:\s*artifact\s*$/im;
+export const isArtifactDeliverable = (issue: Pick<GitHubIssue, 'body'>): boolean => DELIVERABLE_ARTIFACT.test(issue.body);
+
+/** The artifacts a job made (issue #673): each one's id, and the URL of the issue it is linked to. */
+export type JobArtifacts = (jobId: string) => { id: string; issue?: string }[];
+
+/**
+ * For an issue whose deliverable is an artifact (issue #673): undefined when the job made one linked to the issue and a
+ * comment on the issue names it — its link or its id; else why not.
+ */
+async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts | undefined): Promise<string> {
+  const { repo, number, url } = job.source!;
+  const linked = (artifacts?.(job.id) ?? []).filter((a) => a.issue === url);
+  if (linked.length === 0) return 'the issue asks for an artifact, and the job made none linked to it';
+  const comments = await api.listComments(repo!, number!);
+  if (comments.some((c) => linked.some((a) => c.body.includes(a.id)))) return '';
+  return `the issue asks for an artifact, and no comment on it names the job's artifact (${linked.map((a) => a.id).join(', ')}): sh "$HOPPER_ARTIFACT" share ID --owner posts its link there`;
+}
+
 /**
  * Whether the job's issue is done on GitHub (issue #637), decided from what GitHub shows, not from what the job did:
  * - its issue closed as completed, by anyone, at any time (`isClosedAsCompleted`);
@@ -102,15 +122,19 @@ function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDra
  *   not the whole (`partlyDone`);
  * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review;
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
- *   merged, at any time; the job need not have pushed.
+ *   merged, at any time; the job need not have pushed;
+ * - an issue whose deliverable is an artifact (`isArtifactDeliverable`, issue #673): an artifact the job made, linked
+ *   to the issue, named by a comment on it.
  * Undefined: done. Else why not, naming what was looked at. An error asking GitHub throws: the caller asks again.
  */
-export async function notComplete(api: GitHubApi, job: Job): Promise<string | undefined> {
+export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtifacts): Promise<string | undefined> {
   const { repo, number, url } = job.source ?? {};
   if (!repo || !number) return `job ${job.id} has no GitHub issue reference`;
   const issue = await api.getIssue(repo, number);
   const closer = await api.closingPullRequest(repo, number);
   if (isClosedAsCompleted(issue, closer)) return undefined;
+  const artifact = isArtifactDeliverable(issue) ? await artifactMissing(api, job, artifacts) : undefined;
+  if (artifact === '') return undefined;
   const found = new Map<string, { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean }>();
   for (const pr of await api.openClosingPullRequests(repo, number)) {
     if (isReady(pr)) return undefined;
@@ -131,6 +155,7 @@ export async function notComplete(api: GitHubApi, job: Job): Promise<string | un
     : `the issue ${url ?? `${repo}#${number}`} is ${issue.stateReason === 'not_planned' ? 'closed as not planned' : 'closed, not as completed'}`];
   lines.push(found.size === 0 ? `no pull request in ${repo} closes or references it`
     : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map(described).join(', ')}`);
+  if (artifact !== undefined) lines.push(artifact);
   if (asksToUpdate(issue)) {
     const named: NumberedPullRequest[] = [];
     for (const n of namedNumbers(issue)) {

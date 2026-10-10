@@ -165,6 +165,8 @@ export interface JobSourceContext {
   intake(sourceName: string): IntakeContext | undefined;
   /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
   yoloMode(repo: string): boolean;
+  /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
+  jobArtifacts(jobId: string): { id: string; issue?: string }[];
 }
 
 export type { OptionChoice };
