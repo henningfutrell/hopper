@@ -14,6 +14,7 @@ import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { mintsForProblem } from '../domain/minting.ts';
+import { limitsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
 import { systemReadRefusal } from './system-read.ts';
@@ -40,7 +41,7 @@ export interface VaultService {
    * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
    * a new profile waits for a person's approval; a profile dropped has its approval revoked.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[] }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
@@ -237,7 +238,7 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
@@ -247,14 +248,15 @@ export function createVaultService(o: {
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
       if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
-      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined);
+      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined) ?? (limits ? limitsProblem(limits) : undefined);
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
       const was = vault.template(name);
       const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name } }])).values()] : was?.profiles ?? [];
+      // Limits left out keep the ones it has (issue #708).
       o.store.tx(() => {
         vault.saveTemplate({
-          name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
+          name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
         events.append({ type: 'template.saved', data: { template: name, image: image.trim(), secrets: scope, profiles: declared, by } });

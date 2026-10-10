@@ -1,0 +1,57 @@
+// The sandbox flags (issue #708): built here, once, for every way a box is made — the libpod create body, the Docker
+// Engine create body, and the `run` line Add machine shows (GET /api/sandboxes `line`). Nothing a request carries
+// reaches them but the resource limits, which the launch checked against its template first.
+import type { ContainerSpec, ResourceLimits } from '../domain/sandboxes.ts';
+
+/** Where a box's home volume is mounted: the box image's agent user's home. */
+export const HOME = '/home/agent';
+/** How long a box may take to stop before it is killed, in seconds. */
+export const STOP_S = 10;
+const TMPFS_OPTIONS = ['rw', 'nosuid', 'nodev'];
+const CPU_PERIOD = 100_000;
+const MIB = 1024 * 1024;
+
+/** Whether the user an image runs as is root: none set, `root` or uid 0, with or without a group. */
+export function isRootUser(user: string): boolean {
+  const name = user.split(':')[0]!.trim();
+  return name === '' || name === 'root' || name === '0';
+}
+
+/** The `run` flags of a box, as Podman and Docker both take them: the sandbox flags and the resource limits. */
+export function runFlags(limits: ResourceLimits): string[] {
+  return [
+    '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--read-only', '--tmpfs', `/tmp:${TMPFS_OPTIONS.join(',')}`,
+    '--cpus', String(limits.cpus), '--memory', `${limits.memoryMb}m`,
+  ];
+}
+
+/** The libpod create body (Podman's own API, `/libpod/containers/create`). */
+export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
+  return {
+    name: spec.name, image: spec.image, labels: spec.labels, env: spec.env, user: spec.user,
+    cap_drop: ['ALL'], no_new_privileges: true, read_only_filesystem: true, read_only_tmpfs: false,
+    mounts: [{ destination: '/tmp', type: 'tmpfs', source: 'tmpfs', options: TMPFS_OPTIONS }],
+    volumes: [{ Name: spec.volume, Dest: HOME }],
+    resource_limits: {
+      cpu: { quota: Math.round(spec.limits.cpus * CPU_PERIOD), period: CPU_PERIOD },
+      memory: { limit: spec.limits.memoryMb * MIB },
+    },
+    restart_policy: 'unless-stopped',
+    ...(spec.network === 'host' ? { netns: { nsmode: 'host' } } : { netns: { nsmode: 'bridge' }, networks: { [spec.network]: {} } }),
+  };
+}
+
+/** The Docker Engine create body (`/containers/create?name=`). */
+export function dockerCreateBody(spec: ContainerSpec): Record<string, unknown> {
+  return {
+    Image: spec.image, Labels: spec.labels, User: spec.user, Env: Object.entries(spec.env).map(([k, v]) => `${k}=${v}`),
+    HostConfig: {
+      CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], ReadonlyRootfs: true,
+      Tmpfs: { '/tmp': TMPFS_OPTIONS.join(',') },
+      Mounts: [{ Type: 'volume', Source: spec.volume, Target: HOME }],
+      NanoCpus: Math.round(spec.limits.cpus * 1e9), Memory: spec.limits.memoryMb * MIB,
+      RestartPolicy: { Name: 'unless-stopped' },
+      NetworkMode: spec.network,
+    },
+  };
+}

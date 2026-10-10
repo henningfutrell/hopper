@@ -18,6 +18,14 @@ type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<
 const profile = { operation: z.enum(OPERATIONS), asset: z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) }) };
 const mints = z.strictObject({ kind: z.enum(MINTS_FOR_KINDS), name: z.string().max(200) }).nullable().optional();
 
+/** A template's limits (issue #708): the defaults and maximums a launch of it may ask for; checked by the vault. */
+const range = z.strictObject({ default: z.number().positive(), max: z.number().positive() });
+const templateLimits = z.strictObject({
+  cpus: range.optional(), memoryMb: range.optional(),
+  ttlMinutes: z.strictObject({ default: z.number().int().positive().optional(), max: z.number().int().positive().optional() }).optional(),
+  keepHome: z.boolean().optional(),
+});
+
 export const vaultEditBody = z.discriminatedUnion('action', [
   // A value, or (issue #585) the vault backend that keeps it and where: one of the two, never both. `mints` (issue #580):
   // the account or cluster it is a minting credential for; null makes it a plain secret again.
@@ -26,7 +34,7 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
   z.strictObject({
     action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
-    profiles: z.array(z.strictObject(profile)).max(256).optional(),
+    profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(),
   }),
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),

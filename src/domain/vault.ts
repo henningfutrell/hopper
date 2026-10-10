@@ -2,6 +2,7 @@
 // in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
+import type { TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -159,6 +160,12 @@ export interface Template {
    * write, sync or apply profile only by its own explicit approval. Absent on a template saved before: none.
    */
   profiles?: OperationProfile[];
+  /**
+   * What a launch of it may ask for (issue #708): the defaults and maximums of its boxes' resources and time limit, and
+   * whether a box's home volume stays when it goes. Absent: the hopper's defaults (src/sandbox/params.ts). Not part of
+   * its approval: limits narrow what a box may use, they give it nothing.
+   */
+  limits?: TemplateLimits;
   savedBy: string;
   savedAt: string;
   /** The last approval: the image and scope a person approved, who and when. Absent: never approved. */
