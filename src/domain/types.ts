@@ -268,6 +268,8 @@ export interface MachineSnapshot {
   docker?: string;
   /** Its work tree (issues #324, #361): every job's there but one a routing rule pinned here with a path; `~` resolves on it. Absent: the jobs directory. */
   workTree?: string;
+  /** A work tree per repository (issue #691), keyed `owner/name`, matched in any case: a job from one of them works there, not in `workTree`. */
+  workTrees?: Record<string, string>;
   /** Why its work tree cannot be made usable, as its last probe found (issue #361): no job is routed to it. Absent: usable, or not probed yet. */
   workTreeProblem?: string;
   /** An ssh target: the hopper's address its last probe found it reaches, given to its jobs as HOPPER_URL (issue #698). Absent: none found, or not probed yet. */

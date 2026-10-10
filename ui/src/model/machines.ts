@@ -68,6 +68,12 @@ export function workTreeText(m: MachineSnapshot): string | null {
   return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
 }
 
+/** The work trees a machine keeps per repository (issue #691), `owner/name → path`, sorted; null when it maps none. */
+export function workTreesText(m: MachineSnapshot): string | null {
+  const trees = Object.entries(m.workTrees ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  return trees.length ? trees.map(([repo, path]) => `${repo} → ${path}`).join('; ') : null;
+}
+
 /** A sandbox box's template the Machines view shows (issue #602): its name, and whether it takes jobs; null for a machine of no template. */
 export function templateText(m: MachineSnapshot): string | null {
   if (!m.template) return null;

@@ -68,24 +68,33 @@ export function workTreeOn(machine: MachineSnapshot, cwd: string): { cwd: string
   return { cwd: tilde ? resolved : cwd };
 }
 
+/** The work tree a machine maps the repository to (issue #691), matched in any case; undefined when none. */
+export function mappedWorkTree(workTrees: Record<string, string> | undefined, repo: string | undefined): string | undefined {
+  if (!workTrees || !repo) return undefined;
+  const key = repo.toLowerCase();
+  return Object.entries(workTrees).find(([k]) => k.toLowerCase() === key)?.[1];
+}
+
 /**
  * Assumes a validated payload. The work tree is the lane's machine's (issue #361): the job's own `cwd`
  * (a routing rule's, which pins the job to its machine) only on the machine the job is pinned to, else
- * the machine's `workTree`, else the jobs directory. A path set for one machine never reaches another.
+ * the work tree the machine maps the job's repository to (issue #691), else the machine's `workTree`, else the jobs
+ * directory; the hopper makes the machine's trees when missing. A path set for one machine never reaches another.
  * It keeps its `~`: workTreeOn resolves it on the lane's machine. `repo`: the job's GitHub repository, if
  * any: fetched or cloned in a work tree that is no repository (job-worktree.ts).
  */
-export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, machine: Pick<MachineSnapshot, 'id' | 'workTree'>): ClaudeJobPayload {
+export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, machine: Pick<MachineSnapshot, 'id' | 'workTree' | 'workTrees'>): ClaudeJobPayload {
   // A fork (issue #548) works in its parent's repository.
   const source = job.source ?? job.forkOf?.source;
   const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; expectedMs?: number; timeoutMs?: number };
   const own = job.spec.machineId === machine.id ? p.cwd : undefined;
+  const repo = source?.repo && source.kind.startsWith('github') ? source.repo : undefined;
   return {
     prompt: p.prompt,
-    cwd: own ?? machine.workTree ?? JOBS_DIR,
+    cwd: own ?? mappedWorkTree(machine.workTrees, repo) ?? machine.workTree ?? JOBS_DIR,
     ...(own === undefined ? { makeWorkTree: true } : {}),
     model: p.model,
-    ...(source?.repo && source.kind.startsWith('github') ? { repo: source.repo } : {}),
+    ...(repo ? { repo } : {}),
     env: { ...(p.env ?? {}) },
     expectedMs: p.expectedMs ?? DEFAULT_EXPECTED_MS,
     timeoutMs: p.timeoutMs ?? DEFAULT_TIMEOUT_MS,

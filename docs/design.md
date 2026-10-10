@@ -11505,3 +11505,30 @@ Tests: `test/bug-reports/context.test.ts` (the context, what it never carries, t
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
 `test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).
+
+## Work trees per repository (issue #691, 2026-10-10)
+
+Owner request: a machine had one work tree, so a job for one repository ran inside another repository's
+work tree. The rule: a job works in its own repository's tree, never another's; a repository with no tree
+of its own keeps the machine's work tree; a mapped tree that is missing is made (or fails clearly), never
+replaced by the machine's.
+
+**As built:**
+- **A machine option, `workTrees`** (`local`, `ssh`, `client`; `workTreesOption`,
+  `src/plugins/machine-source/attached.ts`): `{"owner/name": "<path>"}`, each path absolute or under `~`,
+  each key a repository (`owner/name`), else the instance is refused. Command-bearing, as `workTree` is.
+  Carried to `MachineSnapshot.workTrees`. Edited in Settings → Plugins (a JSON field); the Machines Edit
+  forms keep it; the machine panel shows it (`work trees per repository`).
+- **Resolved per job** (`resolvePayload`, `src/executors/herdr/payload.ts`, herdr-claude and the print agents):
+  the job's own `cwd` on the machine it is pinned to (a routing rule's) first; then the tree the machine maps the
+  job's GitHub repository to, matched in any case (`mappedWorkTree`); then the machine's `workTree`; then the
+  jobs directory. A fork uses its parent's repository.
+- **Made and cloned when missing**, as the machine's own work tree is: the pane's shell runs `mkdir -p`, then the
+  job worktree command fetches or clones the repository in it (issue #361). It is not probed ahead: a mapped tree
+  that cannot be used (the home or above it, not writable) fails that job with what the shell said, and the
+  machine still takes jobs of other repositories. The issue's other way — a routing rule that sets `workTree`
+  without a machine — is not built: a path is one machine's (issue #361), and the map is per machine already.
+
+Tests: `test/herdr/machine-work-tree.test.ts` (mapped, any case, made when missing, other repository, pinned path wins,
+the home refused), `test/plugins/machine-targets.test.ts` (the option, its refusals, command-bearing),
+`test/ui/machine-work-tree.test.ts` (the panel line).

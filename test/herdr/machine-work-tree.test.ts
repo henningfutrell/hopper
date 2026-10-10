@@ -65,3 +65,38 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     expect(r.runs.filter((c) => c.includes('hopper-worktree')).every((c) => / '' '' '1'/.test(c))).toBe(true);
   });
 });
+
+// Issue #691: one machine works on more than one repository. A job from a repository the machine maps
+// works in that repository's work tree there; a job from any other works in the machine's own.
+describe('herdr-claude executor: a work tree per repository (issue #691)', () => {
+  const from = (repo: string) => ({ source: { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo } });
+  const MAPPED = { ...FAR, workTree: '~/wt/platform', workTrees: { 'Acme/Monolith': '~/wt/monolith' } };
+
+  it('a job from a mapped repository works in its work tree, resolved on the machine; the repository is matched in any case', async () => {
+    const r = await run({}, MAPPED, from('acme/monolith'));
+    expect(r.out).toMatchObject({ kind: 'finished' });
+    expect(r.workTrees[0]).toBe('/home/far/wt/monolith');
+    expect(r.runs.find((c) => c.includes('hopper-worktree'))).toMatch(/^cd '\/home\/far\/wt\/monolith' && /);
+  });
+
+  it('a mapped work tree that is missing is made, and the repository cloned in it: never the machine\'s own work tree', async () => {
+    const r = await run({}, MAPPED, from('acme/monolith'));
+    expect(r.runs.find((c) => c.includes('hopper-scratch'))).toMatch(/^mkdir -p '\/home\/far\/wt\/monolith' && cd '\/home\/far\/wt\/monolith' && /);
+    expect(r.runs.join('\n')).not.toContain('/home/far/wt/platform');
+  });
+
+  it('a job from a repository the machine does not map, or from none, works in the machine\'s own work tree', async () => {
+    expect((await run({}, MAPPED, from('acme/platform'))).workTrees[0]).toBe('/home/far/wt/platform');
+    expect((await run({}, MAPPED)).workTrees).toEqual(['/home/far/wt/platform']);
+  });
+
+  it('a job\'s own work tree, on the machine it is pinned to, still wins over the map', async () => {
+    const pinned = { ...from('acme/monolith'), spec: { executor: 'herdr-claude', machineId: 'laptop', payload: { prompt: 'go', cwd: '~/code/app' } } };
+    expect((await run({ cwd: '~/code/app' }, MAPPED, pinned)).workTrees[0]).toBe('/home/far/code/app');
+  });
+
+  it('a mapped work tree that is the machine\'s home fails the job, naming it', async () => {
+    const r = await run({}, { ...MAPPED, workTrees: { 'acme/monolith': '~' } }, from('acme/monolith'));
+    expect(r.out).toMatchObject({ kind: 'failed', error: expect.stringContaining('the work tree ~ on laptop is its home or above it') });
+  });
+});

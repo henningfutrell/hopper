@@ -20,6 +20,8 @@ interface AttachedBase {
   executors: string[];
   /** Its default work tree (issue #324); `~` is its home. Never on a container target. */
   workTree?: string;
+  /** A work tree per repository (issue #691), keyed `owner/name`: a job from one of them works there. Never on a container target. */
+  workTrees?: Record<string, string>;
   /** When its disk is low (issue #410); absent fields take the defaults. Never on a container target. */
   diskLow?: DiskThresholds;
   /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. */
