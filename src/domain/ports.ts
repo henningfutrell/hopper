@@ -254,6 +254,8 @@ export interface NotifierEvents {
   answerUrl(questionId: string): string;
   /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
   highPriority?(): number;
+  /** Where a person opens an artifact (issue #673): its stable URL under the user's link base. Absent: not known. */
+  artifactUrl?(id: string): string;
   /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
   tldr?(q: Question): string | undefined;
 }

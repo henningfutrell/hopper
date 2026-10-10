@@ -7,24 +7,15 @@ import type { ConnectedAccount } from '../../src/domain/ports.ts';
 import { createConnectedAccounts } from '../../src/connected-accounts/service.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { createAccountSource } from '../../src/sources/compose.ts';
-import { TEST_BOX } from '../support/sealed-tokens.ts';
-
+import { memoryAccountStore, systemOf } from '../support/system-secrets.ts';
 
 const NOW = Date.parse('2026-10-07T21:00:00Z');
 
 function service(record: ConnectedAccount | undefined, refresh = async (): Promise<never> => { throw Object.assign(new Error('bad'), { error: 'bad_refresh_token' }); }) {
-  let kept = record;
   const told: string[] = [];
+  const { store } = memoryAccountStore(record, { settings: { getJobRepositories: () => ['octo-user/tools'], setJobRepositories: () => undefined } });
   const s = createConnectedAccounts({
-    box: TEST_BOX,
-    store: {
-      connectedAccounts: {
-        get: () => kept, put: (a: ConnectedAccount) => { kept = a; }, delete: () => { const had = kept !== undefined; kept = undefined; return had; },
-        swap: (_p: string, from: string, next: ConnectedAccount) => { if (kept?.refreshToken !== from) return false; kept = next; return true; },
-        lock: () => true, unlock: () => undefined,
-      },
-      settings: { getJobRepositories: () => ['octo-user/tools'], setJobRepositories: () => undefined },
-    } as never,
+    store, secrets: systemOf(store),
     apps: hopperApps({ github: {} }),
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
     installations: async () => [],
@@ -33,7 +24,7 @@ function service(record: ConnectedAccount | undefined, refresh = async (): Promi
     refresh: refresh as never,
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
   });
-  return { s, told, kept: () => kept };
+  return { s, told };
 }
 
 const legacy: ConnectedAccount = {

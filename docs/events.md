@@ -2429,13 +2429,14 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 
 ## `vault.secret_set`
 
-Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value. `backend`: the vault backend it is kept in (issue #585), when it is kept in one: the hopper holds no value for it. `mints`: the AWS account or cluster it is a minting credential for (issue #580).
+Version 1 (`docs/schemas/vault.secret_set.v1.json`). A vault secret was set (issue #558): `replaced` when it already held a value. Its name and who set it; never its value. `backend`: the vault backend it is kept in (issue #585), when it is kept in one: the hopper holds no value for it. `rotated`: a system secret (issue #658) the hopper made or renewed itself — a webhook secret rotated, a GitHub token renewed. `mints`: the AWS account or cluster it is a minting credential for (issue #580).
 
 | field | type | required |
 |---|---|---|
 | `name` | string | yes |
 | `by` | string | yes |
 | `replaced` | boolean | yes |
+| `rotated` | boolean | no |
 | `backend` | string | no |
 | `mints` | object | no |
 
@@ -2460,6 +2461,40 @@ Version 1 (`docs/schemas/vault.secret_removed.v1.json`). A vault secret was remo
 {
   "name": "KUBE_TOKEN",
   "by": "Ada"
+}
+```
+
+## `vault.secret_read`
+
+Version 1 (`docs/schemas/vault.secret_read.v1.json`). The hopper read one of its own secrets in the vault's system scope (issue #658), for `purpose`: at most once an hour per secret, since some are read at every source poll. `by` is always `hopper`: no job reads a system secret. Never the value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+| `purpose` | string | no |
+
+```json
+{
+  "name": "system/connected-account.github.access-token",
+  "by": "hopper",
+  "purpose": "github"
+}
+```
+
+## `vault.secret_migrated`
+
+Version 1 (`docs/schemas/vault.secret_migrated.v1.json`). One of the hopper's own secrets moved into the vault's system scope at start (issue #658), from where it was kept before (`from`: `connected_accounts`, `webhooks`, `sign-in`); it was opened again before the old copy was removed. Never the value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `from` | string | yes |
+
+```json
+{
+  "name": "system/webhook.3f2c.signing-secret",
+  "from": "webhooks"
 }
 ```
 
@@ -2995,7 +3030,7 @@ Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, wi
 
 ## `artifact.settings_changed`
 
-Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, and whether public links work and for how long.
+Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artifacts changed (issue #624): the size limits per artifact and per user, the retention, whether public links work and for how long, and the link base (issue #673).
 
 | field | type | required |
 |---|---|---|
@@ -3019,9 +3054,32 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
     "retentionDays": 30,
     "publicLinks": false,
     "linkHours": 24,
-    "linkHoursMax": 168
+    "linkHoursMax": 168,
+    "linkBase": "http://192.0.2.10:4790"
   },
   "by": "github:octocat"
+}
+```
+
+## `artifact.posted`
+
+Version 1 (`docs/schemas/artifact.posted.v1.json`). A job shared an artifact with its owner, who sees it already (issue #673): its link was posted on the job's issue as the job's comment (`comment`, its URL), or could not be (`error`), or the job has no issue (`issue: false`). Also on the job's stream.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `title` | string | yes |
+| `by` | string | yes |
+| `comment` | string | no |
+| `error` | string | no |
+| `issue` | boolean | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "title": "Queue wait by hour",
+  "by": "job 6f1c2a9e",
+  "comment": "https://github.com/octo-org/hello/issues/7#issuecomment-1"
 }
 ```
 

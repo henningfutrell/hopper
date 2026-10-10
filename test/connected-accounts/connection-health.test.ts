@@ -18,12 +18,10 @@ import type { DeviceFlow, Grant } from '../../src/connected-accounts/device-flow
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { renewal } from '../../src/connected-accounts/renewal.ts';
 import type { UserStore } from '../../src/domain/ports.ts';
-import { createTokenBox } from '../../src/secrets/token-box.ts';
+import { accountOf, systemOf } from '../support/system-secrets.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { waitFor } from '../support/wait.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
-import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
-
 
 const EIGHT_HOURS_S = 8 * 3600;
 const T0 = '2026-10-09T10:00:00.000Z';
@@ -57,14 +55,13 @@ const approvedAs = (github: FakeForge, login: string, clock: ReturnType<typeof f
   }),
 });
 
-function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>, o: Partial<ConnectedAccountsOptions> = {}) {
+function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>, { key, previous, ...o }: Partial<ConnectedAccountsOptions> & { key?: string | null; previous?: string[] } = {}) {
   const apps = hopperApps({ github: { clientId: 'gh-client-id', url: github.url } });
   const logs: string[] = [];
   const renewed: unknown[] = [];
   const failures: unknown[] = [];
   const deleted: string[] = [];
   const service = createConnectedAccounts({
-    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async (_, token) => {
@@ -78,17 +75,18 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     flows: { github: approvedAs(github, 'octo-user', clock) },
     onRenewed: (_p, r) => { renewed.push(r); },
     onRenewalFailed: (_p, r) => { failures.push(r); },
+    secrets: systemOf(s, key, previous),
     ...o,
   });
   cleanups.push(() => service.stop());
   return { service, logs, renewed, failures, deleted };
 }
 
-async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore) {
-  const before = openedRow(s)?.accessToken;
+async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore, key?: string) {
+  const before = accountOf(s, key)?.accessToken;
   await service.connect('github');
-  await waitFor(async () => { const now = openedRow(s); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
-  return openedRow(s)!;
+  await waitFor(async () => { const now = accountOf(s, key); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
+  return accountOf(s, key)!;
 }
 
 const github = async (service: ReturnType<typeof hopper>['service']) => (await service.status())[0]!;
@@ -107,7 +105,7 @@ describe('the connection\'s renewals are recorded (#647)', () => {
     expect(h.renewed).toHaveLength(1);
     expect(h.renewed[0]).toMatchObject({ account: 'octo-user', expiresAt: expect.any(String) });
     expect(JSON.stringify(h.renewed)).not.toMatch(/gh[or]_/);
-    expect(openedRow(s)?.renewedAt).toBe(clock.now().toISOString());
+    expect(s.connectedAccounts.get('github')?.renewedAt).toBe(clock.now().toISOString());
   });
 
   it('records each failed renewal with its error code', async () => {
@@ -195,7 +193,7 @@ describe('the status says how the connection was made and how it renews (#647)',
     later(clock, 7.5 * 3600_000);
     await h.service.renewDue();
     const renewedAt = clock.now().toISOString();
-    const current = openedRow(s)!.accessToken;
+    const current = accountOf(s)!.accessToken;
     fail = true;
     later(clock, 3 * 3600_000);
     await h.service.renew('github', current).catch(() => undefined);
@@ -219,12 +217,12 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
+    expect(accountOf(s)!.accessToken).toBe(first.accessToken);
     expect(await github(h.service)).toMatchObject({ state: 'connected', held: { account: 'octo-user', at: T0 } });
     expect(h.logs.some((l) => /held/.test(l))).toBe(true);
 
     await h.service.takeHeld('github');
-    const now = openedRow(s)!;
+    const now = accountOf(s)!;
     expect(now.accessToken).toBe(signIn.accessToken);
     expect(now.connectedBy).toBe('sign-in');
     expect(await github(h.service)).not.toHaveProperty('held');
@@ -240,7 +238,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
     await h.service.dropHeld('github');
-    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
+    expect(accountOf(s)!.accessToken).toBe(first.accessToken);
     expect(h.deleted).toEqual([signIn.accessToken]);
     expect(await github(h.service)).not.toHaveProperty('held');
   });
@@ -253,7 +251,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
     const first = await connect(h.service, s);
 
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: 'gho_refused', grantedBy: 'web' });
-    expect(openedRow(s)!.accessToken).toBe(first.accessToken);
+    expect(accountOf(s)!.accessToken).toBe(first.accessToken);
     expect(await github(h.service)).toMatchObject({ state: 'connected' });
     expect(await github(h.service)).not.toHaveProperty('held');
   });
@@ -270,7 +268,7 @@ describe('a sign-in never quietly replaces a healthy connection (#647)', () => {
 
     const signIn = gh.mint('octo-user', true);
     await h.service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(openedRow(s)!.accessToken).toBe(signIn.accessToken);
+    expect(accountOf(s)!.accessToken).toBe(signIn.accessToken);
     expect((await github(h.service)).state).toBe('connected');
   });
 
@@ -291,11 +289,12 @@ describe('a token the runtime cannot open says which key is missing, at start (#
     const clock = fixedClock(T0);
     const url = temp.url();
     const s = store(url, clock);
-    const sealer = hopper(gh, s, clock, { box: createTokenBox(randomBytes(32).toString('hex')) });
-    await connect(sealer.service, s);
+    const key = randomBytes(32).toString('hex');
+    const sealer = hopper(gh, s, clock, { key });
+    await connect(sealer.service, s, key);
     sealer.service.stop();
 
-    const h = hopper(gh, store(url, clock), clock, { box: undefined });
+    const h = hopper(gh, store(url, clock), clock, { key: null });
     h.service.start();
     expect(h.logs.some((l) => /start check/.test(l) && /HOPPER_MASTER_KEY is missing/.test(l))).toBe(true);
     expect(h.logs.some((l) => /sign in/i.test(l))).toBe(false);
@@ -306,11 +305,12 @@ describe('a token the runtime cannot open says which key is missing, at start (#
     const clock = fixedClock(T0);
     const url = temp.url();
     const s = store(url, clock);
-    const sealer = hopper(gh, s, clock, { box: createTokenBox(randomBytes(32).toString('hex')) });
-    await connect(sealer.service, s);
+    const key = randomBytes(32).toString('hex');
+    const sealer = hopper(gh, s, clock, { key });
+    await connect(sealer.service, s, key);
     sealer.service.stop();
 
-    const h = hopper(gh, store(url, clock), clock, { box: createTokenBox(randomBytes(32).toString('hex')) });
+    const h = hopper(gh, store(url, clock), clock, { key: randomBytes(32).toString('hex') });
     h.service.start();
     expect(h.logs.some((l) => /start check/.test(l) && /the key it was sealed under is missing/.test(l))).toBe(true);
   });

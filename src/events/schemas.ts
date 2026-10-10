@@ -13,7 +13,7 @@ import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobSta
 const strict = z.strictObject;
 const artifactSettings = z.strictObject({
   maxBytes: z.number().int().min(1), userBytes: z.number().int().min(1), retentionDays: z.number().int().min(1),
-  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1),
+  publicLinks: z.boolean(), linkHours: z.number().int().min(1), linkHoursMax: z.number().int().min(1), linkBase: z.string().optional(), // linkBase: issue #673, absent before it
 });
 const decisionPoint = z.enum(DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
@@ -312,8 +312,9 @@ export const EVENT_SCHEMAS = {
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
-  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), backend: z.string().optional(), mints: asset.optional() }),
+  'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
+  'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
   'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
@@ -357,6 +358,7 @@ export const EVENT_SCHEMAS = {
   'artifact.removed': strict({ artifact: z.string(), reason: z.enum(['removed', 'retention']), by: z.string().optional() }),
   'artifact.settings_changed': strict({ from: artifactSettings, to: artifactSettings, by: z.string() }),
   ...ITEM_EVENT_SCHEMAS,
+  'artifact.posted': strict({ artifact: z.string(), title: z.string(), by: z.string(), comment: z.string().optional(), error: z.string().optional(), issue: z.literal(false).optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

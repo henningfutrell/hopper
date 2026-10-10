@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG_NAMES } from '../../src/domain/ports.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import {
-  BEFORE, edit, ENTERED, KEY, list, nextDelivery, REPLACED, rowOf, signatureOf, stored, storedRows, subOf, TWO, useWebhookApp, RUNTIME,
+  BEFORE, edit, ENTERED, KEY, list, nextDelivery, REPLACED, rowOf, secretRowOf, signatureOf, stored, storedRows, subOf, TWO, useWebhookApp, RUNTIME,
 } from '../support/webhooks.ts';
 
 const { start, restart, receiver, nowhere } = useWebhookApp();
@@ -46,14 +46,16 @@ describe('POST /ui/api/webhooks — add', () => {
     await nowhere(a, ENTERED);
   });
 
-  it('the stored column is ciphertext under the runtime\'s key, bound to the subscription', async () => {
+  it('the secret is ciphertext under the runtime\'s key in the vault\'s system scope, bound to its row (issue #658)', async () => {
     const { a, token } = await start();
     await edit(a, token, { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED });
     const row = rowOf(a, 'hook');
     expect(JSON.stringify(row)).not.toContain(ENTERED);
     expect(row.secret_env).toBe('');
-    expect(String(row.secret_sealed)).toMatch(/^hs1\./);
-    expect(createSealer(KEY).open(String(row.secret_sealed), `webhook:${String(row.id)}/signing-secret`)).toBe(ENTERED);
+    expect(row.secret_sealed).toBeNull();
+    const kept = secretRowOf(a, 'hook')!;
+    expect(kept.sealed).toMatch(/^hs1\./);
+    expect(createSealer(KEY).open(kept.sealed, `vault:${kept.id}/value`)).toBe(ENTERED);
   });
 
   it('with no secret: the hopper makes one, shows it in this answer only, and signs with it', async () => {
@@ -156,13 +158,13 @@ describe('POST /ui/api/webhooks — replace and rotate', () => {
   it('a bad secret, an unknown name, or rotate with a secret: refused, nothing changed', async () => {
     const { a, token } = await start();
     await edit(a, token, { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED });
-    const sealed = rowOf(a, 'hook').secret_sealed;
+    const sealed = secretRowOf(a, 'hook')!.sealed;
     expect((await edit(a, token, { action: 'replace', name: 'hook', secret: 'short' })).status).toBe(400);
     expect((await edit(a, token, { action: 'replace', name: 'hook' })).status).toBe(400);
     expect((await edit(a, token, { action: 'rotate', name: 'hook', secret: REPLACED })).status).toBe(400);
     expect((await edit(a, token, { action: 'replace', name: 'nope', secret: REPLACED })).status).toBe(404);
     expect((await edit(a, token, { action: 'rotate', name: 'nope' })).status).toBe(404);
-    expect(rowOf(a, 'hook').secret_sealed).toBe(sealed);
+    expect(secretRowOf(a, 'hook')!.sealed).toBe(sealed);
   });
 
   it('edit takes no secret: 400', async () => {
@@ -185,9 +187,11 @@ describe('POST /ui/api/webhooks — edit', () => {
   it('only the fields sent change; the id and the stored secret stay', async () => {
     const { a, token } = await start();
     await edit(a, token, { action: 'add', name: 'hook', url: 'http://127.0.0.1:1/h', events: ['*'], secret: ENTERED });
-    const { id, secret_sealed: sealed } = rowOf(a, 'hook');
+    const { id } = rowOf(a, 'hook');
+    const sealed = secretRowOf(a, 'hook')!.sealed;
     expect((await edit(a, token, { action: 'edit', name: 'hook', active: false })).status).toBe(200);
-    expect(rowOf(a, 'hook')).toMatchObject({ id, secret_sealed: sealed, active: 0 });
+    expect(rowOf(a, 'hook')).toMatchObject({ id, active: 0 });
+    expect(secretRowOf(a, 'hook')!.sealed).toBe(sealed);
   });
 
   it('no such name: 404; a name or bad url in the body: 400', async () => {
@@ -248,12 +252,13 @@ describe('POST /ui/api/webhooks/test — Send test event', () => {
     const res = await a.ui<Record<string, unknown>>('/ui/api/webhooks/test', { name: 'hook' }, { token });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, status: 200 });
-    expect(r.received).toHaveLength(1);
-    const got = r.received[0]!;
-    expect(got.headers['x-hopper-event']).toBe('webhook.test');
+    // A `*` subscription also gets the vault's events of its own secret (issue #658: set, read): only one is the test event.
+    const tests = r.received.filter((x) => x.headers['x-hopper-event'] === 'webhook.test');
+    expect(tests).toHaveLength(1);
+    const got = tests[0]!;
     expect(got.headers['x-hopper-signature']).toBe(signatureOf(ENTERED, got));
     expect(JSON.parse(got.body)).toMatchObject({ type: 'webhook.test', data: { test: true, subscription: 'hook' } });
-    expect(a.user().store.webhooks.listDeliveries({ limit: 10 })).toEqual([]);
+    expect(a.user().store.webhooks.listDeliveries({ limit: 10 }).filter((d) => !d.eventType.startsWith('vault.'))).toEqual([]);
   });
 
   // Issue #481: the test event has the type the subscription names, so the receiver's routing matches real events.

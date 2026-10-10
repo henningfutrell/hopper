@@ -73,7 +73,7 @@ export function createArtifactRepository(c: StoreContext): ArtifactRepository {
     },
     setSettings(s) {
       c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', SETTINGS_KEY, JSON.stringify({
-        maxBytes: s.maxBytes, userBytes: s.userBytes, retentionDays: s.retentionDays, publicLinks: s.publicLinks, linkHours: s.linkHours, linkHoursMax: s.linkHoursMax,
+        maxBytes: s.maxBytes, userBytes: s.userBytes, retentionDays: s.retentionDays, publicLinks: s.publicLinks, linkHours: s.linkHours, linkHoursMax: s.linkHoursMax, linkBase: s.linkBase,
       }));
     },
   };

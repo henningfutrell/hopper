@@ -12,6 +12,7 @@
 //   Scenario: the chart opens sandboxed
 //     When the person opens the artifact's content URL
 //     Then the HTML is served under a CSP sandbox that runs its scripts but gives it no origin of the hopper and no fetch
+//     And it loads nothing from outside: scripts, styles, images and fonts only inline, data: or blob: (issue #673)
 //   Scenario: a share link works for another user and stops after a revoke
 //     Given a second user of the hopper
 //     When the job runs `share ID --user bob`
@@ -31,96 +32,24 @@
 //     When the job puts an SVG with `--type svg`
 //     Then it has no warning, and it is served under the same sandbox policy as HTML
 //   Scenario: the skill help says an artifact is a visual, and shows an SVG flow diagram and an SVG bar chart
-import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ARTIFACT_SCRIPT } from '../../src/artifacts/index.ts';
 import { HTML_POLICY } from '../../src/artifacts/content.ts';
 import { ARTIFACT_HELP } from '../../src/artifacts/script.ts';
 import { visualWarning } from '../../src/domain/artifacts.ts';
-import { joinHopper } from '../../src/client/join.ts';
-import { startLinkedClient } from '../../src/client/main.ts';
-import type { Client } from '../../src/client/server.ts';
-import type { ArtifactsView, ArtifactView, DomainEvent } from '../../src/domain/types.ts';
-import { proxyToken } from '../../src/github-proxy/token.ts';
-import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { testInstallDir } from '../support/client.ts';
-import { waitFor } from '../support/wait.ts';
+import type { ArtifactView } from '../../src/domain/types.ts';
+import { artifactHarness, eventsOf, readArtifacts as read } from '../support/artifacts.ts';
+import type { TestApp } from '../support/app.ts';
 
-const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
-chmodSync(HERDR, 0o755);
 const CHART = '<!doctype html><title>Queue wait</title><svg viewBox="0 0 10 10"><rect width="4" height="10"/></svg><div id="c"></div><script>document.getElementById("c").textContent = "42";</script>\n';
 const GH_TOKEN = `ghp_${'a1B2'.repeat(9)}`;
 
-let t: TestApp | undefined;
-const clients: Client[] = [];
-const cleanups: (() => void)[] = [];
-const saved = { ...process.env };
+const h = artifactHarness();
+const { boot, artifact, file } = h;
+afterEach(() => h.stop());
 
-afterEach(async () => {
-  for (const c of clients.splice(0)) await c.stop();
-  await t?.stop();
-  t = undefined;
-  for (const c of cleanups.splice(0)) c();
-  process.env = { ...saved };
-});
-
-const temp = (prefix: string): string => {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-};
-
-async function boot(): Promise<{ a: TestApp; session: string; job: string }> {
-  const db = tempDbPath();
-  cleanups.push(db.cleanup);
-  process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
-  process.env.FAKE_HERDR_RUNNING = '1';
-  t = await startTestApp({
-    dbPath: db.dbPath,
-    plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
-    seams: { authorizationServer: createFakeAuthorizationServer() },
-  });
-  const session = await t.login();
-  const dir = temp('hopper-machine-');
-  const code = (await t.ui<{ code: string }>('/ui/api/machines/join', {}, { token: session })).body.code;
-  await joinHopper({ line: `${t.url}#${code}`, name: 'desk', dir });
-  clients.push(startLinkedClient({ dir, herdrBin: HERDR, session: 'hopper', installDir: testInstallDir(), backoffMs: [50] }));
-  const a = t;
-  await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'desk' && m.online), { timeoutMs: 10000, what: 'desk online' });
-  const pulled = await a.pull({ op: 'sleep', ms: 60000 }, { url: 'https://github.com/octo-org/hello/issues/7', repo: 'octo-org/hello', number: 7 } as never);
-  await a.waitForStatus(pulled.id, 'running', 10000);
-  return { a, session, job: pulled.id };
-}
-
-interface Run { code: number; stdout: string; stderr: string }
-
-/** `hopper-artifact`, run as the job runs it: the script and its proxy token in the job's credentials dir, in `cwd`. */
-function artifact(a: TestApp, job: string, args: string[], o: { token?: string; cwd?: string } = {}): Promise<Run> {
-  const dir = temp('job-credentials-');
-  writeFileSync(join(dir, 'token'), `${o.token ?? proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job)}\n`, { mode: 0o600 });
-  writeFileSync(join(dir, 'artifact'), ARTIFACT_SCRIPT, { mode: 0o700 });
-  return new Promise((resolve) => {
-    execFile('sh', [join(dir, 'artifact'), ...args], {
-      cwd: o.cwd, env: { PATH: process.env.PATH, HOPPER_URL: a.url, HOPPER_TOKEN_FILE: join(dir, 'token') } as NodeJS.ProcessEnv, encoding: 'utf8',
-    }, (err, stdout, stderr) => resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr }));
-  });
-}
-
-const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user().store.events.recent(1000).filter((e) => e.type === type);
-const read = async (a: TestApp, session: string) => (await a.api<ArtifactsView>('GET', '/api/artifacts', undefined, { 'x-hopper-session': session })).body;
 const load = (a: TestApp, path: string) => fetch(a.url + path);
-
-/** A file in a scratch dir of the job's. */
-function file(name: string, body: string | Buffer): { dir: string; path: string } {
-  const dir = temp('job-work-');
-  writeFileSync(join(dir, name), body);
-  return { dir, path: join(dir, name) };
-}
 
 describe('artifacts (issue #624)', () => {
   it('a job puts an HTML chart and gets a URL; it is recorded with its job, issue and hash; it opens sandboxed', async () => {
@@ -156,6 +85,10 @@ describe('artifacts (issue #624)', () => {
     expect(csp).toMatch(/^sandbox allow-scripts/);
     expect(csp).not.toContain('allow-same-origin');
     expect(csp).toContain("connect-src 'none'");
+    // Issue #673: nothing loads from outside, so nothing leaves through a request either — its own signed URL included.
+    expect(csp).not.toContain('https:');
+    expect(csp).not.toContain('allow-popups-to-escape-sandbox');
+    for (const d of ['script-src', 'style-src', 'img-src', 'font-src']) expect(csp).toContain(`${d} 'unsafe-inline' data: blob:;`);
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     // A content URL whose signature is changed loads nothing.

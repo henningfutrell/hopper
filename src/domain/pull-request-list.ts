@@ -2,13 +2,20 @@
 // followed after its end (PR waiting) — and one closed without a merge, which waits on a person, grouped per job
 // repository with its yolo mode; and the header: how many repositories have yolo mode on, and where merging waits. A
 // merged one drops off. Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
-// jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time.
+// jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
+// no-checks grace window, issue #677).
 import type { Job } from './types.ts';
-import type { PullRequestSeen } from './pull-requests.ts';
+import { noChecksSettled, readyToMerge, type PullRequestSeen } from './pull-requests.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
-/** Why a waiting pull request is not merged yet: the first that holds, in this order. */
-export const MERGE_WAITS = ['not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'no checks', 'merge refused'] as const;
+/**
+ * Why a waiting pull request is not merged yet: the first that holds, in this order. `no pull request`: none named nor
+ * found yet. `checks not started`: it has no checks, inside the grace window after its last push. `ready`: yolo mode on
+ * and it is ready, so the next sync merges it (issue #677).
+ */
+export const MERGE_WAITS = [
+  'no pull request', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks not started', 'merge refused', 'ready',
+] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
 export interface PullRequestCard {
@@ -25,6 +32,8 @@ export interface PullRequestCard {
   checks: PullRequestSeen['checks'] | 'unknown';
   mergeable: 'mergeable' | 'conflicts' | 'unknown';
   draft: boolean;
+  /** The branch it merges into, as last seen (issue #677). */
+  base?: string;
   /** When it was opened, as last seen. */
   openedAt?: string;
   /** When its job ended done. */
@@ -58,19 +67,20 @@ export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | unde
     && newest(job.source.key)?.id === job.id;
 }
 
-function waitOf(seen: PullRequestSeen | undefined, yolo: boolean): MergeWait {
+function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, now: number): MergeWait {
+  if (!named) return 'no pull request';
   if (!seen) return yolo ? 'not checked yet' : 'yolo off';
   if (seen.draft) return 'draft';
   if (seen.conflicting) return 'conflicts';
   if (seen.checks === 'failing') return 'checks failing';
   if (!yolo) return 'yolo off';
   if (seen.checks === 'pending') return 'checks pending';
-  // Issue #652: the hopper merges only once a check passed; a pull request with none waits for one.
-  if (seen.checks === 'none') return 'no checks';
-  return 'merge refused';
+  if (seen.checks === 'none' && !noChecksSettled(seen, now)) return 'checks not started';
+  if (seen.mergeError || !readyToMerge(seen, now)) return 'merge refused';
+  return 'ready';
 }
 
-function cardOf(job: Job, yolo: boolean): PullRequestCard {
+function cardOf(job: Job, yolo: boolean, now: number): PullRequestCard {
   const f = followedOf(job);
   const seen = f.seen;
   const state = f.follow === 'open' ? 'open' : 'closed';
@@ -78,19 +88,20 @@ function cardOf(job: Job, yolo: boolean): PullRequestCard {
     jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
-    draft: seen?.draft ?? false, ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}), ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
-    ...(state === 'open' ? { waits: waitOf(seen, yolo) } : {}), ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
+    draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),
+    ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
+    ...(state === 'open' ? { waits: waitOf(f.pullRequest !== undefined, seen, yolo, now) } : {}), ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }
 
-/** The list: `jobs` the finished ones to look at, `newest` the newest job of an item, `repos` the job repositories. */
-export function pullRequestList(jobs: Job[], newest: (key: string) => Job | undefined, yolo: YoloModeSettings, repos: string[]): PullRequestsView {
+/** The list: `jobs` the finished ones to look at, `newest` the newest job of an item, `repos` the job repositories, `now` in ms. */
+export function pullRequestList(jobs: Job[], newest: (key: string) => Job | undefined, yolo: YoloModeSettings, repos: string[], now: number): PullRequestsView {
   const waiting = jobs.filter((j) => waitsOnPullRequest(j, newest));
   const names: string[] = [];
   for (const r of [...repos, ...waiting.map((j) => j.source!.repo!)]) if (!names.some((n) => n.toLowerCase() === r.toLowerCase())) names.push(r);
   const groups = names.map((repo) => {
     const on = yoloModeFor(yolo, repo);
-    const cards = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase()).map((j) => cardOf(j, on))
+    const cards = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase()).map((j) => cardOf(j, on, now))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
     return { repo, yolo: on, pullRequests: cards };
   });

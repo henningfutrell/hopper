@@ -29,7 +29,7 @@ export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
 /** The Pull requests list (issue #637): every waiting pull request of the user's jobs, per job repository, with its yolo mode. */
 export function pullRequestsView(t: Pick<TenantParts, 'store'>): PullRequestsView {
   const { store } = t;
-  return pullRequestList(store.jobs.list({ status: ['finished'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'));
+  return pullRequestList(store.jobs.list({ status: ['finished'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), Date.now());
 }
 
 export function registerYoloModeRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

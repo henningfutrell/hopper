@@ -33,10 +33,11 @@ import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
 import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
+import { openUserSystemSecrets } from './system-secrets.ts';
+import { withSystemScope } from '../vault/system-view.ts';
+import type { SystemSecrets } from '../vault/system.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { sealerOf } from '../secrets/sealer.ts';
-import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
@@ -49,7 +50,7 @@ import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index
 import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
-import type { UserArtifacts } from '../artifacts/index.ts';
+import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
@@ -87,6 +88,8 @@ export interface UserRuntimeOptions {
   pluginsConfigIntervalMs: number;
   /** The UI link to one question (notifications carry it). */
   answerUrl(questionId: string): string;
+  /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
+  artifactLinkBase(linkBase: string): string;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
@@ -101,6 +104,8 @@ export interface UserRuntimeOptions {
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
    */
   access?: VaultAccess; minter?: CredentialMinter;
+  /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page. */
+  instanceSecrets?: SystemSecrets;
 }
 
 
@@ -167,9 +172,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
   // hopper's own (issue #657), kept in the vault's system scope.
-  const keys = sealerOf(runtimeSecrets(o.env));
+  // The hopper's own secrets are in the vault's system scope (issue #658): the old copies moved in at this start.
+  const { system, keys } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
   const { jev, typesafeKey, secret } = userTypesafeKey({
-    user, store, env: o.env, runtime: userSecrets(o.env, user), keys, ...(o.access ? { access: o.access } : {}),
+    user, store, env: o.env, runtime: userSecrets(o.env, user), system,
     ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
   });
   const dataDir = userWorkDir(config.workDir, user);
@@ -219,7 +225,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // connected from Sources, through the hopper's app; their job sources and jobs ask here for tokens.
   const connectedAccounts = createConnectedAccounts({
     // GitHub App user tokens expire after 8 h (issues #358, #441): renewed with the refresh token, sealed at rest.
-    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env),
+    store, apps: config.hopperApps, clock, logger, ...fromRuntime(config.hopperApps, o.env), secrets: system,
     whoIs: (provider, token) => whoIs(config.hopperApps[provider], token),
     installations: (token) => installations(config.hopperApps.github, token),
     // Its end, each renewal and each failed renewal are recorded (issues #358, #647), never with a token.
@@ -271,12 +277,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const router = seams.router ?? host.router;
   // Seam doubles win over the host's live instances (looked up per question).
   const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
-  // The webhook signing secrets (issue #451): sealed in the user's store under the runtime's master key; one
-  // an older key sealed is sealed again under the current one now. A subscription from before reads its variable.
-  if (keys.problem) logger.warn(`hopper: ${keys.problem}: webhook signing secrets cannot be stored, and a stored one is not opened`);
-  const webhookSecrets = createWebhookSecrets({ store, keys, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix, logger });
-  const resealed = webhookSecrets.resealAll();
-  if (resealed > 0) logger.info(`hopper: ${resealed} webhook signing secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
+  // The webhook signing secrets (issues #451, #658): system secrets in the user's vault. A subscription from before reads its variable.
+  const webhookSecrets = createWebhookSecrets({ store, system, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix });
   const dispatcher = createWebhookDispatcher({ store, clock, secretOf: (sub) => webhookSecrets.of(sub), baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
@@ -308,7 +310,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const jobSources = () => [...running.map((r) => r.source), ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
-  const vault = await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() });
+  // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
@@ -353,12 +356,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
-  const history = createHistoryRecorders({
-    readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger,
-  });
-  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger });
+  const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy,

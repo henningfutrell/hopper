@@ -30,13 +30,16 @@ import { parseArgs } from 'node:util';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
+import { withHeldSecrets } from './auth/sealed-secrets.ts';
 import { jobRulesProblem } from './job-rules/index.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
+import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
-import { OPERATOR_COMMANDS, OPERATOR_USAGE, OperatorRefusal, runOperatorAction } from './cli-operator.ts';
+import { OPERATOR_COMMANDS, OPERATOR_USAGE, runOperatorAction } from './cli-operator.ts';
+import { OperatorRefusal } from './cli-operator-call.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -87,20 +90,23 @@ function recordName(raw: string | undefined): ConfigName {
   throw new CliError(`unknown config record ${raw ?? '(none)'}; one of ${CONFIG_NAMES.join(', ')}`);
 }
 
-/** Why `value` would not load as `name`, or undefined. */
-export function recordProblem(name: ConfigName, value: unknown): string | undefined {
+/**
+ * Why `value` would not load as `name`, or undefined. `held`: the realms' secrets the instance's vault keeps (issue
+ * #658) — the `sign-in` record no longer holds them, so a realm that needs one is checked as having it.
+ */
+export function recordProblem(name: ConfigName, value: unknown, held: readonly string[] = []): string | undefined {
   if (name === 'rules') return rulesProblem(value);
   if (name === 'job-rules') return jobRulesProblem(value);
-  return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
+  return name === 'sign-in' ? signInConfigProblem(withHeldSecrets(value, held)) : pluginsConfigProblem(value);
 }
 
 /** One config record wherever it lives: a user's (plugins, rules, job-rules) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
-function put(records: Records, name: ConfigName, json: string, version: string): void {
+function put(records: Records, name: ConfigName, json: string, version: string, held: readonly string[]): void {
   let value: unknown;
   try { value = JSON.parse(json); } catch (e) { throw new CliError(`${name} refused, nothing written: not valid JSON: ${(e as Error).message}`); }
-  const problem = recordProblem(name, value);
+  const problem = recordProblem(name, value, held);
   if (problem) throw new CliError(`${name} refused, nothing written: ${problem}`);
   if (!records.write(name, value, version)) {
     throw new CliError(`${name} changed since version ${version} (now ${records.version(name)}); nothing written`);
@@ -138,10 +144,11 @@ function config(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' }, user: { type: 'string' } } });
   const [verb, rawName] = positionals;
   const name = recordName(rawName);
-  withRecords(instance, name, values.user, (records) => configVerb(records, name, verb, values['if-version'], io));
+  const held = name === 'sign-in' ? instance.vault.list().map((s) => s.name) : [];
+  withRecords(instance, name, values.user, (records) => configVerb(records, name, verb, values['if-version'], io, held));
 }
 
-function configVerb(records: Records, name: ConfigName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
+function configVerb(records: Records, name: ConfigName, verb: string | undefined, ifVersion: string | undefined, io: CliIo, held: readonly string[]): void {
   if (verb === 'get') {
     const value = records.read(name);
     if (value === undefined) throw new CliError(`${name}: none yet (version missing)`);
@@ -150,7 +157,7 @@ function configVerb(records: Records, name: ConfigName, verb: string | undefined
     io.out(`${records.version(name)}\n`);
   } else if (verb === 'set') {
     if (!ifVersion) throw new CliError('config set needs --if-version <version> (hopper config version <record>), so nobody else\'s edit is overwritten');
-    put(records, name, io.stdin(), ifVersion);
+    put(records, name, io.stdin(), ifVersion, held);
     io.err(`${name} written (version ${records.version(name)})\n`);
   } else {
     throw new CliError(USAGE);
@@ -243,7 +250,10 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
   let store: InstanceStore | undefined;
   try {
-    store = openInstanceStore({ url, clock: { now: () => new Date() } });
+    const clock = { now: () => new Date() };
+    // The sign-in config with its realms' secrets from the instance's vault (issue #658), opened with the runtime's key.
+    store = openInstanceStore({ url, clock });
+    store = openInstanceSecrets(store, { env: io.env, clock, logger: { info: () => undefined, warn: (l) => io.err(`${l}\n`) } }).instance;
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
