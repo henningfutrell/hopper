@@ -1,5 +1,5 @@
 // Issue #697: one update for a container install, the same by hand and by an agent. `hopper update <tool>`, run from the
-// target image, prints a script that backs up, puts in the release's compose.yaml (the old one kept), moves the install's
+// target image, prints a script that backs up, puts in the compose.yaml that image ships with (the old one kept), moves the install's
 // own settings to .env, checks .env, pulls and starts the whole stack — never the hopper service alone — and checks
 // health. Run here against a stub container tool that records each call: the script is the user-side adapter.
 import { spawnSync } from 'node:child_process';
@@ -12,7 +12,7 @@ import { runCli, type CliIo } from '../../src/cli.ts';
 const ROOT = join(import.meta.dirname, '..', '..');
 const IMAGE = 'ghcr.io/henningfutrell/hopper:beta';
 const KEY = 'a'.repeat(64);
-const RELEASE = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
 const OLD_LAN = readFileSync(join(ROOT, 'test', 'fixtures', 'compose', 'old-lan.yaml'), 'utf8');
 
 const dirs: string[] = [];
@@ -72,14 +72,14 @@ async function update(dir: string, o: { tool?: string; masterKey?: string } = {}
 
 const read = (dir: string, name: string): string => readFileSync(join(dir, name), 'utf8');
 
-describe('hopper update: the release\'s compose file, the whole stack (issue #697)', () => {
-  it('brings an old LAN install to the release\'s compose.yaml, keeps its settings in .env and its old files as backups', async () => {
+describe('hopper update: the compose file the image ships with, the whole stack (issue #697)', () => {
+  it('brings an old LAN install to the image\'s compose.yaml, keeps its settings in .env and its old files as backups', async () => {
     const dir = install(OLD_LAN, `HOPPER_MASTER_KEY=${KEY}\nHOPPER_IMAGE=ghcr.io/henningfutrell/hopper:latest\n`);
     const r = await update(dir);
     expect(r.status, r.out).toBe(0);
-    // The release's compose file, whole, stamped with the release it came with.
-    expect(read(dir, 'compose.yaml')).toMatch(/^# hopper release: /);
-    expect(read(dir, 'compose.yaml')).toContain(RELEASE);
+    // The image's compose file, whole, stamped with the version it came with.
+    expect(read(dir, 'compose.yaml')).toMatch(/^# hopper version: /);
+    expect(read(dir, 'compose.yaml')).toContain(SHIPPED);
     const files = readdirSync(dir);
     const bak = files.filter((f) => f.startsWith('compose.yaml.bak-'));
     expect(bak).toHaveLength(1);
@@ -121,7 +121,7 @@ describe('hopper update: the release\'s compose file, the whole stack (issue #69
   });
 
   it('goes on without the master key in .env when the running hopper was given one some other way', async () => {
-    const dir = install(RELEASE, '');
+    const dir = install(SHIPPED, '');
     const r = await update(dir, { masterKey: '{"source":"given","fingerprint":"ab12cd34","previous":false}' });
     expect(r.status, r.out).toBe(0);
   });
@@ -136,7 +136,7 @@ describe('hopper update: the release\'s compose file, the whole stack (issue #69
 
   it('speaks each compose tool: docker compose and podman-compose', async () => {
     for (const tool of ['docker', 'podman-compose']) {
-      const dir = install(RELEASE, `HOPPER_MASTER_KEY=${KEY}\n`);
+      const dir = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
       const r = await update(dir, { tool });
       expect(r.status, r.out).toBe(0);
       expect(r.calls.filter((c) => c.endsWith('up -d --force-recreate'))).toEqual([tool === 'docker' ? 'compose up -d --force-recreate' : 'up -d --force-recreate']);
@@ -154,6 +154,6 @@ describe('hopper update: the release\'s compose file, the whole stack (issue #69
     expect(skill.out).toMatch(/^# Update a container hopper/);
     const compose = await cli(['update', 'compose']);
     expect(compose.code).toBe(0);
-    expect(compose.out).toBe(`# hopper release: unknown\n${RELEASE}`);
+    expect(compose.out).toBe(`# hopper version: unknown\n${SHIPPED}`);
   });
 });

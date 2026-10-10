@@ -19,7 +19,7 @@ export interface Operation {
   /** What a 200 carries. */
   returns: string;
   /** Answer media type; default JSON. */
-  answers?: 'html' | 'sse' | 'xml' | 'redirect';
+  answers?: 'html' | 'sse' | 'xml' | 'markdown' | 'redirect';
   /** A UI mutation: the least UI role that may make it. */
   role?: UiRole;
   /** Error statuses beyond the guards'. */

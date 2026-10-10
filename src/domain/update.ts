@@ -81,3 +81,10 @@ export interface UpdateStatus extends UpdateSettings {
   /** How many running jobs, of every user, a restart would lose now: what an apply waits on, and what recreating an image's container would end (issue #494). */
   restartBlockers: number;
 }
+
+/** The compose file a build ships with (issue #697): GET /api/update/compose. `compose` starts with the version stamp (`# hopper version: <branch> <commit>`). */
+export interface ShippedCompose {
+  branch?: string;
+  commit?: string;
+  compose: string;
+}

@@ -279,7 +279,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     return user;
   };
   const server = createServer({
-    instance, clock, version: VERSION, pluginStore, updater, access, sandboxes, masterKey: masterKeyStatus,
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus,
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),

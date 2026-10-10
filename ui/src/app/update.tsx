@@ -2,7 +2,8 @@
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
-// A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag.
+// A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag:
+// since issue #697 the update script that image makes, on the compose file that image ships with and the whole stack.
 // The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the commands are one container tool's, the one this browser chose last.
 // An install whose compose.yaml has no OpenFGA (issue #696): How to update says to add it, with the fix.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
@@ -82,7 +83,11 @@ function Command({ text }: { text: string }) {
   );
 }
 
-/** How to update a container install: the channel's tag in .env, pull and recreate the hopper's container, prune — for the chosen container tool; and what a recreate would end now. */
+/**
+ * How to update a container install (issue #697): the channel's image makes the update script, which backs up, puts in that
+ * compose file that image ships with, keeps the install's own settings in .env and starts the whole stack — for the chosen container
+ * tool; then the prune; and what a recreate would end now.
+ */
 function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
   const tool = useContainerTool();
   const access = accessDown(useAccessStatus());
@@ -92,17 +97,17 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
   return (
     <div data-slot="image-update" className="space-y-2 text-xs">
       {u.mismatch && <p className={TEXT.warn}>{u.mismatch}.</p>}
-      <p>In the folder that holds <code>compose.yaml</code>, set the {s.channel} channel's image in <code>.env</code> beside it{s.channel === 'stable' && <> (<code>latest</code> is the same image)</>}:</p>
-      <Command text={u.env} />
       <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-muted-foreground">Pull the image and recreate the hopper's container (Postgres and the volumes stay as they are); then, optionally, remove the image it replaced.</p>
+        <p className="min-w-0 flex-1">In the folder that holds <code>compose.yaml</code>, make the update script from the {s.channel} channel's image, read it, then run it:</p>
         <div data-slot="container-tool" className="flex gap-1">
           {CONTAINER_TOOLS.map((t) => (
             <Button key={t} data-tool={t} size="xs" variant={t === tool ? 'secondary' : 'ghost'} aria-pressed={t === tool} onClick={() => setContainerTool(t)}>{t}</Button>
           ))}
         </div>
       </div>
-      <Command text={c.update} />
+      <Command text={c.make} />
+      <Command text={c.run} />
+      <p className="text-muted-foreground">It backs up the database, <code>compose.yaml</code> and <code>.env</code>; puts in the <code>compose.yaml</code> that image ships with and moves your own settings to <code>.env</code>; sets <code>HOPPER_IMAGE</code>; then pulls and starts the whole stack and checks it. Never recreate the hopper's container alone: a new version can add services. Then, optionally, remove the image it replaced:</p>
       <Command text={c.prune} />
       <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>
       {access !== undefined && (

@@ -289,14 +289,18 @@ copy, and how to check it works:
 
 <h2 id="upgrade">Upgrade</h2>
 <p><strong>With Podman:</strong> you update it; the hopper never updates a container itself. In the hopper's folder,
-download the newest image and recreate the hopper on it, then remove the image it replaced. It keeps your settings,
-database and sign-ins. When an update is out, the hopper's update notice shows these commands and how many running jobs
-the restart would end: wait until none.</p>
-<div class="cmd"><pre>podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper</pre><button type="button" data-copy="podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper">Copy</button></div>
+make the update script from the newest image, read it, then run it. It backs up the database, <code>compose.yaml</code>
+and <code>.env</code>; puts in the new image's <code>compose.yaml</code> and moves your own settings to <code>.env</code>;
+then pulls and starts the whole stack and checks it. It keeps your settings, database and sign-ins. Never update the
+hopper's container alone: a new version can add services it needs. When an update is out, the hopper's update notice
+shows these commands and how many running jobs the restart would end: wait until none. Then remove the image it replaced.</p>
+<div class="cmd"><pre>podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh</pre><button type="button" data-copy="podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh">Copy</button></div>
+<div class="cmd"><pre>sh hopper-update.sh</pre><button type="button" data-copy="sh hopper-update.sh">Copy</button></div>
 <div class="cmd"><pre>podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
-<p class="note">The image tag is the update channel: <code>HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
-<code>:stable</code>) in <code>.env</code> beside <code>compose.yaml</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
-Pick the same channel in the hopper's Settings → Version.</p>
+<p class="note">The image tag is the update channel: <code>ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
+<code>:stable</code>). The script sets it as <code>HOPPER_IMAGE</code> in <code>.env</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
+Pick the same channel in the hopper's Settings → Version. Your own settings go in <code>.env</code> (for a LAN install,
+<code>HOPPER_BIND=0.0.0.0</code>) or in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>

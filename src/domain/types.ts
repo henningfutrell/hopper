@@ -505,7 +505,7 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID, type InstanceTotals, type
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type ShippedCompose, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 

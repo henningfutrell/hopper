@@ -61,6 +61,8 @@ export interface ServerOptions {
   pluginStore: PluginStoreView;
   /** Self-update (the instance's): GET /api/update, POST /ui/api/update. */
   updater: Updater;
+  /** The build's directory, whose compose.yaml GET /api/update/compose serves (issue #697); default this build's. */
+  buildDir?: string;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */

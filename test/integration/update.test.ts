@@ -4,7 +4,7 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ReleaseCompose, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
+import type { ShippedCompose, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
@@ -90,7 +90,7 @@ describe('self-update over HTTP', () => {
     expect(readInstall(appDir).commit).toBe(w.c1);
   });
 
-  it('serves the compose file this build ships with, stamped with its release, and the agent update skill (issue #697)', async () => {
+  it('serves the compose file this build ships with, stamped with its version, and the agent update skill (issue #697)', async () => {
     const w = world();
     const root = tempDir('jh-update-it-');
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
@@ -98,9 +98,9 @@ describe('self-update over HTTP', () => {
     writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices: {}\n');
     const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => {} } } });
     apps.push(app);
-    const c = await app.api<ReleaseCompose>('GET', '/api/update/compose');
+    const c = await app.api<ShippedCompose>('GET', '/api/update/compose');
     expect(c.status).toBe(200);
-    expect(c.body).toEqual({ branch: 'beta', commit: w.c1, compose: `# hopper release: beta ${w.c1}\nname: hopper\nservices: {}\n` });
+    expect(c.body).toEqual({ branch: 'beta', commit: w.c1, compose: `# hopper version: beta ${w.c1}\nname: hopper\nservices: {}\n` });
     const skill = await fetch(`${app.url}/api/update/skill`);
     expect(skill.headers.get('content-type')).toMatch(/^text\/markdown/);
     const text = await skill.text();
