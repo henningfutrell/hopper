@@ -94,6 +94,10 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   it('sets the database password again at each start: a lost secrets volume does not lock the hopper out of its database (issue #659)', () => {
     const script = postgres.command!.join('\n');
     expect(script).toMatch(/ALTER ROLE hopper PASSWORD/);
+    // Healthy only once the password is set: the hopper never meets the old one.
+    expect(script).toMatch(/rm -f \$\$?s\/password_set/);
+    expect(script).toMatch(/ALTER ROLE hopper PASSWORD[^\n]*&& touch \$\$?s\/password_set/);
+    expect((postgres as Service & { healthcheck?: { test: string[] } }).healthcheck?.test.join(' ')).toMatch(/pg_isready -U hopper -d hopper && test -f \/run\/hopper-secrets\/password_set/);
   });
 
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {

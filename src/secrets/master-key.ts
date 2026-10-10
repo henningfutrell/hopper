@@ -151,7 +151,7 @@ export function resolveMasterKey(o: {
   }
 
   if (recorded !== undefined) {
-    return { source: 'missing', fingerprint: recorded, problem: `the master key is missing: this database keeps secrets sealed under the key of fingerprint ${shortFingerprint(recorded)}; ${GIVE_MASTER_KEY}` };
+    return { source: 'missing', fingerprint: recorded, problem: `the master key is missing: this database was set up with the key of fingerprint ${shortFingerprint(recorded)}; ${GIVE_MASTER_KEY}` };
   }
   const kept = o.kept();
   if (kept.keyIds.length > 0 || kept.tokens.length > 0) {

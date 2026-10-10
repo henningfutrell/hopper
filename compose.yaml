@@ -61,6 +61,7 @@ services:
     command:
       - |
         s=/run/hopper-secrets
+        rm -f $$s/password_set
         (
           umask 077
           [ -s $$s/postgres_password ] || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > $$s/postgres_password
@@ -74,7 +75,7 @@ services:
         chown 70:70 $$s/postgres_password
         chown 1000:1000 $$s/database_url $$s/openfga_key $$s/vault_key
         chown -R 65532:65532 $$s/openfga
-        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga' -c "ALTER ROLE hopper PASSWORD '$$(cat $$s/postgres_password)'") &
+        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga' -c "ALTER ROLE hopper PASSWORD '$$(cat $$s/postgres_password)'" && touch $$s/password_set) &
         exec docker-entrypoint.sh postgres
     environment:
       POSTGRES_USER: hopper
@@ -84,7 +85,8 @@ services:
       - postgres:/var/lib/postgresql/data
       - secrets:/run/hopper-secrets
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hopper -d hopper"]
+      # Healthy once the password is set again (password_set): the hopper never meets an old one.
+      test: ["CMD-SHELL", "pg_isready -U hopper -d hopper && test -f /run/hopper-secrets/password_set"]
       interval: 5s
       timeout: 3s
       retries: 20

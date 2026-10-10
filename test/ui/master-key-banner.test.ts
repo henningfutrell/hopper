@@ -66,7 +66,7 @@ describe('the master key banner (#659)', () => {
   });
 
   it('limited: which key is missing and how to give it; nothing deleted', async () => {
-    const problem = 'the master key is missing: this database keeps secrets sealed under the key of fingerprint 0123456789abcdef; give it as HOPPER_MASTER_KEY at launch and restart';
+    const problem = 'the master key is missing: this database was set up with the key of fingerprint 0123456789abcdef; give it as HOPPER_MASTER_KEY at launch and restart';
     const { el } = await render({ view: { source: 'missing', fingerprint: '0123456789abcdef', saved: false, revealable: false, problem } });
     const banner = el.querySelector('[data-master-key]')!;
     expect(banner.textContent).toContain('Limited');
