@@ -3,7 +3,10 @@
 // applied from the next decision) and its record over the window — asked, applied, the agreement rate a person flips
 // it to active on —; then the newest picks, each with its options, what Jev picked and how sure, what became of it and
 // what was decided, and Override (an operator's): what it should have been, which counts in the agreement rate.
-import { Scale } from 'lucide-react';
+// The TypeSafe API key Jev asks with (issue #657), right under whether Jev is on: write-only — set or not, its last 4
+// characters, when —, with Replace and Remove (an operator's: the user's own, or an admin's); a new key is checked once
+// against TypeSafe before it is kept.
+import { KeyRound, Scale } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 import { Empty, Panel } from '@/components/panel';
@@ -13,8 +16,8 @@ import { Input } from '@/components/ui/input';
 import { usePoll } from '@/hooks/use-poll';
 import { get, post } from '@/lib/api';
 import { clock } from '@/model/format';
-import { MODE_TEXT, pickDecided, pickSummary, rate } from '@/model/minor-decisions';
-import type { DecisionPointView, MinorDecisionMode, MinorDecisionPickView, MinorDecisionsView } from '@/model/wire';
+import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, rate } from '@/model/minor-decisions';
+import type { DecisionPointView, MinorDecisionMode, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView } from '@/model/wire';
 import { useCanAdmin, useCanOperate, useJobName } from '@/store/selectors';
 
 const MODES: MinorDecisionMode[] = ['off', 'shadow', 'active'];
@@ -58,6 +61,40 @@ function Point({ p, onSaved }: { p: DecisionPointView; onSaved: () => void }) {
           <div key={k}><dt className="text-muted-foreground">{k}</dt><dd className="num font-medium" data-figure={k}>{v}</dd></div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+/** The TypeSafe API key: write-only. The value typed is sent once and cleared; it is never shown again. */
+function TypesafeKeyField({ k, onSaved }: { k: TypesafeKeyView; onSaved: () => void }) {
+  const canAct = useCanOperate();
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async (body: Record<string, unknown>, done: string) => {
+    setBusy(true);
+    try {
+      await post('/ui/api/typesafe-key', body);
+      toast.success(done);
+      setValue('');
+      onSaved();
+    } catch (e) { toast.error((e as Error).message); }
+    setBusy(false);
+  };
+  const note = environmentNote(k);
+  return (
+    <div data-typesafe-key={k.set ? 'set' : 'not-set'} className="space-y-2 border-b pb-3">
+      <div className="flex items-center gap-2 text-sm font-medium"><KeyRound className="size-4" />TypeSafe API key</div>
+      <p className="text-sm" data-key-status>{keyStatus(k)}</p>
+      {k.problem && <p className="text-xs text-destructive">{k.problem}</p>}
+      {note && <p className="text-xs text-muted-foreground" data-key-note>{note}</p>}
+      {canAct && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="password" autoComplete="off" spellCheck={false} className="h-8 w-80" aria-label="TypeSafe API key" placeholder={k.set ? 'a new key, to replace it' : 'paste the key'}
+            value={value} disabled={busy} onChange={(e) => setValue(e.target.value)} />
+          <Button size="sm" disabled={busy || !value.trim()} onClick={() => void send({ action: 'set', value }, 'TypeSafe API key checked and saved')}>{k.set ? 'Replace' : 'Save'}</Button>
+          {k.set && <Button size="sm" variant="outline" disabled={busy} onClick={() => void send({ action: 'remove' }, 'TypeSafe API key removed')}>Remove</Button>}
+        </div>
+      )}
     </div>
   );
 }
@@ -115,8 +152,9 @@ export function MinorDecisions() {
             permissions or runs on a gated machine always goes on to the next step. Figures over the last {view.windowDays} days.
           </p>
           <p data-jev={view.jev.available ? 'on' : 'off'} className="text-sm">
-            {view.jev.available ? 'Jev is on.' : `Jev is off: ${view.jev.why ?? 'it cannot be asked'}. Each decision is made as before.`}
+            {view.jev.available ? 'Jev is on.' : `${view.jev.why ?? 'Jev is off'}. Each decision is made as before.`}
           </p>
+          <TypesafeKeyField k={view.typesafeKey} onSaved={reload} />
           {view.points.map((p) => <Point key={`${p.point}:${p.mode}:${p.threshold}`} p={p} onSaved={reload} />)}
         </div>
       </Panel>

@@ -5,6 +5,8 @@
 // write, sync or apply profile only by its own explicit approval; a narrowing or a removal revokes what it dropped.
 // A secret may instead be kept in a vault backend (issue #585): the hopper keeps only where, and reads it there at delivery.
 // A minting credential (issue #580) is never delivered: the vault mints short-lived credentials from it (mint.ts).
+// A system secret (issue #657, `system/<name>`, src/vault/system.ts) shares the table and is none of the vault's own: this
+// service lists none, puts none in a template, reseals none, and refuses a job's ask for one after Access says no.
 import { randomUUID } from 'node:crypto';
 import type { AttachedMachine } from '../domain/machines.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
@@ -14,8 +16,9 @@ import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type 
 import { mintsForProblem } from '../domain/minting.ts';
 import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
+import { systemReadRefusal } from './system-read.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
-import { givesOf, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
+import { givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
 import type { SealerState } from '../secrets/sealer.ts';
 import { TOKEN_KEY_VARIABLE } from '../secrets/token-box.ts';
@@ -169,14 +172,14 @@ export function createVaultService(o: {
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
     const name = clientOf(o.targets, (m) => m.name === machine)?.template;
     const t = name === undefined ? undefined : vault.template(name);
-    return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t) : [] };
+    return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t).filter((n) => !isSystemSecret(n)) : [] };
   }
 
   const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
   const rules = (): RadiusRules => (o.store.settings.getBlastRadius() ?? DEFAULT_BLAST_RADIUS_SETTINGS).rules;
   /** What the rating reads of a template: its secrets' names and scope lines, never a value, and its profiles. */
   const scopeOfTemplate = (t: Template): TemplateScope => ({
-    secrets: t.secrets.map((n) => { const s = vault.get(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
+    secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = vault.get(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
     profiles: t.profiles ?? [],
   });
   const viewOf = (t: Template): TemplateView => {
@@ -193,7 +196,7 @@ export function createVaultService(o: {
 
   return {
     view: () => ({
-      secrets: vault.list(), templates: vault.templates().map(viewOf), backends: (o.backends?.() ?? []).map(backendView),
+      secrets: vault.list().filter((s) => !isSystemSecret(s.name)), templates: vault.templates().map(viewOf), backends: (o.backends?.() ?? []).map(backendView),
       ...(sealer ? {} : { problem: unavailable() }),
     }),
 
@@ -226,6 +229,7 @@ export function createVaultService(o: {
     },
 
     remove(name, by) {
+      if (isSystemSecret(name)) return fail('not_found', `the vault holds no secret ${name}`);
       return o.store.tx(() => {
         if (!vault.remove(name)) return fail('not_found', `the vault holds no secret ${name}`);
         events.append({ type: 'vault.secret_removed', data: { name, by } });
@@ -237,6 +241,8 @@ export function createVaultService(o: {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
+      const system = scope.filter(isSystemSecret);
+      if (system.length) return fail('invalid', `${system.join(', ')} is in the vault's system scope: the hopper keeps it for its own use, so it is in no template's scope`);
       const missing = scope.filter((n) => !vault.get(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
@@ -326,6 +332,7 @@ export function createVaultService(o: {
       };
       if ('refused' in box) return refuse(box.refused);
       const { machine: m, job } = box;
+      if (isSystemSecret(ask.name)) return refuse(await systemReadRefusal(o.access, o.userId ?? '', job.id, ask.name));
       if (vault.get(ask.name)?.mints) return refuse(`${ask.name} is a minting credential: the hopper mints from it and never gives it out`);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
@@ -353,6 +360,7 @@ export function createVaultService(o: {
       if (!sealer) return 0;
       let n = 0;
       for (const s of vault.list()) {
+        if (isSystemSecret(s.name)) continue;
         const sealed = vault.sealed(s.id);
         if (sealed === undefined || sealer.current(sealed)) continue;
         try {

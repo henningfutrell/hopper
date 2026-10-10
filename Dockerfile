@@ -25,8 +25,8 @@ LABEL org.opencontainers.image.title=hopper
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip \
  && rm -rf /var/lib/apt/lists/*
-# typesafe-sdk: Jev through TypeSafe, for the decider calls and the gate router's Jev gates. Used only once
-# TYPESAFE_API_KEY is given; without it nothing calls TypeSafe.
+# typesafe-sdk: Jev through TypeSafe, for the decider calls and the gate router's Jev gates. Used only once a
+# TypeSafe API key is set on the Jev page; without it nothing calls TypeSafe.
 RUN pip3 install --no-cache-dir --break-system-packages typesafe-sdk==0.7.4 && python3 -c 'import typesafe_sdk'
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
 # detects it before it runs jobs on attached machines.

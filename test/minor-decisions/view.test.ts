@@ -24,7 +24,7 @@ describe('viewOf', () => {
       ev('minor_decision.overridden', { pickId: 'p5', point: 'question-answer', pick: '1', actual: '1' }),
       picked('f1', { point: 'failure-assessment', options: [{ id: 'retry', label: 'r' }, { id: 'person', label: 'p' }], pick: 'retry' }),
     ];
-    const v = viewOf(events, DEFAULT_MINOR_DECISION_SETTINGS, { available: true });
+    const v = viewOf(events, DEFAULT_MINOR_DECISION_SETTINGS, { available: true }, { set: false });
     expect(v.points[0]).toMatchObject({ point: 'question-answer', asked: 5, picked: 4, applied: 1, compared: 3, agreed: 2, overridden: 1 });
     expect(v.points[0]!.agreement).toBeCloseTo(2 / 3);
     expect(v.points[1]).toMatchObject({ point: 'failure-assessment', asked: 1, picked: 1, compared: 0, agreement: null });

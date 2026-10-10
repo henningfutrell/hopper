@@ -12,6 +12,19 @@ export const VAULT_SCOPE_MAX = 200;
 /** The longest reference to where a vault backend keeps a value (issue #585). */
 export const VAULT_REFERENCE_MAX = 500;
 
+/**
+ * The vault's system scope (issue #657): secrets the hopper keeps for its own use for one user, such as their TypeSafe
+ * API key. Each is a row of the vault's table named `system/<name>` — a name no vault secret can take —, sealed as any
+ * other; but it is none of the vault's own secrets: not listed, in no template, never given to a job or minted from.
+ */
+export const SYSTEM_SECRETS = ['typesafe-api-key'] as const;
+export type SystemSecretName = (typeof SYSTEM_SECRETS)[number];
+const SYSTEM_PREFIX = 'system/';
+/** The vault row's name of a system secret. */
+export const systemSecretRow = (name: SystemSecretName): string => `${SYSTEM_PREFIX}${name}`;
+/** Whether a vault row's name is in the system scope. */
+export const isSystemSecret = (name: string): boolean => name.startsWith(SYSTEM_PREFIX);
+
 /** One vault secret, as anything but the sealer sees it: its metadata, never its value. */
 export interface VaultSecret {
   id: string;

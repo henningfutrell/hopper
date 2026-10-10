@@ -4,7 +4,7 @@
 // refuses to start when a route and this document disagree (`referenceDrift`, checked on ready).
 import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
-import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind, type UiRole } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind } from '../domain/types.ts';
 import { jobsQuery } from './jobs.ts';
 import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
@@ -12,7 +12,7 @@ import { loginSettingsBody } from './ui/logins.ts';
 import { priorityLaneSettingsBody } from './ui/priority-lanes.ts';
 import { blastRadiusSettingsBody, discoverBody } from './ui/blast-radius.ts';
 import { failureCauseBody, failureForgetBody, failureSettingsBody, handoffResolveBody, problemResolveBody } from './ui/failures.ts';
-import { decisionPointBody, overrideBody } from './ui/minor-decisions.ts';
+import { decisionPointBody, overrideBody, typesafeKeyBody } from './ui/minor-decisions.ts';
 import { streamQuery } from './sse.ts';
 import { decisionsQuery, eventsQuery } from './state.ts';
 import { SESSION_HEADER } from './ui/guard.ts';
@@ -34,29 +34,7 @@ import { autoParkBody } from './ui/auto-park.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { accessEditBody } from './ui/access.ts';
 import { usageHistoryQuery } from './usage-history.ts';
-
-type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access';
-
-interface Operation {
-  method: 'get' | 'post';
-  /** Fastify's form: `/api/jobs/:id`. */
-  path: string;
-  tag: Tag;
-  summary: string;
-  description?: string;
-  query?: z.ZodObject;
-  body?: z.ZodType;
-  /** Body media type; default JSON. */
-  form?: boolean;
-  /** What a 200 carries. */
-  returns: string;
-  /** Answer media type; default JSON. */
-  answers?: 'html' | 'sse' | 'xml' | 'redirect';
-  /** A UI mutation: the least UI role that may make it. */
-  role?: UiRole;
-  /** Error statuses beyond the guards'. */
-  errors?: number[];
-}
+import type { Operation, Tag } from './openapi-operation.ts';
 
 const id = (what: string) => ({ name: 'id', in: 'path', required: true, description: `the ${what}'s id`, schema: { type: 'string' } });
 const name = { name: 'name', in: 'path', required: true, description: 'the realm, as the sign-in config names it', schema: { type: 'string' } };
@@ -140,8 +118,9 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/failures/settings', tag: 'Failures', summary: 'Change the failures settings', description: 'Any of them; one left out keeps its value. `maxAttempts` (0 to 10, default 3): retries per job. `backoffSec` (default 60), `backoffFactor` (default 2), `backoffMaxSec` (default 1800): the wait before each retry. `groupThreshold` (default 3) items failed with one signature within `groupWindowMin` minutes (default 60) flag it as a general cause. `auto.retry`, `auto.hold`, `auto.redirect`, `auto.continue` (default on): whether each decision acts by itself; off, it waits for a person, and with `auto.hold` off no job is held for a problem. `activeWindowMin` (1 to 1440, default 10, issue #630): a timed-out job whose pane output changed within this many minutes before its timeout was at work, and goes on. `retentionDays` (default 90): how long failure records and resolved problems are kept. `handoffRetentionDays` (default 30): how long a closed hand-off is kept; an open one is never dropped. `handoffNotify` (default on): whether a job handed off to a person tells the webhooks (`handoff.opened` `notify`). Applies without a restart.', role: 'admin', body: failureSettingsBody, returns: '`FailureSettings`' },
   { method: 'post', path: '/ui/api/failures/causes', tag: 'Failures', summary: 'Name a cause', description: 'Names the cause of a signature, with a description and its default decision (`retry`, `hold`, `redirect` or `person`): the next failure with that signature follows it, before any built-in cause. Naming it again replaces it.', role: 'admin', body: failureCauseBody, returns: 'the `KnownCause`' },
   { method: 'post', path: '/ui/api/failures/causes/forget', tag: 'Failures', summary: 'Forget a named cause', description: 'The signature\'s failures follow the built-in causes again. 404: no cause is named for it.', role: 'admin', body: failureForgetBody, returns: '`{ forgotten }`', errors: [404] },
-  { method: 'get', path: '/api/minor-decisions', tag: 'Decider', summary: 'Decider: Jev\'s picks and agreement rates', description: 'Decider calls through Jev first (issue #550): `jev` — whether Jev can be asked now (`available`, `why` not: no `TYPESAFE_API_KEY`); `points` — each decision point (`question-answer`, `failure-assessment`) with its `mode` (`off`, `shadow`: recorded only, `active`: a pick at or above `threshold` that nothing makes consequential is applied), its label and description, and over the last `windowDays` days how often Jev was `asked`, `picked`, how often its pick was `applied`, `compared` with what was decided after, `agreed`, the `agreement` rate (null with nothing compared) and how many were `overridden`; `recent` — the newest picks, each with its options, pick, confidence, whether it was applied and why not, and what was decided.', returns: '`MinorDecisionsView`' },
+  { method: 'get', path: '/api/minor-decisions', tag: 'Decider', summary: 'Decider: Jev\'s picks and agreement rates', description: 'Decider calls through Jev first (issue #550): `jev` — whether Jev can be asked now (`available`, `why` not: no TypeSafe API key); `typesafeKey` — the TypeSafe API key Jev asks with (issue #657): `set`, its `last4` characters, `setAt` and `setBy`, never the key; `environment.variable` while the runtime still gives the variable it was imported from once (the hopper does not read it); `problem` when none can be stored or opened; `points` — each decision point (`question-answer`, `failure-assessment`) with its `mode` (`off`, `shadow`: recorded only, `active`: a pick at or above `threshold` that nothing makes consequential is applied), its label and description, and over the last `windowDays` days how often Jev was `asked`, `picked`, how often its pick was `applied`, `compared` with what was decided after, `agreed`, the `agreement` rate (null with nothing compared) and how many were `overridden`; `recent` — the newest picks, each with its options, pick, confidence, whether it was applied and why not, and what was decided.', returns: '`MinorDecisionsView`' },
   { method: 'post', path: '/ui/api/minor-decisions/points/:point', tag: 'Decider', summary: 'Change a decision point\'s settings', description: '`mode` (`off`, `shadow`, `active`; default `shadow`) and `threshold` (0 to 1, default 0.85: the confidence a pick needs to be applied, active); one left out keeps its value. Applies from the next decision (`minor_decision.settings_changed`). 404: no such decision point.', role: 'admin', body: decisionPointBody, returns: 'the point\'s `DecisionPointSettings`', errors: [404] },
+  { method: 'post', path: '/ui/api/typesafe-key', tag: 'Decider', summary: 'Set or remove the TypeSafe API key', description: 'Issue #657. `set` checks `value` once against TypeSafe (one cheap Choice), then keeps it in the vault\'s system scope, sealed under `HOPPER_TOKEN_KEY`, in place of any key kept (`vault.secret_set`, name `system/typesafe-api-key`); a key the check fails is not kept, and the 400 says why with the key masked. `remove` deletes it (`vault.secret_removed`); 404 when none is set. Jev uses the change from the next decision, without a restart. The user\'s own key: Access (OpenFGA, `system_secret#can_change`) allows the user or an admin; 403 when it does not, or cannot be asked. The answer is the key\'s view (`TypesafeKeyView`), never the key. Not cached. 503 when the runtime gives no `HOPPER_TOKEN_KEY`.', role: 'operator', body: typesafeKeyBody, returns: '`TypesafeKeyView`', errors: [400, 403, 404, 503] },
   { method: 'post', path: '/ui/api/minor-decisions/picks/:id/override', tag: 'Decider', summary: 'Override a pick', description: 'What the decision should have been: `actual`, one of the pick\'s option ids (`minor_decision.overridden`). Counts in the agreement rate in place of what was compared. It changes nothing already done. 404: no such pick in the window; 400: not one of its options.', role: 'operator', body: overrideBody, returns: 'the `MinorDecisionPickView`', errors: [404] },
   { method: 'post', path: '/ui/api/rules', tag: 'Questions', summary: 'Replace the rules', description: '`version` is the one read from GET /api/question-gates.', role: 'admin', body: rulesBody, returns: 'the new rules view', errors: [409] },
   { method: 'get', path: '/api/machines', tag: 'Machines and usage', summary: 'Machines, their lanes and usage', returns: '`{ machines: (MachineSnapshot & { lanes, usage })[] }`' },

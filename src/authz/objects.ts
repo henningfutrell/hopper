@@ -2,7 +2,7 @@
 // and an asset are named in OpenFGA, the two tuples an approval is, the tuples of who is live, and the relationship path
 // that explains an allow.
 import {
-  OPERATIONS, ASSET_KINDS, type LiveRequesters, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -38,6 +38,24 @@ export function shareTuples(shares: readonly { ownerId: string; artifactId: stri
     subject: s.userId !== undefined ? userObject(s.userId) : linkObject({ userId: s.ownerId, shareId: s.shareId }),
     relation: 'viewer', object: artifactObject({ userId: s.ownerId, id: s.artifactId }),
   }));
+}
+/** A system secret of a user (issue #657): `system_secret:<user>/<name>`. */
+export const systemSecretObject = (s: { userId: string; name: string }): string => `system_secret:${s.userId}/${s.name}`;
+
+/**
+ * The check for an ask about a system secret (issue #657): `can_change` or `can_read` of the requester. Who the secret is
+ * kept for, and an admin's session, are told for this check only, as contextual tuples: no stored tuple says either.
+ */
+export function systemSecretCheck(ask: SystemSecretAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = systemSecretObject({ userId: ask.owner, name: ask.name });
+  const subject = requesterObject(ask.requester);
+  return {
+    tuple: { subject, relation: `can_${ask.action}`, object },
+    contextual: [
+      { subject: userObject(ask.owner), relation: 'owner', object },
+      ...(ask.admin && ask.requester.kind === 'user' ? [{ subject, relation: 'admin', object }] : []),
+    ],
+  };
 }
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 

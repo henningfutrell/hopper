@@ -1,6 +1,7 @@
 // Decider calls in plain words (issue #550): the agreement rate, a Jev pick — the option, how sure, what became of
-// it —, what was decided after it, the mode names, and a pick event's line. Pure.
-import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView } from './wire.ts';
+// it —, what was decided after it, the mode names, and a pick event's line; the TypeSafe API key's state and the note
+// on a variable it was imported from (issue #657). Pure.
+import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, TypesafeKeyView } from './wire.ts';
 
 /** A pick as these read it: its identity and place aside. */
 type Pick = Omit<MinorDecisionPickView, 'pickId' | 'at' | 'point' | 'jobId' | 'questionId'>;
@@ -43,4 +44,19 @@ export function pickDecided(p: Pick): string {
 /** A `minor_decision.picked` event's data as one line. */
 export function pickedEventDetail(d: Record<string, unknown>): string {
   return `Jev: ${pickSummary(d as unknown as Pick)}`;
+}
+
+/** The TypeSafe API key's state (issue #657): set or not, its last 4 characters, when and by whom. Never more of the key. */
+export function keyStatus(k: TypesafeKeyView): string {
+  if (!k.set) return 'Not set';
+  const parts = ['Set'];
+  if (k.last4) parts.push(`ends in ${k.last4}`);
+  if (k.setAt) parts.push(`set ${k.setAt.slice(0, 16).replace('T', ' ')} UTC${k.setBy ? ` by ${k.setBy}` : ''}`);
+  return parts.join(' — ');
+}
+
+/** The note while the runtime still gives the variable the key was imported from: the hopper does not read it. */
+export function environmentNote(k: TypesafeKeyView): string | undefined {
+  if (!k.environment) return undefined;
+  return `${k.environment.variable} is still set. The key was imported from it once; the hopper does not read it now. Remove it from the environment.`;
 }

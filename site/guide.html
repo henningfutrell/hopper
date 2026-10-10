@@ -252,9 +252,11 @@ changes nothing already done, only the comparison. When the agreement is high en
 sending a message, or changing permissions, and any decision for a job on a gated machine, is never decided by Jev. Its pick is
 recorded as <em>consequential</em> and not applied.</p>
 <h3>The key</h3>
-<p>Jev needs a TypeSafe key in hopper's environment: <code>TYPESAFE_API_KEY</code> for the admin user,
-<code>HOPPER_USER_&lt;ID&gt;_TYPESAFE_API_KEY</code> for a user added later. It is read at each call, so no restart is needed.
-Without it the page says Jev is off and which variable to set, and every decision is made as before.</p>
+<p>Jev needs your TypeSafe API key. Paste it on this page, in the TypeSafe API key field, and select Save. The hopper checks
+the key once with TypeSafe, and keeps it only when TypeSafe accepts it. The key is kept encrypted in the hopper's vault and
+is never shown again: the page shows only that it is set, its last 4 characters, and when it was set. Replace and Remove
+change it. Jev uses the change from the next decision, so no restart is needed. Without a key the page says Jev is off,
+and every decision is made as before. From a terminal: <code>hopper typesafe-key set &lt; key-file</code>.</p>
 
 <h2 id="needs-a-person">Needs a person</h2>
 <p>A failed job that hopper stopped trying to fix by itself comes to <strong>Failures → Needs a person</strong>. It stays there

@@ -4,13 +4,13 @@
 // applied when it meets the point's threshold and nothing makes it consequential (active). Every pick is an event on
 // its job. What is decided after a pick that was not applied is compared with it — a question's answer, a
 // person's action on a hand-off —, and a person may override any pick: the agreement rates a person flips a point to
-// active on. Without Jev (no TypeSafe key) nothing is asked and nothing recorded: each decision is made as before.
+// active on. Without Jev (no TypeSafe API key, issue #657) nothing is asked and nothing recorded: each decision is made as before.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
   DECISION_POINTS, DEFAULT_MINOR_DECISION_SETTINGS, MINOR_DECISION_WINDOW_DAYS, type DecisionPoint, type DecisionPointPatch, type DecisionPointSettings,
   type DomainEvent, type JevChooser, type JevPick, type MinorDecisionInput, type MinorDecisionOutcome, type MinorDecisionPickView,
-  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied,
+  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied, type TypesafeKeyView,
 } from '../domain/types.ts';
 import { optionNamed } from './options.ts';
 import { picksOf, viewOf, VIEW_EVENT_TYPES } from './view.ts';
@@ -19,6 +19,8 @@ export interface MinorDecisionsOptions {
   store: UserStore;
   clock: Clock;
   jev: JevChooser;
+  /** The TypeSafe API key as the Jev page shows it (issue #657); never the key. */
+  typesafeKey: () => TypesafeKeyView;
   /** Ceiling on one pick; past it, no pick. */
   timeoutMs: number;
   logger: { warn(line: string): void };
@@ -141,7 +143,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
       });
     },
     stop() { stopped = true; unsubscribe?.(); },
-    view: () => viewOf(windowEvents(), settings(), o.jev.available()),
+    view: () => viewOf(windowEvents(), settings(), o.jev.available(), o.typesafeKey()),
     settings,
     setPoint(point, patch) {
       const all = settings();

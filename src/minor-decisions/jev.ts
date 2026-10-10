@@ -1,11 +1,13 @@
 // Jev at its seam (issue #550, design.md "Decider calls"): one TypeSafe Choice over a decision point's options,
-// through jev_pick.py and the `typesafe_sdk` the gate router's Jev uses, with TYPESAFE_API_KEY from the runtime
-// (read on every call: a key set later is used at once). No key: Jev is off, and nothing is asked. Every failure —
-// no SDK, TypeSafe refusing, a timeout, a pick outside the options — is `{ ok: false }`, never a throw. The script
-// runs in its own process group, so a timeout kills all of it.
+// through jev_pick.py and the `typesafe_sdk` the gate router's Jev uses, with the user's TypeSafe API key from the
+// vault's system scope (issue #657; asked on every call: a key set, replaced or removed applies at once), handed to the
+// script as TYPESAFE_API_KEY. No key: Jev is off, and nothing is asked. Every failure — no SDK, TypeSafe refusing, a
+// timeout, a pick outside the options — is `{ ok: false }`, never a throw, and its words never carry the key. A key check
+// is one such pick, over two options, with the key offered. The script runs in its own process group, so a timeout kills all of it.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { JevChooser, JevPick, MinorDecisionAsk } from '../domain/types.ts';
+import { maskSecret } from '../secrets/mask.ts';
 
 const SCRIPT = fileURLToPath(new URL('./jev_pick.py', import.meta.url));
 /** Jev's own default model (grok-bot-jev's config). */
@@ -16,10 +18,8 @@ export interface JevOptions {
   /** The Python that runs the script. */
   python: string;
   timeoutMs: number;
-  /** A runtime secret by name (TYPESAFE_API_KEY). */
-  secret(name: string): string | undefined;
-  /** The runtime's name for a secret: the user's secret prefix and the name. Default: the name. */
-  secretName?(name: string): string;
+  /** The user's TypeSafe API key now; undefined: none is set. */
+  key(): string | undefined;
   /** The script's environment, besides the key: PATH, HOME, PYTHONPATH. Nothing else of the daemon's. */
   env: Record<string, string | undefined>;
 }
@@ -45,27 +45,43 @@ function run(o: JevOptions, key: string, request: unknown, signal?: AbortSignal)
   });
 }
 
+/** The words Jev is off with, while no TypeSafe API key is set. */
+export const JEV_OFF = 'Jev is off until a TypeSafe API key is set';
+/** What a key check asks: two options, nothing of the user's. */
+const CHECK: MinorDecisionAsk = {
+  point: 'question-answer', instructions: 'A check of the TypeSafe API key: pick yes.', state: { check: true },
+  options: [{ id: 'yes', label: 'yes' }, { id: 'no', label: 'no' }],
+};
+
 export function createJev(o: JevOptions): JevChooser {
-  const key = () => o.secret(KEY) || undefined;
-  const off = `Jev is off until ${o.secretName?.(KEY) ?? KEY} is set`;
+  const key = () => o.key() || undefined;
+  const masked = (why: string, k: string): string => maskSecret(why, k, 'TypeSafe API key');
+
+  async function pickWith(k: string, ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick> {
+    try {
+      const stdout = await run(o, k, {
+        model: JEV_MODEL, instructions: ask.instructions, state: ask.state,
+        criteria: Object.fromEntries(ask.options.map((x) => [x.id, x.label])),
+      }, signal);
+      const out = JSON.parse(stdout.trim().split('\n').pop() ?? '') as { ok: boolean; pick?: unknown; confidence?: unknown; error?: string };
+      if (!out.ok) return { ok: false, why: masked(out.error ?? 'no answer', k) };
+      if (typeof out.pick !== 'string' || !ask.options.some((x) => x.id === out.pick)) return { ok: false, why: `Jev picked ${String(out.pick)}, not an option` };
+      const confidence = typeof out.confidence === 'number' ? Math.min(1, Math.max(0, out.confidence)) : 0;
+      return { ok: true, pick: out.pick, confidence };
+    } catch (e) {
+      return { ok: false, why: masked(e instanceof Error ? e.message : String(e), k) };
+    }
+  }
+
   return {
-    available: () => (key() ? { available: true } : { available: false, why: off }),
-    async pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick> {
+    available: () => (key() ? { available: true } : { available: false, why: JEV_OFF }),
+    pick(ask, signal) {
       const k = key();
-      if (!k) return { ok: false, why: off };
-      try {
-        const stdout = await run(o, k, {
-          model: JEV_MODEL, instructions: ask.instructions, state: ask.state,
-          criteria: Object.fromEntries(ask.options.map((x) => [x.id, x.label])),
-        }, signal);
-        const out = JSON.parse(stdout.trim().split('\n').pop() ?? '') as { ok: boolean; pick?: unknown; confidence?: unknown; error?: string };
-        if (!out.ok) return { ok: false, why: out.error ?? 'no answer' };
-        if (typeof out.pick !== 'string' || !ask.options.some((x) => x.id === out.pick)) return { ok: false, why: `Jev picked ${String(out.pick)}, not an option` };
-        const confidence = typeof out.confidence === 'number' ? Math.min(1, Math.max(0, out.confidence)) : 0;
-        return { ok: true, pick: out.pick, confidence };
-      } catch (e) {
-        return { ok: false, why: e instanceof Error ? e.message : String(e) };
-      }
+      return k ? pickWith(k, ask, signal) : Promise.resolve({ ok: false, why: JEV_OFF });
+    },
+    async check(k) {
+      const r = await pickWith(k, CHECK);
+      return r.ok ? { ok: true } : r;
     },
   };
 }

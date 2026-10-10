@@ -59,6 +59,16 @@ type artifact
     define owner: [user]
     define viewer: [user, link]
     define can_view: owner or viewer
+
+# A secret in the vault's system scope (issue #657): kept for the hopper's own use for one user, such as their TypeSafe
+# API key. At each ask the hopper tells who the user is (owner) and, for an admin's session, the admin. The user or an
+# admin may change it; only the user may read it, so no job, machine or template does.
+type system_secret
+  relations
+    define owner: [user]
+    define admin: [user]
+    define can_change: owner or admin
+    define can_read: owner
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -87,6 +97,10 @@ const ASKED: readonly [type: string, relation: string][] = OPERATIONS.map((op) =
 const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
 const ARTIFACT_ASKED: readonly [type: string, relation: string][] = [['artifact', 'can_view']];
 
+/** What the hopper tells and asks for a system secret (issue #657): apart, so a model edited before them still decides mints. */
+const SYSTEM_SECRET_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['system_secret', 'owner', 'user'], ['system_secret', 'admin', 'user']];
+const SYSTEM_SECRET_ASKED: readonly [type: string, relation: string][] = [['system_secret', 'can_change'], ['system_secret', 'can_read']];
+
 /** Each relation the hopper needs that the model lacks (`type#relation`) or no longer lets it write (`… accepts type`); empty: none. */
 export function modelGaps(model: ModelJson): string[] {
   return gapsIn(model, WRITTEN, ASKED);
@@ -95,6 +109,11 @@ export function modelGaps(model: ModelJson): string[] {
 /** What the model lacks for artifacts (issue #624); empty: shares are decided. A gap here denies every share, never a mint. */
 export function artifactGaps(model: ModelJson): string[] {
   return gapsIn(model, ARTIFACT_WRITTEN, ARTIFACT_ASKED);
+}
+
+/** What the model lacks for system secrets (issue #657); empty: they are decided. A gap here denies every change and read, never a mint. */
+export function systemSecretGaps(model: ModelJson): string[] {
+  return gapsIn(model, SYSTEM_SECRET_WRITTEN, SYSTEM_SECRET_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

@@ -2,7 +2,7 @@
 // accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
 // question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
-// the auto-park timeouts (issue #650).
+// the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
@@ -15,7 +15,7 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -51,6 +51,9 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
                                                      Ask for more paths; the paths named stay selected for the next version
   hopper proposal steer <id> --note <text>           Steer: the note goes back to the job
   hopper proposal reject <id> --note <why>           Reject all: the job ends with the rejection
+  hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
+  hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
+  hopper typesafe-key remove                         remove it: Jev is off until a key is set
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 /** A refusal: the message, exit 2. */
@@ -58,6 +61,8 @@ export class OperatorRefusal extends Error {}
 
 export interface OperatorIo {
   env: Record<string, string | undefined>;
+  /** All of stdin: the TypeSafe API key for `typesafe-key set`. */
+  stdin(): string;
   out(text: string): void;
 }
 
@@ -255,7 +260,22 @@ function proposalCall(args: string[]): Call {
   throw usage(PROPOSAL_USAGE);
 }
 
-function callOf(command: string, args: string[]): Call {
+const TYPESAFE_KEY_SET = 'typesafe-key set (the key on stdin, never as an argument)';
+
+/** The key comes from stdin only: an argument would be in the shell's history and the process list. */
+function typesafeKeyCall(args: string[], stdin: () => string): Call {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const [verb, ...extra] = positionals;
+  if (verb === undefined) return { role: 'viewer', path: '/api/minor-decisions', pick: (v) => (v as { typesafeKey: unknown }).typesafeKey };
+  if (verb === 'remove' && extra.length === 0) return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'remove' }) };
+  if (verb !== 'set' || extra.length > 0) throw usage(verb === 'set' ? TYPESAFE_KEY_SET : `typesafe-key | hopper ${TYPESAFE_KEY_SET} | hopper typesafe-key remove`);
+  const value = stdin().trim();
+  if (!value) throw new OperatorRefusal('no key on stdin: pipe it in, e.g. hopper typesafe-key set < key-file');
+  return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
+}
+
+function callOf(command: string, args: string[], stdin: () => string): Call {
+  if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
@@ -296,14 +316,14 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(
   instance: InstanceStore, command: string, args: string[], userOf: (id: string | undefined) => User, io: OperatorIo,
 ): Promise<void> {
   const { rest, url: rawUrl, user: userId } = common(args);
-  const call = callOf(command, rest);
+  const call = callOf(command, rest, io.stdin);
   const url = daemonUrl(rawUrl, io.env);
   const user = userOf(userId);
   // A CLI session is no gateway realm's: no token of one is ever checked for it.

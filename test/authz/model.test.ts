@@ -3,15 +3,23 @@
 // Issue #581: the requesters — a user owns a job, a job runs on a machine, a machine is an instance of a template — are
 // tuples the hopper writes from who is live, and the path from a requester to an asset names each step.
 import { describe, expect, it } from 'vitest';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps } from '../../src/authz/model.ts';
+import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, modelGaps, systemSecretGaps } from '../../src/authz/model.ts';
 import { shareTuples, profileId, profileOf, assetObject, approvalTuples, machineObject, relationshipPath, requesterObject, requesterTuples } from '../../src/authz/objects.ts';
 
 describe('the access model', () => {
   it('compiles the default model with no gap', () => {
     const json = compileAccessModel(DEFAULT_ACCESS_MODEL);
-    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['artifact', 'asset', 'job', 'link', 'machine', 'operation_profile', 'template', 'user']);
+    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['artifact', 'asset', 'job', 'link', 'machine', 'operation_profile', 'system_secret', 'template', 'user']);
     expect(modelGaps(json)).toEqual([]);
     expect(artifactGaps(json)).toEqual([]);
+    expect(systemSecretGaps(json)).toEqual([]);
+  });
+
+  it('a model edited before the system scope (issue #657) still decides mints; its system secret gaps are apart', () => {
+    const before = DEFAULT_ACCESS_MODEL.slice(0, DEFAULT_ACCESS_MODEL.indexOf('\n# A secret in the vault\'s system scope'));
+    const json = compileAccessModel(before);
+    expect(modelGaps(json)).toEqual([]);
+    expect(systemSecretGaps(json)).toEqual(['system_secret#owner', 'system_secret#admin', 'system_secret#can_change', 'system_secret#can_read']);
   });
 
   it('a model edited before artifacts (issue #624) still decides mints: its artifact gaps are apart', () => {
