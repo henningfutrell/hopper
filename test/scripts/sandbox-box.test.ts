@@ -35,7 +35,8 @@ describe.runIf(ON)('a sandbox box from the Add machine line', () => {
     const config = (await t.api<MachinesConfig>('GET', '/api/machines/config')).body;
     const { code } = (await t.ui<{ code: string }>('/ui/api/machines/join', {}, { token: await t.login() })).body;
     const join = { ...boxPlace(config, String(new URL(t.url).port)), boxImage: IMAGE };
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: ENGINE === 'podman' ? 'podman' : 'docker' }, { origin: t.url, code, join });
+    const { line: flags } = (await t.api<{ line: string }>('GET', '/api/sandboxes', undefined, { 'x-hopper-session': await t.login() })).body;
+    const line = joinLine({ kind: 'box', agent: 'claude', engine: ENGINE === 'podman' ? 'podman' : 'docker' }, { origin: t.url, code, join, flags });
     execFileSync('sh', ['-c', line], { stdio: 'ignore' });
     const m = await waitFor(async () => ((await t!.api('GET', '/api/machines')).body.machines as { id: string; online: boolean; home?: string }[]).find((x) => x.id === BOX && x.online), { timeoutMs: 60000, what: 'the box online' });
     expect(m.home).toBe('/home/agent');

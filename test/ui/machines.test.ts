@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
 import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, boxSignInLine, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { runFlags } from '../../src/sandbox/flags.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -275,14 +276,16 @@ describe('an ssh target that is this machine', () => {
 describe('the Add machine line (issue #308)', () => {
   const code = 'c'.repeat(64);
   const join = { boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' };
+  // The sandbox flags come from the hopper (GET /api/sandboxes `line`), built by the same builder as the boxes it starts (issue #708).
+  const flags = runFlags({ cpus: 4, memoryMb: 8192 }).join(' ');
 
   it('a computer: the hopper\'s install script, from the URL this page is open at, joined with the code', () => {
-    expect(joinLine({ kind: 'computer' }, { origin: 'http://localhost:4790', code, join }))
+    expect(joinLine({ kind: 'computer' }, { origin: 'http://localhost:4790', code, join, flags }))
       .toBe(`curl -fsSL 'http://localhost:4790/client/install' | sh -s -- 'http://localhost:4790#${code}'`);
   });
 
   it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join });
+    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join, flags });
     expect(line.startsWith('podman run -d --name hopper-sandbox-claude ')).toBe(true);
     // Named by the client's own setting: Docker refuses a host name on the host network.
     expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-claude');
@@ -292,20 +295,21 @@ describe('the Add machine line (issue #308)', () => {
     for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-sandbox-claude-home:/home/agent']) {
       expect(line).toContain(flag);
     }
+    expect(line).toContain(` ${flags} `);
     expect(line).toContain(`-e HOPPER_JOIN='http://hopper:4790#${code}'`);
     expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
     // Nothing of the computer is mounted into it.
     expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
-    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join, flags })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
   });
 
   it('a sandbox box from a template (issue #558): named after the template, its image the template\'s', () => {
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join });
+    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join, flags });
     expect(line).toContain('--name hopper-sandbox-kube ');
     expect(line).toContain('-v hopper-sandbox-kube-home:/home/agent');
     expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-kube ');
     expect(line.endsWith(' localhost/box-kubectl:1')).toBe(true);
-    expect(line).toContain('--cap-drop ALL --security-opt no-new-privileges --read-only');
+    expect(line).toContain(flags);
   });
 
   it('the agents a box is offered with are those an executor drives on a client target', () => {
