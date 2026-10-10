@@ -12,6 +12,7 @@
 //   Scenario: the chart opens sandboxed
 //     When the person opens the artifact's content URL
 //     Then the HTML is served under a CSP sandbox that runs its scripts but gives it no origin of the hopper and no fetch
+//     And it loads nothing from outside: scripts, styles, images and fonts only inline, data: or blob: (issue #673)
 //   Scenario: a share link works for another user and stops after a revoke
 //     Given a second user of the hopper
 //     When the job runs `share ID --user bob`
@@ -143,6 +144,10 @@ describe('artifacts (issue #624)', () => {
     expect(csp).toMatch(/^sandbox allow-scripts/);
     expect(csp).not.toContain('allow-same-origin');
     expect(csp).toContain("connect-src 'none'");
+    // Issue #673: nothing loads from outside, so nothing leaves through a request either — its own signed URL included.
+    expect(csp).not.toContain('https:');
+    expect(csp).not.toContain('allow-popups-to-escape-sandbox');
+    for (const d of ['script-src', 'style-src', 'img-src', 'font-src']) expect(csp).toContain(`${d} 'unsafe-inline' data: blob:;`);
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     // A content URL whose signature is changed loads nothing.
