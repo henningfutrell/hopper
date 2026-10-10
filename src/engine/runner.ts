@@ -71,10 +71,15 @@ async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionC
  * reports it done. Its own pull request left with merge conflicts or as a draft (issue #626): while `mayContinue`, the
  * step that finishes it, for the job to go on with in place of a failure and its hand-off.
  */
-async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome, mayContinue: boolean): Promise<ExecutionOutcome | { finish: UnfinishedPullRequest }> {
+async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome, mayContinue: boolean, signal: AbortSignal): Promise<ExecutionOutcome | { finish: UnfinishedPullRequest }> {
   if (outcome.kind !== 'finished') return outcome;
   try {
-    const v = await c.verdict(job);
+    let v = await c.verdict(job);
+    // A miss is asked again a moment later (issue #637): GitHub may not list a new pull request, or its new head, at once.
+    if (!v.done && !('partlyDone' in v) && !(v.finish && mayContinue) && c.doneRecheckMs > 0) {
+      await sleep(c.doneRecheckMs, undefined, { signal }).catch(() => {});
+      if (!signal.aborted) v = await c.verdict(job);
+    }
     if (v.done) return outcome;
     if ('partlyDone' in v) return { ...outcome, partlyDone: v.partlyDone };
     return v.finish && mayContinue ? { finish: v.finish } : { kind: 'failed', error: `not complete: ${v.why}` };
@@ -196,7 +201,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         return;
       }
       if (entry.cancelReason !== undefined) break;
-      const judged = await completeOrFailed(c, started, outcome, briefs < MAX_FINISH_BRIEFS && goOn !== undefined && !c.stopping() && !entry.parking);
+      const judged = await completeOrFailed(c, started, outcome, briefs < MAX_FINISH_BRIEFS && goOn !== undefined && !c.stopping() && !entry.parking, entry.controller.signal);
       if (!('finish' in judged)) { outcome = judged; break; }
       const { finish } = judged;
       const now = store.tx(() => {

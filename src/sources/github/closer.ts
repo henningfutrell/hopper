@@ -28,7 +28,7 @@ export const OPEN_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!, 
 export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
     timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: 100) { nodes { ... on CrossReferencedEvent {
-      source { __typename ... on PullRequest { url createdAt isDraft state mergeable ${HEAD_COMMIT} body repository { nameWithOwner } } }
+      source { __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT} body repository { nameWithOwner } } }
     } } }
   } }
 }`;
@@ -45,7 +45,7 @@ interface Referenced {
   commits?: { nodes?: ({ commit?: { committedDate?: string } } | null)[] };
 }
 interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null }
-interface Source extends Referenced { __typename?: string; body?: string; repository?: { nameWithOwner?: string } }
+interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
 const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
   data?: { repository?: { issueOrPullRequest?: Numbered | null; issue?: {
@@ -107,7 +107,10 @@ export function referencingPullRequestsFrom(body: unknown, what: string): Refere
     const s = n?.source;
     const state = PR_STATES[s?.state ?? ''];
     if (s?.__typename !== 'PullRequest' || !s.url || !s.createdAt || !state || !s.repository?.nameWithOwner) continue;
-    byUrl.set(s.url, { url: s.url, createdAt: s.createdAt, isDraft: s.isDraft === true, conflicting: s.mergeable === 'CONFLICTING', ...headOf(s), state, body: s.body ?? '', repo: s.repository.nameWithOwner });
+    byUrl.set(s.url, {
+      url: s.url, createdAt: s.createdAt, isDraft: s.isDraft === true, conflicting: s.mergeable === 'CONFLICTING', ...headOf(s), state,
+      ...(s.mergedAt ? { mergedAt: s.mergedAt } : {}), body: s.body ?? '', repo: s.repository.nameWithOwner,
+    });
   }
   return [...byUrl.values()];
 }

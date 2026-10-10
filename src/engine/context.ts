@@ -36,6 +36,8 @@ export interface EngineOptions {
   maxQuestions: number;
   /** After a restart, how long a running job whose machine does not answer yet stays running before it fails (issue #368). */
   reconnectGraceMs: number;
+  /** A done job whose source finds it not done is asked again after this long, for GitHub's lag, before it fails (issue #637). Default 0: at once. */
+  doneRecheckMs?: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
   keepPanes: boolean;
   /** Whether a job that ended done is done, partly done or not, asked of its source (`judge`, issues #171, #187, #579). */

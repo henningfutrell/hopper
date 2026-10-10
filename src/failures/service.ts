@@ -27,6 +27,7 @@ import { createTimeouts } from './timeouts.ts';
 import { rerunRecordOf } from './rerun.ts';
 import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
+import { createDoneAtSource } from './done-at-source.ts';
 import { signatureOf } from './signature.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
@@ -47,6 +48,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   minorDecisions?: { first: JevFirst; gated(machineId: string): boolean };
   /** Whether a pull request of the job's own is open, by its source (issue #630); undefined: its source cannot tell. Throws: not known. */
   pullRequestOpen?(job: Job): Promise<boolean | undefined>;
+  /** Whether the job's work is done at its source, asked before any run again of it (`done-at-source.ts`, issue #637). */
+  doneAtSource?(job: Job): Promise<boolean>;
 }
 
 export type FailureAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
@@ -64,9 +67,9 @@ export interface Failures {
   setSettings(patch: Partial<FailureSettings>): FailureSettings;
   /** A person resolves a problem, with a note if any: its held jobs run again, new jobs are no longer held for it. */
   resolve(problemId: string, by: ActingPerson, note?: string): FailureAction<Problem>;
-  /** A person releases a problem's held jobs now: they run again through the normal queue. */
+  /** A person releases a problem's held jobs now: they run again through the normal queue, unless done at their source (issue #637). */
   release(problemId: string, by: ActingPerson): FailureAction<Problem>;
-  /** A person runs a surfaced failure's job again. */
+  /** A person runs a surfaced failure's job again; one done at its source is finished instead, and refused (issue #637). */
   retry(recordId: string, by: ActingPerson): Promise<FailureAction<Job>>;
   /** A person resolves a hand-off (issue #551), `by` the person signed in and the way: the hand-off and the job that follows, if any. */
   resolveHandoff(handoffId: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
@@ -95,6 +98,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const settings = (): FailureSettings => failureSettingsOf(store.settings.getFailureSettings());
   const handoffs = createHandoffs({ ...o, settings, live: () => !stopped });
   const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
+  const doneCheck = createDoneAtSource({ store, doneAtSource: o.doneAtSource, finishShipped: o.finishShipped, now, live: () => !stopped });
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
 
   /** Its latest run has a record — unless the job was continued since (issue #551): its new failure is assessed anew. */
@@ -210,6 +214,7 @@ export function createFailures(o: FailuresOptions): Failures {
 
   /** Make one due run again; a refusal that may pass (its end not reported yet, its source down) is tried again later. */
   async function runPending(r: FailureRecord): Promise<void> {
+    if (await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
     const result = r.pending === 'continue' ? await timeouts.continueOf(r) : await o.rerun(r.jobId, 'assessor');
     if (stopped) return;
     store.tx(() => {
@@ -323,7 +328,8 @@ export function createFailures(o: FailuresOptions): Failures {
     view: () => viewOf(store, settings(), now(), o.resumable),
     blocks() {
       if (!settings().auto.hold) return [];
-      return store.problems.list({ status: 'open' }).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
+      // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
+      return store.problems.list({ status: 'open' }).filter((p) => !p.general).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
     },
     settings,
     setSettings(patch) {
@@ -346,7 +352,7 @@ export function createFailures(o: FailuresOptions): Failures {
       if (done.ok) void sweep();
       return done;
     },
-    retry: (recordId, by) => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, 'user', 'run again by a person', by),
+    retry: (recordId, by) => doneCheck.unlessDone(recordId, () => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, 'user', 'run again by a person', by)),
     resolveHandoff: (handoffId, input, by) => handoffs.resolve(handoffId, input, by),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);

@@ -54,6 +54,8 @@ export interface NumberedPullRequest extends OpenPullRequest {
 /** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */
 export interface ReferencingPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
+  /** When it merged (issue #637). */
+  mergedAt?: string;
   body: string;
   /** owner/repo of the pull request. */
   repo: string;

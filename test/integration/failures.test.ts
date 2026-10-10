@@ -158,6 +158,30 @@ describe('one shared cause on several jobs', () => {
   });
 });
 
+describe('job-specific misses and Recurring problems (issue #637)', () => {
+  it('test 6 — three done-check misses on three items in one hour, on one machine: no Recurring problem, no held job', async () => {
+    const a = await boot();
+    const misses = await Promise.all([1, 2, 3].map((n) => a.pull(fail(`not complete: the issue https://github.com/o/r/issues/${n} is open, and no pull request in o/r closes or references it`))));
+    for (const j of misses) await assessedOf(a, j.id);
+    expect((await failuresOf(a)).problems).toEqual([]);
+    const queued = await a.pull({ op: 'echo' });
+    await a.waitForStatus(queued.id, 'finished');
+  });
+
+  it('test 7 — a Recurring problem from another cause holds only its own jobs: other jobs start', async () => {
+    const a = await boot();
+    const token = await a.login();
+    await settings(a, token, { maxAttempts: 0 });
+    const failing = await Promise.all([1, 2, 3].map(() => a.pull(fail('HOPPER_FAILED the build tool crashed', 300))));
+    for (const j of failing) await a.waitForStatus(j.id, 'failed');
+    const problem = await waitFor(async () => (await failuresOf(a)).problems.find((p) => p.status === 'open' && p.general), { what: 'a Recurring problem' });
+    expect(problem.title).toMatch(/^Recurring: /);
+    const queued = await a.pull({ op: 'echo' });
+    await a.waitForStatus(queued.id, 'finished');
+    expect((await a.job(queued.id)).holdReason).toBeUndefined();
+  });
+});
+
 describe('across a restart', () => {
   it('a retry due later still runs after the daemon restarts', async () => {
     const db = tempDbPath();

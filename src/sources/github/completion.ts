@@ -47,10 +47,6 @@ export function namedNumbers(issue: Pick<GitHubIssue, 'repo' | 'number' | 'title
   return [...new Set(found)].slice(0, MAX_NAMED);
 }
 
-/** A pull request the job updated is done (issue #618): open and free of merge conflicts, or merged after the job began. */
-const updatedDone = (pr: NumberedPullRequest, job: Job): boolean =>
-  isUpdatedBy(pr, job) && (pr.state === 'open' ? !pr.conflicting : pr.state === 'merged' && pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= Date.parse(job.createdAt));
-
 /** Pull request `n`, or undefined when GitHub says it is none (a permanent error: gone, no access). A transient error throws. */
 async function pullRequestOrNone(api: GitHubApi, repo: string, n: number): Promise<NumberedPullRequest | undefined> {
   try {
@@ -61,20 +57,76 @@ async function pullRequestOrNone(api: GitHubApi, repo: string, n: number): Promi
   }
 }
 
+/**
+ * Closed as completed (issue #637): by any pull request, commit or person, at any time. A merged pull request closing it
+ * counts unless GitHub says not planned; closed as not planned is not done.
+ */
+export const isClosedAsCompleted = (issue: GitHubIssue, closer: ClosingPullRequest | undefined): boolean =>
+  issue.state === 'closed' && (issue.stateReason === 'completed' || (closer !== undefined && issue.stateReason !== 'not_planned'));
+
+/** Ready for review (issue #637): open, not a draft, free of merge conflicts. */
+const isReady = (pr: { isDraft: boolean; conflicting: boolean }): boolean => !pr.isDraft && !pr.conflicting;
+
+/** Merged at or after the job was created: on an issue still open, an older merge is work the job was asked to redo. */
+const mergedSince = (pr: { mergedAt?: string }, job: Job): boolean => pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= Date.parse(job.createdAt);
+
+/**
+ * An issue that asks to update the pull requests it names (issue #637): a line — its title, or a line of its body — that
+ * starts by asking to bring up to date, rebase, update or fix the conflicts of a pull request, and names one.
+ */
+const UPDATE_ASK = /^(please\s+)?(bring|rebase|update|refresh|fix\s+(the\s+)?(merge\s+)?conflicts)\b.*(#\d+|\/pull\/\d+)/i;
+export const asksToUpdate = (issue: Pick<GitHubIssue, 'title' | 'body'>): boolean =>
+  [issue.title, ...issue.body.split('\n')].some((l) => UPDATE_ASK.test(l.trim()));
+
+/** A pull request's number, from its URL. */
+const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+
+/** How a pull request was found, for the miss's text: `#N (open, draft)`. */
+function described(pr: { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean }): string {
+  const why = pr.state !== 'open' ? [] : [...(pr.isDraft ? ['draft'] : []), ...(pr.conflicting ? ['merge conflicts'] : [])];
+  return `#${numberOf(pr.url)} (${[pr.state, ...why].join(', ')})`;
+}
+
+/**
+ * Whether the job's issue is done on GitHub (issue #637), decided from what GitHub shows, not from what the job did:
+ * - its issue closed as completed, by anyone, at any time (`isClosedAsCompleted`);
+ * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
+ *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
+ *   not the whole (`partlyDone`);
+ * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
+ *   merged, at any time; the job need not have pushed.
+ * Undefined: done. Else why not, naming what was looked at. An error asking GitHub throws: the caller asks again.
+ */
 export async function notComplete(api: GitHubApi, job: Job): Promise<string | undefined> {
   const { repo, number, url } = job.source ?? {};
   if (!repo || !number) return `job ${job.id} has no GitHub issue reference`;
+  const issue = await api.getIssue(repo, number);
   const closer = await api.closingPullRequest(repo, number);
-  if (isOwnPullRequest(closer, job)) return undefined;
-  const found = await api.getIssue(repo, number);
-  if (isClosedAsComplete(found, closer, job)) return undefined;
-  const open = await api.openClosingPullRequests(repo, number);
-  if (open.some((pr) => !pr.isDraft && !pr.conflicting && (isOwnPullRequest(pr, job) || isUpdatedBy(pr, job)))) return undefined;
-  for (const n of namedNumbers(found)) {
-    const pr = await pullRequestOrNone(api, repo, n);
-    if (pr && updatedDone(pr, job)) return undefined;
+  if (isClosedAsCompleted(issue, closer)) return undefined;
+  const found = new Map<string, { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean }>();
+  for (const pr of await api.openClosingPullRequests(repo, number)) {
+    if (isReady(pr)) return undefined;
+    found.set(pr.url, { ...pr, state: 'open' });
   }
-  return `no pull request opened by this job, ready for review, closes ${url ?? `${repo}#${number}`}, and no pull request this job updated (one the issue names, or an older one that closes it) is free of merge conflicts`;
+  for (const pr of await api.referencingPullRequests(repo, number)) {
+    if (pr.repo.toLowerCase() !== repo.toLowerCase() || isPartOf(pr, repo, number)) continue;
+    if (pr.state === 'open' ? isReady(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
+    if (!found.has(pr.url)) found.set(pr.url, pr);
+  }
+  const lines = [issue.state === 'open' ? `the issue ${url ?? `${repo}#${number}`} is open`
+    : `the issue ${url ?? `${repo}#${number}`} is ${issue.stateReason === 'not_planned' ? 'closed as not planned' : 'closed, not as completed'}`];
+  lines.push(found.size === 0 ? `no pull request in ${repo} closes or references it`
+    : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map(described).join(', ')}`);
+  if (asksToUpdate(issue)) {
+    const named: NumberedPullRequest[] = [];
+    for (const n of namedNumbers(issue)) {
+      const pr = await pullRequestOrNone(api, repo, n);
+      if (pr) named.push(pr);
+    }
+    if (named.length > 0 && named.every((pr) => pr.state === 'merged' || (pr.state === 'open' && !pr.conflicting))) return undefined;
+    if (named.length > 0) lines.push(`the pull requests it asks to update are not each merged or free of merge conflicts: ${named.map(described).join(', ')}`);
+  }
+  return lines.join(', and ');
 }
 
 /**
@@ -106,9 +158,6 @@ export async function partlyDone(api: GitHubApi, job: Job): Promise<string | und
     .filter((pr) => isPartOf(pr, repo, number) && isOwnPullRequest(pr, job) && (pr.state === 'merged' || (pr.state === 'open' && !pr.isDraft && !pr.conflicting)));
   return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
 }
-
-/** A pull request's number, from its URL. */
-const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 
 /**
  * What a failed job's work shows on GitHub (issues #529, #621): its issue — open, closed as completed (`done`), closed
@@ -162,7 +211,7 @@ export async function closedAsComplete(api: GitHubApi, job: Job): Promise<boolea
   if (!repo || !number) return false;
   try {
     const issue = await api.getIssue(repo, number);
-    return issue.state === 'closed' && isClosedAsComplete(issue, await api.closingPullRequest(repo, number), job);
+    return isClosedAsCompleted(issue, await api.closingPullRequest(repo, number));
   } catch (err) {
     if (err instanceof GitHubApiError && err.permanent) return false;
     throw err;

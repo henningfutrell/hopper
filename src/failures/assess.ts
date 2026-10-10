@@ -1,7 +1,7 @@
 // The assessor's judgement of one failed job (issue #509, design.md "Failure assessment"), rules first. Pure: the
 // service gathers the evidence and acts on the result. In order: the open problem of its signature takes it; a
 // known shared cause opens a problem; a signature on enough items of one machine or executor flags a general cause,
-// unless its cause is job-specific (issue #625); a transient cause runs
+// unless its cause is job-specific (issue #625), which never joins an open problem either (issue #637); a transient cause runs
 // again with backoff within the retry limit; anything else goes to a person. Two cases act on nothing (issue #517):
 // a failure whose item already ran again is superseded, and one that failed more than a day before it was
 // assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others. A
@@ -133,7 +133,8 @@ function judge(i: AssessInput): Assessment {
     reasons.push(...t.reasons);
     return t.decision === 'retry' ? done('transient', 'retry', { retryInMs: backoffMs(1, s) }) : done('transient', t.decision);
   }
-  if (i.open) {
+  // A job-specific cause is its own job's: it never joins a problem, even one of its signature (issue #637).
+  if (i.open && i.cause?.cls !== 'job') {
     reasons.push(`same signature as the open problem: ${i.open.title}`);
     return done('shared', placement(i.open.decision, i, undefined, reasons), { problem: { kind: 'join', id: i.open.id }, title: i.open.title });
   }
