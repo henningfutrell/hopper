@@ -3408,7 +3408,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | not built: a **container target** runs commands only, and an **agent box** is a test machine reached over ssh, not locked down ("Agent boxes", residual risk) | #314, #308; mechanisms compared in #315 |
+| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
