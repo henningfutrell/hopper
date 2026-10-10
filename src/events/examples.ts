@@ -140,6 +140,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'github_proxy.failed': { requestId: 'r3', machine: 'desk', own: true, op: 'pr.create', repo: 'octo/tools', error: 'GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and fix)' },
   'vault.secret_set': { name: 'KUBE_TOKEN', by: 'Ada', replaced: false },
   'vault.secret_removed': { name: 'KUBE_TOKEN', by: 'Ada' },
+  'vault.secret_read': { name: 'system/connected-account.github.access-token', by: 'hopper', purpose: 'github' },
+  'vault.secret_migrated': { name: 'system/webhook.3f2c.signing-secret', from: 'webhooks' },
   'template.saved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }], by: 'Ada' },
   'template.removed': { template: 'kube', by: 'Ada' },
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },

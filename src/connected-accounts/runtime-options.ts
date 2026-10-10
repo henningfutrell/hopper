@@ -1,8 +1,7 @@
-// What the runtime gives the connected accounts: the renewal and token deletion with the app's client secret, the token
-// box (issues #358, #441, #597), and the events they record (issues #358, #647).
+// What the runtime gives the connected accounts: the renewal and token deletion with the app's client secret (issues
+// #358, #441, #597), and the events they record (issues #358, #647). The tokens are kept in the vault (issue #658).
 import type { EventLog } from '../domain/ports.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { tokenBoxOf } from '../secrets/token-box.ts';
 import type { HopperApps } from './hopper-app.ts';
 import { renewal } from './renewal.ts';
 import { tokenDeletion } from './revocation.ts';
@@ -12,16 +11,14 @@ import { CLIENT_SECRET_VARIABLE } from './web-flow.ts';
 /**
  * What the runtime gives the connected accounts (issues #358, #441, #597): the renewal, with the app's client
  * secret when the runtime gives one — read at each renewal, so a rotated one counts — the token deletion,
- * with the client secret when given, whether the client secret is available, and the box that seals the tokens
- * at rest, under the instance's HOPPER_MASTER_KEY.
+ * with the client secret when given, and whether the client secret is available.
  */
-export function fromRuntime(apps: HopperApps, env: Record<string, string | undefined>): Pick<ConnectedAccountsOptions, 'refresh' | 'deleteToken' | 'hasClientSecret' | 'box'> {
+export function fromRuntime(apps: HopperApps, env: Record<string, string | undefined>): Pick<ConnectedAccountsOptions, 'refresh' | 'deleteToken' | 'hasClientSecret'> {
   const clientSecret = (): string | undefined => { try { return runtimeSecrets(env)(CLIENT_SECRET_VARIABLE); } catch { return undefined; } };
   return {
     refresh: (provider, refresh, grantedBy) => renewal(apps[provider], clientSecret)(refresh, grantedBy),
     deleteToken: (provider, accessToken) => tokenDeletion(apps[provider], clientSecret())(accessToken),
     hasClientSecret: () => clientSecret() !== undefined,
-    box: tokenBoxOf(runtimeSecrets(env)),
   };
 }
 

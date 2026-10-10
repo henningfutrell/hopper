@@ -7,7 +7,8 @@
 // backend (issue #585): the person names the backend and where the value is there, never the value. A minting
 // credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
 // never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
-// vault does not give; an admin gives one — of the kind suggested, or another — or declines.
+// vault does not give; an admin gives one — of the kind suggested, or another — or declines. The hopper's own secrets
+// (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx).
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -23,6 +24,7 @@ import type { Asset, AssetKind, Operation, OperationProfile, TemplateView, Vault
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
 import { AskedFor } from './vault-requests';
+import { SystemSecrets } from './vault-system';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
@@ -306,6 +308,7 @@ export function Vault() {
         {view && templates.length === 0 && !addingTemplate && <Empty>No templates yet.</Empty>}
         {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
+      {view && <SystemSecrets system={view.system} />}
     </div>
   );
 }

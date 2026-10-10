@@ -10,7 +10,7 @@
 import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ConnectedAccountStatus, SourceStatus } from '../../src/domain/types.ts';
-import { createTokenBox } from '../../src/secrets/token-box.ts';
+import { putAccount } from '../support/system-secrets.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -71,11 +71,11 @@ describe('grant hygiene in the running hopper (#514)', () => {
     const github = await forge();
     const app = await start(github, { HOPPER_MASTER_KEY: randomBytes(32).toString('hex') });
     const pair = github.mint('octo-user');
-    const other = createTokenBox(randomBytes(32).toString('hex'));
-    app.user().store.connectedAccounts.put({
+    // Its tokens sealed in the vault under a key this hopper is not given (issue #658).
+    putAccount(app.user().store, {
       provider: 'github', account: 'octo-user', subject: '1', connectedAt: '2026-10-08T00:00:00.000Z', grantedBy: 'device',
-      accessToken: other.seal(pair.accessToken), refreshToken: other.seal(pair.refreshToken), expiresAt: '2099-01-01T00:00:00.000Z',
-    });
+      accessToken: pair.accessToken, refreshToken: pair.refreshToken, expiresAt: '2099-01-01T00:00:00.000Z',
+    }, randomBytes(32).toString('hex'));
     await app.user().sources.syncNow('github-account').catch(() => undefined);
     expect(await account(app)).toMatchObject({ state: 'unreadable', account: 'octo-user', error: expect.stringMatching(/HOPPER_MASTER_KEY_PREVIOUS/) });
     await waitFor(async () => /HOPPER_MASTER_KEY_PREVIOUS/.test(String((await sourceOf(app))?.detail.paused)), { what: 'the source to say what to do' });

@@ -180,8 +180,9 @@ describe('the reap stops the job\'s scope (issue #410)', () => {
     const id = `${JOB}-${process.pid}`;
     const marker = `jh-410-escapee-${process.pid}`;
     // The scope's own shell starts the escapee: no HOPPER_JOB_ID, its own session, nothing tying it to the job but its cgroup.
+    // bash, for `exec -a`: dash, a distribution's sh, has none (issue #672).
     execFileSync('systemd-run', ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, '-p', 'KillMode=control-group', '-p', 'TimeoutStopSec=10s', '--',
-      'sh', '-c', `env -i setsid sh -c 'exec -a ${marker} sleep 300' </dev/null >/dev/null 2>&1 &`], { timeout: 10000 });
+      'sh', '-c', `env -i setsid bash -c 'exec -a ${marker} sleep 300' </dev/null >/dev/null 2>&1 &`], { timeout: 10000 });
     const running = (): boolean => spawnSync('pgrep', ['-f', marker]).status === 0;
     expect(running()).toBe(true);
     expect(reap(id, '')).toContain(REAP_DONE);

@@ -47,21 +47,20 @@ describe('webhook add and update', () => {
   });
 });
 
-// Issue #451: the signing secret is kept sealed in its own column; the subscription the store answers
-// never carries it, only when it last changed.
+// Issue #451: the signing secret was kept sealed in its own column; since issue #658 it is a system secret in the vault.
+// The subscription the store answers never carries it, only when it last changed; a row's old copy is read only to move it.
 describe('webhook signing secret', () => {
-  it('setSecret keeps the sealed text and when; sealedSecret reads it; the subscription carries neither', () => {
+  it('secretKept records when and drops the old copy; legacySecret reads the old copy; the subscription carries neither', () => {
     const clock = fixedClock();
     const s = t.open(t.url(), clock);
     const w = s.webhooks.add(input)!;
-    expect(s.webhooks.sealedSecret(w.id)).toBeUndefined();
+    expect(s.webhooks.legacySecret(w.id)).toBeUndefined();
     expect(w.secretChangedAt).toBeUndefined();
     clock.set('2026-10-02T11:00:00.000Z');
-    const after = s.webhooks.setSecret(w.id, 'hs1.sealed-text')!;
+    const after = s.webhooks.secretKept(w.id)!;
     expect(after).toEqual({ ...w, secretChangedAt: '2026-10-02T11:00:00.000Z' });
-    expect(JSON.stringify(s.webhooks.list())).not.toContain('sealed-text');
-    expect(s.webhooks.sealedSecret(w.id)).toBe('hs1.sealed-text');
-    expect(s.webhooks.setSecret('nope', 'x')).toBeUndefined();
+    expect(s.webhooks.legacySecret(w.id)).toBeUndefined();
+    expect(s.webhooks.secretKept('nope')).toBeUndefined();
     s.close();
   });
 });

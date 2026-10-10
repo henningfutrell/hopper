@@ -132,6 +132,8 @@
         "github_proxy.failed",
         "vault.secret_set",
         "vault.secret_removed",
+        "vault.secret_read",
+        "vault.secret_migrated",
         "template.saved",
         "template.removed",
         "vault.approved",

@@ -1,6 +1,6 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
-// question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
+// accept, reject or run a job again, order the queue, set the queue gate, list the open questions with why each came to a
+// person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
@@ -10,13 +10,14 @@
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';
-import { HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
+import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
+import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
+import { questionCall } from './cli-operator-questions.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
-import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact'] as const;
 
@@ -27,6 +28,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
+  hopper question list [--reason <reason>]           the open questions; --reason keeps those sent to a person for it: ${ESCALATION_REASONS.join(', ')}
   hopper question answer <id> <text>                 answer an open question; the job waiting on it resumes
   hopper question close <id>                         close an open question without answering
   hopper question dismiss <id>                       drop an open question; a job waiting on it is cancelled
@@ -121,19 +123,6 @@ function queueCall(args: string[]): Call {
     }) };
   }
   throw usage('queue order <id>... | hopper queue gate <mode> [--per-hour <n>|none]');
-}
-
-function questionCall(args: string[]): Call {
-  const [verb, id, ...rest] = args;
-  if (verb === 'answer') {
-    const answer = rest.join(' ').trim();
-    if (!id || !answer) throw usage('question answer <id> <text>');
-    return { role: 'operator', path: `/ui/api/questions/${encodeURIComponent(id)}/answer`, body: async () => ({ answer }) };
-  }
-  if ((verb === 'close' || verb === 'dismiss') && id && rest.length === 0) {
-    return { role: 'operator', path: `/ui/api/questions/${encodeURIComponent(id)}/${verb}`, body: async () => ({}) };
-  }
-  throw usage('question answer <id> <text> | close <id> | dismiss <id>');
 }
 
 /** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */

@@ -1,7 +1,7 @@
 // What the users' schemas keep sealed under the master key (issue #659, design.md "The master key"), read at start
 // before any runtime: the key ids of the sealed values (the webhook signing secrets and the vault secrets,
-// src/secrets/sealer.ts; the system secrets too, issue #657) and the connected accounts' sealed tokens
-// (src/secrets/token-box.ts). It tells a fresh hopper from one whose key is missing, and a key that sealed them from one
+// src/secrets/sealer.ts; the system secrets too, issues #657, #658 — the GitHub tokens and the instance's sign-in realm
+// secrets among them) and the connected accounts' tokens a row still holds from before #658 (src/secrets/token-box.ts). It tells a fresh hopper from one whose key is missing, and a key that sealed them from one
 // that did not. A vault's own secrets a KMS data key seals (issue #586) are left out: the master key does not seal them;
 // its system secrets (`system/<name>`) it always does. A table a schema lacks yet is skipped.
 import type { KeptSecrets } from '../domain/store.ts';

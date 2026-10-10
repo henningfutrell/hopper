@@ -7,6 +7,7 @@
 //   Scenario: the view lists no system secret; a template that names one is refused
 //   Scenario: a job on a box asks for a system secret: Access is asked, and the ask is refused and recorded
 //   Scenario: even when Access allows it, a system secret is never given to a job
+//   Scenario: every kind of system secret (issue #658) is refused to a job, Access asked for each
 import { describe, expect, it } from 'vitest';
 import type { SystemSecretAsk, VaultAccess } from '../../src/domain/access.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
@@ -27,8 +28,8 @@ const KUBE: Template = {
 const link = mintLinkKey();
 const job = { id: 'j1', status: 'running', laneId: 'kbox/lane-1' } as Job;
 
-function vaultWith(allow: boolean) {
-  const secrets = [SYSTEM, PLAIN];
+function vaultWith(allow: boolean, extra: VaultSecret[] = []) {
+  const secrets = [SYSTEM, PLAIN, ...extra];
   const events: NewEvent[] = [];
   const asks: SystemSecretAsk[] = [];
   const store = {
@@ -79,5 +80,20 @@ describe('the vault\'s system scope (issue #657)', () => {
     const { vault } = vaultWith(true);
     const r = await vault.deliver({ name: 'system/typesafe-api-key', token: proxyToken(link.privateKey, 'u1', job.id) }, 'k1');
     expect(r).toEqual({ refused: expect.stringContaining('system scope') });
+  });
+
+  // Issue #658: every kind of the hopper's own secret, the GitHub connection's tokens, a webhook's signing secret and a
+  // sign-in realm's secret too: Access is asked for each, and the job gets none, whatever it answers.
+  it('a job is refused every kind of system secret, and Access is asked for each', async () => {
+    const rows = ['connected-account.github.access-token', 'connected-account.github.refresh-token', 'webhook.w1.signing-secret', 'sign-in.corp.clientSecret']
+      .map((n, i) => ({ ...SYSTEM, id: `s${i + 2}`, name: `system/${n}` }));
+    for (const allow of [false, true]) {
+      const { vault, asks, events } = vaultWith(allow, rows);
+      const token = proxyToken(link.privateKey, 'u1', job.id);
+      for (const row of rows) expect(await vault.deliver({ name: row.name, token }, 'k1'), row.name).toHaveProperty('refused');
+      expect(asks.map((a) => [a.name, a.action, a.requester.kind])).toEqual(rows.map((r) => [r.name.slice('system/'.length), 'read', 'job']));
+      expect(events.map((e) => e.type)).toEqual(rows.map(() => 'vault.refused'));
+      expect(JSON.stringify(events)).not.toContain('value-of-');
+    }
   });
 });

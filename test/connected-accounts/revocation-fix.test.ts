@@ -9,10 +9,9 @@ import { renewal } from '../../src/connected-accounts/renewal.ts';
 import { tokenDeletion } from '../../src/connected-accounts/revocation.ts';
 import type { UserStore } from '../../src/domain/ports.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
+import { accountOf, systemOf } from '../support/system-secrets.ts';
 import { waitFor } from '../support/wait.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
-import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
-
 
 const EIGHT_HOURS_S = 8 * 3600;
 const T0 = '2026-10-09T10:00:00.000Z';
@@ -51,7 +50,6 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
   const logs: string[] = [];
   const told: string[] = [];
   const service = createConnectedAccounts({
-    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async (_, token) => {
@@ -64,6 +62,7 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
     hasClientSecret: () => false,
     flows: { github: approvedAs(github, 'octo-user', clock) },
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
+    secrets: systemOf(s),
     ...o,
   });
   cleanups.push(() => service.stop());
@@ -71,10 +70,10 @@ function hopper(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedC
 }
 
 async function connect(service: ReturnType<typeof hopper>['service'], s: UserStore) {
-  const before = openedRow(s)?.accessToken;
+  const before = accountOf(s)?.accessToken;
   await service.connect('github');
-  await waitFor(async () => { const now = openedRow(s); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
-  return openedRow(s)!;
+  await waitFor(async () => { const now = accountOf(s); return now !== undefined && now.accessToken !== before; }, { what: 'github connected' });
+  return accountOf(s)!;
 }
 
 describe('token revocation fixes (#597)', () => {
@@ -101,8 +100,7 @@ describe('token revocation fixes (#597)', () => {
     const logs: string[] = [];
     const told: string[] = [];
     const service = createConnectedAccounts({
-      box: TEST_BOX,
-      store: s, apps, clock,
+      store: s, apps, clock, secrets: systemOf(s),
       logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
       whoIs: async (_, token) => {
         if (refuseWhoIs || !github.tokens.has(token)) throw new Error('Bad credentials');
@@ -128,7 +126,7 @@ describe('token revocation fixes (#597)', () => {
     refuseWhoIs = true;
     const signIn = github.mint('octo-user');
     await service.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: signIn.accessToken, refreshToken: signIn.refreshToken, grantedBy: 'web' });
-    expect(openedRow(s)?.ended).toMatch(/refused the new token/);
+    expect(s.connectedAccounts.get('github')?.ended).toMatch(/refused the new token/);
     expect(service.expired('github')).toBe(true);
 
     const status2 = (await service.status())[0]!;

@@ -52,7 +52,7 @@ const failuresOf = async (app: TestApp): Promise<FailuresView> => (await app.api
 const now = () => new Date().toISOString();
 
 /** A job of `repo` that ends done with its pull request open, as `pr` opens it; answers the job, finished, and the URL. */
-async function waiting(gh: FakeGitHub, app: TestApp, repo: string, pr: { checks?: 'passing' | 'pending' | 'failing'; isDraft?: boolean } = {}) {
+async function waiting(gh: FakeGitHub, app: TestApp, repo: string, pr: { checks?: 'passing' | 'pending' | 'failing'; isDraft?: boolean; createdAt?: string } = {}) {
   const issue = gh.createIssue({ repo, body: body({ op: 'echo' }), labels: ['hopper'] });
   let url = '';
   app.scripted.ships((job) => { if (job.source?.key === issue.url) url = gh.openPullRequest(repo, issue.number, { createdAt: now(), ...pr }).url; });
@@ -86,20 +86,31 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     expect((await app.job(on.job.id)).status).toBe('finished');
   });
 
-  it('yolo on, a pull request with no checks is not merged (issue #652): its card waits on "no checks" until a check passed', async () => {
+  it('yolo on, a pull request with no checks (issue #677): it waits for checks to start in the grace window, then the hopper merges it', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const token = await app.login();
     await app.ui('/ui/api/yolo-mode', { on: true }, { token });
-    const w = await waiting(gh, app, REPO);
+    // Pushed just now: checks may still start, so it waits.
+    const fresh = await waiting(gh, app, REPO);
     await app.sync();
-    await waitFor(async () => (await cardOf(app, w.job.id))?.waits === 'no checks', { what: 'waits on a check' });
+    await waitFor(async () => (await cardOf(app, fresh.job.id))?.waits === 'checks not started', { what: 'waits for checks to start' });
     expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
-    expect(gh.issue(REPO, w.issue.number).state).toBe('open');
-
-    gh.setChecks(w.url, 'passing');
+    expect(gh.issue(REPO, fresh.issue.number).state).toBe('open');
+    // A check started late: it holds the merge until it passes.
+    gh.setChecks(fresh.url, 'pending');
     await app.sync();
-    await waitFor(() => gh.issue(REPO, w.issue.number).state === 'closed', { what: 'merged once a check passed' });
+    await waitFor(async () => (await cardOf(app, fresh.job.id))?.waits === 'checks pending', { what: 'waits on the late check' });
+    gh.setChecks(fresh.url, 'passing');
+    await app.sync();
+    await waitFor(() => gh.issue(REPO, fresh.issue.number).state === 'closed', { what: 'merged once the late check passed' });
+
+    // Opened before the grace window: no checks means ready, and the hopper merges it.
+    const old = await waiting(gh, app, REPO, { createdAt: new Date(Date.now() - 10 * 60_000).toISOString() });
+    await app.sync();
+    await waitFor(() => gh.issue(REPO, old.issue.number).state === 'closed', { what: 'merged with no checks' });
+    const merged = await waitFor(async () => (await app.events('types=job.pull_request_merged')).find((e) => e.jobId === old.job.id), { what: 'job.pull_request_merged' });
+    expect(merged.data).toMatchObject({ byHopper: true });
   });
 
   it('test 9 — yolo on, the merge waits or fails: the job stays done, no failure record, the pull request stays in the list', async () => {

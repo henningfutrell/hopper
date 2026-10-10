@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { openDb } from '../../src/store/db.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
+import { accountOf, putAccount } from '../support/system-secrets.ts';
 import { foldLeftoverAdmin } from '../../src/users/leftover-admin.ts';
 import { installFromBefore, testPostgres } from '../support/database.ts';
 import { fixedClock, spec, useTempStore } from './helpers.ts';
@@ -49,7 +50,7 @@ function twoUsers(o: { recordAdmin?: boolean } = {}) {
   octo.webhooks.add({ name: 'hook', url: 'http://127.0.0.1:1/octo', events: ['job.*'], active: true });
   const octoHook = octo.webhooks.add({ name: 'octo-hook', url: 'http://127.0.0.1:1/octo-2', events: ['job.*'], active: true })!;
   const delivery = octo.webhooks.createDelivery(octoHook.id, octoEvent);
-  octo.connectedAccounts.put({ provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
+  putAccount(octo, { provider: 'github', account: 'octo', subject: '42', accessToken: 'tok', connectedAt: NOW });
   octo.close();
 
   instance.uiSessions.create({ tokenHash: 'octo-session', startedAt: NOW, lastSeenAt: NOW, checkedAt: NOW, role: 'admin', identity, userId: 'octo' }, NOW);
@@ -77,7 +78,7 @@ describe('the leftover default admin account is folded into the first GitHub adm
     const store = instance.userStore(instance.users.get('octo')!);
     expect(store.jobs.list().map((j) => j.id).sort()).toEqual([adminJob.id, octoJob.id].sort());
     expect(store.questions.get(adminQuestion.id)?.text).toBe('admin q?');
-    expect(store.events.since(0).map((e) => e.jobId).sort()).toEqual([adminJob.id, octoJob.id].sort());
+    expect(store.events.since(0).filter((e) => !e.type.startsWith('vault.')).map((e) => e.jobId).sort()).toEqual([adminJob.id, octoJob.id].sort());
     // Config and settings: the leftover's, which ran the hopper; what only the real user had joins it.
     expect(store.config.read('rules')).toBe('admin rules');
     expect(store.config.read('plugins')).toEqual({
@@ -92,7 +93,7 @@ describe('the leftover default admin account is folded into the first GitHub adm
     const moved = store.events.since(0).find((e) => e.id === octoEvent.id)!;
     expect(store.webhooks.dueDeliveries(new Date(FUTURE))).toEqual([expect.objectContaining({ id: delivery.id, eventSeq: moved.seq })]);
     // The real user's own GitHub connection stays theirs.
-    expect(store.connectedAccounts.get('github')).toMatchObject({ account: 'octo', accessToken: 'tok' });
+    expect(accountOf(store)).toMatchObject({ account: 'octo', accessToken: 'tok' });
     // New rows go on after everything moved.
     const next = store.jobs.create(spec, 50);
     expect(store.jobs.list().map((j) => j.id)).toContain(next.id);

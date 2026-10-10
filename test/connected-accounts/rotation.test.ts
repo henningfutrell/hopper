@@ -21,11 +21,9 @@ import type { ConnectedAccount, UserStore } from '../../src/domain/ports.ts';
 import { createConnectedAccounts, RETRY_MS, type ConnectedAccountsOptions } from '../../src/connected-accounts/service.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { renewal } from '../../src/connected-accounts/renewal.ts';
-import { createTokenBox } from '../../src/secrets/token-box.ts';
+import { accountOf, putAccount, systemOf, TEST_KEY } from '../support/system-secrets.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
-import { openedRow, TEST_BOX } from '../support/sealed-tokens.ts';
-
 
 const EIGHT_HOURS_S = 8 * 3600;
 const H = 3600_000;
@@ -50,13 +48,12 @@ function store(url: string, clock: ReturnType<typeof fixedClock>): UserStore {
 }
 
 /** One process's connected accounts over its own connection to the user schema. */
-function process_(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>, o: Partial<ConnectedAccountsOptions> & { secret?: string } = {}) {
+function process_(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>, { key, ...o }: Partial<ConnectedAccountsOptions> & { secret?: string; key?: string | null } = {}) {
   const apps = hopperApps({ github: { clientId: 'gh-client-id', url: github.url } });
   const told: string[] = [];
   const renewed: string[] = [];
   const logs: string[] = [];
   const service = createConnectedAccounts({
-    box: TEST_BOX,
     store: s, apps, clock,
     logger: { info: (l) => logs.push(l), warn: (l) => logs.push(l) },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }),
@@ -64,6 +61,7 @@ function process_(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixe
     refresh: (p, refresh, grantedBy) => renewal(apps[p], () => o.secret)(refresh, grantedBy),
     onExpired: (_p, account, reason) => { told.push(`${account}: ${reason}`); },
     onRenewed: (p) => { renewed.push(p); },
+    secrets: systemOf(s, key),
     ...o,
   });
   cleanups.push(() => service.stop());
@@ -79,7 +77,7 @@ function connected(github: FakeForge, s: UserStore, clock: ReturnType<typeof fix
     expiresAt: new Date(now + EIGHT_HOURS_S * 1000).toISOString(), refreshTokenExpiresAt: new Date(now + 180 * 24 * H).toISOString(),
     connectedAt: new Date(now).toISOString(), grantedBy: web ? 'web' : 'device',
   };
-  s.connectedAccounts.put(a);
+  putAccount(s, a);
   return a;
 }
 
@@ -100,7 +98,7 @@ describe('the renewer (#441)', () => {
     await service.renewDue();
     expect(refreshes(github)).toHaveLength(1);
     expect(renewed).toEqual(['github']);
-    const kept = openedRow(s)!;
+    const kept = accountOf(s)!;
     expect(kept.accessToken).not.toBe(first.accessToken);
     expect(github.tokens.has(kept.accessToken)).toBe(true);
     expect(github.tokens.has(first.accessToken)).toBe(false); // GitHub refuses the old one now
@@ -139,7 +137,7 @@ describe('the renewer (#441)', () => {
     expect(refreshes(github)).toHaveLength(1);
     expect(ta).toBe(tb);
     expect(github.tokens.has(ta)).toBe(true);
-    expect(a.connectedAccounts.get('github')).toEqual(b.connectedAccounts.get('github'));
+    expect(accountOf(a)).toEqual(accountOf(b));
     expect(pa.told).toEqual([]);
     expect(pb.told).toEqual([]);
   });
@@ -157,7 +155,7 @@ describe('the renewer (#441)', () => {
       // Whatever runs after GitHub answered — a crash, a stop — runs after this macrotask at the earliest.
       refresh: async (p, refresh, by) => {
         const g = await renewal(apps[p], () => undefined)(refresh, by);
-        setImmediate(() => { seenAfterAnswer = openedRow(store(url, clock)); });
+        setImmediate(() => { seenAfterAnswer = accountOf(store(url, clock)); });
         return g;
       },
     });
@@ -180,9 +178,9 @@ describe('the renewer (#441)', () => {
     // An older hopper beside this one, which takes no lock, renews between this one's re-read and its call.
     const older = store(url, clock);
     const olderRenews = async () => {
-      const row = openedRow(older)!;
+      const row = accountOf(older)!;
       const g = await renewal(apps.github, () => undefined)(row.refreshToken!, 'device');
-      older.connectedAccounts.put({ ...row, accessToken: g.accessToken, refreshToken: g.refreshToken!, expiresAt: g.expiresAt!.toISOString() });
+      putAccount(older, { ...row, accessToken: g.accessToken, refreshToken: g.refreshToken!, expiresAt: g.expiresAt!.toISOString() });
     };
     let raced = false;
     const { service, told } = process_(github, s, clock, {
@@ -193,7 +191,7 @@ describe('the renewer (#441)', () => {
     });
     const token = await service.token('github');
     expect(told).toEqual([]);
-    expect(token).toBe(openedRow(older)!.accessToken);
+    expect(token).toBe(accountOf(older)!.accessToken);
     expect(github.tokens.has(token)).toBe(true);
     expect((await service.status())[0]).toMatchObject({ state: 'connected' });
   });
@@ -266,42 +264,70 @@ describe('the renewer (#441)', () => {
     await withSecret.service.renewDue();
     expect(refreshes(github)).toHaveLength(1);
     expect(refreshes(github)[0]!.body).toMatchObject({ client_secret: 'gh-secret' });
-    expect(openedRow(s)!.grantedBy).toBe('web');
+    expect(s.connectedAccounts.get('github')!.grantedBy).toBe('web');
   });
 
-  it('seals the tokens at rest; a fresh process with the same key carries on, another key reads as unreadable', async () => {
+  it('keeps the tokens sealed in the vault; a fresh process with the same key carries on, another key reads as unreadable', async () => {
     const github = await forge();
     const clock = fixedClock(T0);
     const url = temp.url();
     const s = store(url, clock);
-    const first = connected(github, s, clock); // kept in clear, as before #441
+    const first = connected(github, s, clock); // kept under TEST_KEY
     const key = randomBytes(32).toString('hex');
-    const { service } = process_(github, s, clock, { box: createTokenBox(key) });
-
-    await service.renewDue(); // the look seals what is clear
-    const raw = s.connectedAccounts.get('github')!;
-    expect(JSON.stringify(raw)).not.toMatch(/gh[or]_/);
+    expect(systemOf(s, key, [TEST_KEY]).resealAll()).toBe(2); // a start with a new key seals them again (issue #658)
+    const { service } = process_(github, s, clock, { key });
+    expect(sealedRows(s)).toEqual([['system/connected-account.github.access-token', true], ['system/connected-account.github.refresh-token', true]]);
+    expect(JSON.stringify(s.connectedAccounts.get('github'))).not.toMatch(/gh[or]_/);
     expect(await service.token('github')).toBe(first.accessToken);
 
     clock.set(new Date(Date.parse(T0) + 7.5 * H).toISOString());
-    const fresh = process_(github, store(url, clock), clock, { box: createTokenBox(key) });
+    const fresh = process_(github, store(url, clock), clock, { key });
     const renewed = await fresh.service.token('github');
     expect(github.tokens.has(renewed)).toBe(true);
-    expect(JSON.stringify(s.connectedAccounts.get('github'))).not.toMatch(/gh[or]_/);
+    expect(sealedRows(s).every(([, sealed]) => sealed)).toBe(true);
 
-    const other = process_(github, store(url, clock), clock, { box: createTokenBox(randomBytes(32).toString('hex')) });
+    const other = process_(github, store(url, clock), clock, { key: randomBytes(32).toString('hex') });
     expect((await other.service.status())[0]).toMatchObject({ state: 'unreadable', error: expect.stringMatching(/the key it was sealed under is missing/) });
     await expect(other.service.token('github')).rejects.toThrow(/the key it was sealed under is missing/);
     expect(other.told).toEqual([]);
   });
+
+  // Issue #658, test 3: a renewal writes through the vault, under the row's lock, and keeps exactly one refresh token.
+  it('a renewal writes the new pair through the vault and keeps exactly one refresh token, the new one', async () => {
+    const github = await forge();
+    const clock = fixedClock(T0);
+    const url = temp.url();
+    const s = store(url, clock);
+    const first = connected(github, s, clock);
+    clock.set(new Date(Date.parse(T0) + 7.5 * H).toISOString());
+    const a = process_(github, s, clock);
+    const b = process_(github, store(url, clock), clock);
+    const [ta, tb] = await Promise.all([a.service.token('github'), b.service.token('github')]);
+    expect(ta).toBe(tb);
+    const refreshRows = s.vault.list().filter((r) => r.name === 'system/connected-account.github.refresh-token');
+    expect(refreshRows).toHaveLength(1);
+    const kept = accountOf(s)!;
+    expect(kept.refreshToken).not.toBe(first.refreshToken);
+    expect(github.refreshTokens.has(kept.refreshToken!)).toBe(true);
+    expect(github.refreshTokens.has(first.refreshToken!)).toBe(false);
+    const sets = s.events.since(0, 1000).filter((e) => e.type === 'vault.secret_set' && (e.data as { rotated?: boolean }).rotated);
+    expect(sets.map((e) => (e.data as { name: string }).name)).toEqual(['system/connected-account.github.access-token', 'system/connected-account.github.refresh-token']);
+    expect(JSON.stringify(s.events.since(0, 1000))).not.toContain(kept.refreshToken!);
+    expect(JSON.stringify(s.events.since(0, 1000))).not.toContain(kept.accessToken);
+  });
 });
+
+/** Each system secret row of the vault, and whether its value is sealed (never in clear). */
+function sealedRows(s: UserStore): [string, boolean][] {
+  return s.vault.list().map((r) => [r.name, (s.vault.sealed(r.id) ?? '').startsWith('hs1.')]);
+}
 
 function optionsOf(github: FakeForge, s: UserStore, clock: ReturnType<typeof fixedClock>): ConnectedAccountsOptions {
   return {
-    box: TEST_BOX,
     store: s, apps: hopperApps({ github: { clientId: 'gh-client-id', url: github.url } }), clock,
     logger: { info: () => undefined, warn: () => undefined },
     whoIs: async () => ({ subject: '1', account: 'octo-user' }), installations: async () => [],
     refresh: async () => { throw new Error('unused'); },
+    secrets: systemOf(s),
   };
 }

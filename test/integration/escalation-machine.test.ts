@@ -54,7 +54,7 @@ describe('a level that names no machine (#442)', () => {
     const [q] = await a.questionsOf(job.id);
     expect(q).toMatchObject({ status: 'answered', answeredBy: 'level-1' });
     expect(q!.attempts).toEqual([expect.objectContaining({
-      tier: 'level-1', outcome: 'accepted', machine: { id: 'local', why: 'the job\'s machine' }, reason: 'routine (no rules yet)',
+      tier: 'level-1', outcome: 'accepted', machine: { id: 'local', why: 'the job\'s machine' }, reason: 'routine',
     })]);
     // Settings: the level runs; which machine it uses is said, nothing flagged.
     const level = (await report(a)).escalationLevels[0]!;

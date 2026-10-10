@@ -131,7 +131,7 @@ export function createRenewer(o: RenewerOptions): Renewer {
     const until = Date.now() + LOCK_WAIT_MS;
     for (;;) {
       if (accounts.lock(provider)) return true;
-      if (accounts.get(provider)?.refreshToken !== refreshToken || Date.now() >= until) return false;
+      if (o.atRest.storedRefresh(provider) !== refreshToken || Date.now() >= until) return false;
       await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
     }
   }
@@ -205,17 +205,12 @@ export function createRenewer(o: RenewerOptions): Renewer {
     }
     // Kept at once, before anything else awaits: GitHub has already invalidated the pair it was given.
     const kept = { ...recordOf(provider, a, g, a.connectedAt), ...(a.connectedBy ? { connectedBy: a.connectedBy } : {}), renewedAt: o.clock.now().toISOString() };
-    if (!accounts.swap(provider, used, o.atRest.sealed(kept))) return o.live(provider).account.accessToken;
+    // Through the vault, the row locked (issue #658): kept only while `used` is still the stored refresh token.
+    if (!o.atRest.swap(provider, used, kept)) return o.live(provider).account.accessToken;
     troubles.delete(provider);
     o.logger.info(`hopper: ${PROVIDER_NAME[provider]} token of ${a.account} renewed`);
     o.onRenewed?.(provider, { account: a.account, ...(kept.expiresAt ? { expiresAt: kept.expiresAt } : {}) });
     return g.accessToken;
-  }
-
-  /** A token kept in clear — before #441, or before the runtime gave a key — or sealed under an older key (#514), sealed now. */
-  function seal({ account: a, stored }: Live): void {
-    const done = stored.refreshToken !== undefined ? accounts.swap(a.provider, stored.refreshToken, o.atRest.sealed(a)) : (accounts.put(o.atRest.sealed(a)), true);
-    if (done) o.logger.info(`hopper: ${PROVIDER_NAME[a.provider]} tokens of ${a.account} sealed at rest`);
   }
 
   function exclusive<T>(provider: ConnectedAccountProvider, fn: () => Promise<T>): Promise<T> {
@@ -247,7 +242,6 @@ export function createRenewer(o: RenewerOptions): Renewer {
         const l = o.lookable(p);
         if (!l) continue;
         if (!o.atRest.keeps) continue;
-        if (o.atRest.stale(l.stored)) seal(l);
         if (!l.account.refreshToken || !due(l.account) || (troubles.get(p)?.retryAt ?? 0) > now()) continue;
         await renew(p).catch(() => undefined); // logged where it failed
       }
