@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
-| `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
+| `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the masking of GitHub tokens, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that seals a connected account's tokens under `HOPPER_MASTER_KEY`; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key") | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -10673,11 +10673,13 @@ byte by byte (`od`); the file is the body, `application/octet-stream`, read whol
 
 | command | route | answer |
 |---------|-------|--------|
-| `put FILE [--title] [--type]` | `POST /job/artifacts` | 201 `put: <id> <title> <type> <n> bytes` and `url: <stable URL>` |
+| `put FILE [--title] [--summary] [--type] [--to ID [--note]]` | `POST /job/artifacts` | 201 `put: <id> [revision <n>] <title> <type> <n> bytes` and `url: <stable URL>`; `--to`: a new revision (issue #675) |
 | `list [--all] [--markdown]` | `GET /job/artifacts` | the job's (all: the user's); markdown links only through the public URL |
 | `get ID [--out FILE]` | `GET /job/artifacts/:id[?content=1]` | its details and shares, or its content |
 | `share ID --owner \| --user NAME \| --public [--hours N] \| --revoke SHARE` | `POST /job/artifacts/:id/share` | the share; a public link said once; with the owner, the comment posted (issue #673) |
-| `rm ID` | `POST /job/artifacts/:id/rm` | removed, with its shares |
+| `revisions ID` | `GET /job/artifacts/:id/revisions` | its revisions, newest first (issue #675) |
+| `restore ID N` | `POST /job/artifacts/:id/restore?revision=N` | revision N is the latest again, as a new revision (issue #675) |
+| `rm ID` | `POST /job/artifacts/:id/rm` | removed, with its revisions and shares |
 
 Agent-native: `--json` sends `Accept: application/json` and every answer is one JSON line with `ok`; exit 0 done, 1 a
 no (with why), 2 a bad call, 3 the hopper not reached. A refusal is never a silent default: a type the hopper does not
@@ -10714,7 +10716,7 @@ The token rides in the query because Fastify caps a path parameter at 100 charac
 
 | kind | served as | policy (`Content-Security-Policy`) |
 |------|-----------|------------------------------------|
-| html, svg | `text/html`; svg its type | `sandbox allow-scripts allow-popups allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts only `'unsafe-inline' data: blob:` (issue #673); `frame-ancestors 'self'` |
+| html, svg | `text/html`; svg its type | `sandbox allow-scripts allow-popups allow-downloads`; `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`; scripts, styles, images and fonts only `'unsafe-inline' data: blob:` (issue #673), and scripts also from `<origin>/artifact-lib/` (issue #675); `frame-ancestors 'self'` |
 | image | its type | `sandbox; default-src 'none'` (no script, nothing fetched) |
 | csv, markdown, json, text | `text/plain` | the same; the UI renders the preview |
 | pdf | `application/pdf` | `frame-ancestors 'self'` (a sandbox stops the browser's PDF viewer) |
@@ -10728,13 +10730,65 @@ Origin. The UI frames it with the same sandbox attribute too. SVG is made safe b
 issue #675 an SVG is a drawing a job makes, as an HTML page is, so it gets the HTML policy and the UI frames it the same
 way: its inline script runs, in an opaque origin, and reaches nothing.
 
-**Artifacts are visuals (issue #675).** An artifact is a drawn diagram, a chart, a graph, a map — not a page of styled
-text; prose goes in the issue comment or the job result. The skill help (`ARTIFACT_HELP`, `src/artifacts/script.ts`)
-says so and gives two inline-SVG examples, a flow diagram and a bar chart, with no external load. `visualWarning`
-(`src/domain/artifacts.ts`) checks an HTML artifact for an `<svg>`, `<canvas>` or `<img>` element; with none, the
-artifact is kept, and the put answers a `warning`, which `artifact.created` carries to the job's timeline (the event
-line shows it after the title) and its job stream. A warning, not a no: a page may draw through an element the check
-does not know.
+**An artifact is a presentation medium (issue #675).** It is how a job presents its work to people: a shareable,
+meaningful, dynamic page — a flowchart, a diagram, a chart, an interactive view — that shows the result itself, which a
+person opens on a phone or a desktop, uses and shares. It is not tied to one format; the job picks the form that shows
+the result best. Prose goes in the issue comment or the job result. The skill help (`ARTIFACT_HELP`,
+`src/artifacts/script.ts`) says so, names the bundled libraries, and gives two examples: an interactive Mermaid
+flowchart whose steps show their code when clicked, and a Chart.js chart with a filter. `visualWarning`
+(`src/domain/artifacts.ts`) checks an HTML artifact for an `<svg>`, `<canvas>`, `<img>` or `<script>` (a script draws at
+run time); with none, the artifact is kept, and the put answers a `warning`, which `artifact.created` carries to the
+job's timeline (the event line shows it after the title) and its job stream. A warning, not a no: a page may draw
+through an element the check does not know.
+
+**Title and summary (issue #675).** Every artifact has a title (`--title`, else its file name) and a one-line summary
+(`--summary`, whitespace folded, at most 300 characters, GitHub tokens masked): the Artifacts list, the job card's links,
+a review card's embeds and the share page show it. A put with no summary is kept, with a warning. A revision keeps the
+title and summary it does not change.
+
+**Dynamic pages: the bundled libraries (issue #675).** A page runs inline script, and its sandbox loads nothing from
+outside, so the hopper serves the libraries a page needs itself: Mermaid 12 (`/artifact-lib/mermaid.js`: flowcharts,
+sequence, state, class and Gantt diagrams), Chart.js 4 (`/artifact-lib/chart.js`) and D3 7 (`/artifact-lib/d3.js`)
+(`ARTIFACT_LIBS`, `src/artifacts/libs.ts`). They are dev dependencies: `npm run build:ui` copies the three files from
+node_modules into `ui/dist/artifact-lib/` (`scripts/copy-artifact-libs.ts`), and the bundle check fails a build without
+one, so the image and an install carry the files, not the packages. The daemon reads them at start, as it reads the UI
+(a dir that is not there answers 503, a dir with a file missing stops the start), and serves each as JavaScript with
+`Cross-Origin-Resource-Policy: cross-origin` — to a sandboxed page the hopper is another origin — and a day's cache. An
+HTML or SVG artifact's policy (`htmlPolicy(origin)`) adds `<origin>/artifact-lib/` to its `script-src`, where `origin` is
+the address the person opened it at (`ArtifactEdge.baseOf`), so the path matches on loopback, a LAN name and the public
+URL alike. A request there reaches the hopper only; nothing leaves. Why bundled and served rather than inlined into
+each page: Mermaid alone is 5.5 MB, over half of one artifact's default limit; why these three: each is the established
+library for its job, and none needs `eval` or `new Function`, which the policy refuses (checked in Chromium: a Mermaid
+flowchart renders and runs its click handler, and a Chart.js chart draws, in the opaque-origin sandbox).
+
+**Revisions (issue #675).** Every change to an artifact is a **revision**, numbered from 1. A put with `--to ID` (a job of
+the same user; the job that made it or a later one) makes the next one, with an optional one-line `--note`; the id, its
+stable URL, its public links and its shares stay and show the latest. A person (UI, `hopper artifact restore`) or a job
+(`restore ID N`) restores an old revision: its content, title, summary, name and type are copied as a new latest revision,
+note `restored revision N` — nothing is overwritten or moved. Storage: the `artifacts` row stays the latest revision,
+content included, with `revision`, `updated_at`, `revised_by`, `note`, `summary`, `pinned` (tenant migration 36,
+`ARTIFACT_REVISION_TABLES` in `migration-artifacts.ts`); each older one is a row of `artifact_revisions` (key: artifact
+and number; its content beside it; removed with its artifact). A new revision copies the row into `artifact_revisions`
+in the database and then updates the row, in one transaction. So the build before reads and serves the latest as it did,
+and what it puts is revision 1 by the columns' defaults; it removes an artifact by its first `created_at`, not its last
+change, which is the one difference a rollback shows. `GET /api/artifacts/:id/revisions` lists them newest first (number,
+time, who — `job <id>` or the person —, note, pinned, `latest`), and `GET /api/artifacts/:id/revisions/:n` reads one; each
+with a content URL signed for the viewer, `&revision=N` beside the token (the signature covers the artifact; Access is per
+artifact, so the number need not be signed). **A link to one revision**: the UI's `#artifacts/<id>/<n>` (the stable URL and
+`/<n>`), and a public link's `?revision=N`; without it a link follows the latest. **Limits**: every revision counts toward
+the user's quota, and each put and restore is checked against it. **Retention**: the sweep removes an older revision past
+the retention unless it is pinned (`artifact.revision_removed`), never the latest; it removes an artifact whose latest
+revision is past the retention unless one of its revisions is pinned. A person pins and unpins a revision in the UI
+(`POST /ui/api/artifacts/:id/revisions/:n/pin`, `artifact.revision_pinned`). A new revision starts unpinned.
+
+**The share page (issue #675).** A public link (`/artifact-link/<token>`) opens a page of the hopper's own (`sharePage`,
+`src/http/artifacts.ts`), not the raw content: a phone viewport, the title and summary on top — as `<title>`,
+`description` and Open Graph `og:title`/`og:description`, which chat apps read for a share preview —, which revision
+it is with a link to the latest when it pins an older one, a download link, and the content below in a frame
+(`/artifact-link/<token>/content[?revision=N]`, served as before under its kind's policy; HTML and SVG framed with the
+UI's sandbox attribute, an image as an `<img>`). The page runs no script (`default-src 'none'; style-src 'unsafe-inline';
+img-src 'self' data:; frame-src 'self'`), escapes every text the job wrote, and is `noindex`. The link checks are the
+same for the page and the content: live, public links on, Access.
 
 **It loads nothing from outside** (issue #673). The first real artifact showed the gap: with `https:` in its script,
 style, image and font sources a page could load from any address, and send out what it read through the URL of an
@@ -10769,11 +10823,16 @@ links on: off in Settings → Artifacts, every one stops at once. Revoking a sha
 the next load.
 
 **Events.** `artifact.created` (on the job's timeline), `artifact.shared`, `artifact.share_revoked`, `artifact.removed`
-(`removed` by a person or a job, or `retention`), `artifact.posted` (issue #673), `artifact.settings_changed`. All but the last also go on the job's
+(`removed` by a person or a job, or `retention`), `artifact.posted` (issue #673), `artifact.revised`, `artifact.revision_pinned`,
+`artifact.revision_removed` (issue #675), `artifact.settings_changed`. `artifact.created`, `.shared`, `.share_revoked`,
+`.removed`, `.posted` and `.revised` also go on the job's
 **job stream** (issue #613) while the job is at work, phase `progress` (`src/artifacts/stream.ts`, registered as
 `artifact` in `src/users/job-stream.ts`), so a waiting agent hears at once; the UI hears the domain events on its SSE.
 
-**UI.** The Artifacts view (`#artifacts`, `#artifacts/<id>`): the user's own and the ones shared with them, a preview
+**UI.** The Artifacts view (`#artifacts`, `#artifacts/<id>`, `#artifacts/<id>/<n>`): the user's own and the ones shared
+with them, each with its title, summary and revision; its revisions (issue #675, `ui/src/views/artifact-revisions.tsx`):
+number, when, who, note, pinned — open one (its own preview, title and summary, "Revision n of N"), copy a link to it,
+pin or unpin it, restore it (the owner); a preview
 by kind (HTML and SVG in a sandboxed frame; images; PDF; CSV as a table of its first 50 rows, papaparse; Markdown rendered by
 marked into a frame with an empty sandbox; JSON and text as text), its job and issue, open, download, copy its URL,
 remove, and the shares: share with a user, make a public link (shown once), revoke. Every card that names a job — the
@@ -10785,7 +10844,7 @@ off, and their default and most hours.
 **Notify and the CLI** (issue #673). A new artifact reaches the person through their notifier: the Grok Bot routine posts
 `artifact.created` with the artifact's link ("Grok Bot routine webhook"). The operator CLI (`src/cli-operator.ts`, issue
 #623: JSON out) has `hopper artifact list`, `get <id>`, `share <id> --with <name> | --public [--hours <n>]`, `revoke <id>
-<share>` and `rm <id>`, each the UI's own read or `POST /ui/api/artifacts/…`; `--with`, since `--user` names the user the
+<share>`, `revisions <id>`, `restore <id> <n>` (issue #675) and `rm <id>`, each the UI's own read or `POST /ui/api/artifacts/…`; `--with`, since `--user` names the user the
 CLI acts as.
 
 **GitHub.** A link to an artifact on GitHub is a link to the hopper, which the publishing rule allows only through the
@@ -10793,11 +10852,11 @@ public URL: `list --markdown` gives links only when the hopper has one, else the
 
 **Limits and retention.** Per artifact (default 10 MB) and per user (500 MB), checked at each put; a retention sweep
 (at start, then hourly) removes artifacts older than the user keeps (30 days) with their shares (`artifact.removed`,
-`retention`).
+`retention`); since issue #675 it goes by the latest revision's time, and removes older revisions first ("Revisions").
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/artifacts/` | one user's artifacts — put, share, revoke, remove, the limits, the masking, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); `hopper-artifact` and the skill's text (`script.ts`); the job stream types and the events put on it (`stream.ts`). Its rows through the `ArtifactRepository` port; its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
+| `src/artifacts/` | one user's artifacts — put, revise, restore, pin, share, revoke, remove, the limits, the masking, the retention sweep (`service.ts`); the content policy per kind and the signed content URL (`content.ts`); the bundled libraries and their route (`libs.ts`, issue #675); `hopper-artifact` and the skill's text (`script.ts`); the job stream types and the events put on it (`stream.ts`). Its rows through the `ArtifactRepository` port; its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 
 Settled without asking, each one place to change: content in Postgres, not a volume (no config file, nothing on the
 machine); a content URL's key is a system secret of its owner's, kept across restarts (issue #673); a public link is on by default and expires in a day, at most a
@@ -10809,7 +10868,12 @@ Tests: `test/integration/artifacts.test.ts` (the real daemon, a joined machine, 
 chart and get a URL, recorded with its job, issue and hash, on the timeline and the job stream, served under the
 sandbox; a share with another user that works and stops after a revoke; a public link without a session, its most
 hours, public links off and on, revoked; the size limit, a PNG byte for byte, a GitHub token masked, list and markdown,
-rm, a token that is no job's, a bad call; the retention sweep), `test/ui/artifacts.test.ts` (the UI's model).
+rm, a token that is no job's, a bad call; the retention sweep), `test/integration/artifact-revisions.test.ts` (issue #675: a
+put to an artifact is revision 2 under the same id, revision 1 readable, the API and the events; restore as a new revision;
+the quota counts revisions; pin and the sweep; a public link follows the latest or pins one; the CLI),
+`test/integration/artifact-pages.test.ts` (issue #675: the libraries copied and served to an opaque origin, a missing one
+refused at start; an HTML page's script source is `/artifact-lib/` at the address used; the warnings; the share page;
+the skill help), `test/ui/artifacts.test.ts` (the UI's model).
 
 ## A connection's health (issue #647, 2026-10-10)
 
