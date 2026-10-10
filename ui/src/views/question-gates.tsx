@@ -12,8 +12,10 @@ import { Empty, Panel } from '@/components/panel';
 import { AddInstance, InstanceForm, pluginEditsUnsaved, sendPluginsEdit } from '@/components/plugin-form';
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
+import { Switch } from '@/components/ui/switch';
+import { agreementLine } from '@/model/auto-answer';
 import { DRAFT_KEY, escalationMachineChoices, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
-import type { PluginsReport, QuestionGatesView, RulesView } from '@/model/wire';
+import type { AutoAnswerView, Confidence, PluginsReport, QuestionGatesView, RulesView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
@@ -123,6 +125,47 @@ function EscalationMachine({ report }: { report: PluginsReport }) {
   );
 }
 
+const CONFIDENCE_CHOICES: Confidence[] = ['low', 'medium', 'high'];
+
+/**
+ * Auto-answer (issue #632): whether a level's answer goes into the job with no person, the least confidence it needs, and
+ * the agreement stats the threshold is tuned on. The hard limits stay whatever is set here.
+ */
+function AutoAnswer({ view, onSaved }: { view: AutoAnswerView; onSaved: (v: AutoAnswerView) => void }) {
+  const authed = useCanAdmin();
+  const [busy, setBusy] = useState(false);
+  const save = async (patch: Partial<Pick<AutoAnswerView, 'enabled' | 'threshold'>>) => {
+    setBusy(true);
+    try {
+      onSaved(await post<AutoAnswerView>('/ui/api/auto-answer', patch));
+      toast.success('Auto-answer saved; the next question reads it');
+    } catch (e) {
+      if (e instanceof SessionRejected) useHopper.setState({ authed: false });
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div data-slot="auto-answer" className="space-y-2 text-xs">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex min-h-8 items-center gap-2"><Switch checked={view.enabled} disabled={!authed || busy} onCheckedChange={(enabled) => void save({ enabled })} />Auto-answer</label>
+        <label htmlFor="auto-answer-threshold" className="text-muted-foreground">at confidence</label>
+        <select id="auto-answer-threshold" className={SELECT} value={view.threshold} disabled={!authed || busy || !view.enabled} onChange={(e) => void save({ threshold: e.target.value as Confidence })}>
+          {CONFIDENCE_CHOICES.map((c) => <option key={c} value={c}>{c} or higher</option>)}
+        </select>
+      </div>
+      <div className="text-muted-foreground">
+        {view.enabled
+          ? 'A level that does not escalate, at or above this confidence, answers the job with no person. A lower level below it sends the question up; the top level below it sends it to you.'
+          : 'Off: a level\'s answer is a recommendation, and you answer every question.'}
+        {' '}Risk rules, consequential actions and high-priority jobs always come to you.
+      </div>
+      <div className="num text-muted-foreground">{agreementLine(view.stats)}</div>
+    </div>
+  );
+}
+
 export function QuestionGates() {
   const report = useHopper((s) => s.plugins);
   const pluginsError = useHopper((s) => s.pluginsError);
@@ -147,9 +190,10 @@ export function QuestionGates() {
             </Stage>
           )}
           {report && (
-            <Stage n={1} title="Escalation levels" what="lowest first: each answers the question or escalates it to the next; one that fails or cannot run escalates">
+            <Stage n={1} title="Escalation levels" what="lowest first: each answers the question or escalates it to the next; one that fails or cannot run escalates; reorder them to change the ladder">
               <AddInstance role="escalation-level" />
               <EscalationMachine report={report} />
+              {gates && <AutoAnswer view={gates.autoAnswer} onSaved={(autoAnswer) => setGates({ ...gates, autoAnswer })} />}
               {levels.length
                 ? levels.map((inst) => <InstanceForm key={inst.name} role="escalation-level" inst={inst} />)
                 : <div className="text-xs text-muted-foreground">none — questions go straight to the owner</div>}

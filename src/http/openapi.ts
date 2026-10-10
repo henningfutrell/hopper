@@ -28,6 +28,7 @@ import { completeBody, devicePollBody, deviceStartBody, loginBody, passwordBody,
 import { reviewQuery } from './reviews.ts';
 import { acceptBody, notesBody, optionalNotesBody, reviewSettingsBody } from './ui/reviews.ts';
 import { phaseShiftSettingsBody, shiftBody } from './ui/phase-shifts.ts';
+import { autoAnswerBody } from './ui/auto-answer.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { accessEditBody } from './ui/access.ts';
 import { usageHistoryQuery } from './usage-history.ts';
@@ -107,7 +108,9 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/job-rules', tag: 'Jobs', summary: 'Replace the job rules', description: '`version` is the one read from GET /api/job-rules. The next job to start gets them.', role: 'admin', body: jobRulesBody, returns: 'the new job rules view', errors: [409] },
   { method: 'get', path: '/api/questions', tag: 'Questions', summary: 'List questions', query: questionsQuery, description: 'Each is a `QuestionView`: its job\'s live priority, the phase shifts an open one offers now (`shifts`, issue #548), and the forks made from it (`forks`, issue #570): each fork\'s job, kind, note, job status, whether it still runs, and its review item and status once it wrote one.', returns: '`{ questions: QuestionView[] }`' },
   { method: 'get', path: '/api/questions/:id', tag: 'Questions', summary: 'One question, with its escalation trail and the machine that raised it', returns: '`QuestionView`', errors: [404] },
-  { method: 'get', path: '/api/question-gates', tag: 'Questions', summary: 'The rules and the risk rules', returns: '`QuestionGatesView`' },
+  { method: 'get', path: '/api/question-gates', tag: 'Questions', summary: 'The rules, the risk rules and auto-answer', description: 'Issue #632: `autoAnswer` is the auto-answer settings (`enabled`, `threshold`) and its agreement stats over `stats.windowDays`: the answers levels typed into jobs with no person (`answered`), the ones a person corrected (`corrected`), and the share not corrected (`agreement`, absent with none).', returns: '`QuestionGatesView`' },
+  { method: 'post', path: '/ui/api/auto-answer', tag: 'Questions', summary: 'Change the auto-answer settings', description: 'Issue #632. Either part; one left out keeps its value (`auto_answer.settings_changed`). `enabled` false: a level\'s answer is a recommendation, and a person answers. `threshold` (`low`, `medium`, `high`): the least confidence a level\'s answer needs to go into the job. Applies to the next question, without a restart.', role: 'admin', body: autoAnswerBody, returns: '`AutoAnswerView`', errors: [400] },
+  { method: 'post', path: '/ui/api/questions/:id/correct', tag: 'Questions', summary: 'Correct an auto-answer', description: 'Issue #632. The question\'s answer becomes the person\'s; `corrected` keeps the level\'s answer it replaced (`question.corrected`). The job gets the correction ahead of its next answer or resume: a running job at its next stop, or at once when a person parks and re-queues it. 409: no level\'s answer went into the job, it was corrected already, or its job ended.', role: 'operator', body: answerBody, returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/answer', tag: 'Questions', summary: 'Answer an open question', role: 'operator', body: answerBody, returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/close', tag: 'Questions', summary: 'Close an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/questions/:id/dismiss', tag: 'Questions', summary: 'Dismiss an open question', role: 'operator', returns: 'the `Question`', errors: [404, 409] },

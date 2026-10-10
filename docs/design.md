@@ -294,6 +294,14 @@ configured. Its advice is always applied: there is no router mode (issue #211).
 - Job → Jev state: `goal` ← `spec.goal`, `kind` ← `spec.kind`, plus `spec.meta` keys
   `cached_artifact`, `cached_note`, `prior_error`, `same_error_count`, `sources_found`,
   `constraints`.
+- **Facts first, no model** (issue #628, `facts.ts`): before it spawns the shim, the gate router checks
+  verdicts the job's own facts fix. In order: a non-empty `meta.cached_artifact` → `reuse_cache`; a
+  non-empty `meta.prior_error` with `meta.same_error_count` ≥ `STOP_RETRY_SAME_ERRORS` (1) → `stop_retry`;
+  none of the `META_KEYS` above in `spec.meta` (every GitHub issue job today: the gates would judge the goal
+  alone) → `proceed_full`. Each is advice with `source: "gate-router"` and `details: { gatesAsked: false,
+  decidedBy: "facts", rule }` (`rule`: `cached_artifact` | `same_error_count` | `no_meta_keys`), given at
+  once, so the job waits no `timeoutSeconds` on "awaiting router advice". Any other job goes to the gates:
+  Jev keeps `intent`.
 - `fake` router (test double): deterministic, no network, mirrors grok-bot-jev's precedence from job
   metadata: bypass marker → `proceed_full` (gatesAsked false); `meta.cached_artifact` →
   `reuse_cache`; `meta.prior_error` and `same_error_count >= 1` → `stop_retry`; kind
@@ -491,7 +499,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (the escalation levels, lowest first → risk rules on an answer → accepted or human; timers, recovery), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), Jev first (`jev-first.ts`), the escalation levels, lowest first → risk rules on an answer → auto-answer, issue #632 → accepted or human; timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -1794,6 +1802,16 @@ state: the job updates it, it does not take it over. The report follows an older
 own; one the issue names is not followed, since its merge closes another issue. The job closes its issue as completed
 once the updated pull request is merged.
 
+**A pull request left in conflict or as a draft** (issue #626) is not done, but the next step is fixed, so no person
+is asked. When a done job is neither complete nor partly done, the runner asks its source for the job's own open pull
+request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the issue or ships part of
+it): with merge conflicts, `rebase` it onto its base branch (conflicts come first: a draft with them is rebased); a draft
+free of them, `mark_ready` it for review. The job then goes on in its own session (`Executor.resume`, in the same pane
+and work tree) told that step's **finish brief** (`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model
+call, recorded as `job.finish_briefed`. Its next end is judged again. At most `MAX_FINISH_BRIEFS` (2) per run; after them,
+or with no such pull request, an executor that cannot resume, or any other state, the job fails `not complete:` and is
+handed to a person as before.
+
 **Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
 repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
 settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
@@ -2426,9 +2444,25 @@ A question climbs the escalation levels (plugins.yaml `escalationLevels`, lowest
 as far as it needs: a simple question is settled at the first level; the more complex it is, the
 higher it climbs; above the top level is the owner.
 
+**Fixed answers first** (issue #629, `src/questions/fixed-answers.ts`). Before Jev first and the levels, a question whose
+answer the facts fix is answered without a model, and Jev and the levels are not asked:
+
+- **Allowed dialogs.** A permission dialog read off the screen (`detectedBy: blocked`) that asks to edit
+  (`Edit file`, `Create file`, `Write file`, `Overwrite file`) or read (`Read file`) one file, where the file is inside the
+  job's work tree (`job.workTree`; a relative path is taken from it; `..` is resolved; a path under `~` never is) and a
+  file the dialog's question names is that file: answered with the number of its `Yes` option — never a "Yes, allow all
+  … during this session" option. No work tree reported, or anything the parser does not recognise: not answered here.
+- **Reused answers.** A question a person already answered (`answeredBy: human`, status `answered`) on the same item —
+  this job, then each job it runs again by `rerunOf`, up to 20 — with the same text, case and spacing aside and a
+  countdown (`1:59`) aside: answered with that person's newest answer.
+
+The risk rules run on the question and the fixed answer, as on a level's: a hit sends the question to the owner, the
+fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `role: fixed`; `question.answered` names
+`by: fixed`. A question no fixed answer fits goes on to Jev first and the levels as before.
+
 1. Each level gets the full request — question, job prompt, goal, rules file, the trail so far
    (earlier runs, and the levels below with their recommendations) and its place,
-   `level: { number, of }` — and replies `{ answer?, escalate, reason }`. `answer` is its best
+   `level: { number, of }` — and replies `{ answer?, escalate, reason, confidence? }`. `answer` is its best
    answer: the exact text to type. `escalate: false` **answers**. `escalate: true` sends the
    question to the next level up, its answer staying on the trail as its **recommendation**: the
    next level sees it, and the UI's **Use answer** sends it as the owner's answer in one click, by the
@@ -2444,16 +2478,41 @@ higher it climbs; above the top level is the owner.
    level's prompt fences the untrusted parts.
 2. Risk rules run on the question and the answer to be typed; a hit sends the question to the
    owner, past every level above — no model approves what the rules guard.
-3. Accepted → the answer is typed into the pane; `answeredBy` names the level. Past the top
-   level, or with no levels → the human.
+3. **Auto-answer** (issue #632, `src/questions/auto-answer.ts`) decides whether the answer goes into
+   the job with no person. In order: the consequential guard (`src/minor-decisions/guard.ts`:
+   permissions, a machine the blast-radius gate keeps) and a high-priority job send the question to a
+   person; with auto-answer off, the answer is only a recommendation and a person answers; a
+   `confidence` (`low`, `medium`, `high`) below the threshold sends the question to the next level, or
+   from the top level to a person. No confidence meets no threshold. The settings are the user's
+   (`autoAnswer`, default on at `high`), read at every question, changed at `POST /ui/api/auto-answer`
+   (`auto_answer.settings_changed`) and shown in Settings → Question gates.
+4. Accepted → the answer is typed into the pane; `answeredBy` names the level, and `question.answered`
+   carries `auto: true` and the confidence. Past the top level, or with no levels → the human.
+
+**Correcting an auto-answer** (issue #632). A person may correct a level's answer that went into the
+job (`POST /ui/api/questions/:id/correct`, Settings → Question history): the question's answer is the
+person's now, `corrected` keeps the level, its answer, when and by whom, and `question.corrected` is on
+the trail. The job keeps the correction (`pendingCorrection`) and gets it ahead of whatever it next
+resumes with (`withCorrection`, `src/engine/answers.ts`): its next question's answer, a review brief,
+or a parked job's re-queue. A running job gets it at its next stop; to give it at once, park the job
+and re-queue it. A job that ended cannot get one, and the route refuses it. The **agreement stats**
+over the last 30 days — the auto-answers, the corrected ones and the share kept — are in
+`GET /api/question-gates` `autoAnswer.stats`, so the threshold can be tuned.
+
+**The ladder.** Rules, Jev, then the escalation levels, then a person. Jev first takes a question that
+lists its options (issue #550); the levels are pluggable and their order is the plugins config's, moved
+in Settings → Question gates; an install adds levels where it wants them. The built-in ladder is one
+level, the frontier model (issue #632): a lower Opus level gave answers like the Fable level's, at more
+cost and time. Tenant migration 33 (`src/store/migration-no-opus-level.ts`) drops the Opus level from a
+stored config that still holds exactly the old built-in pair (`claude-cli` on `opus`, then on `fable`),
+and moves an open question at it to the Fable level; any other set of levels stays.
 
 **The model that ran.** Each level attempt records `model`: the model id the level reports it
 ran — for `claude-cli`, the keys of the CLI's `modelUsage` (`fable` → `claude-fable-5-1`) — else
 the configured alias. The trail shows whether a level is really the model it names.
 
 `claude-cli` runs locked down (`--tools ''`, `--strict-mcp-config`, `--setting-sources ''`,
-`--json-schema`). Built-in levels: `level-1` (`claude-cli`, model `opus`), then `level-2`
-(`claude-cli`, model `fable`).
+`--json-schema`). Built-in level: `level-1` (`claude-cli`, model `fable`).
 
 **A level is named as a level, never after a model** (issue #209). The built-in levels were `opus`
 and `fable`, and kept those names when their model option changed: the UI titled a level `fable`
@@ -8367,7 +8426,9 @@ a cause a person named for that signature first, then the built-in ones by their
    that machine (`executor`: an expired login), or every machine.
 3. The signature failed on `groupThreshold` items (default 3, counting this one; a retry chain is one item)
    within `groupWindowMin` minutes (default 60): a **general** cause, grouped and held, scoped to the machine
-   and executor every failure of it shares, if any.
+   and executor every failure of it shares. Only when they share a machine or an executor, and only when its cause
+   is absent or `transient`: a `job` cause (`not-complete`, `invalid-spec`, `question-unanswered`, or a cause a
+   person named with the decision "a person") belongs to its one job and never groups (issue #625).
 4. A `transient` cause runs again while its retries are under `maxAttempts` (default 3): after
    `backoffSec × backoffFactor^(attempt−1)`, at most `backoffMaxSec` (defaults 60 s, 2, 1800 s). At the limit:
    a person, saying so.

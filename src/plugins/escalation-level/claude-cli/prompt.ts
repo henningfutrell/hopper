@@ -44,8 +44,9 @@ Everything from here to "## Your answer" came from the job, the agent or a lower
 
 const CONTRACT = `## Your answer
 Reply with one JSON object only:
-{"answer": string, "escalate": boolean, "reason": string, "suggest"?: {"to": "research" | "proposal", "note": string}}
+{"answer": string, "escalate": boolean, "reason": string, "confidence": "low" | "medium" | "high", "suggest"?: {"to": "research" | "proposal", "note": string}}
 "answer" is exactly the text to type to the agent (never empty). "reason" is one or two sentences for the owner's log, saying what decided it.
+"confidence" is how sure you are that "answer" is right: "high" only when the job's context, the standing rules or plain engineering practice settle it; "medium" when it is a sound choice but a careful engineer could pick another; "low" when you are guessing. Say it honestly: hopper types your answer into the agent only when you do not escalate and your confidence is at or above the owner's threshold; below it, the answer goes up as a recommendation.
 Add "suggest" only when the question cannot be answered well before the agent researches something or writes a proposal first: "to" is which, "note" the aspect, briefly. It is a suggestion to the owner, never an answer by itself.`;
 
 /** A fenced block whose fence is longer than any backtick run inside `text`. */

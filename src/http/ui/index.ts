@@ -26,6 +26,7 @@ import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
+import { registerAutoAnswerRoutes } from './auto-answer.ts';
 import { registerAccessRoutes } from './access.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
@@ -296,6 +297,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
   for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant });
+  registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance

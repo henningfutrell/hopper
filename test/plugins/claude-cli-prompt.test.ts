@@ -23,6 +23,12 @@ describe('buildLevelPrompt (claude-cli)', () => {
     expect(p).toMatch(/even when you escalate/i);
   });
 
+  it('a level says how sure it is, and is told its answer goes in only at or above the owner\'s threshold (issue #632)', () => {
+    const p = buildLevelPrompt(req());
+    expect(p).toMatch(/"confidence": "low" \| "medium" \| "high"/);
+    expect(p).toMatch(/only when you do not escalate and your confidence is at or above the owner's threshold/);
+  });
+
   it('a level may suggest research or a proposal first, as a suggestion to the owner, never an answer (issue #548)', () => {
     const p = buildLevelPrompt(req());
     expect(p).toMatch(/"suggest"\?: \{"to": "research" \| "proposal", "note": string\}/);

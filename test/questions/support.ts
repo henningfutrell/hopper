@@ -3,7 +3,7 @@
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
 import type { AnswerRequest, ConfigRecords, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
-import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type Job, type NewEvent, type Question, type QuestionAttempt, type RaisedBy } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type AutoAnswerSettings, type DomainEvent, type JevFirst, type Job, type NewEvent, type Question, type QuestionAttempt, type RaisedBy } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
@@ -11,6 +11,8 @@ export interface MemoryStore {
   events: Array<DomainEvent & { txDepth: number }>;
   depth(): number;
   addJob(prompt: string, goal?: string): Job;
+  /** Change a job as the engine would (its status, priority, a correction it holds). */
+  setJob(id: string, patch: Partial<Job>): void;
 }
 
 export function createMemoryStore(): MemoryStore {
@@ -18,6 +20,7 @@ export function createMemoryStore(): MemoryStore {
   const jobs = new Map<string, Job>();
   let events: Array<DomainEvent & { txDepth: number }> = [];
   let depth = 0;
+  let autoAnswer: AutoAnswerSettings | undefined;
   let qn = 0;
   const now = () => new Date().toISOString();
   const store = {
@@ -39,8 +42,8 @@ export function createMemoryStore(): MemoryStore {
         return structuredClone(q);
       },
       get: (id: string) => (questions.has(id) ? structuredClone(questions.get(id)) : undefined),
-      list: (f?: { status?: string[] }) =>
-        [...questions.values()].filter((q) => !f?.status || f.status.includes(q.status)).map((q) => structuredClone(q)),
+      list: (f?: { status?: string[]; jobId?: string }) =>
+        [...questions.values()].filter((q) => (!f?.status || f.status.includes(q.status)) && (!f?.jobId || q.jobId === f.jobId)).map((q) => structuredClone(q)),
       update(id: string, patch: Partial<Question>) {
         const q = { ...questions.get(id)!, ...patch, updatedAt: now() };
         questions.set(id, q);
@@ -52,8 +55,9 @@ export function createMemoryStore(): MemoryStore {
         return structuredClone(q);
       },
     },
-    // The priority lane settings never saved: the default high-priority threshold (issue #535).
-    settings: { getPriorityLanes: () => undefined },
+    // The priority lane settings never saved: the default high-priority threshold (issue #535). Auto-answer (issue #632):
+    // as a test sets it, never saved by default.
+    settings: { getPriorityLanes: () => undefined, getAutoAnswer: () => autoAnswer, setAutoAnswer: (s: AutoAnswerSettings) => { autoAnswer = s; } },
     tx<T>(fn: () => T): T {
       if (depth > 0) return fn();
       const snap = { q: structuredClone(questions), e: structuredClone(events) };
@@ -79,11 +83,12 @@ export function createMemoryStore(): MemoryStore {
       jobs.set(id, job);
       return job;
     },
+    setJob(id, patch) { jobs.set(id, { ...jobs.get(id)!, ...patch }); },
   } as MemoryStore;
 }
 
 /** A level that answers: what is typed into the job when no risk rule matches. */
-export const ANSWERED: LevelReply = { answer: 'use postgres', escalate: false, reason: 'rules say so' };
+export const ANSWERED: LevelReply = { answer: 'use postgres', escalate: false, reason: 'rules say so', confidence: 'high' };
 /** A level that escalates, with its recommendation for the next level up. */
 export const UP: LevelReply = { answer: 'maybe postgres', escalate: true, reason: 'beyond what I can settle' };
 
@@ -98,9 +103,12 @@ export function scriptedLevel(name: string, script: LevelScript, model = `${name
 export interface Rig {
   mem: MemoryStore;
   svc: QuestionService;
+  /** The job the rig's questions are raised on. */
+  job: Job;
   answered: Array<{ q: Question; depth: number }>;
   expired: Array<{ q: Question; depth: number }>;
   dismissed: Array<{ q: Question; depth: number }>;
+  corrected: Array<{ q: Question; depth: number }>;
   /** Calls the levels received, in order. */
   asked: Array<{ level: string; req: AnswerRequest }>;
   /** Create a question the way the engine does: at the service's first stage, raised on `raisedBy` when given. */
@@ -129,6 +137,8 @@ export interface RigOptions {
   renotifyMs?: number;
   humanTimeoutMs?: number;
   stageTimeoutMs?: number;
+  /** Jev first (issue #550): absent, the levels only. */
+  first?: JevFirst;
 }
 
 export function rig(o: RigOptions = {}): Rig {
@@ -137,6 +147,7 @@ export function rig(o: RigOptions = {}): Rig {
   const answered: Rig['answered'] = [];
   const expired: Rig['expired'] = [];
   const dismissed: Rig['dismissed'] = [];
+  const corrected: Rig['corrected'] = [];
   const asked: Rig['asked'] = [];
   const recorded = (name: string, script: LevelScript) => scriptedLevel(name, (req, signal) => {
     asked.push({ level: name, req });
@@ -155,10 +166,12 @@ export function rig(o: RigOptions = {}): Rig {
     onAnswered: (q) => answered.push({ q, depth: mem.depth() }),
     onExpired: (q) => expired.push({ q, depth: mem.depth() }),
     onDismissed: (q) => dismissed.push({ q, depth: mem.depth() }),
+    onCorrected: (q) => corrected.push({ q, depth: mem.depth() }),
+    ...(o.first ? { minorDecisions: { first: o.first, gated: () => false } } : {}),
   });
   const job = mem.addJob('build the thing', 'ship it');
   return {
-    mem, svc, answered, expired, dismissed, asked,
+    mem, svc, answered, expired, dismissed, corrected, asked, job,
     question: (text = 'Which database?', raisedBy?: RaisedBy) =>
       mem.store.questions.create({ jobId: job.id, text, recentOutput: 'line1\nline2', detectedBy: 'marker', tier: svc.firstStage(), ...(raisedBy ? { raisedBy } : {}) }),
     eventsOf: (type) => mem.events.filter((e) => e.type === type),

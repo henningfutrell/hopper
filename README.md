@@ -261,8 +261,10 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read
    its warning first.
 
-When a job asks a question, it climbs the escalation levels: Opus answers what it can settle,
-Fable takes what Opus escalates, and what neither should decide waits for you in the UI's
+When a job asks a question, it climbs the escalation levels: by default one level, Fable, answers
+what it is sure of and the job gets the answer with no action from you (auto-answer; risky,
+consequential and high-priority questions always come to you, and you can correct an auto-answer
+later in Settings → Question history), and what it should not decide waits for you in the UI's
 Questions view ([phase shifts](https://henningfutrell.github.io/hopper/guide.html#phase-shifts) send a question to research or a proposal; small
 questions with listed options can go to [Jev](https://henningfutrell.github.io/hopper/guide.html#jev) first). The levels, their order and each one's model (picked from the models your `claude`
 offers) are yours to change in Settings → Question gates, and so is where each one runs: on this

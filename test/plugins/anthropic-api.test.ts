@@ -25,7 +25,7 @@ const message = (text: string, over: Record<string, unknown> = {}) => ({
 
 beforeEach(async () => {
   seen = [];
-  reply = { status: 200, body: message(JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'the rules say so' })) };
+  reply = { status: 200, body: message(JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'the rules say so', confidence: 'high' })) };
   server = createServer((req, res) => {
     let raw = '';
     req.setEncoding('utf8').on('data', (c: string) => { raw += c; });
@@ -73,13 +73,13 @@ describe('anthropic-api (escalation level)', () => {
   });
 
   it('asks once with the key from the runtime, the reply schema, and the question on the prompt; answers with the model that ran', async () => {
-    expect(await (await level({ effort: 'low' })).answer(req, signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'the rules say so', model: 'claude-opus-5-5' });
+    expect(await (await level({ effort: 'low' })).answer(req, signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'the rules say so', confidence: 'high', model: 'claude-opus-5-5' });
     expect(seen).toHaveLength(1);
     const [{ headers, body }] = seen as [Seen];
     expect(headers['x-api-key']).toBe('test-key');
     expect(body).toMatchObject({
       model: 'claude-opus-5-5',
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: { required: ['answer', 'escalate', 'reason'] } } },
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: { required: ['answer', 'escalate', 'reason', 'confidence'] } } },
     });
     const prompt = JSON.stringify(body.messages);
     for (const s of ['RULE: prefer sqlite', 'Build the invoicing service', 'Which database should I use?', 'escalation level 1 of 1']) expect(prompt).toContain(s);

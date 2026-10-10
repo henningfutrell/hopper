@@ -44,6 +44,6 @@ process.stdin.on('end', () => {
     modelUsage: { [`claude-${process.argv[process.argv.indexOf('--model') + 1]}-resolved`]: { outputTokens: 1 } },
     structured_output: process.env.FAKE_CLAUDE_STRUCTURED
       ? JSON.parse(process.env.FAKE_CLAUDE_STRUCTURED)
-      : { answer: 'use postgres', escalate: false, reason: 'rules' },
+      : { answer: 'use postgres', escalate: false, reason: 'rules', confidence: 'high' },
   }));
 });

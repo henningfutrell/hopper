@@ -366,9 +366,7 @@ export interface WebhookDispatcher {
   test(name: string): Promise<NotifierActionResult | undefined>;
 }
 
-export type AnswerByHumanResult =
-  | { ok: true; question: Question }
-  | { ok: false; reason: 'not_found' | 'not_open' };
+export type AnswerByHumanResult = { ok: true; question: Question } | { ok: false; reason: 'not_found' | 'not_open' };
 
 /**
  * Runs the question pipeline: answer → assess → risk rules → accepted or human. Every write is
@@ -388,6 +386,8 @@ export interface QuestionService {
   closeByHuman(questionId: string): AnswerByHumanResult;
   /** The owner drops an open question: status `dismissed`, no answer, `question.dismissed`, then onDismissed (the engine cancels a job still waiting on it). */
   dismissByHuman(questionId: string): AnswerByHumanResult;
+  /** A person corrects a level's auto-answer (issue #632, src/questions/auto-answer.ts `correctAutoAnswer`), then onCorrected. */
+  correct(questionId: string, answer: string, by: string): { ok: true; question: Question } | { ok: false; reason: 'not_found' | 'not_auto' | 'job_ended' };
   /** The owner saw the question in the UI: `seenAt` is set once and kept. Any status. */
   markSeen(questionId: string): { ok: true; question: Question } | { ok: false; reason: 'not_found' };
   /**

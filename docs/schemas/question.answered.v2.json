@@ -16,6 +16,18 @@
       "type": "string",
       "const": "pane"
     },
+    "auto": {
+      "type": "boolean",
+      "const": true
+    },
+    "confidence": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
     "raisedBy": {
       "type": "object",
       "properties": {

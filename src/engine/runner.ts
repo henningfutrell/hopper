@@ -4,7 +4,7 @@
 // one whose machine did not answer at recovery is asked again until it does (issue #368).
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
-import type { Job, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { finishBrief, MAX_FINISH_BRIEFS, type Job, type LaneId, type MachineSnapshot, type UnfinishedPullRequest } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import type { Cleanup } from './cleanup.ts';
@@ -13,6 +13,7 @@ import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
+import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 
 const PROGRESS_EVERY_MS = 500;
@@ -66,14 +67,16 @@ async function execute(executor: Executor | undefined, job: Job, ctx: ExecutionC
 /**
  * A job that ended done is finished only when its work is complete (issues #171, #187), or partly done — its own pull
  * request ships part of its item (issue #579): otherwise, or when that cannot be told, it fails, and its source never
- * reports it done.
+ * reports it done. Its own pull request left with merge conflicts or as a draft (issue #626): while `mayContinue`, the
+ * step that finishes it, for the job to go on with in place of a failure and its hand-off.
  */
-async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome): Promise<ExecutionOutcome> {
+async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOutcome, mayContinue: boolean): Promise<ExecutionOutcome | { finish: UnfinishedPullRequest }> {
   if (outcome.kind !== 'finished') return outcome;
   try {
     const v = await c.verdict(job);
     if (v.done) return outcome;
-    return 'partlyDone' in v ? { ...outcome, partlyDone: v.partlyDone } : { kind: 'failed', error: `not complete: ${v.why}` };
+    if ('partlyDone' in v) return { ...outcome, partlyDone: v.partlyDone };
+    return v.finish && mayContinue ? { finish: v.finish } : { kind: 'failed', error: `not complete: ${v.why}` };
   } catch (e) {
     return { kind: 'failed', error: `could not confirm the work is complete: ${e instanceof Error ? e.message : String(e)}` };
   }
@@ -149,35 +152,58 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     });
     const progress = progressReporter(job.id, claim.laneId);
     // A fork whose question was answered without it (issue #570) is told the answer first.
-    const resumeWith = store.tx(() => forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer));
-    let outcome: ExecutionOutcome;
-    try {
+    // A person's correction of an earlier auto-answer (issue #632) goes in ahead of what it resumes with.
+    const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
+    const contextOf = (j: Job, m: MachineSnapshot): ExecutionContext => ({
+      // The job rules as they are at this start (issue #172): an edit reaches the next job.
+      job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf),
+      // A login the job waits on (issue #476) goes to the logins, never into a question.
+      logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
+      // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
+      credentials: (scratch, make = false) => placeCredentials(c, started, m, executor?.machineShell?.(m), scratch, make, (line) => progress.report(0, line)),
+      progress: (f, msg) => progress.report(f, msg),
+      saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
+      workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
+      agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
+    });
+    const attempt = async (go: () => Promise<ExecutionOutcome>): Promise<ExecutionOutcome> => {
+      try {
+        return await go();
+      } catch (e) {
+        return { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
+      }
+    };
+    let outcome = await attempt(async () => {
       const waited = machine && executor && launch === 'reattach-when-reachable'
         ? await whenReachable(executor, started, claim, machine.id, entry.controller.signal) : undefined;
-      outcome = !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, {
-        // The job rules as they are at this start (issue #172): an edit reaches the next job.
-        job: started, laneId: claim.laneId, machine, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), started.spec, started.forkOf),
-        // A login the job waits on (issue #476) goes to the logins, never into a question.
-        logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: machine.id, run: job.spec.executor }, () => !c.stopping()),
-        // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
-        credentials: (scratch, make = false) => placeCredentials(c, started, machine, executor?.machineShell?.(machine), scratch, make, (line) => progress.report(0, line)),
-        progress: (f, m) => progress.report(f, m),
-        saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
-        workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
-        agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },
-      }, reattach, resumeWith);
-    } catch (e) {
-      outcome = { kind: 'failed', error: e instanceof Error ? e.message : String(e) };
+      return !machine ? { kind: 'failed', error: `machine of lane ${claim.laneId} is not attached` } : waited ?? await execute(executor, started, contextOf(started, machine), reattach, resumeWith);
+    });
+    /** The job goes on in its own session, told `text`; undefined: its executor cannot resume it. */
+    const resume = executor?.resume?.bind(executor);
+    const goOn = machine && resume ? (j: Job, text: string) => resume(contextOf(j, machine), text) : undefined;
+    // Its own pull request left with merge conflicts or as a draft (issue #626): the job goes on in its own session with
+    // the fixed brief that finishes it, a few times at most, before it is judged as any other.
+    for (let briefs = 0; ; briefs += 1) {
+      // Parked mid-turn (issue #501): the executor left its pane as it was; it is ended now, the work tree and session kept.
+      // A job that ended done meanwhile is recorded as any other.
+      if (entry.parking && entry.cancelReason === undefined && outcome.kind !== 'finished' && !c.stopping()) {
+        progress.flush();
+        const parked = store.tx(() => recordPark(c, store.jobs.get(job.id) ?? started, 'running', claim.laneId));
+        await releaseParked(c, parked);
+        return;
+      }
+      if (entry.cancelReason !== undefined) break;
+      const judged = await completeOrFailed(c, started, outcome, briefs < MAX_FINISH_BRIEFS && goOn !== undefined && !c.stopping() && !entry.parking);
+      if (!('finish' in judged)) { outcome = judged; break; }
+      const { finish } = judged;
+      const now = store.tx(() => {
+        store.events.append({ type: 'job.finish_briefed', jobId: job.id, laneId: claim.laneId, data: { pullRequest: finish.pullRequest, step: finish.step } });
+        // A parked or continued job's run (issues #501, #551) reopened its session already: the brief types into that pane.
+        const j = store.jobs.get(job.id) ?? started;
+        return j.parked || j.continued ? store.jobs.update(job.id, { parked: undefined, continued: undefined }) : j;
+      });
+      outcome = await attempt(() => goOn!(now, finishBrief(finish)));
     }
-    // Parked mid-turn (issue #501): the executor left its pane as it was; it is ended now, the work tree and session kept.
-    // A job that ended done meanwhile is recorded as any other.
-    if (entry.parking && entry.cancelReason === undefined && outcome.kind !== 'finished' && !c.stopping()) {
-      progress.flush();
-      const parked = store.tx(() => recordPark(c, store.jobs.get(job.id) ?? started, 'running', claim.laneId));
-      await releaseParked(c, parked);
-      return;
-    }
-    if (entry.cancelReason === undefined) outcome = await completeOrFailed(c, started, outcome);
     // Shutdown: leave the job running in the store; restart recovery decides its fate.
     if (c.stopping() && entry.cancelReason === undefined) return;
     progress.flush();

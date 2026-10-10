@@ -125,6 +125,11 @@ export interface Job extends JobPhaseFields {
   researchId?: string;
   /** An answer to deliver on the next claim: the job resumes instead of starting fresh. */
   pendingAnswer?: string;
+  /**
+   * A person's correction of an auto-answer the job got (issue #632): typed in ahead of the job's next answer, when it
+   * resumes; a job running now gets it at its next stop, or at once when a person parks and re-queues it.
+   */
+  pendingCorrection?: string;
   /** Machine a resuming job must return to (its pane lives there, or its parked work tree and agent session). */
   resumeOn?: MachineId;
   /**
@@ -449,6 +454,7 @@ export * from './pull-requests.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
+export * from './auto-answer.ts';
 export * from './access.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------

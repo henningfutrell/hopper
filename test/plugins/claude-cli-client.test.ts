@@ -32,7 +32,7 @@ const saved = { ...process.env };
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'jh-cli-client-'));
   process.env.FAKE_CLAUDE_OUT = join(dir, 'rec.json');
-  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules' });
+  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high' });
   delete process.env.FAKE_CLAUDE_MODE;
   tc = await startTestClient({ token: () => TOKEN, herdrBin: '/nonexistent/herdr', claudeBin: CLAUDE, session: 'hopper' });
 });
@@ -58,7 +58,7 @@ const rec = () => JSON.parse(readFileSync(join(dir, 'rec.json'), 'utf8')) as { a
 describe('claude-cli on a client target (issue #482)', () => {
   it('a level that names the client: answered by the client\'s claude, locked down, the prompt on stdin', async () => {
     const reply = await (await level({ machine: 'studio' }, [STUDIO])).answer(req(), signal());
-    expect(reply).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', model: 'claude-opus-resolved' });
+    expect(reply).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high', model: 'claude-opus-resolved' });
     expect(rec().argv.slice(0, 3)).toEqual(['-p', '--model', 'opus']);
     expect(rec().argv.slice(-2)).toEqual(['--tools', '']);
     expect(rec().stdin).toContain('Which database?');

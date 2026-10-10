@@ -460,7 +460,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 
 ## `question.answered`
 
-Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
+Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance; `auto: true` with its `confidence`: it went into the job with no person, issue #632), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
 
 | field | type | required |
 |---|---|---|
@@ -468,6 +468,8 @@ Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an
 | `by` | string | yes |
 | `answer` | string | yes |
 | `via` | string | no |
+| `auto` | boolean | no |
+| `confidence` | `low` \| `medium` \| `high` | no |
 | `raisedBy` | object | no |
 
 ```json
@@ -2147,6 +2149,53 @@ Version 1 (`docs/schemas/phase_shifts.settings_changed.v1.json`). An admin saved
 }
 ```
 
+## `question.corrected`
+
+Version 1 (`docs/schemas/question.corrected.v1.json`). A person corrected an escalation level's auto-answer (issue #632): `was` is the level's answer that went into the job, `answer` the correction. The job gets the correction with its next answer or resume; the agreement stats count it against the level's auto-answers.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `level` | string | yes |
+| `was` | string | yes |
+| `answer` | string | yes |
+| `by` | string | yes |
+| `raisedBy` | object | no |
+
+```json
+{
+  "questionId": "q1",
+  "level": "level-1",
+  "was": "use postgres",
+  "answer": "use sqlite",
+  "by": "admin"
+}
+```
+
+## `auto_answer.settings_changed`
+
+Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), and the least confidence it needs (`threshold`: `low`, `medium` or `high`), `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": true,
+    "threshold": "high"
+  },
+  "to": {
+    "enabled": true,
+    "threshold": "medium"
+  },
+  "by": "admin"
+}
+```
+
 ## `github_proxy.done`
 
 Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `pr.create`, `pr.view`) on `repo`, `number` and `url` where it is. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
@@ -2621,6 +2670,22 @@ Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pul
 {
   "pullRequest": "https://github.com/owner/repo/pull/13",
   "part": true
+}
+```
+
+## `job.finish_briefed`
+
+Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts or as a draft (issue #626): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first) or `mark_ready` (a draft, marked ready for review). At most two per run; then the job is judged as any other.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `step` | `rebase` \| `mark_ready` | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "step": "rebase"
 }
 ```
 

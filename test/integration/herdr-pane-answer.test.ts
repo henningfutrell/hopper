@@ -68,7 +68,7 @@ describe('a question answered by typing into the pane', () => {
     const level = createFakeLevel({
       name: 'drafter',
       script: (_req, signal) => new Promise<LevelReply>((resolve) => {
-        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', escalate: false, reason: 'late' }); }, { once: true });
+        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', escalate: false, reason: 'late', confidence: 'high' }); }, { once: true });
       }),
     });
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
