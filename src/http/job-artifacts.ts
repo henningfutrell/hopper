@@ -5,7 +5,8 @@
 //   POST /job/artifacts?name=&title=&type=   the file as the body (application/octet-stream): kept, 201
 //   GET  /job/artifacts[?all=1][&markdown=1] the job's artifacts (all: every job's of the user)
 //   GET  /job/artifacts/:id[?content=1]      one, or its content
-//   POST /job/artifacts/:id/share?user=NAME | ?public=1[&hours=N] | ?revoke=SHARE
+//   POST /job/artifacts/:id/share?owner=1 | ?user=NAME | ?public=1[&hours=N] | ?revoke=SHARE
+//                                            the owner: shown — its link posted on the job's issue (issue #673)
 //   POST /job/artifacts/:id/rm
 //
 // Plain text back, few tokens, or JSON when `Accept: application/json` asks for it; every no says why. It changes no
@@ -15,6 +16,7 @@ import { ARTIFACT_PATH, isRefusal, type Refusal, type ShareMade } from '../artif
 import { LINK_PATH } from '../artifacts/content.ts';
 import { ARTIFACT_MAX_BYTES, type Artifact, type ArtifactShare } from '../domain/artifacts.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
+import type { GitHubProxy } from '../github-proxy/index.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import type { ArtifactEdge } from './artifacts.ts';
 import type { TenantParts, Tenants } from './tenants.ts';
@@ -52,9 +54,46 @@ const no = (req: FastifyRequest, reply: FastifyReply, r: Refusal | { status: num
 const line = (a: Artifact, url: string): string => `${a.id}  ${a.title}  ${a.type}  ${a.size} bytes  ${a.createdAt}  ${url}`;
 const shareLine = (s: ArtifactShare): string => `${s.id}  ${s.kind === 'user' ? `user ${s.userName ?? s.userId}` : `public link until ${s.expiresAt}`}${s.revokedAt ? `  revoked ${s.revokedAt}` : ''}`;
 
-export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; edge: ArtifactEdge }): void {
+/**
+ * The comment that shows an artifact on its issue (issue #673), under the publishing rule: a link only through the public
+ * URL, else its id and where to open it — never a local address. Its title is the job's text, on one line.
+ */
+export function shownComment(a: Artifact, publicBase: string | undefined): string {
+  const title = a.title.replace(/\s+/g, ' ').replace(/[[\]*_`<>]/g, '');
+  const where = publicBase
+    ? `[Open it](${publicBase}/#artifacts/${a.id})`
+    : `Open it in the hopper's Artifacts view: artifact \`${a.id}\`.`;
+  return `An artifact for this issue is on the hopper: **${title}** (${a.type}, ${a.size} bytes).\n\n${where}`;
+}
+
+export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; edge: ArtifactEdge; github: GitHubProxy }): void {
   const brief = (t: TenantParts, a: Artifact) => ({ ...a, url: o.edge.url(o.edge.base(t), a.id) });
   const urlOf = (t: TenantParts, id: string): string => o.edge.url(o.edge.base(t), id);
+  /**
+   * A share with the owner (issue #673): they see it already, so nothing is made. The artifact is shown instead: its link
+   * posted on the job's issue as the job's own comment, through the GitHub proxy (its policy, limits and timeline
+   * events), and `artifact.posted` on the job's timeline. A comment that cannot be posted is a no, with why.
+   */
+  const shown = async (req: FastifyRequest, reply: FastifyReply, who: { t: TenantParts; job: Job }, id: string, by: string): Promise<FastifyReply> => {
+    const a = who.t.artifacts.get(id)!;
+    const url = urlOf(who.t, id);
+    const head = `shown: ${a.id}  ${a.title}: the owner sees it already\nurl: ${url}`;
+    const { repo, number } = who.job.source ?? {};
+    if (!repo || !number) {
+      who.t.artifacts.posted(id, by, { noIssue: true });
+      return answer(req, reply, 200, { owner: true, url }, `${head}\nposted: nowhere, the job has no issue`);
+    }
+    const r = await o.github.handle(req.headers.authorization, { op: 'issue.comment', repo, number, body: shownComment(a, o.edge.publicBase()) });
+    const comment = typeof r.body.url === 'string' ? r.body.url : undefined;
+    if (r.status === 200 && comment) {
+      who.t.artifacts.posted(id, by, { comment });
+      return answer(req, reply, 200, { owner: true, url, posted: comment }, `${head}\nposted: ${comment}`);
+    }
+    const error = typeof r.body.error === 'string' ? r.body.error : `the hopper answered ${r.status}`;
+    who.t.artifacts.posted(id, by, { error });
+    return answer(req, reply, 502, { owner: true, url, error: `the owner sees it already, but its link was not posted on ${repo}#${number}: ${error}` },
+      `no: the owner sees it already, but its link was not posted on ${repo}#${number}: ${error}`);
+  };
   void app.register(async (scope) => {
     // The file, whole: the user's limit is checked after; nothing larger than any limit may allow is read.
     scope.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: ARTIFACT_MAX_BYTES + 1 }, (_req, body, done) => { done(null, body); });
@@ -108,7 +147,9 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       }
       const name = q(req, 'user');
       let made: ShareMade | Refusal;
-      if (name) {
+      if (q(req, 'owner')) {
+        made = who.t.artifacts.share(id, { user: { id: who.t.githubProxy.user.id, name: '' } }, by);
+      } else if (name) {
         const user = o.tenants.list().find((u) => u.name === name);
         if (!user) return no(req, reply, { status: 404, text: `this hopper has no user ${name}` });
         made = who.t.artifacts.share(id, { user: { id: user.id, name: user.name } }, by);
@@ -116,9 +157,10 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
         const hours = q(req, 'hours');
         made = who.t.artifacts.share(id, { link: true, ...(hours !== undefined ? { hours: Number(hours) } : {}) }, by);
       } else {
-        return no(req, reply, { status: 400, text: 'say who: --user NAME, --public [--hours N], or --revoke SHARE' });
+        return no(req, reply, { status: 400, text: 'say who: --owner, --user NAME, --public [--hours N], or --revoke SHARE' });
       }
       if (isRefusal(made)) return no(req, reply, made);
+      if ('owner' in made) return shown(req, reply, who, id, by);
       const link = made.token ? `${o.edge.base(who.t)}${LINK_PATH}/${made.token}` : undefined;
       return answer(req, reply, 201, { share: made.share, ...(link ? { link } : {}) }, `shared: ${shareLine(made.share)}${link ? `\nlink: ${link}` : `\nurl: ${urlOf(who.t, id)}`}`);
     });

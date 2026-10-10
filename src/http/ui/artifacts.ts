@@ -83,6 +83,8 @@ export function registerArtifactRoutes(app: FastifyInstance, o: { operator: Guar
       made = t.artifacts.share(id, { link: true, ...(body.hours !== undefined ? { hours: body.hours } : {}) }, who);
     }
     if (isRefusal(made)) return refused(made);
+    // With the owner (issue #673): they see it already; nothing is made.
+    if ('owner' in made) return { artifact: viewOf(req, t, id), owner: true };
     // The link is said once, here: only its hash is kept.
     return { artifact: viewOf(req, t, id), share: made.share, ...(made.token ? { link: `${o.edge.baseOf(req)}${LINK_PATH}/${made.token}` } : {}) };
   });

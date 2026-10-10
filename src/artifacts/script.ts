@@ -27,12 +27,16 @@ or font from a CDN or any other address does not load. No eval or new Function e
         TYPE: html, svg, png, jpeg, gif, webp, pdf, csv, markdown, json, text or file (default: from FILE's name)
   sh "$HOPPER_ARTIFACT" list [--all] [--markdown]               this job's artifacts (--all: every job's of this user)
   sh "$HOPPER_ARTIFACT" get ID [--out FILE]                     its details, or its content into FILE
+  sh "$HOPPER_ARTIFACT" share ID --owner                        show it to its owner: posts its link on this job's issue
   sh "$HOPPER_ARTIFACT" share ID --user NAME                    let another user of this hopper see it
   sh "$HOPPER_ARTIFACT" share ID --public [--hours N]           a public link that expires (when the user allows them)
   sh "$HOPPER_ARTIFACT" share ID --revoke SHARE                 end a share; its link stops working at once
   sh "$HOPPER_ARTIFACT" rm ID                                   remove it, and every share of it
 Add --json to any command for JSON. Exit 0: done; 1: a no, with why; 2: a bad call; 3: the hopper cannot be reached.
 
+Its owner is the user whose job made it, and sees it already: share --owner (or --user with their name) makes no share;
+it posts the artifact's link on the job's issue, as this job's comment. An issue whose deliverable is an artifact is
+done when that comment is there; no pull request is needed.
 In a proposal or a research report, put the artifact's URL on a line: the hopper shows the artifact there.
 On GitHub (a pull request body, an issue comment): link an artifact only by a URL list --markdown gives. It gives one
 only when the hopper has a public URL; else name the artifact by its title, and say it is on the hopper.
@@ -42,12 +46,12 @@ Text artifacts are checked for GitHub tokens: one found is masked before the hop
 export const ARTIFACT_SCRIPT = `#!/bin/sh
 # hopper-artifact — put files on the hopper for a person to see (issue #624). Written by the hopper at each job start.
 #   sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE] | list [--all] [--markdown] | get ID [--out FILE]
-#   sh "$HOPPER_ARTIFACT" share ID (--user NAME | --public [--hours N] | --revoke SHARE) | rm ID     [--json]
+#   sh "$HOPPER_ARTIFACT" share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID     [--json]
 # Load the artifacts skill for the full help: sh "$HOPPER_SKILL" artifacts
 # Exit 0: done; 1: a no, with why; 2: a bad call; 3: the hopper cannot be reached.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE] | list [--all] [--markdown] | get ID [--out FILE] | share ID (--user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--type TYPE] | list [--all] [--markdown] | get ID [--out FILE] | share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; [ -z "$json" ] || printf 'accept: application/json\\n'; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
@@ -67,6 +71,7 @@ while [ $# -gt 0 ]; do
     --all) q="$q&all=1" ;;
     --markdown) q="$q&markdown=1" ;;
     --public) q="$q&public=1" ;;
+    --owner) q="$q&owner=1" ;;
     --title|--type|--user|--hours|--revoke|--out)
       [ $# -ge 2 ] || usage
       case $1 in --out) out=$2 ;; *) q="$q&\${1#--}=$(enc "$2")" ;; esac

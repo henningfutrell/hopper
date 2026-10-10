@@ -3021,6 +3021,28 @@ Version 1 (`docs/schemas/artifact.settings_changed.v1.json`). Settings → Artif
 }
 ```
 
+## `artifact.posted`
+
+Version 1 (`docs/schemas/artifact.posted.v1.json`). A job shared an artifact with its owner, who sees it already (issue #673): its link was posted on the job's issue as the job's comment (`comment`, its URL), or could not be (`error`), or the job has no issue (`issue: false`). Also on the job's stream.
+
+| field | type | required |
+|---|---|---|
+| `artifact` | string | yes |
+| `title` | string | yes |
+| `by` | string | yes |
+| `comment` | string | no |
+| `error` | string | no |
+| `issue` | boolean | no |
+
+```json
+{
+  "artifact": "a1b2c3d4-0000-4000-8000-000000000624",
+  "title": "Queue wait by hour",
+  "by": "job 6f1c2a9e",
+  "comment": "https://github.com/octo-org/hello/issues/7#issuecomment-1"
+}
+```
+
 ## `item.snapshot_recorded`
 
 Version 1 (`docs/schemas/item.snapshot_recorded.v1.json`). An item's approved text was recorded (issue #662): its title, body and the assignee comments its job runs, by their SHA-256 `hash`. `reason`: at its first job (`intake`), from its first job by the migration (`backfill`), or a person accepted new text (`accepted`). Never the text.

@@ -20,6 +20,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
+  'artifact.posted': 'ok',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -37,6 +38,8 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';
   if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
   if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
+  // An artifact shown to its owner (issue #673): where its link was posted, or why not.
+  if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
   if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;

@@ -359,6 +359,7 @@ export const EVENT_SCHEMAS = {
   'item.changed_since_snapshot': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, editors: z.array(z.string()), newComments: z.number().int().min(0) }),
   'item.original_kept': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, ...acting }),
   'item.new_text_accepted': strict({ key: z.string(), fromHash: sha256, toHash: sha256, editors: z.array(z.string()), ...acting }),
+  'artifact.posted': strict({ artifact: z.string(), title: z.string(), by: z.string(), comment: z.string().optional(), error: z.string().optional(), issue: z.literal(false).optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

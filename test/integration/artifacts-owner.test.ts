@@ -15,7 +15,7 @@
 //   Scenario: an artifact-only issue is done once the link is on it, with no pull request
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ArtifactView } from '../../src/domain/types.ts';
-import { createAccountGitHubApi } from '../../src/sources/github/account/api.ts';
+import { createFakeGitHub as createMemoryGitHub } from '../../src/sources/github/fake.ts';
 import { notComplete } from '../../src/sources/github/completion.ts';
 import { artifactHarness, eventsOf, ISSUE } from '../support/artifacts.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
@@ -81,12 +81,18 @@ describe('share with the owner (issue #673)', () => {
   });
 
   it('an artifact-only issue is done once the link is on it, with no pull request', async () => {
-    const { a, job, github, art } = await withGitHub({ body: 'Make a chart.\n\nDeliverable: artifact\n' });
-    const api = createAccountGitHubApi({ apiUrl: `${github.url}/api/v3`, token: async () => 'test-account-token' });
+    const body = 'Make a chart.\n\nDeliverable: artifact\n';
+    const { a, job, github, art } = await withGitHub({ body });
+    // The done-check reads the issue through the GitHubApi port; the in-memory GitHub there gets what the hopper posted.
+    const gh = createMemoryGitHub();
+    gh.createIssue({ repo: ISSUE.repo, labels: ['hopper'], body });
     const theJob = a.user().store.jobs.get(job)!;
-    const artifactsOf = () => a.user().store.artifacts.list({ jobId: job }).map((x) => ({ id: x.id, ...(x.issue ? { issue: x.issue.url } : {}) }));
-    expect(await notComplete(api, theJob, artifactsOf)).toMatch(/no comment on it names the job's artifact/);
+    const artifactsOf = (id: string) => a.user().store.artifacts.list({ jobId: id }).map((x) => ({ id: x.id, ...(x.issue ? { issue: x.issue.url } : {}) }));
+    const sourced = { ...theJob, source: { ...theJob.source!, url: `https://github.com/${ISSUE.repo}/issues/1`, number: 1 } };
+    const linked = (id: string) => artifactsOf(id).map((x) => ({ ...x, issue: sourced.source.url }));
+    expect(await notComplete(gh, sourced, linked)).toMatch(/no comment on it names the job's artifact/);
     expect((await h.artifact(a, job, ['share', art.id, '--owner'])).code).toBe(0);
-    expect(await notComplete(api, theJob, artifactsOf)).toBeUndefined();
+    for (const c of commentsOf(github)) gh.addComment(ISSUE.repo, 1, 'owner', c);
+    expect(await notComplete(gh, sourced, linked)).toBeUndefined();
   });
 });

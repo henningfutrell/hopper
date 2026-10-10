@@ -156,6 +156,7 @@
         "artifact.share_revoked",
         "artifact.removed",
         "artifact.settings_changed",
+        "artifact.posted",
         "item.snapshot_recorded",
         "item.changed_since_snapshot",
         "item.original_kept",

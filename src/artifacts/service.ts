@@ -21,8 +21,11 @@ export const isRefusal = (r: unknown): r is Refusal => typeof r === 'object' && 
 export interface PutRequest { name: string; title?: string; type?: string; content: Buffer }
 /** A new share: with a user of the hopper, or a public link for `hours`. */
 export type ShareRequest = { user: { id: string; name: string } } | { link: true; hours?: number };
-/** A public link's token is said once, when it is made: only its hash is kept. */
-export interface ShareMade { share: ArtifactShare; token?: string }
+/**
+ * A share made: a public link's token is said once, when it is made, and only its hash is kept. `owner`: the share was
+ * with the artifact's owner, who sees it already — nothing is made (issue #673).
+ */
+export type ShareMade = { share: ArtifactShare; token?: string } | { owner: true };
 
 export interface UserArtifacts {
   put(job: Job, r: PutRequest): Artifact | Refusal;
@@ -31,6 +34,8 @@ export interface UserArtifacts {
   list(o?: { jobId?: string; limit?: number }): Artifact[];
   share(id: string, r: ShareRequest, by: string): ShareMade | Refusal;
   revoke(id: string, shareId: string, by: string): ArtifactShare | Refusal;
+  /** Its link was posted for its owner on the job's issue (`comment`), or could not be (`error`) (issue #673). */
+  posted(id: string, by: string, r: { comment: string } | { error: string } | { noIssue: true }): void;
   remove(id: string, by: string): Artifact | Refusal;
   /** The share a public link's token names, live or not; undefined: none. */
   shareOfToken(token: string): ArtifactShare | undefined;
@@ -108,7 +113,8 @@ export function createUserArtifacts(o: {
       const s = repo.settings();
       const at = now();
       if ('user' in r) {
-        if (r.user.id === o.userId) return { no: 'the artifact is yours already: share it with another user', status: 400 };
+        // The owner sees it already (issue #673): a share with them changes nothing, and succeeds.
+        if (r.user.id === o.userId) return { owner: true };
         const already = repo.shares(id, at).find((x) => x.kind === 'user' && x.userId === r.user.id);
         if (already) return { share: already };
         const share: ArtifactShare = { id: newId(), artifactId: id, kind: 'user', userId: r.user.id, userName: r.user.name, createdAt: at, createdBy: by };
@@ -141,6 +147,14 @@ export function createUserArtifacts(o: {
         o.store.events.append({ type: 'artifact.share_revoked', jobId: art.jobId, data: { artifact: id, share: shareId, with: share.kind, by } });
       });
       return { ...share, revokedAt: at, revokedBy: by };
+    },
+    posted(id, by, r) {
+      const art = repo.get(id);
+      if (!art) return;
+      o.store.events.append({
+        type: 'artifact.posted', jobId: art.jobId,
+        data: { artifact: id, title: art.title, by, ...('comment' in r ? { comment: r.comment } : 'error' in r ? { error: r.error } : { issue: false }) },
+      });
     },
     remove(id, by) {
       const art = repo.get(id);
