@@ -8,7 +8,7 @@ import type { z } from 'zod';
 import type { DetectionKit, OptionChoice, QuestionAttempt } from './sdk.ts';
 import { levelArgv } from '../client/level.ts';
 import { userProcessEnv } from '../executors/env.ts';
-import type { RunLogins } from '../domain/ports.ts';
+import type { RunLogins } from '../domain/types.ts';
 import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
 

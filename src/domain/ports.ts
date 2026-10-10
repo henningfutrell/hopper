@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, LoginCheck, LoginReport, HandoffResolution, ActingPerson, WorkState,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -58,29 +58,19 @@ export interface ExecutionContext {
   jobRules?: string;
   /** The logins (issue #476): a login the job's work waits on goes here, never into a question. Absent → none taken. */
   logins?: RunLogins;
+  /**
+   * Asked before each nudge (issue #627): what the job's source and the hopper say of the job now. A throw: it could
+   * not tell. Absent → nudge.
+   */
+  beforeNudge?(): Promise<NudgeCheck>;
 }
 
 /**
- * Where a run reports a login it waits on (issue #476, design.md "Logins"), and reads what the user did with
- * it. The run waits as its tool does, and says when the tool went on, or when the run ended first.
+ * The check before a nudge (issue #627): nudge; or end the job done, with why — its pull request is ready for review,
+ * or its issue is closed; or no nudge while it waits on a person, with what it waits on.
  */
-export interface RunLogins {
-  /**
-   * The login's id; one open login per run and prompt — the same tool, code or URL (issue #567) —, so the same code
-   * reported again is the same login and a new code updates it. `renewable`: the run can ask its tool for a new
-   * code. `restore`: the same login read again after a restart: only its URL and code are taken back. Throws on a
-   * report its kind refuses.
-   */
-  report(report: LoginReport, o: { renewable: boolean; restore?: boolean }): string;
-  /** What to do next: wait, ask the tool for a new code, stop waiting (cancelled), or fail. */
-  check(id: string): LoginCheck;
-  /** The login went through: a login signal (a token obtained, the CLI logged in), or a print-mode run that succeeded. */
-  completed(id: string): void;
-  /** The run said its code expired before it was completed (issue #567): expired now, as at `expiresAt`. */
-  expired(id: string): void;
-  /** The run ended first, or could not take the login. */
-  failed(id: string, reason: string): void;
-}
+export type NudgeCheck = { nudge: true } | { done: string } | { waiting: string };
+
 
 /** What the executor needs answered before the job can continue. */
 export interface ExecutionQuestion {

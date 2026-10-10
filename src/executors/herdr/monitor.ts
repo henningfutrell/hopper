@@ -10,7 +10,7 @@ import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inp
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
-const SUMMARY_CHARS = 4000;
+export const SUMMARY_CHARS = 4000;
 const MAX_CONSECUTIVE_ERRORS = 3;
 
 export type Sleep = (ms: number, signal: AbortSignal) => Promise<void>;
