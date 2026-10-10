@@ -53,7 +53,7 @@ async function containerWithClient(levels: unknown[], o: { start?: boolean } = {
   process.env.FAKE_HERDR_DIR = scratch;
   process.env.FAKE_HERDR_RUNNING = '1';
   process.env.FAKE_CLAUDE_OUT = join(scratch, 'claude.json');
-  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine' });
+  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' });
   t = await startTestApp({
     dbPath: db.dbPath, env: { HOPPER_LOCAL_MACHINE: 'false' }, realLevels: true,
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 2, executors: ['scripted'] }, escalationLevels: levels },

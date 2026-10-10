@@ -1,5 +1,6 @@
 // Question gates (issue #18): the gates a question passes that are not plugins — the rules
 // and the risk rules — as GET /api/question-gates reports them. docs/glossary.md "Question gates".
+import type { AutoAnswerView } from './auto-answer.ts';
 
 /** The rules as read now. `version`: sha-256 of the record, or `missing`; an edit carries it back. */
 export interface RulesView {
@@ -19,4 +20,6 @@ export interface RiskRuleView {
 export interface QuestionGatesView {
   rules: RulesView;
   riskRules: RiskRuleView[];
+  /** Auto-answer (issue #632): whether a level's answer goes into the job with no person, and the agreement stats. */
+  autoAnswer: AutoAnswerView;
 }

@@ -118,6 +118,8 @@
         "job.forked",
         "job.fork_resolved",
         "phase_shifts.settings_changed",
+        "question.corrected",
+        "auto_answer.settings_changed",
         "github_proxy.done",
         "github_proxy.refused",
         "github_proxy.failed",

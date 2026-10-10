@@ -28,10 +28,10 @@ describe('ensurePluginsConfig', () => {
 
   it('a config without those sections: the built-in levels and usage source run on this machine, named as the `local` machine; where this host is no machine they name none (#174)', () => {
     const here = builtinInstances(1000);
-    expect(here.escalationLevels.map((l) => l.options?.machine)).toEqual(['local', 'local']);
+    expect(here.escalationLevels.map((l) => l.options?.machine)).toEqual(['local']);
     expect(here.usageSources.map((u) => u.options?.machine)).toEqual(['local']);
     const container = builtinInstances(1000, false);
-    expect([...container.escalationLevels, ...container.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined, undefined]);
+    expect([...container.escalationLevels, ...container.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined]);
   });
 
   it('a fresh store lists no machine: the hopper does not register its own host by default, and its parts name none until one is picked (#259)', () => {
@@ -39,7 +39,7 @@ describe('ensurePluginsConfig', () => {
     expect(ensurePluginsConfig({ config, answerTimeoutMs: 1000, logger })).toEqual({ action: 'default' });
     const written = config.read(PLUGINS) as PluginsDoc;
     expect(written.machines).toEqual([]);
-    expect([...written.escalationLevels, ...written.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined, undefined]);
+    expect([...written.escalationLevels, ...written.usageSources].map((i) => i.options?.machine)).toEqual([undefined, undefined]);
   });
 
   it('keeps an existing config untouched', () => {

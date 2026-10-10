@@ -17,6 +17,7 @@ const GATES = {
     { name: 'delete', describe: 'deleting or wiping things' },
     { name: 'deploy', describe: 'deploying or publishing' },
   ],
+  autoAnswer: { enabled: true, threshold: 'high', stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 } },
 };
 const claudeSchema = {
   type: 'object',
@@ -79,6 +80,7 @@ function fakeDaemon() {
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/ui/api/rules') return json(200, { ...RULES, text: body!.text, version: 'v2' });
     if (path === '/ui/api/plugins') return json(200, PLUGINS);
+    if (path === '/ui/api/auto-answer') return json(200, { ...GATES.autoAnswer, ...body });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
@@ -132,6 +134,20 @@ describe('question gates panel', () => {
     const text = panel()!.textContent!;
     for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'level-1', 'level-2', 'delete', 'deploying or publishing', 'Standing rules']) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
+  });
+
+  it('auto-answer (#632): on at high confidence, with its agreement stats; the threshold is posted to /ui/api/auto-answer', async () => {
+    const daemon = await boot();
+    const box = panel()!.querySelector('[data-slot="auto-answer"]')!;
+    expect(box.textContent).toContain('4 auto-answers in 30 days · 1 corrected · 75% kept');
+    const select = box.querySelector<HTMLSelectElement>('select#auto-answer-threshold')!;
+    expect(select.value).toBe('high');
+    await act(async () => {
+      select.value = 'medium';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ threshold: 'medium' }));
+    await vi.waitFor(() => expect(select.value).toBe('medium'));
   });
 
   it('Save posts the draft with the version it was based on', async () => {

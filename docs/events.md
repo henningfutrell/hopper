@@ -460,7 +460,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 
 ## `question.answered`
 
-Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
+Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an escalation level's (`by` = the level instance; `auto: true` with its `confidence`: it went into the job with no person, issue #632), or the human's (`via: "pane"` when they typed it into the job's pane: the job already runs again, nothing is typed for them).
 
 | field | type | required |
 |---|---|---|
@@ -468,6 +468,8 @@ Version 2 (`docs/schemas/question.answered.v2.json`). An answer was accepted: an
 | `by` | string | yes |
 | `answer` | string | yes |
 | `via` | string | no |
+| `auto` | boolean | no |
+| `confidence` | `low` \| `medium` \| `high` | no |
 | `raisedBy` | object | no |
 
 ```json
@@ -2124,6 +2126,53 @@ Version 1 (`docs/schemas/phase_shifts.settings_changed.v1.json`). An admin saved
       "opus"
     ]
   }
+}
+```
+
+## `question.corrected`
+
+Version 1 (`docs/schemas/question.corrected.v1.json`). A person corrected an escalation level's auto-answer (issue #632): `was` is the level's answer that went into the job, `answer` the correction. The job gets the correction with its next answer or resume; the agreement stats count it against the level's auto-answers.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `level` | string | yes |
+| `was` | string | yes |
+| `answer` | string | yes |
+| `by` | string | yes |
+| `raisedBy` | object | no |
+
+```json
+{
+  "questionId": "q1",
+  "level": "level-1",
+  "was": "use postgres",
+  "answer": "use sqlite",
+  "by": "admin"
+}
+```
+
+## `auto_answer.settings_changed`
+
+Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), and the least confidence it needs (`threshold`: `low`, `medium` or `high`), `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": true,
+    "threshold": "high"
+  },
+  "to": {
+    "enabled": true,
+    "threshold": "medium"
+  },
+  "by": "admin"
 }
 ```
 

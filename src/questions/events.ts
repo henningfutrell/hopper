@@ -3,7 +3,7 @@
 import type { UserStore } from '../domain/ports.ts';
 import type { Question } from '../domain/types.ts';
 
-export type QuestionEventType = 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired' | 'question.lapsed';
+export type QuestionEventType = 'question.escalated' | 'question.escalated_to_human' | 'question.answered' | 'question.closed' | 'question.dismissed' | 'question.expired' | 'question.lapsed' | 'question.corrected';
 
 export function emitQuestionEvent(store: UserStore, q: Question, type: QuestionEventType, data: Record<string, unknown>): void {
   const r = q.raisedBy;

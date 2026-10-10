@@ -13,6 +13,7 @@ import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
 import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
+import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 
 const PROGRESS_EVERY_MS = 500;
@@ -149,7 +150,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     });
     const progress = progressReporter(job.id, claim.laneId);
     // A fork whose question was answered without it (issue #570) is told the answer first.
-    const resumeWith = store.tx(() => forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer));
+    // A person's correction of an earlier auto-answer (issue #632) goes in ahead of what it resumes with.
+    const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
     let outcome: ExecutionOutcome;
     try {
       const waited = machine && executor && launch === 'reattach-when-reachable'

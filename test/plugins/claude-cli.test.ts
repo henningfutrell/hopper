@@ -84,7 +84,7 @@ describe('claude-cli (escalation level)', () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  it('spawns locked down with the reply schema { answer, escalate, reason, suggest? }, --tools "" last, in the data dir', async () => {
+  it('spawns locked down with the reply schema { answer, escalate, reason, confidence, suggest? }, --tools "" last, in the data dir', async () => {
     await (await level()).answer(req(), signal());
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
@@ -93,10 +93,12 @@ describe('claude-cli (escalation level)', () => {
       type: 'object',
       properties: {
         answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' },
+        // Issue #632: how sure it is; only at or above the auto-answer threshold does its answer go into the job.
+        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
         // Issue #548: a phase shift the level suggests, optional.
         suggest: { type: 'object', properties: { to: { type: 'string', enum: ['research', 'proposal'] }, note: { type: 'string' } }, required: ['to'], additionalProperties: false },
       },
-      required: ['answer', 'escalate', 'reason'],
+      required: ['answer', 'escalate', 'reason', 'confidence'],
       additionalProperties: false,
     });
     expect(rec().cwd).toBe(dir);
@@ -123,8 +125,8 @@ describe('claude-cli (escalation level)', () => {
   });
 
   it.each([
-    [{ answer: 'use sqlite', escalate: false, reason: 'routine' }, { answer: 'use sqlite', escalate: false, reason: 'routine', model: 'claude-opus-resolved' }],
-    [{ answer: 'pick option 1', escalate: true, reason: 'irreversible' }, { answer: 'pick option 1', escalate: true, reason: 'irreversible', model: 'claude-opus-resolved' }],
+    [{ answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' }, { answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high', model: 'claude-opus-resolved' }],
+    [{ answer: 'pick option 1', escalate: true, reason: 'irreversible', confidence: 'high' }, { answer: 'pick option 1', escalate: true, reason: 'irreversible', confidence: 'high', model: 'claude-opus-resolved' }],
   ])('returns a schema-valid reply %j, with the model the CLI reports it ran (modelUsage)', async (structured, want) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await level()).answer(req(), signal())).toEqual(want);
@@ -135,6 +137,8 @@ describe('claude-cli (escalation level)', () => {
     ['escalate missing', { answer: 'a', reason: 'r' }],
     ['reason missing', { answer: 'a', escalate: false }],
     ['answer missing', { escalate: false, reason: 'r' }],
+    ['confidence missing', { answer: 'a', escalate: false, reason: 'r' }],
+    ['confidence off the scale', { answer: 'a', escalate: false, reason: 'r', confidence: 'certain' }],
   ])('%s returns { error }', async (_n, structured) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await level()).answer(req(), signal())).toEqual({ error: expect.any(String) });
@@ -171,7 +175,7 @@ describe('a level that names no machine (#442)', () => {
   const OTHER: MachineSnapshot = { ...LOCAL, id: 'other', label: 'other' };
   const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
   const unnamed = (machines: MachineSnapshot[], fallback?: string) => claudeCli.create(ctx(machines, fallback), opts(claudeCli, { bin: BIN, timeoutMs: 5000 }));
-  const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine' };
+  const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' };
 
   it('the only machine that can run claude answers; the reply names it and why', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(ANSWER);
@@ -233,13 +237,13 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   });
 
   it('runs claude over the machine\'s connection, locked down, the prompt on stdin, in a fresh dir removed after', async () => {
-    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules' });
-    expect(await (await onMachine([LAPTOP])).answer(req(), signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', model: 'claude-opus-resolved' });
+    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high' });
+    expect(await (await onMachine([LAPTOP])).answer(req(), signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high', model: 'claude-opus-resolved' });
     const [call] = sshCalls();
     expect(call!.argv.slice(call!.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
-    expect(schema).toMatchObject({ required: ['answer', 'escalate', 'reason'] });
+    expect(schema).toMatchObject({ required: ['answer', 'escalate', 'reason', 'confidence'] });
     expect(rec().stdin).toContain('Which database should I use?');
     expect(rec().cwd).not.toBe(dir);
     expect(existsSync(rec().cwd)).toBe(false);

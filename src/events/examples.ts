@@ -31,6 +31,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'question.escalated': { questionId: 'q1', target: 'human', reason: 'asked', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 0, renotify: true },
   'question.escalated_to_human': { questionId: 'q1', reason: 'fable: the owner\'s call', text: 'which?', jobId: 'j1', goal: 'g', answerUrl: 'http://127.0.0.1/q', notifyCount: 1, raisedBy: { machineId: 'desk', name: 'Desk tower', laneId: 'desk/lane-1' }, priority: 75, high: true },
   'question.answered': { questionId: 'q1', by: 'human', answer: 'yes' },
+  'question.corrected': { questionId: 'q1', level: 'level-1', was: 'use postgres', answer: 'use sqlite', by: 'admin' },
   'question.closed': { questionId: 'q1', answer: 'The owner closed this question without answering. Continue on your own judgement; if you cannot, end with HOPPER_FAILED and say why.' },
   'question.dismissed': { questionId: 'q1' },
   'question.expired': { questionId: 'q1', after_ms: 1000 },
@@ -113,6 +114,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_merged': { pullRequest: 'https://github.com/owner/repo/pull/12', part: false },
   'job.pull_request_closed': { pullRequest: 'https://github.com/owner/repo/pull/13', part: true },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
+  'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high' }, to: { enabled: true, threshold: 'medium' }, by: 'admin' },
   'phase_shifts.settings_changed': { from: { defaultMode: 'fork', forkParent: 'wait', levels: [] }, to: { defaultMode: 'switch', forkParent: 'wait', levels: ['opus'] } },
   'job.gate_passed': { reason: 'held at the blast-radius gate: desk is rated high; only a job let through the gate runs there' },
   'minor_decision.picked': {

@@ -9,6 +9,7 @@ import { documentsToRecords } from './migration-config.ts';
 import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.ts';
 import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
+import { noOpusLevel } from './migration-no-opus-level.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
@@ -333,6 +334,9 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   'ALTER TABLE vault_secrets ALTER COLUMN sealed DROP NOT NULL',
   // 32: The job stream (issue #613): each job's stream events and the watches its requests are waited on by.
   JOB_STREAM_TABLES,
+  // 33: the default ladder goes straight to the frontier level (issue #632): the old built-in opus level goes. The build
+  // before runs on the one level left.
+  noOpusLevel,
 ];
 
 /** A user schema's version once migrated. */

@@ -16,7 +16,7 @@ import { commandOn } from '../../../executors/command.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { CLAUDE_TIMEOUT_MS, claudeModelChoices, claudePrint, ON_MACHINE, parsePrint, type ClaudePrintOptions } from '../../claude-print.ts';
 import { containerRefusal, notConfigured, offlineNote, pickMachine } from '../../../domain/machine-pick.ts';
-import { REVIEW_KINDS, REVIEW_VERDICTS } from '../../../domain/types.ts';
+import { CONFIDENCES, REVIEW_KINDS, REVIEW_VERDICTS } from '../../../domain/types.ts';
 import type { RunLogins } from '../../../domain/ports.ts';
 import type { LevelReply, MachineSnapshot, PluginDefinition, ReviewReply } from '../../sdk.ts';
 import { buildLevelPrompt } from './prompt.ts';
@@ -36,15 +36,17 @@ const JSON_SCHEMA = {
   type: 'object',
   properties: {
     answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' },
+    // How sure it is of its answer (issue #632): only at or above the auto-answer threshold does it go into the job.
+    confidence: { type: 'string', enum: [...CONFIDENCES] },
     // A phase shift it suggests (issue #548): research or a proposal first, about the aspect in `note`.
     suggest: { type: 'object', properties: { to: { type: 'string', enum: [...REVIEW_KINDS] }, note: { type: 'string' } }, required: ['to'], additionalProperties: false },
   },
-  required: ['answer', 'escalate', 'reason'],
+  required: ['answer', 'escalate', 'reason', 'confidence'],
   additionalProperties: false,
 };
 
 const REPLY: z.ZodType<LevelReply> = z.object({
-  answer: z.string(), escalate: z.boolean(), reason: z.string(),
+  answer: z.string(), escalate: z.boolean(), reason: z.string(), confidence: z.enum(CONFIDENCES),
   suggest: z.object({ to: z.enum(REVIEW_KINDS), note: z.string().optional() }).optional(),
 });
 

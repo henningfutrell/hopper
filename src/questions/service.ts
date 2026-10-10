@@ -1,19 +1,20 @@
 // The question pipeline (design.md "Question pipeline"): the escalation levels, lowest first. Each
 // level answers the question or escalates it to the next level up; above the top level is the
 // owner. An answer is typed into the job unless a risk rule matches, which sends the question to
-// the owner whatever level answered. Before the levels, a question that lists its options is a minor decision
+// the owner whatever level answered, or auto-answer holds it (issue #632, ./auto-answer.ts): the consequential
+// guard, a high-priority job, auto-answer off, or a confidence below the threshold. A person may correct an auto-answer. Before the levels, a question that lists its options is a minor decision
 // (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
 import type { AnswerByHumanResult, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
 import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt, type ReviewKind, type ShiftMode } from '../domain/types.ts';
+import { answerHold, correctAutoAnswer } from './auto-answer.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
 import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
 import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
-import { riskRules } from './risk.ts';
 
 export interface QuestionServiceOptions {
   store: UserStore;
@@ -33,6 +34,8 @@ export interface QuestionServiceOptions {
   onExpired: (q: Question) => void;
   /** Synchronous, called inside the tx that marks the question dismissed. */
   onDismissed: (q: Question) => void;
+  /** Synchronous, called inside the tx that records a person's correction of an auto-answer (issue #632): the job gets it. */
+  onCorrected: (q: Question) => void;
   /** Where a level's run reports a login it waits on (issue #476): never an answer, and never a question of its own. */
   logins?: Logins;
   /** Jev first (issue #550), asked first about a question that lists its options, and whether the blast-radius gate keeps a machine. Absent: the levels only. */
@@ -207,8 +210,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         store.questions.addAttempt(id, { ...base, error: reply.error, reason: `error${rulesNote}` });
         return `${level.name} failed: ${reply.error}`;
       }
-      const { answer, escalate, reason: why, suggest } = reply.value;
-      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}`, ...(suggest ? { suggest } : {}) };
+      const { answer, escalate, reason: why, suggest, confidence } = reply.value;
+      const replyFields = { ...(answer === undefined ? {} : { answer }), escalate, reason: `${why}${rulesNote}`, ...(confidence ? { confidence } : {}), ...(suggest ? { suggest } : {}) };
       // A suggested phase shift (issue #548): made by the level where the settings allow it, else shown to the person.
       // A fork leaves the question open for its result, with a person, who may still answer it first.
       const mode = suggest && o.onShift?.(q, suggest, level.name);
@@ -222,16 +225,14 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         store.questions.addAttempt(id, { ...base, ...replyFields });
         return `${level.name}: ${why}`;
       }
-      // The level answers. The risk rules run on the question and the answer to be typed; a hit goes
-      // to the owner, past every level above: no model approves what the rules guard.
-      const hits = riskRules(`${q.text}\n${answer}`);
-      if (hits.length > 0) {
-        store.questions.addAttempt(id, { ...base, ...replyFields, riskRules: hits });
-        return void toHuman(q, `risk rules: ${hits.join(', ')}`);
-      }
-      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules: hits, outcome: 'accepted' });
+      // The level answers. The risk rules run on the question and the answer to be typed; a hit goes to the owner, past
+      // every level above: no model approves what the rules guard. Then auto-answer (issue #632) may hold it for a person,
+      // or, below the threshold, for the next level.
+      const { riskRules, hold } = answerHold({ store, q, answer, level: level.name, top: number >= of, confidence, gated: o.minorDecisions?.gated });
+      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, ...(hold ? {} : { outcome: 'accepted' as const }) });
+      if (hold) return hold.to === 'next' ? hold.why : void toHuman(q, hold.why);
       const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
-      emit(updated, 'question.answered', { by: level.name, answer });
+      emit(updated, 'question.answered', { by: level.name, answer, auto: true, ...(confidence ? { confidence } : {}) });
       o.onAnswered(updated);
       return undefined;
     });
@@ -329,6 +330,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
         return { ok: true as const, question: updated };
       });
     },
+
+    correct: (id, answer, by) => correctAutoAnswer({ store, at: iso(), onCorrected: o.onCorrected }, id, answer, by),
 
     markSeen(id) {
       const q = store.questions.get(id);

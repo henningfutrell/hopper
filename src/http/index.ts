@@ -106,7 +106,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   loginRoutes(app, { ...tenant, sessions, clock: o.clock });
   failureRoutes(app, tenant);
   minorDecisionRoutes(app, tenant);
-  questionGatesRoutes(app, tenant);
+  questionGatesRoutes(app, { ...tenant, clock: o.clock });
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
