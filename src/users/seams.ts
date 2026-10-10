@@ -41,6 +41,8 @@ export interface UserSeams {
   hostKeyOffer?: (ssh: string) => Promise<HostKeyOffer>;
   /** Replaces starting this machine's herdr session (issue #260): when it is added, and while it is a machine. */
   herdrSession?: (session: string) => Promise<void>;
+  /** The job stream (issue #613): above how many bytes an event goes out as a pointer (default INLINE_MAX). */
+  jobStream?: { inlineMax?: number };
 }
 
 /** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */

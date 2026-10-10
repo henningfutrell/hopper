@@ -70,7 +70,8 @@ interface Booted { a: TestApp; session: string; edit: Edit }
 async function start(dbPath: string, o: { port?: number; seams?: AppSeams; first?: boolean } = {}): Promise<Booted> {
   const a = await startTestApp({
     dbPath, secrets: { HOPPER_TOKEN_KEY: KEY }, ...(o.port ? { env: { HOPPER_PORT: String(o.port) } } : {}),
-    plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
+    // Started again, the plugins config is the database's: it holds the box joined before.
+    plugins: o.first === false ? false : { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
     seams: { authorizationServer: createFakeAuthorizationServer(), ...o.seams },
   });
   apps.push(a);
@@ -162,6 +163,8 @@ async function counting(port: () => number): Promise<{ url: string; seen: Seen[]
     const up = request({ host: '127.0.0.1', port: port(), method: req.method, path: req.url, headers: { ...req.headers, host: `127.0.0.1:${port()}` } }, (r) => {
       res.writeHead(r.statusCode ?? 502, r.headers);
       r.pipe(res);
+      // The hopper gone mid-stream: so is the job's connection, as it would be with no proxy between.
+      r.on('close', () => { if (!r.complete) res.destroy(); });
     });
     up.on('error', () => { res.destroy(); });
     req.pipe(up);
