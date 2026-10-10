@@ -4091,7 +4091,12 @@ drives on a client target; cursor-agent runs only here and on ssh targets), herd
 client from `src/client`, user `agent`, Claude's first-run screens seeded, its auto-updater off (the root
 is read-only). Its entrypoint copies the client into the home volume once (a loaded release must persist),
 starts the herdr session, and runs the client — joining with `HOPPER_JOIN` the first time — again after
-each release load (exit 75). Its agent is signed in once, `<engine> exec -it hopper-sandbox-claude claude`,
+each release load (exit 75). The join line leaves the box's environment before anything starts (issue #606):
+the entrypoint writes `HOPPER_JOIN` to a file only `agent` can read, runs itself again without the variable,
+and gives the client the file's path (`HOPPER_JOIN_FILE`); the client reads it once and removes it, joined or
+not. A file, because a process's starting environment stays readable in `/proc/<pid>/environ` after it unsets
+a variable. So no process in the box — the entrypoint, herdr, the client, a job — holds the code, and a restart
+dials in with the link alone. Its agent is signed in once, `<engine> exec -it hopper-sandbox-claude claude`,
 and stays signed in in the volume. What the line confines: every capability dropped, no new privileges, a
 read-only root, nothing of the computer mounted, the compose network only (no published port). What it
 does not: its network reaches the internet (the agent's API, GitHub) — #315's open egress question.

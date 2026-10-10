@@ -348,7 +348,8 @@ line carries a one-time join code: it works once, for 10 minutes.
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
   nothing of the computer mounted. Sign its agent in once:
   `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
-  so a recreated box is the same machine.
+  so a recreated box is the same machine. The join code is used once: after the join, nothing in the box
+  holds it, and a restart does not need it.
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working
