@@ -2,7 +2,8 @@
 // level answers the question or escalates it to the next level up; above the top level is the
 // owner. An answer is typed into the job unless a risk rule matches, which sends the question to
 // the owner whatever level answered, or auto-answer holds it (issue #632, ./auto-answer.ts): the consequential
-// guard, a high-priority job, auto-answer off, or a confidence below the threshold. A person may correct an auto-answer. Before the levels, a question that lists its options is a minor decision
+// guard, a high-priority job, auto-answer off, or a confidence below the threshold. A person may correct an auto-answer. First of all, a question whose answer the facts fix (issue #629) is answered
+// without a model: an allowed permission dialog, or a person's answer reused; the risk rules still run. Then, before the levels, a question that lists its options is a minor decision
 // (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
 // answers.
@@ -11,6 +12,7 @@ import type { Logins } from '../logins/index.ts';
 import { jobPriorityTag, type JevFirst, type Question, type QuestionAttempt, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { answerHold, correctAutoAnswer } from './auto-answer.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
+import { answerFixed, FIXED } from './fixed-answers.ts';
 import { askJevFirst, JEV } from './jev-first.ts';
 import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
 import { levelRequest } from './request.ts';
@@ -238,13 +240,13 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     });
   }
 
-  /** Jev first (issue #550): true when nothing is left for the levels. */
-  const answeredByJev = (q: Question) => { emit(q, 'question.answered', { by: JEV, answer: q.answer! }); o.onAnswered(q); };
-  const jevFirst = (id: string) => (o.minorDecisions ? askJevFirst({ store, ...o.minorDecisions, iso, stopped: () => stopped, answered: answeredByJev }, id) : Promise.resolve(false));
+  /** Fixed answers (issue #629), then Jev first (issue #550): true when nothing is left for the levels. */
+  const answeredBy = (by: string) => (q: Question) => { emit(q, 'question.answered', { by, answer: q.answer! }); o.onAnswered(q); };
+  const jevFirst = (id: string) => (o.minorDecisions ? askJevFirst({ store, ...o.minorDecisions, iso, stopped: () => stopped, answered: answeredBy(JEV) }, id) : Promise.resolve(false));
 
   async function run(id: string, reason: string): Promise<void> {
     if (stopped) return;
-    if (await jevFirst(id)) return;
+    if (answerFixed({ store, iso, human: HUMAN, toHuman, answered: answeredBy(FIXED) }, id) || await jevFirst(id)) return;
     const levels = [...o.levels()];
     let why: string | undefined = reason;
     for (const [i, level] of levels.entries()) {
