@@ -8336,7 +8336,9 @@ a cause a person named for that signature first, then the built-in ones by their
    that machine (`executor`: an expired login), or every machine.
 3. The signature failed on `groupThreshold` items (default 3, counting this one; a retry chain is one item)
    within `groupWindowMin` minutes (default 60): a **general** cause, grouped and held, scoped to the machine
-   and executor every failure of it shares, if any.
+   and executor every failure of it shares. Only when they share a machine or an executor, and only when its cause
+   is absent or `transient`: a `job` cause (`not-complete`, `invalid-spec`, `question-unanswered`, or a cause a
+   person named with the decision "a person") belongs to its one job and never groups (issue #625).
 4. A `transient` cause runs again while its retries are under `maxAttempts` (default 3): after
    `backoffSec × backoffFactor^(attempt−1)`, at most `backoffMaxSec` (defaults 60 s, 2, 1800 s). At the limit:
    a person, saying so.
