@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkToken } from '../../src/client/signature.ts';
 import { linkToken, mintLinkKey, parseJoinLine, publicKeyOf } from '../../src/client/link.ts';
+import { BACKOFF_MS } from '../../src/client/server.ts';
 
 describe('a link key', () => {
   it('is X25519: a PKCS#8 private half and a 43-character base64url public half', () => {
@@ -51,5 +52,12 @@ describe('the join line', () => {
     for (const bad of ['http://hopper:4790', `ftp://hopper#${code}`, `http://hopper:4790#short`, `hopper:4790#${code}`]) {
       expect(() => parseJoinLine(bad)).toThrow(/<hopper URL>#<join code>/);
     }
+  });
+});
+
+describe('dialing again (issue #704)', () => {
+  it('waits at most 10 s between dials, so a client is back soon after the hopper restarts', () => {
+    expect(BACKOFF_MS[0]).toBe(1000);
+    expect(Math.max(...BACKOFF_MS)).toBe(10000);
   });
 });

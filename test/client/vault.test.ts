@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createNonceCache, mintToken, nonceOf, signRequest, signVault, verifyRequest, verifyVault } from '../../src/client/signature.ts';
-import { askOf, isSecretName, openAnswer, sealAnswer, startVault, type Vault, type VaultAsk } from '../../src/client/vault.ts';
+import { askOf, isSecretName, openAnswer, sealAnswer, socketOf, startVault, type Vault, type VaultAsk } from '../../src/client/vault.ts';
 import { credentialOutput, mintedOutput } from '../../src/client/secret.ts';
 
 const TOKEN = mintToken();
@@ -115,6 +115,17 @@ function helper(v: Vault, args: string[], env: Record<string, string | undefined
     child.stdin?.end(input);
   });
 }
+
+describe('the vault\'s socket (issue #704)', () => {
+  it('is vault.sock in the client dir on Linux and macOS', () => {
+    expect(socketOf('/home/u/.config/hopper-client', 'linux', 'ab12')).toBe(join('/home/u/.config/hopper-client', 'vault.sock'));
+    expect(socketOf('/Users/u/.config/hopper-client', 'darwin', 'ab12')).toBe(join('/Users/u/.config/hopper-client', 'vault.sock'));
+  });
+
+  it('is a named pipe on Windows, where a socket path in the profile is refused (EACCES), its name new at each start', () => {
+    expect(socketOf('C:\\Users\\u\\.config\\hopper-client', 'win32', 'ab12')).toBe('\\\\.\\pipe\\hopper-vault-ab12');
+  });
+});
 
 describe('the vault on a machine', () => {
   let vault: Vault | undefined;
