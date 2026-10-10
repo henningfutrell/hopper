@@ -58,6 +58,9 @@ export const restoreRevision = (id: string, n: number) =>
   act<{ artifact: ArtifactView }>(`/ui/api/artifacts/${id}/restore`, { revision: n }, `Revision ${n} restored as the latest`);
 export const pinRevision = (id: string, n: number, pinned: boolean) =>
   act<{ revision: ArtifactRevisionView }>(`/ui/api/artifacts/${id}/revisions/${n}/pin`, { pinned }, pinned ? `Revision ${n} pinned: the retention keeps it` : `Revision ${n} unpinned`);
+/** Issue #687: each of `from`'s revisions is added to `into`, oldest first; then `from` is removed. */
+export const mergeArtifacts = (into: string, from: string[]) =>
+  act<{ artifact: ArtifactView; merged: string[] }>(`/ui/api/artifacts/${into}/merge`, { from }, from.length === 1 ? 'Merged: its revisions are in this artifact now' : `Merged ${from.length} artifacts into this one`);
 export const removeArtifact = (id: string) => act(`/ui/api/artifacts/${id}/remove`, {}, 'Artifact removed');
 export const saveArtifactSettings = (patch: Partial<ArtifactSettings>) =>
   act<{ settings: ArtifactSettings }>('/ui/api/artifacts/settings', patch, 'Artifact settings saved');

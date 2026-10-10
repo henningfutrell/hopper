@@ -38,6 +38,12 @@
       "minimum": 1,
       "maximum": 9007199254740991
     },
+    "copiedFrom": {
+      "type": "string"
+    },
+    "mergedFrom": {
+      "type": "string"
+    },
     "masked": {
       "type": "integer",
       "minimum": 1,

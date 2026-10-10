@@ -3014,12 +3014,13 @@ Version 1 (`docs/schemas/artifact.share_revoked.v1.json`). A share of an artifac
 
 ## `artifact.removed`
 
-Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`).
+Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`), or merged into another artifact, which holds its revisions now (`merged`, `into`, issue #687).
 
 | field | type | required |
 |---|---|---|
 | `artifact` | string | yes |
-| `reason` | `removed` \| `retention` | yes |
+| `reason` | `removed` \| `retention` \| `merged` | yes |
+| `into` | string | no |
 | `by` | string | no |
 
 ```json
@@ -3128,7 +3129,7 @@ Version 1 (`docs/schemas/tldr.settings_changed.v1.json`). An admin turned the TL
 
 ## `artifact.revised`
 
-Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new latest revision (issue #675): a job put a file to it (`by` the job), or a person restored an older revision (`restoredFrom`), which is copied, not moved. Its id, its links and its shares stay. `note`: what changed, in one line. The older revisions stay readable.
+Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new latest revision (issue #675): a job put a file to it (`by` the job), or a person restored an older revision (`restoredFrom`), which is copied, not moved; or a person revised it with a file or another artifact's latest content (`copiedFrom`), or merged another artifact into it, whose revisions are added oldest first, each still `by` the job that made it (`mergedFrom`, issue #687). Its id, its links and its shares stay. `note`: what changed, in one line. The older revisions stay readable.
 
 | field | type | required |
 |---|---|---|
@@ -3142,6 +3143,8 @@ Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new lates
 | `by` | string | yes |
 | `note` | string | no |
 | `restoredFrom` | integer | no |
+| `copiedFrom` | string | no |
+| `mergedFrom` | string | no |
 | `masked` | integer | no |
 | `warning` | string | no |
 
