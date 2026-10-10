@@ -1,6 +1,6 @@
 // Artifacts in the UI (issue #624), pure: a job's artifacts — its user's own and those shared with the person —, the
 // artifacts a text links to by their stable URL (a proposal or a research report embeds them), sizes and shares in
-// words, and how each kind is previewed.
+// words, how each kind is previewed, and an artifact's line on the timeline.
 import type { ArtifactKind, ArtifactShare, ArtifactsView, ArtifactView } from './wire.ts';
 
 /** An artifact's stable URL ends `#artifacts/<id>`: a text that names one links to it. */
@@ -46,12 +46,19 @@ export type Preview = 'frame' | 'image' | 'pdf' | 'csv' | 'markdown' | 'text' | 
 
 export function previewOf(kind: ArtifactKind): Preview {
   switch (kind) {
-    case 'html': return 'frame';
-    case 'svg': case 'image': return 'image';
+    // An SVG is served in the HTML sandbox (issue #675): framed, its inline script runs as an HTML page's does.
+    case 'html': case 'svg': return 'frame';
+    case 'image': return 'image';
     case 'pdf': return 'pdf';
     case 'csv': return 'csv';
     case 'markdown': return 'markdown';
     case 'json': case 'text': return 'text';
     default: return 'none';
   }
+}
+
+/** `artifact.created` on the timeline: its title, and its warning when it is not a visual (issue #675). */
+export function artifactCreatedDetail(d: Record<string, unknown>): string {
+  const title = typeof d.title === 'string' ? d.title : String(d.name);
+  return typeof d.warning === 'string' ? `${title}: warning: ${d.warning}` : title;
 }

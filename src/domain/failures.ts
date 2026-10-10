@@ -2,6 +2,7 @@
 // assessed — its error normalised to a signature, matched to a known cause, and decided: run again (transient),
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
+import type { Tldr } from './tldr.ts';
 
 /** What the assessor decides for a failed job. `continue` (issue #630): a timed-out job still at work goes on. */
 export const FAILURE_DECISIONS = ['retry', 'hold', 'redirect', 'person', 'continue'] as const;
@@ -302,6 +303,8 @@ export interface Handoff {
   resolution?: HandoffResolution;
   /** What its job's work showed at its source when last asked (issue #621); absent until asked, or when it cannot tell. */
   work?: WorkState;
+  /** The TL;DR of its summary and reasons (issue #569), once a long one has one. */
+  tldr?: Tldr;
 }
 
 /** Whether the daemon takes an action now, and why not. */

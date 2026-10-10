@@ -107,7 +107,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
       {job && <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" />
         {movedOn && <StatusBadge status={`job ${job.status}`} tone="warn" label={`job moved on: ${job.status}`} />}
         {!movedOn && <ParkButton job={job} />}</div>}
-      <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} /></div>
+      <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>

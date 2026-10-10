@@ -9,6 +9,8 @@ import { handoffCard } from './card.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
+import { tldrSettings } from '../tldr/service.ts';
+import { withShownTldr } from '../tldr/text.ts';
 
 const DAY_MS = 86_400_000;
 const PROFILE_DAYS = 14;
@@ -119,12 +121,14 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
   // Each with its job's live priority (issue #535); the open hand-offs of high-priority jobs first.
   const saved = store.settings.getPriorityLanes();
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
+  const tldr = tldrSettings(store);
   const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r) } });
   return {
     now: now.toISOString(),
     counts: countsOf(store),
     settings,
-    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, h, resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
+    // Each with its TL;DR (issue #569) only while it is shown.
+    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.

@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Textarea } from '@/components/ui/textarea';
 import { Confirm } from '@/components/confirm';
-import { CardText, FoldToggle, InlineMarkdown, Markdown } from '@/components/markdown';
+import { CardText, FoldToggle, InlineMarkdown, Markdown, TldrLine } from '@/components/markdown';
 import { JobTitle } from '@/components/job';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
@@ -71,17 +71,20 @@ function Origin({ p }: { p: ReviewItemView }) {
 }
 
 /**
- * One version: its parts, or its text when none was read from it. `fold`: a long one shows its summary — the first part
- * it has, its first paragraph — and the rest behind Show all; an earlier version, already behind a fold, shows whole.
+ * One version: its parts, or its text when none was read from it. `fold`: a long one shows its TL;DR (`tldr`, issue
+ * #569) or else its summary — the first part it has, its first paragraph — and the rest behind Show all; an earlier
+ * version, already behind a fold, shows whole.
  */
-function Version({ v, type, fold = false }: { v: ReviewVersion; type: ReviewSectionView; fold?: boolean }) {
+function Version({ v, type, fold = false, tldr }: { v: ReviewVersion; type: ReviewSectionView; fold?: boolean; tldr?: string | undefined }) {
   const [open, setOpen] = useState(false);
   const shown = type.parts.filter(([k]) => v.sections[k] !== undefined);
   const folds = fold && shown.length > 1 && isLong(v.text);
   const folded = folds && !open;
-  const parts = folded ? shown.slice(0, 1) : shown;
+  const lead = folds ? tldr : undefined;
+  const parts = folded ? (lead ? [] : shown.slice(0, 1)) : shown;
   return (
     <div className="space-y-2">
+      {lead && <TldrLine text={lead} />}
       {shown.length > 0 ? (
         <dl className="grid gap-2 text-sm">
           {parts.map(([k, label]) => (
@@ -91,7 +94,7 @@ function Version({ v, type, fold = false }: { v: ReviewVersion; type: ReviewSect
             </div>
           ))}
         </dl>
-      ) : <div className="rounded-md bg-muted/40 p-3 text-sm">{fold ? <CardText text={v.text} /> : <Markdown text={v.text} />}</div>}
+      ) : <div className="rounded-md bg-muted/40 p-3 text-sm">{fold ? <CardText text={v.text} tldr={tldr} /> : <Markdown text={v.text} />}</div>}
       {folds && <FoldToggle open={open} onToggle={() => setOpen((o) => !o)} lines={v.text.trim().split('\n').length} />}
       {v.missing.length > 0 && (
         <div data-slot="missing" className="text-xs text-warn">Left out: {v.missing.map((m) => partLabel(type, m)).join(', ')}</div>
@@ -201,7 +204,7 @@ function ItemCard({ kind, p, type }: { kind: ReviewKind; p: ReviewItemView; type
       {!job && p.high && <HighTag priority={p.priority} className="self-start" />}
       {job ? <JobTitle job={job} /> : p.source?.title && <div className="text-sm font-medium">{p.source.title}</div>}
       <Origin p={p} />
-      {kind !== 'proposal' ? <Version v={latest} type={type} fold />
+      {kind !== 'proposal' ? <Version v={latest} type={type} fold tldr={p.tldr?.text} />
         : p.status === 'open' && canAct ? <PathsDecide p={p} type={type} /> : <PathsView v={latest} />}
       {kind === 'proposal' && <ArtifactEmbeds text={latest.text} />}
       {earlier.length > 0 && (

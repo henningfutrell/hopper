@@ -154,6 +154,8 @@ export async function startTestApp(o: {
     pluginStoreDefault: null,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realLevels ? {} : fakeLevels()),
+    // No model in tests (issue #569): a long card has no TL;DR unless a test puts a double here.
+    tldrWriter: async () => ({ error: 'no TL;DR model in tests' }),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.

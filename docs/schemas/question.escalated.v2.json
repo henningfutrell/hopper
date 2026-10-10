@@ -35,6 +35,9 @@
     "lapsesAt": {
       "type": "string"
     },
+    "tldr": {
+      "type": "string"
+    },
     "raisedBy": {
       "type": "object",
       "properties": {

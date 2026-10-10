@@ -1,11 +1,11 @@
 // One user's artifacts (issue #624, design.md "Artifacts"): a job puts a file, the hopper keeps it with its job, issue,
 // type, size and hash, under the user's limits; it masks GitHub tokens in a text artifact first (issue #597). Its
 // owner shares it with another user or by an expiring public link, revokes a share, removes it; the retention sweep
-// removes what is older than the user keeps. Every change is an event of the user's, in the same transaction; the
+// removes what is older than the user keeps. An HTML artifact with no drawing is kept with a warning (issue #675). Every change is an event of the user's, in the same transaction; the
 // HTTP edge puts the job's on its job stream. Never throws for a person's or a job's mistake: it answers a no with why.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
-  ARTIFACT_TITLE_MAX, artifactName, artifactType, kindOf, shareLive, TEXT_KINDS,
+  ARTIFACT_TITLE_MAX, artifactName, artifactType, kindOf, shareLive, TEXT_KINDS, visualWarning,
   type Artifact, type ArtifactSettings, type ArtifactShare,
 } from '../domain/artifacts.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
@@ -19,6 +19,8 @@ export type Refusal = { no: string; status: 400 | 403 | 404 | 413 };
 export const isRefusal = (r: unknown): r is Refusal => typeof r === 'object' && r !== null && 'no' in r;
 
 export interface PutRequest { name: string; title?: string; type?: string; content: Buffer }
+/** What a put keeps; `warning`: kept, but not what an artifact is for (issue #675). */
+export type PutDone = Artifact & { warning?: string };
 /** A new share: with a user of the hopper, or a public link for `hours`. */
 export type ShareRequest = { user: { id: string; name: string } } | { link: true; hours?: number };
 /**
@@ -28,7 +30,7 @@ export type ShareRequest = { user: { id: string; name: string } } | { link: true
 export type ShareMade = { share: ArtifactShare; token?: string } | { owner: true };
 
 export interface UserArtifacts {
-  put(job: Job, r: PutRequest): Artifact | Refusal;
+  put(job: Job, r: PutRequest): PutDone | Refusal;
   get(id: string): Artifact | undefined;
   content(id: string): Buffer | undefined;
   list(o?: { jobId?: string; limit?: number }): Artifact[];
@@ -89,6 +91,7 @@ export function createUserArtifacts(o: {
         return { no: `${name} is ${inWords(content.length)}, and this user's artifacts hold ${inWords(used)} of ${inWords(s.userBytes)} (Settings → Artifacts): remove some first`, status: 413 };
       }
       const title = maskGitHubTokens((r.title ?? '').trim()).slice(0, ARTIFACT_TITLE_MAX) || name;
+      const warning = visualWarning(kind, content);
       const src = job.source;
       const issue = src?.url ? { url: src.url, ref: src.repo && src.number !== undefined ? `${src.repo}#${src.number}` : src.url } : undefined;
       const artifact: Artifact = {
@@ -99,10 +102,10 @@ export function createUserArtifacts(o: {
         repo.add(artifact, content);
         o.store.events.append({
           type: 'artifact.created', jobId: job.id,
-          data: { artifact: artifact.id, title, name, type, size: artifact.size, sha256: artifact.sha256, ...(issue ? { issue: issue.url } : {}), ...(masked > 0 ? { masked } : {}) },
+          data: { artifact: artifact.id, title, name, type, size: artifact.size, sha256: artifact.sha256, ...(issue ? { issue: issue.url } : {}), ...(masked > 0 ? { masked } : {}), ...(warning ? { warning } : {}) },
         });
       });
-      return artifact;
+      return warning ? { ...artifact, warning } : artifact;
     },
     get: (id) => repo.get(id),
     content: (id) => repo.content(id),

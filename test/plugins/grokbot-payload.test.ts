@@ -49,3 +49,19 @@ describe('Grok Bot routine: the question body carries the Markdown source (issue
     expect(payload(question({ text }))).toMatchObject({ question: text, questionFormat: 'markdown' });
   });
 });
+
+describe('Grok Bot routine: the question body leads with the TL;DR (issue #569)', () => {
+  const withLead = (tldr?: string) => questionPayload({ question: question(), job: moved, answerUrl: undefined, at: 'x', now: new Date('2026-10-08T10:01:00.000Z'), offered: false, tldr });
+
+  it('the TL;DR first, right after the sender and the job, before the question', () => {
+    const body = withLead('Pick a branch: dev or main.');
+    expect(body.tldr).toBe('Pick a branch: dev or main.');
+    const keys = Object.keys(body);
+    expect(keys.indexOf('tldr')).toBe(keys.indexOf('issueUrl') + 1);
+    expect(keys.indexOf('tldr')).toBeLessThan(keys.indexOf('question'));
+  });
+
+  it('none known (a short question, or the setting off): no tldr key', () => {
+    expect('tldr' in withLead()).toBe(false);
+  });
+});

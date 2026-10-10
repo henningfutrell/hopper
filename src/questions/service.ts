@@ -17,6 +17,7 @@ import { askJevFirst, JEV } from './jev-first.ts';
 import { forkRuns, openOnEndedJobs, unarmed } from './stale.ts';
 import { levelRequest } from './request.ts';
 import { REPLY, check } from './results.ts';
+import { tldrData } from '../tldr/service.ts';
 
 export interface QuestionServiceOptions {
   store: UserStore;
@@ -81,7 +82,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     // The job's live priority (issue #535): a high-priority question is told apart wherever it goes.
     const base = { target, reason, text: q.text, jobId: q.jobId, ...(q.lapsesAt ? { lapsesAt: q.lapsesAt } : {}), ...jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId) };
     if (target !== HUMAN) return base;
-    return { ...base, goal: store.jobs.get(q.jobId)?.spec.goal, answerUrl: o.answerUrl(q.id), notifyCount: q.notifyCount };
+    // What a notification leads with (issue #569): the TL;DR, else the agent's own summary; never waited for.
+    return { ...base, goal: store.jobs.get(q.jobId)?.spec.goal, answerUrl: o.answerUrl(q.id), notifyCount: q.notifyCount, ...tldrData(store, 'question', q) };
   }
 
   // ---- the human stage ------------------------------------------------------------------

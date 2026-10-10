@@ -20,6 +20,7 @@ import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
 import type { Logins } from '../logins/index.ts';
 import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
+import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, sessionToken } from './host-guard.ts';
@@ -48,6 +49,8 @@ export interface TenantParts {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): its view, set and remove; never the key. */
   typesafeKey: TypesafeKey;
+  /** The TL;DR of every long card (issue #569): its sweep, run at once when the setting turns on. */
+  tldrs: Pick<Tldrs, 'sweep'>;
   /** Every job source's status (/api/sources, SSE source.updated). */
   registry: SourceRegistry;
   plugins: PluginsView;

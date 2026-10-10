@@ -6,7 +6,7 @@ import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { localPlugin } from '../plugins/machine-source/local/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
-import type { AttachedMachine, HostKeyOffer, JevChooser } from '../domain/types.ts';
+import type { AttachedMachine, HostKeyOffer, JevChooser, TldrWriter } from '../domain/types.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
 import type { MachineProbe, ResolvedTarget } from '../machines/index.ts';
 import type { GitHubApi } from '../sources/index.ts';
@@ -43,6 +43,8 @@ export interface UserSeams {
   herdrSession?: (session: string) => Promise<void>;
   /** The job stream (issue #613): above how many bytes an event goes out as a pointer (default INLINE_MAX). */
   jobStream?: { inlineMax?: number };
+  /** Replaces the TL;DR's model (issue #569; default Claude Haiku through the `claude` CLI). */
+  tldrWriter?: TldrWriter;
 }
 
 /** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */

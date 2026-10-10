@@ -6,6 +6,7 @@
 // here, by its ReviewSectionType, and a future one follows the same path. Pure: no I/O. Re-exported from types.ts.
 import type { ShiftThen } from './phase.ts';
 import { pathsOf, proposalDocument, type FollowOnView, type PathSelection, type ProposalPathSet, type SelectedPath } from './proposal-paths.ts';
+import type { Tldr } from './tldr.ts';
 import type { JobId, PriorityTag, QuestionStatus, RaisedBy } from './types.ts';
 
 /**
@@ -126,6 +127,8 @@ export interface ReviewItem {
   seenAt?: string;
   /** The paths a person had selected when they asked for more paths or steered (issue #651): kept for the next version. */
   selection?: PathSelection;
+  /** The TL;DR of its newest version (issue #569), once a long one has one. */
+  tldr?: Tldr;
   createdAt: string;
   updatedAt: string;
 }

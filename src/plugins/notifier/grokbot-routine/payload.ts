@@ -2,7 +2,8 @@
 // what the job already knows (issue #378), so the receiver can route and rank it without calling back
 // into the hopper: the machine (its id and name) and lane that raised it (issue #485: the question's own
 // snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
-// detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569).
+// detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569), led by
+// its TL;DR when it is long.
 import type { DomainEvent, Job, Question } from '../../sdk.ts';
 
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
@@ -19,6 +20,8 @@ export interface QuestionBody {
   offered: boolean;
   /** The high-priority threshold (issue #535); absent: not known, and `high` is null. */
   highPriority?: number | undefined;
+  /** What the body leads with (issue #569): the question's TL;DR, else the agent's own summary; absent: none (a short question). */
+  tldr?: string | undefined;
 }
 
 /** A question that reached the human. */
@@ -27,6 +30,8 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
   const raised = q.raisedBy;
   return {
     ...base('question.escalated_to_human', b.at, job, q.jobId),
+    // Plain text, one or two sentences (issue #569): the receiver shows it first, the question behind it.
+    ...(b.tldr ? { tldr: b.tldr } : {}),
     // The agent's text as written, Markdown (issue #569): the receiver renders it as the UI does.
     question: q.text, questionFormat: 'markdown', questionId: q.id, ...(b.answerUrl ? { answerUrl: b.answerUrl } : {}),
     machineId: raised?.machineId ?? null, machineName: raised?.name ?? null, laneId: raised?.laneId ?? null, priority: job?.priority ?? null,
