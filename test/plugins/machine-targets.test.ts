@@ -29,10 +29,10 @@ describe('the attached-machine plugins', () => {
   });
 
   it('what reaches the machine, what of the vault it may be given (its template, issue #558) and the box the hopper started for it (issue #603) are command-bearing; lanes, executors and label are not', () => {
-    expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh', 'workTree']);
+    expect(commandBearing('ssh')).toEqual(['herdr', 'hostKey', 'session', 'ssh', 'workTree', 'workTrees']);
     expect(commandBearing('docker')).toEqual(['docker']);
-    expect(commandBearing('client')).toEqual(['container', 'key', 'template', 'workTree']);
-    expect(commandBearing('local')).toEqual(['workTree']);
+    expect(commandBearing('client')).toEqual(['container', 'key', 'template', 'workTree', 'workTrees']);
+    expect(commandBearing('local')).toEqual(['workTree', 'workTrees']);
   });
 });
 
@@ -113,6 +113,17 @@ describe('targetOf: an instance as the attached machine it names', () => {
     expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, workTree: '/srv/trees' } })).toMatchObject({ workTree: '/srv/trees' });
     expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('workTree');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTree: 'trees' } }))).toMatch(/workTree must be an absolute path or start with ~/);
+  });
+
+  // Issue #691: a work tree per repository, so a job works in its own repository's tree on the machine.
+  it('an ssh or client instance carries a work tree per repository; a key that is no owner/name or a relative path is refused', () => {
+    const workTrees = { 'acme/monolith': '~/wt/monolith', 'acme/platform': '/srv/platform' };
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTrees } })).toMatchObject({ workTrees });
+    expect(targetOf({ name: 'studio', plugin: 'client', options: { key: KEY, workTrees } })).toMatchObject({ workTrees });
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop' } })).not.toHaveProperty('workTrees');
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTrees: { monolith: '~/wt' } } }))).toMatch(/owner\/name/);
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', workTrees: { 'acme/monolith': 'wt' } } }))).toMatch(/absolute path or start with ~/);
+    expect(why(() => targetOf({ name: 'box', plugin: 'docker', options: { docker: 'hopper-target', workTrees } }))).not.toBe('accepted');
   });
 
   // Issue #372: lanes kept for jobs pinned to the machine.
