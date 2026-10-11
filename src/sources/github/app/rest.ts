@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the App adapter, each with an installation token for the
 // issue's repo. REST shapes mapped onto the GitHubApi port's types.
 
-import type { GitHubComment, GitHubIssue, IssueEvent } from '../api.ts';
+import type { GitHubComment, GitHubIssue, IssueEvent, SubIssue } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -10,6 +10,7 @@ interface RestIssue {
   user?: { login?: string } | null; assignees?: ({ login?: string } | null)[] | null; labels?: ({ name?: string } | string)[]; closed_by?: { login?: string } | null;
   closed_at?: string | null; state_reason?: string | null;
   pull_request?: unknown; sub_issues_summary?: { total?: number; completed?: number; percent_completed?: number } | null;
+  repository_url?: string;
 }
 interface RestIssueWithRepo extends RestIssue { repository?: { full_name?: string } | null }
 interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string }
@@ -27,6 +28,11 @@ export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
   };
 }
 
+/** A sub-issue as GitHub lists it (issue #729): its repository from its `repository_url`, else `repo` (its parent's). */
+export function subIssueFrom(i: RestIssue, repo: string): SubIssue {
+  return { repo: /\/repos\/([^/]+\/[^/]+)$/.exec(i.repository_url ?? '')?.[1] ?? repo, number: i.number, state: i.state === 'closed' ? 'closed' : 'open' };
+}
+
 function commentFrom(c: RestComment): GitHubComment {
   return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url };
 }
@@ -42,6 +48,12 @@ export async function listOpenIssues(req: Request, token: string, repo: string, 
 export async function getIssue(req: Request, token: string, repo: string, number: number): Promise<GitHubIssue> {
   const r = await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: auth(token) });
   return issueFrom(r.data as RestIssue, repo);
+}
+
+export async function subIssues(req: Request, token: string, repo: string, number: number): Promise<SubIssue[]> {
+  const subs = await paginate(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues', { ...splitRepo(repo), issue_number: number, per_page: 100 },
+    `token ${token}`, (d) => d as RestIssue[]);
+  return subs.map((i) => subIssueFrom(i, repo));
 }
 
 export async function listComments(req: Request, token: string, repo: string, number: number): Promise<GitHubComment[]> {

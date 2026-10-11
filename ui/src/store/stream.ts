@@ -6,6 +6,7 @@ import { EVENT_TYPES } from '@/model/event-types';
 import type { DomainEvent } from '@/model/wire';
 import { announceCredentialAsked } from './vault';
 import { ARTIFACTS_REREAD_MS, refreshArtifacts, refreshArtifactsSoon } from './artifacts';
+import { refreshLineage, refreshLineageSoon } from './lineage';
 import { onDelivery, onDomainEvent, onRecorded, onSource, refreshFailures, refreshHealth, refreshLive, refreshLogins, refreshQuestions, refreshUpdate, setConn, useHopper } from './index';
 
 export function connect(): () => void {
@@ -22,6 +23,7 @@ export function connect(): () => void {
     refreshFailures().catch(() => {});
     refreshUpdate().catch(() => {});
     void refreshArtifacts();
+    void refreshLineage();
   };
   es.onerror = () => setConn('reconnecting');
   es.addEventListener('delivery.updated', (m) => onDelivery(JSON.parse(m.data)));
@@ -33,6 +35,8 @@ export function connect(): () => void {
   es.addEventListener('vault.credential_asked', (m) => { const e = JSON.parse(m.data) as DomainEvent; if (e.seq > after) announceCredentialAsked(e); });
   // Artifacts (issue #624): made, shared, revoked or removed — read again; and before their content URLs run out.
   for (const t of EVENT_TYPES.filter((x) => x.startsWith('artifact.'))) es.addEventListener(t, () => refreshArtifactsSoon());
+  // Issue lineage (issue #729): a job filed a child issue — read the links again.
+  es.addEventListener('job.child_issue_filed', () => refreshLineageSoon());
   const artifacts = setInterval(() => { void refreshArtifacts(); }, ARTIFACTS_REREAD_MS);
   const health = setInterval(() => { refreshHealth().catch(() => {}); refreshUpdate().catch(() => {}); }, 10_000);
   return () => { clearInterval(health); clearInterval(artifacts); es.close(); };

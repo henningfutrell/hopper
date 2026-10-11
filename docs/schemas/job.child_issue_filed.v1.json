@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "parent": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "repo",
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "child": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "number",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "required": {
+      "type": "boolean"
+    },
+    "subIssue": {
+      "type": "boolean"
+    },
+    "subIssueError": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "parent",
+    "child",
+    "required"
+  ],
+  "additionalProperties": false
+}

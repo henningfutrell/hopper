@@ -230,4 +230,5 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'bug_report.failed': { repo: 'henningfutrell/hopper', error: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
   'repo_checks.job_queued': { repo: 'owner/repo', number: 41, url: 'https://github.com/owner/repo/issues/41', existing: false, by: 'octocat' },
   'repo_checks.dismissed': { repo: 'owner/repo', dismissed: true, by: 'octocat' },
+  'job.child_issue_filed': { requestId: 'r1', parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' }, required: true, subIssue: true },
 };

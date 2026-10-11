@@ -264,7 +264,7 @@ describe('issue lineage through the hopper (issue #729)', () => {
     const answer = json(r);
     expect(answer).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: true, subIssue: true });
     expect(t.github.issues.find((i) => i.number === 8)!.body).toContain('Required child of octo/tools#7: that issue is not done while this one is open.');
-    expect(subIssueLinks(t.github)).toEqual([expect.objectContaining({ path: '/repos/octo/tools/issues/7/sub_issues', body: { sub_issue_id: issueIdOf('octo/tools', 8) } })]);
+    expect(subIssueLinks(t.github)).toEqual([expect.objectContaining({ path: '/api/v3/repos/octo/tools/issues/7/sub_issues', body: { sub_issue_id: issueIdOf('octo/tools', 8) } })]);
     expect(t.github.issues.find((i) => i.number === 7)!.subIssues).toEqual(['octo/tools#8']);
     expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
       jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),

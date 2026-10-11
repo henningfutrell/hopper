@@ -104,7 +104,7 @@ export function untrustedBlock(issue: Pick<GitHubIssue, 'title' | 'body'>, comme
  * last part closes the issue; when every part is done, to check the issue and close it when nothing is left.
  */
 export function partsLine(n: number, parts: Parts): string {
-  const what = `parts: ${parts.done} of ${parts.total} done (the checklist under the heading "Parts" in the issue, else its sub-issues; each merged "Part of #${n}" pull request counts as one more done; a part that names an issue, and a sub-issue, is done only when that issue is closed)`;
+  const what = `parts: ${parts.done} of ${parts.total} done (the checklist under the heading "Parts" in the issue and its sub-issues; each merged "Part of #${n}" pull request counts as one more done; a part that names an issue, and a sub-issue, is done only when that issue is closed)`;
   return parts.done >= parts.total
     ? `${what}. Now every part is done: check the issue, and when nothing is left, close it as completed`
     : `${what}. Ship the next part that is not done. Open its pull request with "Part of #${n}", and use "Closes #${n}" only when it ships the last part`;

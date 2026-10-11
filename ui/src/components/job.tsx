@@ -1,6 +1,6 @@
 // How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
 // (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its issue's
-// parts done (issue #729), its artifacts
+// parts done and its lineage, parent and children (issue #729), its artifacts
 // (issue #624), ticking times, and the flags a running job carries: unassigned (issue #387), its credential files not
 // rewritten with its connection's new token (issue #647).
 import { ExternalLink, UserX } from 'lucide-react';
@@ -11,6 +11,7 @@ import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { ArtifactChips } from './artifacts';
+import { LineageChips } from './lineage';
 import { HighTag, useIsHigh } from './priority';
 
 const GITHUB = 'https://github.com/';
@@ -54,6 +55,7 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
           <span data-parts={`${parts.done}/${parts.total}`} className={cn('rounded border px-1 text-[10px]', parts.done >= parts.total && 'border-ok/40 text-ok')}
             title={`${parts.done} of the ${parts.total} parts its issue declares are done`}>{parts.label}</span>
         )}
+        <LineageChips job={job} />
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}
         <ArtifactChips jobId={job.id} />

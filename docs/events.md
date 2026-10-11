@@ -3912,3 +3912,33 @@ Version 1 (`docs/schemas/repo_checks.dismissed.v1.json`). A person dismissed (`d
   "by": "octocat"
 }
 ```
+
+## `job.child_issue_filed`
+
+Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `requestId` names the request, as in `github_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `parent` | object | yes |
+| `child` | object | yes |
+| `required` | boolean | yes |
+| `subIssue` | boolean | no |
+| `subIssueError` | string | no |
+
+```json
+{
+  "requestId": "r1",
+  "parent": {
+    "repo": "octo/tools",
+    "number": 7
+  },
+  "child": {
+    "repo": "octo/tools",
+    "number": 42,
+    "url": "https://github.com/octo/tools/issues/42"
+  },
+  "required": true,
+  "subIssue": true
+}
+```

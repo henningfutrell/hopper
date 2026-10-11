@@ -8,6 +8,8 @@
 //   (issue #652: it holds no GitHub token of its own), and read pull requests, on the hopper's job repositories;
 // - a job of any other user (**another user's job**, treated as untrusted) may only file an issue there.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
+// An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required`, only
+// for the hopper's own job — a required child, linked as a GitHub sub-issue, so the parent is not done while it is open.
 import { z } from 'zod';
 
 export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'issue.close', 'pr.create', 'pr.view', 'pr.ready'] as const;
@@ -17,10 +19,12 @@ const repo = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'repo must b
 const number = z.coerce.number().int().positive();
 const text = (max: number) => z.string().min(1).max(max);
 const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: letters, digits, . _ / -');
+/** A flag: from a form it comes as the text `true`. */
+const flag = z.union([z.literal('true'), z.literal(true)]).transform(() => true as const);
 
 /** One request, as the hopper takes it: the operation and only the fields it uses. GitHub's limits on titles and bodies. */
 export const proxyRequest = z.discriminatedUnion('op', [
-  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000) }),
+  z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional() }),
   z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000) }),
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
   z.strictObject({ op: z.literal('issue.close'), repo, number }),
@@ -38,7 +42,7 @@ export type ProxyRequest = z.infer<typeof proxyRequest>;
 export const REPORT_OP = 'report.bug';
 export const reportRequest = z.strictObject({
   op: z.literal(REPORT_OP), title: text(200), body: text(10_000), commentOn: number.optional(),
-  force: z.union([z.literal('true'), z.literal(true)]).transform(() => true as const).optional(),
+  force: flag.optional(),
 });
 export type ReportRequest = z.infer<typeof reportRequest>;
 
@@ -73,17 +77,29 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
   if (req.op === 'pr.ready' && !ownRepo) {
     return { ok: false, reason: `a job marks a pull request ready only on its own repository${asker.repo ? ` (${asker.repo})` : ', and this job has none'}` };
   }
+  if (req.op === 'issue.create' && req.required && !asker.own) {
+    return { ok: false, reason: 'a job of another user files no required child: file it with no --required' };
+  }
+  if (req.op === 'issue.create' && req.required && (asker.repo === undefined || asker.issue === undefined)) {
+    return { ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' };
+  }
   if (req.op === 'issue.close' && !(ownRepo && asker.issue === req.number)) {
     return { ok: false, reason: `a job closes only its own issue${asker.repo && asker.issue !== undefined ? ` (${asker.repo}#${asker.issue})` : ', and this job has none'}` };
   }
   return { ok: true };
 }
 
+/** The job's issue a filed issue is a child of (issue #729), and whether the job marked it required. */
+export interface IssueParent { repo: string; number: number; required: boolean }
+
 /**
- * What every issue filed through the hopper carries at its end: that the hopper filed it for a job, which one,
- * and that it waits for a person. Ids only — GitHub text names no person and no machine (repo law); the
- * hopper's event log has who asked and from where, under the request id.
+ * What every issue filed through the hopper carries at its end: its parent, the job's issue (issue #729: GitHub links
+ * the mention back on the parent), that the hopper filed it for a job, which one, and that it waits for a person. Ids
+ * only — GitHub text names no person and no machine (repo law); the hopper's event log has who asked and from where,
+ * under the request id.
  */
-export function filedNote(jobId: string, requestId: string): string {
-  return `\n\n---\nFiled through hopper for job \`${jobId}\` (request \`${requestId}\`). It is not a job: it waits for a person to triage it.`;
+export function filedNote(jobId: string, requestId: string, parent?: IssueParent): string {
+  const ref = parent && `${parent.repo}#${parent.number}`;
+  const lineage = !parent ? '' : parent.required ? `Required child of ${ref}: that issue is not done while this one is open.\n` : `Follow-up of ${ref}.\n`;
+  return `\n\n---\n${lineage}Filed through hopper for job \`${jobId}\` (request \`${requestId}\`). It is not a job: it waits for a person to triage it.`;
 }

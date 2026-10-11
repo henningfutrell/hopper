@@ -19,7 +19,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
   'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'tldr.settings_changed': 'warn',
   'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
-  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
+  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
@@ -36,6 +36,11 @@ export function detailOf(e: DomainEvent): string {
   // The GitHub proxy (issue #563): what the hopper did on GitHub for the job, where, or why not.
   if (e.type === 'github_proxy.done') return `${String(d.op)} ${String(d.repo)}#${String(d.number)}: ${String(d.url)}`;
   if (e.type === 'github_proxy.refused') return `${typeof d.op === 'string' ? `${d.op} ` : ''}refused: ${String(d.reason)}`;
+  // Issue lineage (issue #729): the child issue the job filed, of which parent, and a sub-issue link GitHub refused.
+  if (e.type === 'job.child_issue_filed') {
+    const at = (i: unknown) => { const r = i as { repo?: unknown; number?: unknown }; return `${String(r.repo)}#${String(r.number)}`; };
+    return `${d.required === true ? 'required child' : 'follow-up'} ${at(d.child)} of ${at(d.parent)}${typeof d.subIssueError === 'string' ? `; not linked: ${d.subIssueError}` : ''}`;
+  }
   if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
   // Skills (issue #582): what the job asked the hopper to set up, and the answer.
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';

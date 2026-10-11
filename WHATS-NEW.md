@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- An issue a job files is now linked to the job's own issue. The job's card shows its parent issue and its child issues, and the new issue names its parent. When a job says the new issue must be done first, the parent issue is not marked done until it is closed.
 - With yolo mode on, the hopper now merges a ready pull request even when its job's issue came from someone you do not trust, or from an app. That check now only decides whether a job runs. Such a pull request no longer waits for a person while its checks pass.
 - A question that comes to you now lists every reason it was held, not only the first: for example a safety rule, a high-priority job and a not-sure-enough answer together. A sure answer on a high-priority job now goes to the job on its own; to keep those for yourself, turn on "Hold high-priority questions for me" in Settings → Question gates. Safety rules no longer stop an answer for plain negations such as "uses no secrets".
 - An assistant with an API token can now ask the hopper for the sandbox template some work needs, the same way a job asks. The hopper makes it, and approves it by itself only when the work only reads what your read policy allows. You can also ask from the command line.

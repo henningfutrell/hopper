@@ -179,6 +179,7 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'bug_report.failed': 'A bug report was not filed (issue #694): GitHub refused it for good. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.',
   'repo_checks.job_queued': 'A person queued the "Add PR checks to <repo>" job for job repository `repo` (`owner/repo`, lowercased), which has no checks (issue #677): an issue filed through their own GitHub connection with the hopper label, assigned to their connected account, so a job source takes it. `existing`: an open issue of that title was there, and none was filed. Its `number` and `url`, and `by`.',
   'repo_checks.dismissed': 'A person dismissed (`dismissed: true`) or brought back (`false`) the "Add PR checks" recommendation for job repository `repo` (`owner/repo`, lowercased; issue #677). The "no checks" warning stays. `by` who did it.',
+  'job.child_issue_filed': 'A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job\'s own issue `parent` (each `repo` and `number`; the child\'s `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue\'s text names its parent, and nothing waits on it. `requestId` names the request, as in `github_proxy.done`.',
 };
 
 type Prop = Record<string, unknown>;
