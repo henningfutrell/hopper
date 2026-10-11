@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { UpdateBuilder } from '../../src/domain/ports.ts';
+import type { ReleaseCheck, ReleaseVerdict, UpdateBuilder } from '../../src/domain/ports.ts';
 import type { InstallInfo } from '../../src/domain/types.ts';
 
 const ID = { GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@example.invalid', GIT_COMMITTER_NAME: 'test', GIT_COMMITTER_EMAIL: 'test@example.invalid' };
@@ -68,4 +68,13 @@ export function copyBuilder(o: { main?: string; calls?: string[] } = {}): Update
       writeFileSync(join(targetDir, 'install.json'), JSON.stringify(info));
     },
   };
+}
+
+/**
+ * The release check at its port (issue #652): every commit asked about, and the verdict `verdict` gives; by default each
+ * commit passes as the merge of pull request #1.
+ */
+export function releaseCheck(verdict: (commit: string) => ReleaseVerdict = () => ({ passed: true, pullRequest: { number: 1, url: 'https://github.com/o/r/pull/1' } })): ReleaseCheck & { asked: string[] } {
+  const asked: string[] = [];
+  return { asked, verify: async (_repo, commit) => { asked.push(commit); return verdict(commit); } };
 }
