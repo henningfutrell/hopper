@@ -25,6 +25,7 @@ import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
+import { commentHoldsReleased } from './migration-comment-holds.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -323,11 +324,7 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   )`,
   // 29: Templates (issue #558): an image and the vault secrets its boxes may ask for, with its last approval, in its
   // body. A table only: the build before runs on it.
-  `CREATE TABLE templates (
-    seq BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
-  )`,
+  'CREATE TABLE templates (seq BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, body TEXT NOT NULL)',
   // 30: done is always a pull request ready for review (issue #579): the GitHub sources' `completion` option goes.
   // The build before reads a source with none as its old default.
   noCompletion,
@@ -346,6 +343,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   itemSnapshotsBackfill,
   // 36: Artifact revisions (issue #675); the artifact row stays the latest, so the build before runs on it.
   ARTIFACT_REVISION_TABLES,
+  // 37: A comment holds no job (issue #747): a text change whose title and body are the snapshot's is dropped.
+  commentHoldsReleased,
 ];
 
 /** A user schema's version once migrated. */

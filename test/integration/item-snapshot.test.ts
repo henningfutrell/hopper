@@ -64,6 +64,29 @@ describe('Item snapshots (issue #662)', () => {
     expect(await a.events('types=item.snapshot_recorded')).toHaveLength(1);
   });
 
+  it('a comment alone is no change (issue #747): Run again and an item offered again run at once with the snapshot', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const { issue, first, jobsFor } = await failedOnce(gh, a);
+    gh.addComment(REPO, issue.number, 'owner', 'Status ping.');
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.textChange).toBeUndefined();
+    const second = await a.waitForStatus(r.body.id, 'failed');
+    expect(second.error).toBe('original text ran');
+
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
+    gh.addComment(REPO, issue.number, 'owner', 'Design notes.');
+    gh.removeLabel(REPO, issue.number, 'hopper:failed');
+    await a.sync();
+    const third = await waitFor(async () => (await jobsFor()).find((j) => j.id !== first.id && j.id !== r.body.id), { what: 'the third job' });
+    expect(third.textChange).toBeUndefined();
+    expect((await a.waitForStatus(third.id, 'failed')).error).toBe('original text ran');
+    expect(await a.events('types=item.changed_since_snapshot')).toEqual([]);
+  });
+
   it('an issue edited after a failed run: Run again holds the new job with the change shown, never runs the edited text; Rerun the original runs the snapshot', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);

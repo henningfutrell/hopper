@@ -11629,10 +11629,16 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
   because a person removed its end label: each goes through `ingest`. Its item is rendered from the snapshot's text
   (`JobSource.withText`; GitHub: `promptWithText`, the untrusted block of issue #652 made from the snapshot's title, body
   and comments, the context block — priority, yolo mode, done line — as read now). A brief is appended after.
-- **Changed → held.** When the live text hashes otherwise, the new job is created with the snapshot's text and a
+- **Changed → held.** When the live title or body differs from the snapshot's, the new job is created with the snapshot's text and a
   **text change** (`Job.textChange`: both texts, who edited it, and the job's text with the new text). The decider holds
   it before every other judgement (`TEXT_CHANGED`): no approval, acceptance or queue order starts it.
   `item.changed_since_snapshot { key, snapshotHash, liveHash, editors, newComments }` — never the text.
+- **A comment is no change** (issue #747, 2026-10-10). The hash still covers the comments, but only the title and body
+  are compared (`sameAsk`): with the same title and body the job runs the snapshot's text at once, however many comments
+  came since. A status note, design notes or a bot's update re-held approved jobs before: seven at once, each with no
+  editor and only new comments, the queue idle with every lane free. Tenant migration 37
+  (`store/migration-comment-holds.ts`) drops the text change of each job held only for new comments; the decider then
+  judges it as any other waiting job. A held change with an edited title or body still lists its new comments on the card.
 - **Edits while queued.** Each sync offers an item whose job has not ended again (`refresh`); a job not started whose
   item's text changed is held the same way (`refreshText`). Its comments are not read then (no extra call per poll), so
   only an edit of the title or body is a change; the comments it last saw stand in. The refresh never changes a job's

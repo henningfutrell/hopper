@@ -1,8 +1,9 @@
 // Item snapshots at intake (issue #662, design.md "Item snapshots"): the first job of an item records the text it ran
-// with; every later job of the item runs that text, and a live text that hashes differently holds the job with a text
+// with; every later job of the item runs that text, and a live title or body that differs holds the job with a text
 // change until a person keeps the original, accepts the new text (owner only: the route asks Access), or cancels it. A
-// job that has not started is held the same way when its item changes while it waits.
-import { newComments, textHash, type ItemSnapshot, type ItemText, type TextChange } from '../domain/item-snapshots.ts';
+// job that has not started is held the same way when its item changes while it waits. New comments alone hold nothing
+// (issue #747): a status note or a bot's update does not change what the item asks.
+import { newComments, sameAsk, textHash, type ItemSnapshot, type ItemText, type TextChange } from '../domain/item-snapshots.ts';
 import type { SourceItem, SourceRef, UserStore } from '../domain/ports.ts';
 import { TERMINAL_STATUSES, type ActingPerson, type Job, type JobId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -26,20 +27,24 @@ function liveText(item: SourceItem, seen: ItemText | undefined): ItemText | unde
   return { title, body, comments: comments ?? seen?.comments ?? [] };
 }
 
-/** Whether `liveHash` is a text nothing deals with yet: not the snapshot, no change held for it, no original kept for it. */
-const unhandled = (liveHash: string, snapshot: ItemSnapshot, job: Job | undefined): boolean =>
-  liveHash !== snapshot.hash && job?.textChange?.liveHash !== liveHash && job?.originalKept?.liveHash !== liveHash;
+/**
+ * Whether `live` asks what nothing deals with yet: not the snapshot's title and body, no change held for them, no original
+ * kept for them. Its comments are not compared (issue #747).
+ */
+const unhandled = (live: ItemText, snapshot: ItemSnapshot, job: Job | undefined): boolean =>
+  ![textOf(snapshot), job?.textChange?.to, job?.originalKept?.seen].some((t) => t && sameAsk(t, live));
 
-function changeOf(snapshot: ItemSnapshot, live: ItemText, liveHash: string, accepted: SourceItem, at: string, item: SourceItem): TextChange {
+function changeOf(snapshot: ItemSnapshot, live: ItemText, accepted: SourceItem, at: string, item: SourceItem): TextChange {
   return {
-    detectedAt: at, snapshotHash: snapshot.hash, liveHash, from: textOf(snapshot), to: live, edits: item.text?.edits ?? [],
+    detectedAt: at, snapshotHash: snapshot.hash, liveHash: textHash(live), from: textOf(snapshot), to: live, edits: item.text?.edits ?? [],
     accepted: { title: accepted.title, body: accepted.body, prompt: accepted.prompt, env: accepted.env },
   };
 }
 
 /**
- * The snapshot of an item that becomes a new job: none yet → record the live text; the same hash → run it; another hash →
- * the job runs the snapshot's text, held with the change. A source that cannot render a text (`withText`) keeps no snapshot.
+ * The snapshot of an item that becomes a new job: none yet → record the live text; the same title and body → run it, new
+ * comments or not; another title or body → the job runs the snapshot's text, held with the change. A source that cannot
+ * render a text (`withText`) keeps no snapshot.
  */
 export function gateItem(store: UserStore, item: SourceItem, source: SourceRef, at: string): SnapshotGate {
   if (!source.withText) return { item };
@@ -47,10 +52,9 @@ export function gateItem(store: UserStore, item: SourceItem, source: SourceRef, 
   const live = liveText(item, snapshot && textOf(snapshot));
   if (!live) return { item };
   if (!snapshot) return { item, record: live };
-  const liveHash = textHash(live);
   const original = source.withText(item, textOf(snapshot));
-  if (liveHash === snapshot.hash) return { item: original };
-  return { item: original, change: changeOf(snapshot, live, liveHash, source.withText(item, live), at, item) };
+  if (sameAsk(live, snapshot)) return { item: original };
+  return { item: original, change: changeOf(snapshot, live, source.withText(item, live), at, item) };
 }
 
 /**
@@ -60,7 +64,7 @@ export function gateItem(store: UserStore, item: SourceItem, source: SourceRef, 
 export function changedSince(store: UserStore, item: SourceItem, job: Job | undefined): string | undefined {
   const snapshot = store.itemSnapshots.get(item.key);
   const live = snapshot ? liveText(item, seenBy(job, snapshot)) : undefined;
-  if (!snapshot || !live || !unhandled(textHash(live), snapshot, job)) return undefined;
+  if (!snapshot || !live || !unhandled(live, snapshot, job)) return undefined;
   return snapshot.recordedAt;
 }
 
@@ -93,9 +97,8 @@ export function refreshText(c: EngineContext, job: Job, item: SourceItem, source
   const snapshot = c.store.itemSnapshots.get(item.key);
   const live = snapshot ? liveText(item, seenBy(job, snapshot)) : undefined;
   if (!snapshot || !live) return false;
-  const liveHash = textHash(live);
-  if (!unhandled(liveHash, snapshot, job)) return false;
-  holdForChange(c, job.id, item.key, changeOf(snapshot, live, liveHash, source.withText(item, live), nowIso(c), item));
+  if (!unhandled(live, snapshot, job)) return false;
+  holdForChange(c, job.id, item.key, changeOf(snapshot, live, source.withText(item, live), nowIso(c), item));
   return true;
 }
 
