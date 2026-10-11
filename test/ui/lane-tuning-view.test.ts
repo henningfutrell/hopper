@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 // Lane tuning on Machines (issue #688), the panel rendered against a fake of GET /api/lanes/plan: each machine's
 // recommended lanes next to its configured lanes, the reason and the confidence. An admin changes a machine's bounds and
-// Save posts only what changed; bounds that cross are refused in place; an admin sets active mode and undoes the last
-// change. The history lists each change with its reason. A viewer reads only.
+// Save posts only what changed; bounds that cross are refused in place. An admin applies a recommendation, dismisses it,
+// and undoes the last one applied. The history lists each change with its reason. A viewer reads only.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,15 +11,17 @@ import type { LaneTuningPlan } from '../../src/domain/types.ts';
 const SHADOW: LaneTuningPlan = {
   at: '2026-10-10T12:00:00.000Z', windowDays: 7, changes: [],
   machines: [{
-    machineId: 'desk', label: 'Desk', online: true, configured: 2, inUse: 2, lanes: 4, headroom: 4, confidence: 0.5, usedFrac: 0.2, usage: 'free',
-    tuning: { autoTune: true, minLanes: 1, maxLanes: 8, mode: 'shadow' }, reason: 'no resource pressure up to 2 lanes in use; room for 2 more',
+    machineId: 'desk', label: 'Desk', online: true, configured: 2, lanes: 4, headroom: 4, confidence: 0.5, usedFrac: 0.2, usage: 'free',
+    tuning: { autoTune: true, minLanes: 1, maxLanes: 8 }, reason: 'no resource pressure up to 2 lanes in use; room for 2 more', apply: { to: 4 },
   }],
 };
-const ACTIVE: LaneTuningPlan = {
+const { apply: _apply, ...asConfigured } = SHADOW.machines[0]!;
+const APPLIED: LaneTuningPlan = {
   ...SHADOW,
-  machines: [{ ...SHADOW.machines[0]!, inUse: 4, tuning: { ...SHADOW.machines[0]!.tuning, mode: 'active' }, undo: { to: 2 } }],
-  changes: [{ at: '2026-10-10T11:59:00.000Z', machineId: 'desk', kind: 'applied', from: 2, to: 4, reason: 'room for 2 more' }],
+  machines: [{ ...asConfigured, configured: 4, undo: { to: 2 } }],
+  changes: [{ at: '2026-10-10T11:59:00.000Z', machineId: 'desk', kind: 'applied', from: 2, to: 4, reason: 'room for 2 more', by: 'someone' }],
 };
+const DISMISSED: LaneTuningPlan = { ...SHADOW, machines: [{ ...asConfigured, dismissed: { at: '2026-10-10T11:59:00.000Z', by: 'someone' } }] };
 let PLAN = SHADOW;
 
 let root: Root | undefined;
@@ -80,17 +82,26 @@ describe('lane tuning on Machines', () => {
     expect(posts).toEqual([{ path: '/ui/api/lanes/tuning', body: { machineId: 'desk', maxLanes: 3 } }]);
   });
 
-  it('an admin sets active mode', async () => {
+  it('an admin applies the recommendation or dismisses it', async () => {
     await boot('admin');
-    await act(async () => { field('Active mode for Desk').click(); });
-    await act(async () => { saveButton()!.click(); });
-    expect(posts).toEqual([{ path: '/ui/api/lanes/tuning', body: { machineId: 'desk', mode: 'active' } }]);
+    await act(async () => { button('Apply: 4 lanes')!.click(); });
+    await act(async () => { button('Dismiss')!.click(); });
+    expect(posts).toEqual([
+      { path: '/ui/api/lanes/apply', body: { machineId: 'desk', lanes: 4 } },
+      { path: '/ui/api/lanes/dismiss', body: { machineId: 'desk' } },
+    ]);
   });
 
-  it('in active mode: the lanes in use, the history with each change\'s reason, and an admin\'s undo', async () => {
-    await boot('admin', ACTIVE);
-    expect(document.querySelector('[data-slot="lane-recommendation-line"]')?.textContent).toBe('4 lanes in use, as recommended; configured 2');
-    expect(document.querySelector('[data-slot="lane-change"]')?.textContent).toContain('2 → 4 lanes: room for 2 more');
+  it('a dismissed recommendation offers no Apply and says who dismissed it', async () => {
+    await boot('admin', DISMISSED);
+    expect(button('Apply: 4 lanes')).toBeUndefined();
+    expect(document.querySelector('[data-slot="lane-dismissed"]')?.textContent).toBe('Dismissed by someone; shown again when the recommendation moves');
+  });
+
+  it('after an Apply: the history with each change\'s reason, and an admin\'s undo', async () => {
+    await boot('admin', APPLIED);
+    expect(document.querySelector('[data-slot="lane-recommendation-line"]')?.textContent).toBe('Recommends the configured 4 lanes');
+    expect(document.querySelector('[data-slot="lane-change"]')?.textContent).toContain('2 → 4 lanes: applied by someone: room for 2 more');
     await act(async () => { button('Undo: back to 2')!.click(); });
     expect(posts).toEqual([{ path: '/ui/api/lanes/undo', body: { machineId: 'desk' } }]);
   });
@@ -99,10 +110,12 @@ describe('lane tuning on Machines', () => {
     await boot('viewer');
     expect(document.querySelector('[data-slot="lane-recommendation-line"]')).not.toBeNull();
     expect(document.querySelector('[data-slot="lane-tuning-form"]')).toBeNull();
+    expect(button('Apply: 4 lanes')).toBeUndefined();
+    expect(button('Dismiss')).toBeUndefined();
   });
 
   it('a viewer sees no undo', async () => {
-    await boot('viewer', ACTIVE);
+    await boot('viewer', APPLIED);
     expect(document.querySelector('[data-slot="lane-change"]')).not.toBeNull();
     expect(button('Undo: back to 2')).toBeUndefined();
   });
