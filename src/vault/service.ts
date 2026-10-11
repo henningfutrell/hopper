@@ -24,12 +24,13 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
+import { templateChecks, type TemplateChecks } from './checks.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService {
+export interface VaultService extends TemplateChecks {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -39,9 +40,10 @@ export interface VaultService {
   remove(name: string, by: string): VaultResult;
   /**
    * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
-   * a new profile waits for a person's approval; a profile dropped has its approval revoked.
+   * a new profile waits for a person's approval; a profile dropped has its approval revoked. `readOnly` (issue #716): it
+   * takes the read-only check; a template keeps that through every save. A save makes its last check stale.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[] }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
@@ -241,7 +243,7 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles, limits, tools }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
@@ -261,7 +263,7 @@ export function createVaultService(o: {
       o.store.tx(() => {
         vault.saveTemplate({
           name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}),
-          ...(adds.length ? { tools: adds } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
+          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
         events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), secrets: scope, profiles: declared, by } });
@@ -364,6 +366,7 @@ export function createVaultService(o: {
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom,
 
+    ...templateChecks(o.store),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

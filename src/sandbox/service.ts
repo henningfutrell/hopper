@@ -7,12 +7,16 @@ import { randomUUID } from 'node:crypto';
 import type { SandboxesView } from '../domain/machines.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
+import type { ProbeCatalog } from '../domain/read-only-check.ts';
+import { createCheckPass, type CheckTemplates } from './check.ts';
 import { runFlags } from './flags.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
 import { DEFAULT_LIMITS } from './params.ts';
+import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, USER_LABEL, type LaunchRequest } from './launch.ts';
+export { usersTemplates } from './check.ts';
 
 /** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
 export const COMPOSE_NETWORK = 'hopper_default';
@@ -44,6 +48,10 @@ export interface SandboxesOptions {
   waiting(now: Date): Set<string>;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
+  /** The templates the read-only check reads, and where it keeps a check (issue #716). Absent: no check runs. */
+  checks?: CheckTemplates;
+  /** The probes of the read-only check; absent: the hopper's catalog (src/sandbox/probes.ts). */
+  probes?: ProbeCatalog;
 }
 
 export interface Sandboxes {
@@ -55,6 +63,8 @@ export interface Sandboxes {
   launch(userId: string, l: LaunchRequest): Promise<{ container: string }>;
   /** One reconcile pass, at `now` (default the clock's). */
   reconcile(now?: Date): Promise<void>;
+  /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
+  check(): Promise<void>;
   start(): void;
   stop(): void;
 }
@@ -85,6 +95,13 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     }
   };
   const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
+  const checkPass = o.runtime && o.checks
+    ? createCheckPass({ runtime: o.runtime, instanceId: o.instanceId, network: o.network, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
+    : undefined;
+  let checking: Promise<void> | undefined;
+  const check = (): Promise<void> => (checking ??= (checkPass?.() ?? Promise.resolve())
+    .catch((e: unknown) => o.logger.warn(`hopper: the read-only check pass failed: ${e instanceof Error ? e.message : String(e)}`))
+    .finally(() => { checking = undefined; }));
 
   return {
     async view(userId) {
@@ -110,10 +127,12 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     },
 
     reconcile,
+    check,
     start() {
       if (!o.runtime || timer) return;
       void reconcile();
-      timer = setInterval(() => void reconcile(), RECONCILE_MS);
+      void check();
+      timer = setInterval(() => { void reconcile(); void check(); }, RECONCILE_MS);
       timer.unref();
     },
     stop() {

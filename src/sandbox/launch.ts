@@ -2,7 +2,8 @@
 // The record is written before the container is made, so a container of the hopper's never exists without one but
 // while a launch makes it; a launch that fails leaves nothing it made — the container, a volume it made new, the
 // record. A home volume that was there already (a box of that name before it, kept) stays.
-import type { ContainerRuntime, LaunchParams, SandboxRecord } from '../domain/sandboxes.ts';
+import { checkWait } from '../domain/read-only-check.ts';
+import type { BoxTool, ContainerRuntime, LaunchParams, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { isRootUser } from './flags.ts';
@@ -41,26 +42,29 @@ export interface LaunchContext {
   launching: Set<string>;
 }
 
+/** The image a box runs, and its user: `base`, with `tools` added when it names any (issue #716), built once per base and set of tools. */
+export async function boxImage(runtime: ContainerRuntime, base: string, tools: readonly BoxTool[] | undefined): Promise<{ image: string; user: string }> {
+  const read = await runtime.pull(base);
+  if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
+  if (!tools?.length) return { image: base, user: read.user };
+  const built = toolsImage({ image: base, id: read.id }, tools);
+  await runtime.build(built.tag, built.containerfile);
+  return { image: built.tag, user: (await runtime.pull(built.tag)).user };
+}
+
 const profileKey = (p: { operation: string; asset: { kind: string; name: string } }): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
 export async function launchBox(c: LaunchContext, userId: string, l: LaunchRequest): Promise<SandboxRecord> {
   const t = l.template;
   if (t && (t.approval === undefined || t.pending.image)) throw new LaunchRefused(409, `the image of template ${t.name} is not approved: approve it in Settings → Vault first`);
+  // The read-only check (issue #716): a template that needs one starts no box until its current version passed.
+  const waits = t && checkWait(t);
+  if (waits) throw new LaunchRefused(409, waits);
   const resolved = resolveParams(t && { name: t.name, gives: t.gives, profiles: t.profiles.map(profileKey), limits: t.limits, tools: t.tools }, l.params);
   if (!resolved.ok) throw new LaunchRefused(400, resolved.error);
   const { params } = resolved;
 
-  const base = t?.image ?? `${BOX_IMAGE}:box-${l.agent}`;
-  const read = await c.runtime.pull(base);
-  if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
-  // Tools (issue #716): the box runs the base image with them added, built once per base and set of tools.
-  let image = base;
-  if (params.tools) {
-    const built = toolsImage({ image: base, id: read.id }, params.tools);
-    await c.runtime.build(built.tag, built.containerfile);
-    image = built.tag;
-  }
-  const { user } = image === base ? read : await c.runtime.pull(image);
+  const { image, user } = await boxImage(c.runtime, t?.image ?? `${BOX_IMAGE}:box-${l.agent}`, params.tools);
 
   const stem = `hopper-sandbox-${t?.name ?? l.agent}`;
   const taken = new Set([...(await c.runtime.list()).map((x) => x.name), ...c.repo.list().map((r) => r.name)]);

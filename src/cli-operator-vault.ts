@@ -23,6 +23,8 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      approve one write, sync or apply profile explicitly
   hopper template revoke <name>                      revoke its approval: its boxes take no new job and are given nothing
   hopper template remove <name>                      remove it (refused while a box of it is attached)
+  hopper template check <name>                       run its read-only check again (a template a job asked for with
+                                                     read needs only): its boxes wait until it passed
   hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
                                                      the read policy: the assets read is approved on with no person, for a
                                                      template a job asks for; set replaces it, set with none clears it
@@ -35,7 +37,7 @@ export const VAULT_USAGE = `  hopper vault                                      
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared]`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]...';
-const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | read-policy [set <entry>...]';
+const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
@@ -128,7 +130,7 @@ export function templateCall(args: string[]): Call {
   }
   if (!name || flags) throw usage(TEMPLATE_VERBS);
   if (verb === 'approve-profile' && rest.length === 1) return { ...edit({ action: 'approve-profile', name, ...profileOf(rest[0]!) }), pick: templatesOf };
-  const action = { approve: 'approve-template', revoke: 'revoke-template', remove: 'remove-template' }[verb as string];
+  const action = { approve: 'approve-template', revoke: 'revoke-template', remove: 'remove-template', check: 'check-template' }[verb as string];
   if (action && rest.length === 0) return { ...edit({ action, name }), pick: templatesOf };
   throw usage(TEMPLATE_VERBS);
 }

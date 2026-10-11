@@ -3,7 +3,7 @@
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, containerfileTar, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer } from './socket-http.ts';
 
 const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
@@ -79,6 +79,18 @@ export function createPodmanRuntime(socket: string): ContainerRuntime {
     async start(id) {
       const a = await call('POST', `/containers/${enc(id)}/start`);
       if (!ok(a) && a.status !== 304) throw refusal(`start the box ${id}`, a);
+    },
+
+    async wait(id, timeoutMs) {
+      const a = await call('POST', `/containers/${enc(id)}/wait?condition=exited&condition=stopped`, undefined, timeoutMs);
+      if (!ok(a)) throw refusal(`wait for the box ${id}`, a);
+      return Number(a.text.trim());
+    },
+
+    async logs(id) {
+      const a = await socketBytes(socket, 'GET', API + `/containers/${enc(id)}/logs?stdout=true&stderr=true`);
+      if (a.status < 200 || a.status >= 300) throw refusal(`read what the box ${id} wrote`, { status: a.status, text: a.bytes.toString('utf8') });
+      return logText(a.bytes);
     },
 
     async inspect(id) {

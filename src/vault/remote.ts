@@ -98,5 +98,6 @@ export function remoteVault(o: {
     boxRadius: (machine) => o.local.boxRadius(machine),
     boxes: () => o.local.boxes(),
     templateScopes: () => o.local.templateScopes(),
+    recordCheck: (name, check) => o.local.recordCheck(name, check), checkTemplate: (name, by) => o.local.checkTemplate(name, by),
   };
 }

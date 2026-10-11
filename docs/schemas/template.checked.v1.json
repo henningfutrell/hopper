@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "problem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "template",
+    "state",
+    "failed"
+  ],
+  "additionalProperties": false
+}

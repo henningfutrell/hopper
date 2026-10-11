@@ -51,7 +51,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A **template
   request** (issue #716, `docs/design.md` "Templates on request"), `sandbox-template` with the job's needs, saves the
   template those needs name through the vault's own save, never widening one a person changed, and approves it only when
-  it makes it now and the user's **read policy** holds every need as a read; it never approves anything else. A running job's
+  it makes it now and the user's **read policy** holds every need as a read; it never approves anything else. A template of
+  read needs only takes no box until its read-only check passed (issue #716, `docs/design.md` "The read-only check"). A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
   job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh

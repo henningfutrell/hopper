@@ -2,7 +2,7 @@
 // it "starts" does not join by itself: a test joins it with the join line its spec carries, as the box's client would.
 import type { ContainerInfo, ContainerRuntime, ContainerSpec, RuntimeKind } from '../../src/domain/ports.ts';
 
-export interface FakeContainer { id: string; spec: ContainerSpec; state: string }
+export interface FakeContainer { id: string; spec: ContainerSpec; state: string; ran?: Promise<{ exit: number; output: string }> }
 
 export interface FakeContainerRuntime extends ContainerRuntime {
   /** By name. */
@@ -22,6 +22,13 @@ export interface FakeContainerRuntime extends ContainerRuntime {
   removeFails?: string;
   /** Set: every create fails with this reason. */
   createFails?: string;
+  /**
+   * Runs a one-shot container's script (issue #716, the read-only check), as it would in the box: its exit code and what it
+   * wrote. Absent: it writes nothing and ends with 0. test/support/fake-cloud-tools.ts gives one.
+   */
+  runScript?: (spec: ContainerSpec) => Promise<{ exit: number; output: string }>;
+  /** Every one-shot container it ran, by name: its spec, kept after it is removed. */
+  ran: Map<string, ContainerSpec>;
   /** Put a container there as someone else (or the hopper before a restart) made it. */
   put(spec: ContainerSpec): string;
 }
@@ -31,7 +38,7 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
   const byId = (id: string): FakeContainer | undefined => [...e.boxes.values()].find((c) => c.id === id || c.spec.name === id);
   const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, image: c.spec.image, labels: { ...c.spec.labels }, state: c.state });
   const e: FakeContainerRuntime = {
-    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0,
+    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0, ran: new Map(),
     put(spec) {
       const id = `ctr${++n}`;
       e.boxes.set(spec.name, { id, spec: structuredClone(spec), state: 'running' });
@@ -55,7 +62,19 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
       e.boxes.set(spec.name, { id, spec: structuredClone(spec), state: 'created' });
       return id;
     },
-    async start(id) { byId(id)!.state = 'running'; },
+    async start(id) {
+      const c = byId(id)!;
+      c.state = 'running';
+      if (c.spec.script === undefined) return;
+      e.ran.set(c.spec.name, structuredClone(c.spec));
+      c.ran = (e.runScript?.(c.spec) ?? Promise.resolve({ exit: 0, output: '' })).then((r) => { c.state = 'exited'; return r; });
+    },
+    async wait(id) {
+      const ran = byId(id)?.ran;
+      if (!ran) throw new Error(`no one-shot container ${id}`);
+      return (await ran).exit;
+    },
+    async logs(id) { return (await byId(id)?.ran)?.output ?? ''; },
     async inspect(id) { const c = byId(id); return c ? info(c) : undefined; },
     async stop(id) { const c = byId(id); if (c) c.state = 'exited'; },
     async remove(id) {

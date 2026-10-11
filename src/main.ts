@@ -37,7 +37,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { createSandboxes, hopperNetwork, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperNetwork, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -276,7 +276,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       return rt ? sandboxBoxesOf(rt.host) : undefined;
     },
     waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
-    clock, logger,
+    clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);

@@ -2,7 +2,7 @@
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
-import { approvalText, BOX_TOOLS, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, BOX_TOOLS, checkText, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -129,5 +129,22 @@ describe('a template\'s tools (issue #716)', () => {
     expect(toolsText({})).toBe('none');
     expect(toolsText({ tools: ['helm', 'kubectl'] })).toBe('helm, kubectl');
     expect(toolsText({ tools: ['aws', 'kubectl'], approval: { tools: ['kubectl'] } })).toBe('aws (waits), kubectl');
+  });
+});
+
+describe('a template\'s read-only check on the page (issue #716)', () => {
+  const at = '2026-10-10T20:00:00.000Z';
+  const probe = (id: string, passed: boolean, outcome: string) => ({ id, asset: 'lab', outcome, passed });
+  it('none for a template that takes no check', () => {
+    expect(checkText({ savedAt: at })).toBeUndefined();
+  });
+  it('not run, running, passed and failed; a check of an older version is not run on this one', () => {
+    expect(checkText({ readOnly: true, savedAt: at })).toEqual({ text: 'not run on this version yet: it runs once the template is approved', waits: true });
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: 'older', state: 'passed', probes: [] } })?.waits).toBe(true);
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'running', probes: [] } })).toEqual({ text: 'runs now', waits: true });
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'passed', probes: [probe('kube.get', true, 'allowed')] } }))
+      .toEqual({ text: 'passed: 1 probes, every write refused, every read worked', waits: false });
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'failed', probes: [probe('kube.get', true, 'allowed'), probe('kube.create-namespace', false, 'allowed')], problem: 'it ran out of time' } }))
+      .toEqual({ text: 'failed: kube.create-namespace on lab (allowed); it ran out of time', waits: true });
   });
 });

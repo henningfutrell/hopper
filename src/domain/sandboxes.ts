@@ -33,6 +33,11 @@ export interface ContainerSpec {
   limits: ResourceLimits;
   /** The user it runs as: the image's own, never root (the launch refuses an image that runs as root). */
   user: string;
+  /**
+   * A one-shot container (issue #716, the read-only check): it runs `sh -c <script>` in place of the image's entrypoint,
+   * on a terminal, and is not restarted when it ends. Absent: a box, which runs its image's entrypoint and is restarted.
+   */
+  script?: string;
 }
 
 /** What the hopper reads of an image: the user it runs as (`''`: none set, which is root), and its id when the runtime says. */
@@ -70,6 +75,10 @@ export interface ContainerRuntime {
   /** Create the container; answers its id. */
   create(spec: ContainerSpec): Promise<string>;
   start(id: string): Promise<void>;
+  /** Waits until the container ends, at most `timeoutMs`; answers its exit code. Throws when it did not end in time. */
+  wait(id: string, timeoutMs: number): Promise<number>;
+  /** What the container wrote (it runs on a terminal: one stream, as written). */
+  logs(id: string): Promise<string>;
   /** The container by id or name; undefined: no such container. */
   inspect(id: string): Promise<ContainerInfo | undefined>;
   /** Stop it (a grace period, then killed); one already stopped or gone is no error. */

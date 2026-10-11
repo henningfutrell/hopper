@@ -44,7 +44,7 @@ const SHUTDOWN_WAIT_MS = 5000;
  * a lane, and one sent back or accepted on to the next section requeues its job (issues #537, #543); a discovery that
  * changed a machine, new blast-radius settings and a job let through the gate change which machines a job may take
  * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548); a template
- * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605); a lane recommendation applied or undone changes a machine's lanes (issue #688). */
+ * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605); a read-only check ended or asked for again changes whether its boxes take a job (issue #716); a lane recommendation applied or undone changes a machine's lanes (issue #688). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
@@ -52,7 +52,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.parked', 'job.unparked', 'job.continued', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
   'machine.discovered', 'blast_radius.settings_changed', 'vault.approved', 'vault.revoked', 'job.gate_passed', 'job.forked',
-  'template.saved', 'template.removed', 'template.profile_approved', 'vault.secret_set', 'vault.secret_removed',
+  'template.saved', 'template.removed', 'template.profile_approved', 'template.checked', 'template.check_requested', 'vault.secret_set', 'vault.secret_removed',
   'lanes.applied', 'lanes.undone',
 ]);
 

@@ -10,6 +10,9 @@
 //     Given the read policy holds cluster/lab and aws-account/*
 //     And a job running on the hopper's machine
 //     When the job runs `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012"`
+//     Then the template is approved by the read policy, and the job waits for its read-only check (issue #716, item 4;
+//       test/integration/read-only-check.test.ts)
+//     When the check passes
 //     Then the answer is 200: the template, approved by the read policy, and the skills its box loads
 //     And the vault holds the template: the box image, the tools its needs use (issue #716, item 2), no secret, the two
 //       read profiles, approved, nothing pending
@@ -35,6 +38,8 @@ import type { AccessDecisionRecord, TemplateView, VaultView } from '../../src/do
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
+import { createFakeCloudTools } from '../support/fake-cloud-tools.ts';
+import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 
@@ -59,7 +64,12 @@ const temp = (prefix: string): string => {
 async function boot(policy?: string[]): Promise<{ a: TestApp; token: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer() } });
+  // The read-only check's box runs its script with fake tools that refuse every write (issue #716, item 4).
+  const cloud = createFakeCloudTools('read-only');
+  cleanups.push(cloud.cleanup);
+  const runtime = createFakeContainerRuntime();
+  runtime.runScript = cloud.runScript;
+  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);
   const token = await a.login();
   if (policy) expect((await a.ui('/ui/api/vault', { action: 'set-read-policy', assets: policy }, { token })).status).toBe(200);
@@ -109,6 +119,10 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('read needs inside the read policy are approved with no person; the same needs again get the same template', async () => {
     const { a, token } = await boot(['cluster/lab', 'aws-account/*']);
     const creds = await runningJob(a);
+    const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012']);
+    expect(first.code, first.stdout).toBe(3);
+    expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ is approved; waiting for the read-only check of asked-[0-9a-f]+: it has not run on this version yet/);
+    await a.app.sandboxes.check();
     const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012']);
     expect(r.code, r.stdout).toBe(0);
     const [t] = await asked(a, token);
@@ -168,8 +182,10 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('a template a person changed since a job asked for it is never widened back by a job; a revoked one is not approved again', async () => {
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    expect((await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab'])).code).toBe(0);
+    // Approved by the policy; it waits for its read-only check (issue #716, item 4).
+    expect((await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab'])).code).toBe(3);
     const [t] = await asked(a, token);
+    expect(t!.approval?.by).toBe('the read policy');
 
     // A person revokes it: the policy does not approve it again.
     expect((await a.ui('/ui/api/vault', { action: 'revoke-template', name: t!.name }, { token })).status).toBe(200);

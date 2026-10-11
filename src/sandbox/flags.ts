@@ -36,7 +36,8 @@ export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
       cpu: { quota: Math.round(spec.limits.cpus * CPU_PERIOD), period: CPU_PERIOD },
       memory: { limit: spec.limits.memoryMb * MIB },
     },
-    restart_policy: 'unless-stopped',
+    // A one-shot container (issue #716): its script on a terminal, in place of the entrypoint, never restarted.
+    ...(spec.script !== undefined ? { entrypoint: ['/bin/sh'], command: ['-c', spec.script], terminal: true, restart_policy: 'no' } : { restart_policy: 'unless-stopped' }),
     ...(spec.network === 'host' ? { netns: { nsmode: 'host' } } : { netns: { nsmode: 'bridge' }, networks: { [spec.network]: {} } }),
   };
 }
@@ -45,12 +46,13 @@ export function libpodCreateBody(spec: ContainerSpec): Record<string, unknown> {
 export function dockerCreateBody(spec: ContainerSpec): Record<string, unknown> {
   return {
     Image: spec.image, Labels: spec.labels, User: spec.user, Env: Object.entries(spec.env).map(([k, v]) => `${k}=${v}`),
+    ...(spec.script !== undefined ? { Entrypoint: ['/bin/sh'], Cmd: ['-c', spec.script], Tty: true } : {}),
     HostConfig: {
       CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], ReadonlyRootfs: true,
       Tmpfs: { '/tmp': TMPFS_OPTIONS.join(',') },
       Mounts: [{ Type: 'volume', Source: spec.volume, Target: HOME }],
       NanoCpus: Math.round(spec.limits.cpus * 1e9), Memory: spec.limits.memoryMb * MIB,
-      RestartPolicy: { Name: 'unless-stopped' },
+      RestartPolicy: { Name: spec.script !== undefined ? 'no' : 'unless-stopped' },
       NetworkMode: spec.network,
     },
   };

@@ -2,6 +2,9 @@
 // in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
+import { checkWait, type ReadOnlyCheck } from './read-only-check.ts';
+
+export * from './read-only-check.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
@@ -205,6 +208,13 @@ export interface Template {
    * so approved with its image: a change waits for a person as a new image does. Absent: none.
    */
   tools?: BoxTool[];
+  /**
+   * A template a job asked for with read needs only (issue #716, item 4): it takes no box and no job until the read-only
+   * check of its current version passed. Kept through every save. Absent: no check.
+   */
+  readOnly?: true;
+  /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
+  check?: ReadOnlyCheck;
   savedBy: string;
   savedAt: string;
   /** The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved. */
@@ -240,14 +250,15 @@ export function givesOf(t: Template): string[] {
 
 /**
  * Why a box of the template `name` takes no new job (issue #602), or undefined when the template is approved: saved, and
- * approved with the image it names now. A scope widened since keeps its boxes working on what was approved.
+ * approved with the image it names now, and (issue #716) its read-only check passed when it needs one. A scope widened
+ * since keeps its boxes working on what was approved.
  */
 export function approvalWait(name: string, t: Template | undefined): string | undefined {
   const wait = 'waiting for template approval';
   if (!t) return `${wait}: no template ${name} is saved`;
   if (!t.approval) return `${wait}: ${name} is not approved`;
   if (!imageApproved(t)) return `${wait}: the image of ${name} changed since it was approved`;
-  return undefined;
+  return checkWait(t);
 }
 
 /** The template's view, with the profiles access approves it for (`approvedProfiles`) and its rating. */
