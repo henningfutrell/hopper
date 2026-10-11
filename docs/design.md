@@ -6638,7 +6638,18 @@ Refused (409): while limited (no key to rotate from), and while the vault runs i
 (`HOPPER_VAULT_URL`): that process keeps the key it was started with, so it is rotated at launch instead
 (`HOPPER_MASTER_KEY` new, `HOPPER_MASTER_KEY_PREVIOUS` old, docs/deploy.md).
 
-Carried, part 3 of issue #659: an optional KMS as the master key's source.
+#### A KMS as the master key's source: not built (issue #659, decided 2026-10-10)
+
+Requirement 1 of issue #659 named an optional KMS as a second source of the master key. It is not built:
+`HOPPER_MASTER_KEY` is the only source. The reason is the issue's own done line, "no hopper secret depends on a
+volume". The only KMS the hopper has (local-kms, the compose profile `kms`, "The KMS: an optional key provider"
+below) keeps its key material in its `/data` volume. A master key it wraps would make every secret depend on that
+volume again; on a tmpfs volume the key would be gone after a full stop. An outside KMS (AWS KMS) has no such volume,
+but it needs credential handling the hopper does not have, which is outside issue #659.
+
+A KMS-wrapped master key is deferred to issue #558 (the key service, always optional). If it is built, it may only use
+a KMS whose key material does not live in a hopper volume: the compose `kms` service is never a source of the master
+key. The KMS's data key for the vault's own secrets (issue #586) is not changed by this decision.
 
 `HOPPER_SECRET_KEY` and the secret box of issue #55 stay gone: a leftover `HOPPER_SECRET_KEY` is a
 leftover variable (boot warning; delete the line). A webhooks-document entry with an inline `secret` —
