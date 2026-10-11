@@ -758,7 +758,7 @@ Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finishe
 | `notes` | string | yes |
 | `nextJobId` | string | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {

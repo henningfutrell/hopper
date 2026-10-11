@@ -35,7 +35,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/jobs/:id/rework', o.operator, async (req) => {
     const { notes } = parseWith(reworkBody, req.body ?? {});
     const s = signedInOf(req);
-    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s.identity) : undefined);
+    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s) : undefined);
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });

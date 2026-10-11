@@ -96,12 +96,9 @@ function jobCall(args: string[]): Call {
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
-  if (verb === 'rework') {
-    if (values.notes === undefined || values.reason !== undefined) throw usage('job rework <id> --notes <text>');
-    const notes = values.notes;
-    return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
-  }
-  if (values.notes !== undefined) throw usage('job rework <id> --notes <text>');
+  const notes = values.notes;
+  if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
+  if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
