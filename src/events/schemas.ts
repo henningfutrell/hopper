@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, answerHold, bugReportEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 // A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
@@ -349,10 +349,12 @@ export const EVENT_SCHEMAS = {
   'vault.credential_declined': strict({ request: z.string(), skill: z.string(), template: z.string(), reason: z.string(), by: z.string(), jobs: z.array(z.string()) }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
-  // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url.
+  // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
+  // forked (issue #429): its url, no number; a fork names the fork.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
+    strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional() }),
   ]),
   'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string() }),
   'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }),
@@ -366,7 +368,7 @@ export const EVENT_SCHEMAS = {
   ...ITEM_EVENT_SCHEMAS,
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents,
+  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...contributionEvents,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

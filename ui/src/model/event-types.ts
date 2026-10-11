@@ -44,7 +44,7 @@ const ALL: Record<EventType, true> = {
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
   'lanes.recommended': true, 'lanes.tuning_changed': true, 'lanes.applied': true, 'lanes.undone': true, 'lanes.dismissed': true,
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
-  'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true,
+  'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

@@ -40,7 +40,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   honoured only while the job is at work — asks the hopper to act on GitHub with its own connection; it changes no job,
   question, webhook or setting, only records what it did. A running job's git (issue #652, `docs/design.md` "Git through the
   hopper"): `GET`/`POST /job/git/<owner>/<name>.git/…`, git's smart HTTP with the job's proxy token as its password, fetches
-  and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository, never its
+  and pushes on GitHub with the job's own user's connection — a push only to a branch of the job's own repository, or, with
+  the user's **Contribution** on (issue #429, `docs/design.md` "The contribution flow"), of the user's fork of it, never its
   default or a release branch —; it changes no job, question, webhook or setting, only records a push. **A job holds no
   GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
@@ -94,7 +95,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   assigns a labelled issue to the user's connected account; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
   label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's; Queue job for a job repository with no checks (issue #677) files "Add PR checks to <repo>" on that repository through the person's own connection — an issue with the hopper label, assigned to their connected account, its text fixed —, once: an open one of that title is answered instead. A job's own request through the GitHub proxy (issue #563) is
-the job's act, as when it pushes: its text is the job's, under the publishing rule; an issue filed that way ends with the
+the job's act, as when it pushes: its text is the job's, under the publishing rule; so are, with the user's Contribution on
+(issue #429), the fork of a repository its user cannot push to and the pull request it opens there from that fork; an issue filed that way ends with the
 hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon
   keeps is in the database `HOPPER_DATABASE_URL` names; config is config records in it — JSON values

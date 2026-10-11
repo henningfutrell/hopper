@@ -11207,7 +11207,7 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
 1. the token: its user's runtime, its link key, its job, at work — else **401**;
 2. the request's shape (`proxyRequest`, strict: no labels, no assignees, GitHub's length limits) — else **400**;
 3. who asks (`checkRequest`, `src/github-proxy/policy.ts`): the repository must be one of the hopper's user's **job
-   repositories**; the hopper's **own job** (a job of that user) may ask every operation, a pull request only on its own
+   repositories**, or the **job's fork** ("The contribution flow"); the hopper's **own job** (a job of that user) may ask every operation, a pull request only on its own
    repository (its source's, a fork's parent's); **another user's job** only `issue.create` — else **403** with the reason;
 4. the hopper's GitHub connection: none, or its sign-in ended — **503** saying so;
 5. the rate limits (`src/github-proxy/limits.ts`, per hour, per job and per machine: `issue.create` 5 and 20,
@@ -11290,7 +11290,8 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
 3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
-   when that is one of its user's **job repositories** — else **403** with the reason, which git shows as `remote: …`;
+   when that is one of its user's **job repositories** and the user can push to it, or to the **job's fork** ("The
+   contribution flow") — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -13373,3 +13374,81 @@ clone in the scratch dir, the work tree untouched; one lane, two jobs of two rep
 its own; a later job fetches; a checkout of another repository there is refused; the reap keeps the checkout; the
 job's own repository in any case as before), `test/herdr/executor-job-worktree.test.ts` (the executor's side over
 the fake herdr: the checkout saved and named in the prompt; the job's own repository unchanged).
+
+## The contribution flow (issue #429, 2026-10-11)
+
+Part of the pointed-job architecture (tracking issue #424, job 5 of 13). Owner requirement: for a repository the user does
+not own, a job forks it, clones the fork, reads `CONTRIBUTING.md` and the files beside it (the pull request template, the
+code of conduct, a CLA) and follows them, and opens its pull request upstream from the fork; when the repository takes no
+issues, it files its issue on the fork and links back. Settings live in the database, are edited in the UI, and apply
+without a restart.
+
+**Assumptions about other work.** The pointed-job record (#425) is not on `dev`. This works on the job's own repository
+as the GitHub proxy already names it (`job.source.repo`, a fork's parent's): what a pointed-job record names too.
+Repository-agnostic lanes (#431) give the job a worktree of a checkout of that repository; the job clones its fork
+beside it, in its scratch dir. How a job of a repository the user does not own comes to exist
+is #425's; until then, an issue there that a person approved as a request card, in a job repository, is one. "The user
+cannot push to it" is GitHub's own answer (`permissions.push` of `GET /repos/{owner}/{repo}` with the user's connection),
+not ownership: a collaborator pushes as before.
+
+**Contribution** (`src/domain/contribution.ts`, the user's setting `contribution`, `{ on }`): off unless an admin turns
+it on (Settings → Contribution; `GET /api/contribution`, `POST /ui/api/contribution` `{ on }`, admin;
+`contribution.changed { from, to, by }`), since the fork, the pull request and an issue go out under the user's account,
+on somebody else's repository. Read at each request a job makes (the proxy's connection and the git user,
+`src/users/github-proxy.ts`), so it applies without a restart. A fork made while it was on stays on GitHub; nothing is
+pushed to it or opened from it while it is off.
+
+**The job's fork.** A repository that GitHub says is a fork (`fork`) whose `parent` or `source` is the job's own
+repository, owned by the login of the user's connection. The hopper reads it from GitHub when it can matter — Contribution
+on, the request's owner the user's login, the repository no job repository — and never keeps it: a fork deleted on
+GitHub is no fork at the next request.
+
+**`hopper-gh` additions** (`src/github-proxy/policy.ts`, `api.ts`, `script.ts`):
+
+| command | what | who |
+|---------|------|-----|
+| `repo view --repo R` | `canPush`, `hasIssues`, `defaultBranch`, `fork`, `parent`, and `contribution` (the setting) | the hopper's own job; on a job repository or the job's fork |
+| `repo fork --repo R` | forks R into the user's account (`POST /repos/{o}/{r}/forks`, `default_branch_only`), or answers the fork the user has (GitHub makes one only once); when R takes no issues, turns the fork's issues on (`PATCH`, `has_issues`); answers `fork`, `url`, `defaultBranch`, `issues` (where an issue goes, or `issuesError`), and `next`: the steps | the hopper's own job; R its own repository; Contribution on; refused when the user can push to R |
+| `pr create --head LOGIN:BRANCH` | a pull request on the job's own repository from a branch of the fork | the same; LOGIN the user's login, Contribution on |
+| `issue create\|comment\|view`, `pr view` on the fork | as on a job repository; a filed issue names the job's issue as its parent (issue #729), the link back | the hopper's own job, Contribution on |
+
+A pull request opened on the fork is refused, naming the command that opens it upstream. Rate limits: `repo.fork` 3 per job
+and 20 per machine in an hour, `repo.view` as the other reads. Each is an event on the job's timeline as before
+(`github_proxy.done` gains `op` `repo.view`, `repo.fork`, with `url` and, for a fork, `fork`; no `number`).
+
+**`next`** (`contributionSteps`): clone the fork; before making a branch, read `CONTRIBUTING.md` (also under `.github/`
+and `docs/`), the pull request template, `CODE_OF_CONDUCT.md` and a CLA if named; follow the branch name, the commit style,
+the tests and the template; when a CLA needs a person to sign it, ask; push to the fork; open the pull request upstream
+with `--head <login>:<branch>`; and where an issue goes. The hopper reads none of these files itself: the job has the
+clone, and a rule the hopper parsed would be a second, weaker reader of text the maintainers wrote for people.
+
+**Git** (`src/github-proxy/git-broker.ts`): a push to the job's own repository first reads it (the read that already gave
+the default branch): a user who cannot push is refused before GitHub refuses it — with Contribution on, `your user cannot
+push to R: contribute through a fork: sh "$HOPPER_GH" repo fork --repo R, then push your branch to the fork`; off, the same
+and that a person turns it on. A push to the job's fork goes with the user's connection under the same ref check
+(`checkPush`, its own default branch and the release branches kept); a fetch of it goes with the connection too, so a fork
+of a private repository clones. Any other repository is refused as before.
+
+**The job is told** (`GITHUB_PROXY_LINE`, every job's protocol): when `repo view` says its user cannot push to the
+repository, contribute through a fork; the help says how. One sentence, not the steps: a job of the user's own repository
+pays nothing more, and the steps come with the fork.
+
+**Not built** (each a later part of #424): a job record that points at an unowned repository's issue without a source
+label (#425); following the upstream pull request to completion when no job repository holds it (#428); a per-repository
+policy on what a job may post there without review (#435). Yolo mode is the user's per repository; on a repository the
+user cannot push to, GitHub refuses the hopper's merge, which is kept on the pull request (`mergeError`) and never fails
+the job: leave it off there.
+
+**Residual risk.** A job with Contribution on can open pull requests and file issues on any job repository its user
+cannot push to, under the user's account: the setting is the policy until #435. The fork is the user's own repository: a
+job may push any branch of it but its default and the release branches, as on its own repository.
+
+Tests: `test/integration/contribution.test.ts` (the real daemon, a fake GitHub with forks and git's own
+`git-http-backend`, the real git and `hopper-gh`: off by default and refused saying so; on — a push upstream refused naming
+the fork command, the fork made and answered again, the branch pushed to the fork, its default and `main` refused, the pull
+request upstream from it, another login's head refused, a pull request on the fork refused; a repository with no issues —
+the fork's issues on, the issue filed there with its parent; a repository that is no fork of the job's refused; a
+repository the user can push to not forked; turned off after the fork — a push and a pull request refused; the setting's
+guards), `test/github-proxy/contribution.test.ts` (the policy and the steps), `test/ui/contribution.test.ts` (the panel's
+summary and note).
+

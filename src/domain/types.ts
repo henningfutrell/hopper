@@ -509,6 +509,7 @@ export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './yolo-mode.ts';
+export * from './contribution.ts';
 export * from './pull-requests.ts';
 export * from './pull-request-list.ts';
 export * from './priority.ts';

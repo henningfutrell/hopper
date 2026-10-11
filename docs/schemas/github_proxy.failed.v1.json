@@ -28,7 +28,9 @@
             "issue.close",
             "pr.create",
             "pr.view",
-            "pr.ready"
+            "pr.ready",
+            "repo.view",
+            "repo.fork"
           ]
         },
         {
