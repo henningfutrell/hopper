@@ -1,10 +1,11 @@
 // A job's pull request after done (issue #579, design.md "Done is a pull request"). Whether a job that ended done is
 // done, partly done or not (`judge`): done — its source finds its work complete; partly done — not complete, but its
 // own pull request ships part of its item ("Part of #N"); else not, with why — and, when the job's own pull request is
-// left with merge conflicts or as a draft, the fixed step that finishes it (issue #626): the job goes on with its brief
-// in place of a hand-off. And what a source tells the sync loop when it follows an ended job's pull request: merged, or
-// closed without a merge. And rework (issue #724): a person sends a done job's open pull request back with notes, and the
-// brief its new job is told. Pure but for the source it asks.
+// left with merge conflicts, failing checks or as a draft, the fixed step that finishes it (issues #626, #736): the job
+// goes on with its brief in place of a hand-off. And what a source tells the sync loop when it follows an ended job's pull
+// request: merged, or closed without a merge — and, while it waits, the step that tends it (issue #736). And rework
+// (issue #724): a person sends a done job's open pull request back with notes, and the brief its new job is told. Pure
+// but for the source it asks.
 import type { ActingPerson } from './failures.ts';
 import type { Job } from './types.ts';
 
@@ -90,29 +91,67 @@ export interface FollowUp {
   state: Record<string, unknown>;
 }
 
-/** The fixed step that finishes a job's own pull request (issue #626): `rebase` onto its base, or `mark_ready` for review. */
-export const FINISH_STEPS = ['rebase', 'mark_ready'] as const;
+/**
+ * The fixed step that finishes a job's own pull request (issue #626): `rebase` onto its base, `fix_checks` that fail
+ * (issue #736), or `mark_ready` for review.
+ */
+export const FINISH_STEPS = ['rebase', 'fix_checks', 'mark_ready'] as const;
 export type FinishStep = (typeof FINISH_STEPS)[number];
 
 /** The job's own pull request, by URL, and the step that finishes it. */
 export interface UnfinishedPullRequest { pullRequest: string; step: FinishStep }
 
-/** The most finish briefs one run of a job gets (issue #626): rebase, then mark ready. Then it fails, as before. */
-export const MAX_FINISH_BRIEFS = 2;
+/** The most finish briefs one run of a job gets (issues #626, #736): rebase, fix the checks, mark ready. Then it fails, as before. */
+export const MAX_FINISH_BRIEFS = 3;
 
 const numberOf = (url: string): string => /\/pull\/(\d+)/.exec(url)?.[1] ?? '';
 const repoOf = (url: string): string => /\/([^/]+\/[^/]+)\/pull\//.exec(url)?.[1] ?? '';
 
+/** The steps of a finish brief or a tend brief: fixed text, no model call. */
+function stepLines(f: UnfinishedPullRequest): string[] {
+  if (f.step === 'rebase') {
+    return [`Your pull request ${f.pullRequest} has merge conflicts with its base branch. The job is not done yet.`,
+      'Fetch the base branch.', 'Rebase your branch onto it.', 'Resolve every conflict and keep the intent of both sides.',
+      'Run the repo\'s checks.', 'Push the branch with --force-with-lease.'];
+  }
+  if (f.step === 'fix_checks') {
+    return [`The checks of your pull request ${f.pullRequest} fail. The job is not done yet.`,
+      'Read the failing checks and their logs.', 'Fix the cause on the branch of the pull request.',
+      'Run the repo\'s checks.', 'Push the branch.'];
+  }
+  return [`Your pull request ${f.pullRequest} is a draft. A draft is not done.`,
+    'Make sure the repo\'s checks pass.', `Mark the pull request ready for review: sh "$HOPPER_GH" pr ready ${numberOf(f.pullRequest)} --repo ${repoOf(f.pullRequest)}.`];
+}
+
 /** What the job is told to finish its pull request (issue #626): fixed text, no model call. Through the hopper (issue #652). */
 export function finishBrief(f: UnfinishedPullRequest): string {
-  const lines = f.step === 'rebase'
-    ? [`Your pull request ${f.pullRequest} has merge conflicts with its base branch. The job is not done yet.`,
-      'Fetch the base branch.', 'Rebase your branch onto it.', 'Resolve every conflict and keep the intent of both sides.',
-      'Run the repo\'s checks.', 'Push the branch with --force-with-lease.']
-    : [`Your pull request ${f.pullRequest} is a draft. A draft is not done.`,
-      'Make sure the repo\'s checks pass.', `Mark the pull request ready for review: sh "$HOPPER_GH" pr ready ${numberOf(f.pullRequest)} --repo ${repoOf(f.pullRequest)}.`];
-  return [...lines, 'Do not open a new pull request.', 'Then end the job as done.'].join('\n');
+  return [...stepLines(f), 'Do not open a new pull request.', 'Then end the job as done.'].join('\n');
 }
+
+/** The tend steps (issue #736): what makes a waiting pull request need its job again. A draft is a person's, never tended. */
+export const TEND_STEPS = ['rebase', 'fix_checks'] as const satisfies readonly FinishStep[];
+export type TendStep = (typeof TEND_STEPS)[number];
+
+/** The most tends in a row of one pull request (issue #736): then it waits on a person, as it did before tending. */
+export const MAX_TENDS = 3;
+
+/** The step that tends a waiting pull request as last seen (issue #736): merge conflicts first, then failing checks. */
+export const tendStep = (seen: PullRequestSeen | undefined): TendStep | undefined =>
+  !seen || seen.draft ? undefined : seen.conflicting ? 'rebase' : seen.checks === 'failing' ? 'fix_checks' : undefined;
+
+/**
+ * What the item's new job is told after its prompt when the hopper tends its waiting pull request (issue #736): go on with
+ * that pull request, the step, and to fail saying why when it cannot. Fixed text, no model call.
+ */
+export function tendBrief(pullRequest: string, step: TendStep): string {
+  return [`The hopper runs this issue again to tend its open pull request ${pullRequest}.`,
+    `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step }), 'Do not open a new pull request.',
+    'If you cannot resolve a conflict or fix a check, end the job as failed. Say which files or checks, and why.',
+    'Then end the job as done.'].join('\n');
+}
+
+/** What a tend left on the job it tended (issue #736), in its source state (`tended`): it follows no more. When: `job.pull_request_tended`. */
+export interface Tended { pullRequest: string; step: TendStep; nextJobId: string }
 
 /**
  * Set on the job that reworks a pull request (issue #724): the pull request a person sent back, their notes, when, and who
@@ -175,6 +214,19 @@ export async function overAtSource(source: { notComplete?: NotComplete; partlyDo
 /** Whether a failed job's work is done at its source (issue #637), asked before any run again: false for a source that does not judge. */
 export async function doneAtSource(source: { notComplete?: NotComplete } | undefined, job: Job): Promise<boolean> {
   return source?.notComplete ? (await source.notComplete(job)) === undefined : false;
+}
+
+/**
+ * How many tends in a row brought pull request `url` to job `job` (issue #736): the jobs it runs again (`rerunOf`), back to
+ * the first that did not tend `url`.
+ */
+export function tendsInRow(job: Job, url: string, get: (id: string) => Job | undefined): number {
+  let n = 0;
+  for (let j = job.rerunOf ? get(job.rerunOf) : undefined; j; j = j.rerunOf ? get(j.rerunOf) : undefined) {
+    if ((j.sourceState?.source as { tended?: Tended } | undefined)?.tended?.pullRequest !== url) break;
+    n += 1;
+  }
+  return n;
 }
 
 /** A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724). */

@@ -113,7 +113,7 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     expect(merged.data).toMatchObject({ byHopper: true });
   });
 
-  it('test 9 — yolo on, the merge waits or fails: the job stays done, no failure record, the pull request stays in the list', async () => {
+  it('test 9 — yolo on, the merge waits or fails: the job stays done, no failure record; merge conflicts are tended (issue #736)', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const token = await app.login();
@@ -130,15 +130,14 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     const refused = await waitFor(async () => { const c = await cardOf(app, w.job.id); return c?.waits === 'merge refused' ? c : undefined; }, { what: 'the merge refused' });
     expect(refused).toMatchObject({ state: 'open', checks: 'passing', mergeError: expect.stringContaining('not mergeable') });
 
-    // Merge conflicts after done: it waits on them; never a merge, never a failure.
+    // Merge conflicts after done: never a merge, never a failure; it is tended (issue #736), its item runs again.
     gh.pushToPullRequest(w.url, now(), { conflicting: true });
     await app.sync();
-    await waitFor(async () => (await cardOf(app, w.job.id))?.waits === 'conflicts', { what: 'waits on its conflicts' });
-    expect((await cardOf(app, w.job.id))!.mergeable).toBe('conflicts');
+    await waitFor(async () => (await app.events('types=job.pull_request_tended')).some((e) => e.jobId === w.job.id), { what: 'tended' });
     expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
     expect((await app.job(w.job.id)).status).toBe('finished');
     expect((await failuresOf(app)).recent.filter((r) => r.jobId === w.job.id)).toEqual([]);
-    expect(await app.events('types=job.failed')).toEqual([]);
+    expect((await app.events('types=job.failed')).filter((e) => e.jobId === w.job.id)).toEqual([]);
   });
 
   it('test 11 — each card has its state and its repository\'s yolo badge; the header says how much yolo is on and where merging waits; the CLI answers the same', async () => {

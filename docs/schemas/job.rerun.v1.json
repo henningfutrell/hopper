@@ -6,7 +6,8 @@
       "type": "string",
       "enum": [
         "user",
-        "assessor"
+        "assessor",
+        "tending"
       ]
     },
     "person": {

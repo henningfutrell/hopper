@@ -1816,8 +1816,10 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    `state_reason` is completed, or its last close event's closer is a merged pull request and it is not closed as not
    planned). Closed as not planned is not done.
 2. A pull request **of the issue's repo that closes or references it** — `closedByPullRequestsReferences` (a closing
-   keyword, to the default branch), or a cross-reference (`Refs #N`, any mention) — is open, not a draft and has no merge
-   conflicts (GraphQL `mergeable` is not `CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it), or is
+   keyword, to the default branch), or a cross-reference (`Refs #N`, any mention) — is open, not a draft, has no merge
+   conflicts (GraphQL `mergeable` is not `CONFLICTING`; `UNKNOWN`, not yet computed, does not count against it) and no
+   failing checks (issue #736: its head commit's status check rollup is not `FAILURE`/`ERROR`; checks still running, or
+   none, do not count against it — the hopper merges only once they pass), or is
    merged at or after the job's `createdAt`. Whoever opened it, whenever. One that says `Part of #N` ships a part, not the
    whole (partly done, below). A merge before the job, on an issue still open, is work the job was asked to redo: not done.
    An open pull request of the repo that names the issue **only on its branch** (`namesIssue`: `issue-N`, `issue_N`,
@@ -1843,15 +1845,31 @@ for an update, the named pull requests and their state. **A miss is asked again*
 (default 60 s): GitHub may list a new pull request, or a new head commit, only some seconds after the push. The failure
 assessor looks a third time before it assesses the failure ("Failure assessment": a done-check miss).
 
-**A pull request left in conflict or as a draft** (issue #626) is not done, but the next step is fixed, so no person
-is asked. When a done job is neither complete nor partly done, the runner asks its source for the job's own open pull
-request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the issue or ships part of
-it): with merge conflicts, `rebase` it onto its base branch (conflicts come first: a draft with them is rebased); a draft
-free of them, `mark_ready` it for review. The job then goes on in its own session (`Executor.resume`, in the same pane
-and work tree) told that step's **finish brief** (`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model
-call, recorded as `job.finish_briefed`. Its next end is judged again. At most `MAX_FINISH_BRIEFS` (2) per run; after them,
-or with no such pull request, an executor that cannot resume, or any other state, the job fails `not complete:` and is
-handed to a person as before.
+**A pull request left in conflict, with failing checks or as a draft** (issues #626, #736) is not done, but the next
+step is fixed, so no person is asked. When a done job is neither complete nor partly done, the runner asks its source for
+the job's own open pull request that one step finishes (`JobSource.unfinishedPullRequest`; for GitHub one that closes the
+issue or ships part of it): with merge conflicts, `rebase` it onto its base branch (conflicts come first: a draft with
+them is rebased); with failing checks, `fix_checks`; a draft free of both, `mark_ready` it for review. The job then goes
+on in its own session (`Executor.resume`, in the same pane and work tree) told that step's **finish brief**
+(`finishBrief`, `src/domain/pull-requests.ts`): fixed text, no model call, recorded as `job.finish_briefed`. Its next end
+is judged again. At most `MAX_FINISH_BRIEFS` (3) per run; after them, or with no such pull request, an executor that
+cannot resume, or any other state, the job fails `not complete:` and is handed to a person as before.
+
+**Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
+can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
+follows it (`follow.ts`) and keeps what it saw (`seen`); after that follow, off the job's report chain, the sync loop's
+after-done half (`src/sources/after-done.ts`) asks `tendStep(seen)`: merge conflicts → `rebase`, else failing checks →
+`fix_checks`; a draft is a person's and is never tended. A step due, the job's item **runs again** on Run again's own path
+(`job.rerun`, `by: "tending"`), its prompt followed by the **tend brief** (`tendBrief`: work on that pull request's
+branch, the step's lines, open no new pull request, and fail saying which files or checks and why when it cannot). The
+tended job follows it no more (`follow: tended`, `tended` names the pull request, the step and the new job) and
+`job.pull_request_tended` records it. The new job is judged as any other: done once the same pull request is ready again
+(an older pull request counts, rule 2 above; a part counts when the job pushed to it, `isUpdatedBy`), and it then waits
+and is followed in its turn; a job that cannot ends failed, and its hand-off in Needs a person says why — the problem card.
+At most `MAX_TENDS` (3) tends in a row of one pull request (`tendsInRow`, along `rerunOf`): then it waits on a person, as
+before tending, its card on the Pull requests list saying `conflicts` or `checks failing`. A refusal because a newer job of
+the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
+it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
 to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests

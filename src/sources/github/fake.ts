@@ -38,6 +38,8 @@ export interface FakeGitHub extends GitHubApi {
   openUnlinkedPullRequest(repo: string, pr: PullRequestInput & { headRef: string }): OpenPullRequest;
   /** Its head commit's checks now (issue #637); undefined: none. */
   setChecks(url: string, checks: ChecksState | undefined): void;
+  /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
+  setConflicting(url: string, conflicting: boolean): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */
@@ -301,19 +303,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
     openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
     openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, 'A change.'),
-    setChecks(url, checks) {
-      const p = pull(url);
-      if (checks) p.checks = checks;
-      else delete p.checks;
-    },
+    setChecks(url, checks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    pushToPullRequest(url, at, o = {}) {
-      const p = pull(url);
-      p.headCommittedAt = at;
-      p.conflicting = o.conflicting ?? false;
-    },
+    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; },
+    pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
       Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });

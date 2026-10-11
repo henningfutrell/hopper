@@ -18,7 +18,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'minor_decision.picked': 'question', 'minor_decision.overridden': 'warn',
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
   'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'tldr.settings_changed': 'warn',
-  'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
+  'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',

@@ -121,6 +121,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_merged': { pullRequest: 'https://github.com/owner/repo/pull/12', part: false },
   'job.pull_request_closed': { pullRequest: 'https://github.com/owner/repo/pull/13', part: true },
   'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
+  'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high' }, to: { enabled: true, threshold: 'medium' }, by: 'admin' },
   'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
