@@ -59,7 +59,8 @@ and give the receiver the new one. From then on the variable is not read: delete
 Every secret the hopper keeps is sealed under one key, the **master key**. The database keeps only its
 fingerprint (an HMAC of a fixed label under the key), never the key. The key comes from the launch, as the
 variable `HOPPER_MASTER_KEY`. It is never read from a file or a volume: a container is ephemeral, and a key
-kept beside it is lost with it.
+kept beside it is lost with it. No KMS gives the master key: `HOPPER_KMS_URL` changes only the key of the vault's
+own secrets (`docs/design.md` "A KMS as the master key's source: not built").
 
 **Keep the master key in a password manager.** Without it, a new container on the same database opens none
 of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
