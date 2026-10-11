@@ -7,9 +7,10 @@
 import { laneEffect } from '../decider/usage.ts';
 import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
 import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
+import { expectedCost } from '../decider/placement-cost.ts';
 import type { UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LANE_TUNING, JOB_COST_WINDOW_DAYS, LANE_CHANGE_EVENTS, laneChangeOf, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
+  DEFAULT_LANE_TUNING, type ExpectedCost, type Job, type JobCostGroup, JOB_COST_WINDOW_DAYS, LANE_CHANGE_EVENTS, laneChangeOf, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
 } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -28,7 +29,9 @@ export interface LaneTuningService {
   plan(): Promise<LaneTuningPlan>;
   /** The job cost profiles over the job cost window, and grouped: `GET /api/lanes/costs` and `hopper lanes costs`. */
   costs(): Promise<JobCosts>;
-  /** Record `lanes.recommended` for each tuned machine with a known headroom whose recommended or configured lanes changed. How many events. */
+  /** A job's expected cost from the job cost groups as last read (by `costs` or `record`); undefined: none known. Synchronous, for each Decision. */
+  expected(job: Job): ExpectedCost | undefined;
+  /** Read the job cost groups again, then record `lanes.recommended` for each tuned machine with a known headroom whose recommended or configured lanes changed. How many events. */
   record(): Promise<number>;
   /** Change one machine's settings; `by` names who. The plan after it. */
   set(machineId: string, patch: LaneTuningPatch, by: string): Promise<LaneTuningPlan>;
@@ -44,6 +47,8 @@ const tuningOf = (store: UserStore, machineId: string): LaneTuning => store.sett
 const lanesText = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
 
 export function createLaneTuning(c: EngineContext): LaneTuningService {
+  // The job cost groups as last read: each Decision reads a job's expected cost from them, never the runs themselves.
+  let groups: { repo: JobCostGroup[]; kind: JobCostGroup[] } = { repo: [], kind: [] };
   // The last recorded per machine: read from the event log once, so a restart does not record each machine again.
   let last: Map<string, { lanes: number; configured: number }> | undefined;
   const lastRecorded = (): Map<string, { lanes: number; configured: number }> => {
@@ -107,14 +112,18 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
       const job = c.store.jobs.get(id);
       return job && { ...(job.source?.repo ? { repo: job.source.repo } : {}), kind: jobCostKind(job.spec) };
     }, (id) => machines.find((m) => m.id === id)?.template?.name);
-    return { at: now.toISOString(), windowDays: JOB_COST_WINDOW_DAYS, jobs: profiles.slice(0, JOB_COSTS_LISTED), groups: jobCostGroups(profiles) };
+    const all = jobCostGroups(profiles);
+    groups = { repo: all.repo, kind: all.kind };
+    return { at: now.toISOString(), windowDays: JOB_COST_WINDOW_DAYS, jobs: profiles.slice(0, JOB_COSTS_LISTED), groups: all };
   };
 
   return {
     plan,
     costs,
+    expected: (job) => expectedCost(job, groups),
     async record() {
       if (c.stopping()) return 0;
+      await costs();
       const p = await plan();
       if (c.stopping()) return 0;
       return p.machines.filter(recordOne).length;

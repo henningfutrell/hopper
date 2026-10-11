@@ -1,10 +1,11 @@
-import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
 import { isSpecialty } from '../domain/elbow-in.ts';
 import { roomToElbowIn } from './elbow-in.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts';
 
 /** One executor's share of a machine: its own cap, and the lanes its jobs hold there. */
 export interface ExecutorState {
@@ -40,6 +41,8 @@ export interface MachineState {
   slots: LaneSlots;
   /** The blast-radius gate (issue #542): a job it keeps from this machine is placed elsewhere. */
   gate?: BlastRadiusInput;
+  /** What the jobs this Decision placed here are expected to cost (issue #688). */
+  placed: PlacedCost;
 }
 
 export interface Candidate {
@@ -249,7 +252,7 @@ function eligible(s: MachineState, job: Job): boolean {
     && (pin === undefined || pin === s.machine.id);
 }
 
-const fits = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+const fitsLane = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
@@ -312,25 +315,27 @@ function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): 
 
 /**
  * Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. A high-priority job goes
- * to the machine holding the best free priority lane first (issue #535).
+ * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
+ * cost fits goes first (issue #688).
  */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
-    const fitting = states.filter((s) => fits(s, job, pl));
+    const fits = states.filter((s) => fitsLane(s, job, pl));
     // A specialty job that fits nowhere elbows in past the cap (issue #762); else a critical one takes one lane over it
     // (issue #373). The extra lane drains when its job ends.
-    const elbowing = fitting.length === 0 && isSpecialty(job) ? states.filter((s) => elbowsIn(s, job)) : [];
+    const elbowing = fits.length === 0 && isSpecialty(job) ? states.filter((s) => elbowsIn(s, job)) : [];
     const elbowed = elbowing.length > 0;
-    const squeezed = fitting.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
-    const options = elbowed ? elbowing : squeezed ? states.filter((s) => squeezes(s, job)) : fitting;
-    if (options.length === 0) {
+    const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
+    const able = elbowed ? elbowing : squeezed ? states.filter((s) => squeezes(s, job)) : fits;
+    if (able.length === 0) {
       wait.push({ jobId: job.id, reason: waitReason(job, states, pl) });
       continue;
     }
+    const { options, note: costed } = fitting(able, costs?.[job.id]);
     const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl));
     const pressure = pick.executors.get(ex)!.pressure;
     const picked = pickLane(pick.machine.id, pick.machine.maxLanes, pick.slots, pick.freeIdle, job, pl);
@@ -340,12 +345,14 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const overCap = (squeezed || elbowed) && pick.occupied + pick.assigned > pick.cap;
     if (overCap) pick.overCap += 1;
     pick.executors.get(ex)!.assigned += 1;
+    place(pick.placed, costs?.[job.id]);
     const why = [
       ...(elbowed ? [overCap ? `specialty: elbows in over the lane cap ${pick.cap}` : `specialty: elbows in past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
         : overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
         : squeezed ? [`critical priority: past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
           : [`${room(pick)} room left (cap ${pick.cap})`]),
       ...(pressure > 0 ? [`placement pressure ${pressure.toFixed(3)}/h`] : []),
+      ...(costed ? [costed] : []),
       ...(note ? [note] : []),
     ];
     const where = `${picked?.priority ? `priority lane ${picked.priority} ` : ''}${lane ? `${picked?.priority ? '(idle)' : `idle lane ${lane.id}`}` : picked?.priority ? '(new)' : 'new lane'}`;
