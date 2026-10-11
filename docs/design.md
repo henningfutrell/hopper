@@ -1892,8 +1892,11 @@ tended job follows it no more (`follow: tended`, `tended` names the pull request
 `job.pull_request_tended` records it. The new job is judged as any other: done once the same pull request is ready again
 (an older pull request counts, rule 2 above; a part counts when the job pushed to it, `isUpdatedBy`), and it then waits
 and is followed in its turn; a job that cannot ends failed, and its hand-off in Needs a person says why — the problem card.
-At most `MAX_TENDS` (3) tends in a row of one pull request (`tendsInRow`, along `rerunOf`): then it waits on a person, as
-before tending, its card on the Pull requests list saying `conflicts` or `checks failing`. A refusal because a newer job of
+At most `MAX_TENDS` (3) `fix_checks` tends in a row of one pull request (`tendsInRow`, along `rerunOf`): then it waits on a
+person, as before tending, its card on the Pull requests list saying `checks failing`. A `rebase` is never capped (issue
+#786): each is made needed by a new merge on the base, not by the tend before it, and a rebase that fails ends the row by
+itself — the tend job ends failed and waits on a person. With a cap, a busy base left pull requests conflicting after
+three good rebases, and nothing tended them again. A refusal because a newer job of
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
@@ -2023,13 +2026,22 @@ the list, and nothing tended them). Two ways it fell out, each closed:
   **reconciled** with its source at each sync, before the follows (`src/sources/after-done.ts`, `JobSource.unfollowedPullRequests`,
   on GitHub `src/sources/github/reconcile.ts`). A candidate is `reconcilable`: finished, its end reported, the newest job
   of its item, and following nothing (`follow` absent, `merged` or `closed`; not `open`, `tended`, `reworked`, nor a merge
-  still to check again). Per repository one listing of its open pull requests (newest 100, each with its branch and body);
+  still to check again). Finished or failed (issue #786): a pull request is followed to its end, whatever its job's end —
+  but not a failed tend job's (`failedTend`), which waits on a person. Per repository one listing of its open pull requests (newest 100, each with its branch and body);
   per candidate the newest that closes its issue by a closing keyword, else the newest that ships part of it ("Part of
-  #N"), else the newest on a branch named for it; the issue is read only for a match, and a closed issue's pull request is
-  never taken. A match is followed from then on, on the job's report chain (`follow: open`, `pullRequest`, `part`; `seen`
+  #N"), else the newest on a branch named for it; the issue is read only for a match. An issue closed as completed still
+  has its open pull request taken when that one closes it by keyword or ships a part of it, never one named for it only on
+  its branch (issue #786: issues were closed from under their open parts, and the parts were left); an issue closed as not
+  planned has none taken. A match is followed from then on, on the job's report chain (`follow: open`, `pullRequest`, `part`; `seen`
   starts again) and `job.pull_request_followed` records it: it shows on the list, yolo mode merges it, tending tends it,
-  as any PR waiting job's. A paused source is not reconciled; a throw is logged and asked again next sync. A failed job is
-  never reconciled: the judge-again path above finishes one whose pull request is done.
+  as any PR waiting job's. A paused source is not reconciled; a throw is logged and asked again next sync. A failed job that
+  follows its pull request is followed and tended as a finished one (`followsWhenEnded`), and shows on the list; its
+  pull request's merge or close takes off `hopper:failed`. The judge-again path above still finishes one whose pull
+  request is done.
+- *Another issue's pull request was taken for it* (issue #786). A pull request that only mentions the issue ("depends on
+  #N") and closes or ships part of another issue (`worksOnAnotherIssue`) is that issue's work: it never makes this issue
+  done, the report never follows it, and the hopper's merge of it never closes this issue. Before, such a mention counted
+  as done, its merge closed the issue as completed, and the issue's own open part was left.
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are

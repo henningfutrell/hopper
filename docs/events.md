@@ -3150,7 +3150,7 @@ Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done lef
 
 ## `job.pull_request_tended`
 
-Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. At most three tends in a row of one pull request; then it waits on a person.
+Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person.
 
 | field | type | required |
 |---|---|---|
@@ -3168,7 +3168,7 @@ Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's p
 
 ## `job.pull_request_followed`
 
-Version 1 (`docs/schemas/job.pull_request_followed.v1.json`). A done job that followed no pull request — it ended before the hopper followed pull requests, or its follow ended — is the newest job of its item, and its item is open and has an open pull request on its source (issue #763): the sync loop reconciled it, and the job follows that pull request from now on, as PR waiting. It shows on the Pull requests list, and yolo mode merges it and tending tends it as any followed one. `part`: it ships part of the item ("Part of #N").
+Version 1 (`docs/schemas/job.pull_request_followed.v1.json`). A done job — or a failed one that is no failed tend, issue #786 — that followed no pull request — it ended before the hopper followed pull requests, or its follow ended — is the newest job of its item, and its item is open, or closed as completed with an open pull request that closes it by keyword or ships part of it (issue #786), and has an open pull request on its source (issue #763): the sync loop reconciled it, and the job follows that pull request from now on, as PR waiting. It shows on the Pull requests list, and yolo mode merges it and tending tends it as any followed one. `part`: it ships part of the item ("Part of #N").
 
 | field | type | required |
 |---|---|---|

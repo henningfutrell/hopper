@@ -104,18 +104,33 @@ describe('tending a waiting pull request (issue #736)', () => {
     expect(await jobsFor(app, issue.url)).toHaveLength(2);
   });
 
-  it(`at most ${MAX_TENDS} tends in a row of the same pull request; then it waits on a person`, async () => {
+  it('a rebase is never capped (issue #786): the base moves again after each, and each time the item runs again', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const { issue, url } = await pullRequestWaiting(gh, app, (pr) => gh.pushToPullRequest(pr, new Date().toISOString()));
-    for (let n = 2; n <= MAX_TENDS + 1; n++) {
+    const rebases = MAX_TENDS + 2;
+    for (let n = 2; n <= rebases + 1; n++) {
       gh.setConflicting(url, true);
       await app.sync();
       const tender = await nextJob(app, issue.url, n);
       await app.waitForStatus(tender!.id, 'finished');
       await waitFor(async () => ((await app.job(tender!.id)).sourceState?.source as { follow?: string } | undefined)?.follow === 'open', { what: 'following again' });
     }
-    gh.setConflicting(url, true);
+    expect(await app.events('types=job.pull_request_tended')).toHaveLength(rebases);
+  });
+
+  it(`at most ${MAX_TENDS} fix_checks tends in a row of the same pull request; then it waits on a person`, async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, url } = await pullRequestWaiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.setChecks(pr, 'passing'); });
+    for (let n = 2; n <= MAX_TENDS + 1; n++) {
+      gh.setChecks(url, 'failing');
+      await app.sync();
+      const tender = await nextJob(app, issue.url, n);
+      await app.waitForStatus(tender!.id, 'finished');
+      await waitFor(async () => ((await app.job(tender!.id)).sourceState?.source as { follow?: string } | undefined)?.follow === 'open', { what: 'following again' });
+    }
+    gh.setChecks(url, 'failing');
     await app.sync();
     await app.sync();
     expect(await jobsFor(app, issue.url)).toHaveLength(MAX_TENDS + 1);

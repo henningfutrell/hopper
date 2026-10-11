@@ -59,7 +59,11 @@ export interface FakeGitHub extends GitHubApi {
 }
 
 /** A pull request to open: when, a draft or not, merge conflicts or not, and its head commit's time (default createdAt). */
-export interface PullRequestInput { createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; headRef?: string; base?: string }
+export interface PullRequestInput {
+  createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; headRef?: string; base?: string;
+  /** Its body in place of the fixed text (issue #786); it still mentions the issue. */
+  body?: string;
+}
 
 export interface FakeAppIdentity {
   botLogin: string;

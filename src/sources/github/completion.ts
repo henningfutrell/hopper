@@ -128,7 +128,8 @@ async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts
  * - its issue closed as completed, by anyone, at any time (`isClosedAsCompleted`);
  * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
  *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
- *   not the whole (`partlyDone`);
+ *   not the whole (`partlyDone`); one that only mentions it and closes or ships part of another issue is that issue's
+ *   work, not this one's (`worksOnAnotherIssue`, issue #786);
  * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review, unless it ships a
  *   part (issue #721);
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
@@ -162,6 +163,7 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   for (const pr of await api.referencingPullRequests(repo, number)) {
     if (pr.repo.toLowerCase() !== repo.toLowerCase()) continue;
     if (isPartOf(pr, repo, number)) { parts.add(pr.url); continue; }
+    if (worksOnAnotherIssue(pr.body, repo, number)) continue;
     if (pr.state === 'open' ? counts(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
     if (!found.has(pr.url)) found.set(pr.url, pr);
   }
@@ -217,6 +219,17 @@ export function closesByKeyword(body: string, repo: string, n: number): boolean 
   const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)${n}(?!\\d)`;
   return new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+${target}`, 'i').test(body);
+}
+
+/**
+ * A pull request that only mentions issue `n` and closes or ships part of another issue of `repo` (issue #786): it is that
+ * issue's work. Its mention of `n` ("depends on #n") never makes `n` done, and its merge never closes `n`.
+ */
+export function worksOnAnotherIssue(body: string, repo: string, n: number): boolean {
+  if (closesByKeyword(body, repo, n)) return false;
+  const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)(\\d+)(?!\\d)`;
+  return [...body.matchAll(new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?|part\\s+of)\\s*:?\\s+${target}`, 'gi'))].some((m) => Number(m[1]) !== n);
 }
 
 /**

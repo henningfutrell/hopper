@@ -256,6 +256,14 @@ describe('closing finishes the loop: the hopper\'s own merge closes the issue (i
     expect(gh.calls).toEqual([]);
   });
 
+  it('yolo mode merges a pull request that closes another issue and only mentions this one: the hopper leaves this issue open (issue #786)', async () => {
+    const { gh, source, job } = followed((gh) => gh.openReferencingPullRequest(REPO, 1, { createdAt: LONG_AGO, body: 'Closes #9\n\nIt depends on #1.' }));
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', part: true });
+    expect(gh.issue(REPO, 1).state).toBe('open');
+    expect(closes(gh)).toEqual([]);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+  });
+
   it('Merge now on a pull request named for the issue only on its branch: the issue is closed the same way', async () => {
     const { gh, source, job, pr } = followed((gh) => gh.openUnlinkedPullRequest(REPO, { createdAt: LONG_AGO, headRef: 'issue-1-fix', checks: 'pending' }), false);
     expect(await source.follow!(job, 'merge')).toMatchObject({ outcome: 'merged', pullRequest: pr.url, part: false });

@@ -23,8 +23,8 @@ import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestA
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
-import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue } from './completion.ts';
-import { LABEL_DONE, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
+import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
+import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { ensureLabels, type ReportContext } from './report.ts';
 
@@ -48,7 +48,8 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
   const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const closing = newest(await api.openClosingPullRequests(repo, number));
   if (closing) return { url: closing.url, part: false };
-  const mention = newest((await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase()));
+  const mention = newest((await api.referencingPullRequests(repo, number))
+    .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number)));
   if (mention) return { url: mention.url, part: isPartOf(mention, repo, number) };
   const branch = newest((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
   return branch && { url: branch.url, part: false };
@@ -115,11 +116,12 @@ export const closedAfterMergeComment = (url: string): string =>
 
 /**
  * After the hopper's own merge of pull request `url` that did not close the issue (issue #677): a part ("Part of #N") stays
- * a part; else the hopper closes the issue as completed and comments with its link. Whether it closed the issue.
+ * a part, and so does another issue's work that only mentions this one (issue #786); else the hopper closes the issue as
+ * completed and comments with its link. Whether it closed the issue.
  */
 async function closeAfterMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
   const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
-  if (pr && isPartOf(pr, repo, number)) return false;
+  if (pr && (isPartOf(pr, repo, number) || worksOnAnotherIssue(pr.body, repo, number))) return false;
   // Closed first: a sync after a failed comment finds it closed as completed, the item done.
   await api.closeAsCompleted(repo, number);
   await api.postComment(repo, number, closedAfterMergeComment(url));
@@ -175,7 +177,8 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     const shipsPart = part || (now.state === 'merged' && !whole);
     // A merged part that makes every declared part done (issue #729): the issue is done.
     const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, repo, number, (await ctx.api.getIssue(repo, number)).body, now.url) : undefined;
-    await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE]);
+    // A failed job's followed pull request (issue #786) ends its `hopper:failed` too.
+    await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED]);
     const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
     if (add) {
       await ensureLabels(ctx, repo);
