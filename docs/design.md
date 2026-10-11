@@ -13429,6 +13429,7 @@ the follow goes on, and the next sync asks again. No event: the field is a view 
 **Pointed jobs.** A job of the hopper reads as a pointed job on its issue (issue #425, `pointedJobOf`), so its
 cross-references are that pointed job's. A pointed job whose pointer is a pull request (the issues it closes,
 `closingIssuesReferences`) is not read yet: nothing runs one until the tracking service (issue #426) does.
+
 ## The issue graph (issue #437, 2026-10-11)
 
 Part of the pointed-job architecture (issue #424, job 13 of 13). **Store only: nothing reads it, and no feature depends on
@@ -13461,11 +13462,13 @@ installation token and a user-owned Project) leaves that part out.
 **Nothing depends on it.** A read or a write that fails is said per issue in the source's status (`graphErrors`, by issue
 URL) and read again at the next sync; the discover, the items and the jobs go on as if there were no graph.
 
-**Assumptions about the other jobs of #424.** The watches (job 3, #427) and cross-reference detection (job 6, #430) are not
-built. Until they are, the GitHub sources' listing is what "sees" an issue, and the graph's links come from GitHub's own
-linked items and timeline, not from parsed text. When the watches land, a watch feeds the same recorder
-(`recordIssueGraph`) for each issue it watches; #430's confirmed links can add edges the same way. An issue that leaves the
-listing (closed, unlabelled) keeps the last state its read gave until something reads it again.
+**Assumptions about the other jobs of #424.** The watches (job 3, #427) are not built. Until they are, the GitHub sources'
+listing is what "sees" an issue. When the watches land, a watch feeds the same recorder (`recordIssueGraph`) for each issue
+it watches. Cross-reference detection (job 6, #430, "Cross-references" above) is built and keeps its confirmed closing
+references on the job, not in the graph. The graph does not read them: its `closes` edges come from the same GitHub
+`closedByPullRequestsReferences` that #430 confirms against, so the two agree on closing pull requests. A commit that closed
+an issue (#430 keeps it) is no node of the graph yet; a later change can add it through `recordIssueGraph`. An issue that
+leaves the listing (closed, unlabelled) keeps the last state its read gave until something reads it again.
 
 ## The shared rate limiter (issue #436, 2026-10-11)
 
