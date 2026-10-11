@@ -8536,7 +8536,7 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again). While the
   check waits: 202 `waiting: template <name> is approved; waiting for the read-only check …`; `template.checked` asks again.
 
-**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. (Tools assembled per
+**Not built.** A job does not launch the box: a person or the CLI starts it (carried on issue #769). (Tools assembled per
 run, item 2, and the read-only check, item 4, are built: "Tools assembled per run", "The read-only check".) A need's credential is asked of a person when a job on the box first loads the skill;
 the template does not name a vault secret the user already has. Templates made on request are not removed when no job
 uses them.
@@ -10322,10 +10322,9 @@ whose. A GitHub token on the exchange is any token of the account (as on the API
 which app it is for. The build before this one reads `Authorization` only as the API door, so on a downgrade it would ask
 GitHub about an API token sent to it (a token it then refuses); the token is useless there and ends within the hour.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs (item 1, built by the job for
-issue #716); tools assembled per run (item 2); the read-only negative suite run before a new template's first use (item 5),
-which waits on #715. Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
-editing `api_token`'s relations; a per-token scope list waits for a caller that needs one.
+**Not built.** Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
+editing `api_token`'s relations; a per-token scope list waits for a caller that needs one. (The rest of issue #718 is built under issue #716: "Templates
+on request", "Tools assembled per run", "The read-only check"; its real-environment part is carried on #715.)
 
 Tests: `test/integration/api-tokens.test.ts` (a person mints, an agent sets a secret, saves and approves a template and
 launches a box with the token alone; every route takes a token; the role cap, the hour, no chained mint; revoke; an unknown
