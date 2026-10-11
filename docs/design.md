@@ -59,7 +59,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
-| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
+| `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -13093,8 +13093,30 @@ is not a tunnel down the link: the link is HTTP/2 with the client as its server,
 own per job request, as the vault's ask does (`askHopper`). It adds no right: every `/job/` route still asks for the job's
 proxy token, and the hopper's Host guard sees the Host the client joined with. It takes only `/job/` paths (else 404) and
 only its own Host, `127.0.0.1:<port>` or `localhost:<port>` (else 421), so a web page that rebinds a name to loopback
-reaches nothing through it. Answers stream through (the job stream, git). A hopper it cannot reach is a 502 that names
-the URL.
+reaches nothing through it. Answers stream through (the job stream, git). A hopper it cannot reach is held, below.
+
+**The door waits instead of failing** (issue #752, path 2 of the field-survival kit). A request whose connection to the
+hopper cannot be made (refused, no route, a name not resolved, no connection within 10 s) is held: the door notes when
+the hopper went **out of reach** and tries again with backoff (0.25 s, doubling, at most 5 s) until `DOOR_HOLD_MS` (120 s,
+the reconnect grace's default) from that time. The hopper back → the request goes on, and the door logs how long it was
+away. The hold over → 503, `Retry-After: 30`, `the hopper is out of reach since <ISO time>; wait, do not sign in another
+way.` and the URL; while it stays away, a later request gets that answer after one try. The door sends a request again
+only when no connection was made, so the hopper never got it: each connection is fresh (no keep-alive socket that could
+have carried it), and the body goes on only once connected. A connection that breaks after that is a 502, as before: the
+hopper may have done the write. So no write needs a de-duplication key — the audit of `/job/` writes the proposal asked
+for comes out empty — and a lost answer stays the job's to read (`pr view`, `issue view`). Nothing is cached: no token, no
+text, no buffered write; every write still goes through the hopper with the job's proxy token, so no owner escalation,
+mint, push or grant can happen while it is away. Out of scope: a proxy in front of the hopper that answers 502 itself
+(the door passes that answer on), and a hopper that takes the connection and then hangs.
+
+**The scripts obey Retry-After** (`hcurl`, `src/github-proxy/retry-after.ts`). hopper-gh, hopper-skill and
+hopper-artifact send each request through one shell function: a 503 with `Retry-After` is waited out (at most 60 s) and
+sent again, `RETRY_AFTER_TRIES` (4) tries in all; then the script prints the door's reason and exits as for a no
+(hopper-artifact: 3, cannot reach). Not curl's own `--retry`: it sends a 500 or a 502 again too. git has no Retry-After:
+the door's hold is all it gets, and after it git fails with the 503. The protocol line `OUT_OF_REACH_LINE` tells the job:
+on that answer, keep the local work going (edit, build, test, commit), wait to push and to ask the hopper, then try
+again; never sign in another way. Path 1 (the hopper holds the job through a link outage, "Link-lost hold") and path 3
+(a box-side watchdog with a time limit) are their own changes.
 
 **The reach check** (`src/client/reach.ts`). At each start, resume and turn, before the job's files are kept,
 `placeCredentials` asks the machine's shell `reach(url)` for the URL the job is given: the fixed script, through the
@@ -13117,7 +13139,9 @@ the URL it joined at.
 cannot. An ssh reverse tunnel would give it one; build it when an ssh target needs it.
 
 Tests: `test/github-proxy/reach.test.ts` (the URL per machine), `test/client/door.test.ts` (a request and a streamed
-answer through the door, the refusals, an unreachable hopper), `test/client/reach.test.ts` (the check on this machine and
+answer through the door, the refusals, an unreachable hopper: held and sent once when it is back, 503 with Retry-After
+after the hold, never sent again once connected), `test/github-proxy/retry-after.test.ts` (each script waits out a 503
+with Retry-After, stops after its tries, and never sends a 500 or a plain 503 again), `test/client/reach.test.ts` (the check on this machine and
 on a client: reached, a name not resolved, 421, 502, no curl), `test/integration/client-door.test.ts` (a real joined
 client: the job is given the door, checked first, and `hopper-skill` works through it),
 `test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper fails at its start, with the
