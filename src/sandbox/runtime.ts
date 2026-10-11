@@ -55,7 +55,11 @@ export interface Placements {
   runtimeOf(userId: string, machine: string): { runtime: ContainerRuntime; joinUrl: string } | undefined;
 }
 
-export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; joinUrl: () => string; clients?: ClientTargets }): Placements {
+/**
+ * `joinUrl`: where a box beside the hopper dials it, as configured; `address`, when given, sets it at each launch from
+ * what the runtime says of the hopper (address.ts).
+ */
+export function createPlacements(o: { local: ContainerRuntime | undefined; network: string; joinUrl: () => string; address?: (runtime: ContainerRuntime) => Promise<string>; clients?: ClientTargets }): Placements {
   // Made at each look: a machine that joined again under the same name has a new link key.
   const remote = (userId: string, machine: string): { runtime: ContainerRuntime; dialled(): string | undefined } | undefined => {
     const target = o.clients?.(userId, machine);
@@ -68,7 +72,7 @@ export function createPlacements(o: { local: ContainerRuntime | undefined; netwo
         if (!o.local) throw new Error(NO_RUNTIME);
         const problem = await o.local.problem();
         if (problem) throw new Error(problem);
-        return { machine: LOCAL, runtime: o.local, network: o.network, joinUrl: o.joinUrl() };
+        return { machine: LOCAL, runtime: o.local, network: o.network, joinUrl: o.address ? await o.address(o.local) : o.joinUrl() };
       }
       const target = remote(userId, machine);
       if (!target) throw new LaunchRefused(400, `no client target ${machine}: a sandbox box starts on the computer the hopper runs on, or on a machine that joined with Add machine`);

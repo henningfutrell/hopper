@@ -184,7 +184,7 @@ describe.skipIf(!SOCKET)('the sandbox module, real rootless Podman', () => {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
     t = await startTestApp({
-      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, env: { HOPPER_SANDBOX_NETWORK: network, HOPPER_LAN_NAMES: 'hopper' },
+      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, env: { HOPPER_SANDBOX_NETWORK: network, HOPPER_LAN_NAMES: 'hopper', HOPPER_LAN_PEERS: '10.0.0.0/8' },
       plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['test'] } },
       seams: { containerRuntime: createPodmanRuntime(SOCKET!), startCheckMs: 5000 },
     });

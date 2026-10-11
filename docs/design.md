@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -4497,26 +4497,70 @@ deleted the home volume.
   not approved is still 409 (#602).
 - **The sandbox record** (instance migration 34, `sandboxes`: id, unique name, user, the record as JSON): its user,
   name, agent, template and version (`savedAt`), image, the resolved parameters, runtime, machine (`local`, or the client target's name), container
-  id, volume, `keepHome`, state, created, expires, and the address it dials. Written before the container is made, so
+  id, volume, `keepHome`, state, created, expires, the address it dials, and its last start check. Written before the container is made, so
   a container of the hopper's never exists without one but while a launch makes it; a launch that fails removes what it
   made — the container, a volume it made new (never a kept home), the record.
 - **Reconcile works from the records** (every 10 s and at start, after the runtimes; `reconcile.ts`). Past its time
-  limit: stopped and removed at once. Its container gone: the record goes. A machine names it: `ready` — its client
-  reported back over the address in the record, which proves it. A live join code waits for it: still `starting`.
+  limit: stopped and removed at once. Its container gone: the record goes. Its start check runs again, in the box
+  (part 3, below). A machine names it and its check passes: `ready`. Its check fails: `unreachable`, never `ready`.
+  A live join code waits for it: still `starting`.
   Else idle: removed once it is found so twice in a row. A user whose machines cannot be read keeps every box. A
   container with the hopper's label and no record — a box from before the records — is taken on as a record when a
   machine names it (limits unknown: `0`, no limit), else removed the same way. Removing stops the box (10 s, then
   killed), removes it, and keeps its home volume unless the record says `keepHome: false`: it may hold an agent's sign-in.
-- **The address** is the join URL the launch wrote into the record and the box's join line: `http://127.0.0.1:<port>`
-  beside a hopper on the host, `http://<first LAN name, else hopper>:<port>` on the compose network. It is proven when
-  the box joins (state `ready`), not inspected beforehand. A box on a client target dials the URL that machine's client
-  dialled in on (#695): an address the machine proved it reaches. Inspecting the hopper's own address on its compose
-  network is not built yet.
+- **The address** is the join URL the launch wrote into the record and the box's join line. Since part 3 it is set at
+  each launch from what the runtime says of the hopper (`address.ts`), and the box's start check proves it before the
+  launch answers. A box on a client target dials the URL that machine's client dialled in on (#695): an address the
+  machine proved it reaches.
 - **Not built yet:** the launch's `secrets` and `profile` narrowing what the vault and Access give the box (kept on the
-  record now, not enforced past the template's own scope); the inspected local address; the template limits and the
-  launch parameters in the UI (the API takes them; Add machine launches with the template's defaults); the start check
-  run from inside the box on every health check (the field review on the issue); a box with tools (issue #716) on a
-  client target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
+  record now, not enforced past the template's own scope); the template limits and the launch parameters in the UI
+  (the API takes them; Add machine launches with the template's defaults); a box with tools (issue #716) on a client
+  target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
+
+### The start check and the proven address (issue #708 part 3, 2026-10-11)
+
+Before it, the address a box beside the hopper dialled was a guess (`lanNames[0] ?? 'hopper'`), and nothing checked
+it: a wrong guess left a box that never joined, and was removed once its join code ran out, with no reason given. The
+field review asked for a check run from inside the target, on every health check, with no shell rc file in the way
+(#518), and a loud failure when the hopper is not reached.
+
+- **The address, set at launch** (`hopperAddress`, `address.ts`). On the host network: `http://127.0.0.1:<port>`. Else
+  the hopper inspects its own container through the runtime (its hostname is its container id): on the box's network
+  it takes the first of its names there that is also a LAN name (`HOPPER_LAN_NAMES`), since the box must resolve the
+  name and the hopper must take it as a Host. On the compose network that is `hopper`, the service's name. Its
+  container not on that network: 409, with `podman network connect <network> <container>`. No LAN name among its names
+  there: 409, with the name to add. A hopper that is no container of that runtime (on the host, with
+  `HOPPER_SANDBOX_NETWORK` set): its first LAN name, and only the start check can prove it.
+- **The start check** (`startCheckTest`, `flags.ts`) is the box's health check, set in its create body:
+  `bash --noprofile --norc -c "curl -fsS -m 5 -o /dev/null '<address>/client/install'"`. It runs in the box, as the
+  box's user, under the sandbox flags, so it sees the network, the name resolution and the Host check exactly as the
+  box's client will. A refusal (403 from a peer outside `HOPPER_LAN_PEERS`, 421 for a Host the hopper does not take)
+  fails it too. `/client/install` is the one route any machine may read with no session. The box images have bash and
+  curl.
+- **Run when the hopper asks.** Podman gets no interval, so no timer on the computer runs it: a computer with no user
+  systemd (WSL) has none. The hopper runs it through the API (`GET /containers/{id}/healthcheck`) and reads what it
+  wrote from `inspect` (`State.Health.Log`). Docker runs a health check only on its own interval (10 s): the hopper
+  reads its last run. `ContainerRuntime.startCheck` answers `{passed, output}`, or nothing for a box made before the
+  check. The client carries both: a create may have the check (only `Test`, `Interval`, `Timeout`, `Retries`), and
+  the check route runs only on a box with the `io.hopper.box` label.
+- **At launch** the hopper runs the check every 0.5 s until it passes, for up to 30 s (`START_CHECK_MS`). Not passed:
+  the launch fails (502) with what the check wrote — `from inside the box <name>, the hopper does not answer at
+  <address>: curl: (6) Could not resolve host: hopper` — and removes what it made. Passed: the record keeps it.
+- **At each reconcile pass** (every 10 s) the check runs again in each recorded box. A failed check makes the box
+  `unreachable` and logs a warning once, with the address and the output; Machines shows it (`sandbox-reach.tsx`). A
+  passing check again makes it `starting`, then `ready` when a machine names it. A check that cannot be run now (the
+  runtime did not answer) changes nothing. The record is written only when the result changes.
+- **The box itself is not changed.** No new image: the check is the runtime's, not the entrypoint's, so the published
+  box images work as they are.
+
+**Verification (part 3).** `test/adapters/podman-runtime.test.ts`, `docker-runtime.test.ts`: the check in each create
+body, run now (Podman) or read (Docker), its output, a box with none, a stopped box; `inspect` answers the names on
+each network. `test/sandbox/address.test.ts`: each case of the address. `test/client/runtime.test.ts`: the check
+carried, only on a box of the hopper's, and only its four fields. `test/integration/sandbox-start-check.test.ts`
+(and `sandbox-lifecycle.test.ts`'s first scenario): the check fetches the real test hopper; a box that cannot reach it does not start and leaves nothing; a box that loses it
+is `unreachable` until it passes again. `test/ui/sandbox-reach.test.ts`. Real rootless Podman
+(`podman-sandbox.test.ts`): the check in `inspect`, passed at launch, through the client on a machine too; a box on a
+bridge network the hopper is not on fails the launch with curl's own words, and leaves no container, volume or record.
 
 ### The remote runtime (issue #708 part 2, 2026-10-10)
 

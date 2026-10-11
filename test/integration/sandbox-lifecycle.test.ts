@@ -6,8 +6,7 @@
 //
 // Feature: the hopper owns the life of its sandbox boxes
 //   Scenario: adding a sandbox box starts its container and records it; it is ready once it joins
-//   Scenario: a box that cannot reach the hopper from inside does not start, and says why: nothing is left
-//   Scenario: a box that loses the hopper is unreachable, not ready, until its start check passes again
+//   (its start check, run in the box: test/integration/sandbox-start-check.test.ts)
 //   Scenario: a box of a template runs the template's image, only once that image is approved
 //   Scenario: a launch fills in the template's defaults, takes parameters within its max, and records them
 //   Scenario: parameters outside what the template allows are refused, and nothing starts
@@ -129,41 +128,6 @@ describe('sandbox boxes the hopper starts', () => {
     // A second box takes a free name, past a container someone else made.
     runtime.put({ name: 'hopper-sandbox-claude-2', image: 'x', network: 'host', volume: 'x-home', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'x' });
     expect((await launch(a, session, {})).body.container).toBe('hopper-sandbox-claude-3');
-  });
-
-  it('a box that cannot reach the hopper from inside does not start, and says why: nothing is left', async () => {
-    const runtime = createFakeContainerRuntime();
-    const { a, session } = await boot(runtime);
-    runtime.unreachable = "curl: (6) Could not resolve host: hopper";
-    const r = await launch(a, session, {});
-    expect(r.status).toBe(502);
-    expect(r.body.error).toBe(`the sandbox box did not start: from inside the box hopper-sandbox-claude, the hopper does not answer at ${a.url}: curl: (6) Could not resolve host: hopper`);
-    expect(runtime.boxes.size).toBe(0);
-    expect(runtime.volumes.size).toBe(0);
-    expect((await view(a, session)).boxes).toEqual([]);
-  });
-
-  it('a box that loses the hopper is unreachable, not ready, until its start check passes again', async () => {
-    const runtime = createFakeContainerRuntime();
-    const { a, session } = await boot(runtime);
-    await launch(a, session, {});
-    await boxJoins(a, runtime, 'hopper-sandbox-claude');
-    await reconcile(a);
-    expect((await view(a, session)).boxes.map((b) => b.state)).toEqual(['ready']);
-
-    // Every reconcile pass runs the check again, in the box.
-    runtime.unreachable = 'curl: (7) Failed to connect to hopper port 4790';
-    await a.app.sandboxes.reconcile();
-    const lost = (await view(a, session)).boxes[0]!;
-    expect(lost.state).toBe('unreachable');
-    expect(lost.check).toEqual({ passed: false, at: expect.any(String), output: 'curl: (7) Failed to connect to hopper port 4790' });
-    // It is not idle: its machine still names it, so it stays, and says why it is not ready.
-    await reconcile(a);
-    expect(runtime.boxes.has('hopper-sandbox-claude')).toBe(true);
-
-    runtime.unreachable = undefined;
-    await a.app.sandboxes.reconcile();
-    expect((await view(a, session)).boxes.map((b) => [b.state, b.check?.passed])).toEqual([['ready', true]]);
   });
 
   it('a box of a template runs the template\'s image, only once that image is approved', async () => {

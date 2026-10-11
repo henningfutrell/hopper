@@ -11,7 +11,8 @@
 // blast radius, the gate and the actor machines (issue #542, blast-radius.tsx). Each card says its CPU and memory now,
 // draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). Each machine's lane
 // recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box the
-// hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes).
+// hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes); a box
+// whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -35,6 +36,7 @@ import { BlastRadiusPanel } from './blast-radius';
 import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
+import { UnreachableBoxes } from './sandbox-reach';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -190,10 +192,11 @@ export function Machines() {
   const open = useRef(false);
   useEffect(() => { open.current = adding !== false || defaulting || editing !== null; }, [adding, defaulting, editing]);
 
-  const [cleanup, setCleanup] = useState<CleanupProblem[]>([]);
+  const [boxes, setBoxes] = useState<SandboxesView | null>(null);
+  const cleanup: CleanupProblem[] = boxes?.problems ?? [];
   const load = useCallback(() => Promise.all([
     fetchConfig().then(setConfig, (e: Error) => { toast.error(e.message); }),
-    get<SandboxesView>('/api/sandboxes').then((v) => setCleanup(v.problems), () => setCleanup([])),
+    get<SandboxesView>('/api/sandboxes').then(setBoxes, () => setBoxes(null)),
   ]), []);
   useEffect(() => {
     void load();
@@ -250,6 +253,7 @@ export function Machines() {
         <Panel title="Attach a machine over ssh" icon={Plus}><AddMachineForm config={config} busy={busy} send={ctx.attach} onDone={() => setAdding(false)} /></Panel>
       )}
       {cleanup.length > 0 && <CleanupProblems problems={cleanup} />}
+      <UnreachableBoxes view={boxes} />
       {config?.error && <div className="rounded-md border border-bad/40 p-3 text-xs break-words text-bad">{config.error}</div>}
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>

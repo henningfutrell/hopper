@@ -5,11 +5,12 @@
 // their boxes. A container with the hopper's label and no record (a box from before the records, or a launch cut off)
 // is taken on as a record when a machine names it, else removed the same way. Removing keeps the home volume unless the
 // record says otherwise: it may hold an agent's sign-in. One pass checks one runtime: the hopper's own, or one user's
-// client target's (the remote runtime), each against the records of the boxes on it.
+// client target's (the remote runtime), each against the records of the boxes on it. Each pass runs every box's start
+// check again, in the box: a box whose check fails is `unreachable`, never `ready`, and the hopper says why, once.
 import type { CleanupProblem } from '../domain/machines.ts';
 import type { ContainerInfo, ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
-import { BOX_LABEL, USER_LABEL } from './launch.ts';
+import { BOX_LABEL, checkNote, USER_LABEL } from './launch.ts';
 
 export interface ReconcileContext {
   runtime: ContainerRuntime;
@@ -77,10 +78,12 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
       c.logger.warn(`hopper: sandbox box ${r.name} is gone: its record is removed`);
       continue;
     }
+    const checked = await recheck(c, r, box.id);
     const names = c.boxesOf(r.userId);
     if (names === undefined) continue;
     if (names.has(r.name)) {
-      if (r.state !== 'ready') c.repo.update({ ...r, state: 'ready' });
+      const state = checked.check?.passed === false ? 'unreachable' : 'ready';
+      if (checked.state !== state) c.repo.update({ ...checked, state });
       continue;
     }
     if (c.waiting.has(r.name)) continue;
@@ -99,6 +102,20 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
     }
     await idle(box.name, () => remove(box.name, box.id, userId, undefined, 'no machine names it, and no record holds it'));
   }
+  return next;
+}
+
+/**
+ * The box's start check, run again: kept on its record when its result changed, and said once. A failed check makes the
+ * box `unreachable`; a check that cannot be run now (the runtime did not answer) changes nothing.
+ */
+async function recheck(c: ReconcileContext, r: SandboxRecord, id: string): Promise<SandboxRecord> {
+  const run = await c.runtime.startCheck(id).catch(() => undefined);
+  if (!run || (run.passed === r.check?.passed && (run.output || undefined) === r.check?.output)) return r;
+  const next: SandboxRecord = { ...r, check: checkNote(run, c.now), ...(run.passed ? (r.state === 'unreachable' ? { state: 'starting' as const } : {}) : { state: 'unreachable' as const }) };
+  if (!run.passed) c.logger.warn(`hopper: sandbox box ${r.name} cannot reach the hopper at ${r.address} from inside: ${run.output}`);
+  else if (r.check?.passed === false) c.logger.info(`hopper: sandbox box ${r.name} reaches the hopper at ${r.address} again`);
+  c.repo.update(next);
   return next;
 }
 

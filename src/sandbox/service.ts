@@ -28,8 +28,10 @@ export const COMPOSE_NETWORK = 'hopper_default';
  */
 export const hopperNetwork = (c: { sandboxNetwork?: string | undefined; localMachine: boolean }): string => c.sandboxNetwork ?? (c.localMachine ? 'host' : COMPOSE_NETWORK);
 
-/** How often the hopper checks its boxes against their records and the machines. */
+/** How often the hopper checks its boxes against their records and the machines, and runs their start checks. */
 export const RECONCILE_MS = 10_000;
+/** How long a launch waits for the box's start check to pass: the box reaches the hopper, or the launch fails. */
+export const START_CHECK_MS = 30_000;
 
 export interface SandboxesOptions {
   /** Undefined: no runtime socket is given to the hopper (HOPPER_PODMAN_SOCKET, HOPPER_DOCKER_SOCKET unset). */
@@ -39,8 +41,12 @@ export interface SandboxesOptions {
   instanceId: string;
   /** The network a box joins (`hopper_default` beside the compose hopper, `host` beside one on the host). */
   network: string;
-  /** The URL a box dials the hopper at, from that network: written into the record at launch. */
+  /** The URL a box dials the hopper at, from that network, as configured: a box taken on from before the records. */
   joinUrl: () => string;
+  /** Sets that URL at each launch from what the runtime says of the hopper (address.ts); absent: `joinUrl`. */
+  address?: (runtime: ContainerRuntime) => Promise<string>;
+  /** How long a launch waits for the box's start check to pass; default START_CHECK_MS. */
+  startCheckMs?: number;
   /** A user's client target by name, for a box on it (the remote runtime); absent: boxes start only beside the hopper. */
   clients?: ClientTargets;
   /** A join code for the user's box `container`, of `template` when it is one's. */
@@ -83,7 +89,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let timer: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | undefined;
   const down = new Map<string, string>();
-  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, ...(o.clients ? { clients: o.clients } : {}) });
+  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, ...(o.address ? { address: o.address } : {}), ...(o.clients ? { clients: o.clients } : {}) });
 
   /**
    * The hopper's own runtime, then each client target that holds a recorded box. One that cannot be listed now — a
@@ -134,7 +140,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       const at = await places.place(userId, l.machine);
       const record = await launchBox({
         runtime: at.runtime, repo: o.repo, instanceId: o.instanceId, machine: at.machine, network: at.network, joinUrl: at.joinUrl, now: o.clock.now(),
-        id: randomUUID(), mint: (container, template) => o.mint(userId, container, template), launching,
+        id: randomUUID(), mint: (container, template) => o.mint(userId, container, template), launching, startCheckMs: o.startCheckMs ?? START_CHECK_MS,
       }, userId, l);
       o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${at.runtime.kind} on ${at.machine}); it joins as a machine`);
       return { container: record.name };

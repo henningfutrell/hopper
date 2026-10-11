@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A sandbox box the hopper starts now checks, from inside the box, that it reaches the hopper before the box counts as started. If it does not, starting the box fails and says why, and nothing is left behind. The hopper checks each box again every few seconds, and Machines shows a box that lost the hopper.
 - The hopper can now start a sandbox box on another machine you joined with Add machine, in that machine's own Podman. Pick the machine under A sandbox box. The hopper keeps that box in step as it does its own, and checks it again when the machine comes back after it was away.
 - Jev can now pick how many lanes a machine runs and which machine a waiting job goes to, inside what the lane rules allow. Both start in shadow: Settings → Decider shows how often Jev agrees. Set them to active, and a sure pick becomes the machine's recommendation on Machines, which you still apply, or the machine a job goes to.
 - The hopper now updates only to a version that was merged through a pull request whose checks passed. The update notice shows which version it is and links the pull request. When the newest version was not checked that way, the notice says "Update held" and why, and the hopper does not install it.
