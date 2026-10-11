@@ -128,7 +128,7 @@ describe('the priority lanes on Machines', () => {
     expect(rows[0]!.querySelector('[data-slot="priority-lane"]')).not.toBeNull();
     expect(rows[1]!.querySelector('[data-slot="priority-lane"]')).toBeNull();
     expect(document.querySelector('[data-slot="priority-lanes-summary"]')!.textContent)
-      .toBe('High priority: 75 and above. 1 priority lane, chosen by reliability; kept free while no high-priority job waits.');
+      .toBe('High priority: 75 and above. 1 priority lane, chosen by reliability; held only while a high-priority job waits for one, else used by any job.');
   });
 
   it('an admin saves a setting; Save posts only what changed', async () => {

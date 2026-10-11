@@ -253,6 +253,15 @@ function eligible(s: MachineState, job: Job): boolean {
     && (pin === undefined || pin === s.machine.id);
 }
 
+/**
+ * Issue #788: before `job` is placed, each machine holds a priority lane for every high-priority job after it in the
+ * order that could run there; none once they are placed.
+ */
+function holdFor(states: MachineState[], ahead: Job[], job: Job): void {
+  if (ahead[0] === job) ahead.shift();
+  for (const s of states) s.slots.wanted = ahead.filter((h) => eligible(s, h) && roomFor(s, h.spec.executor) > 0).length;
+}
+
 const fitsLane = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
 /**
@@ -299,8 +308,8 @@ function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): 
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
   const kept = keptFor(s.slots, job, pl) > 0 ? freePriority(s.slots) : [];
   if (roomFor(s, ex) > 0 && kept.length > 0 && (pinOf(job) === id || s.unpinned < unpinnedCap(s))) {
-    // Only its priority lanes are free (issue #535).
-    return `waiting for a lane: machine ${id} keeps ${priorityLaneNames(kept)} free for high-priority jobs, the other ${s.occupied + s.assigned} are in use`;
+    // Only priority lanes held for high-priority jobs still to be placed are free (issues #535, #788).
+    return `waiting for a lane: machine ${id} holds ${priorityLaneNames(kept)} for high-priority jobs still to be placed, the other ${s.occupied + s.assigned} are in use`;
   }
   if (roomFor(s, ex) > 0) {
     // Only its reserved lanes are free (issue #372).
@@ -323,8 +332,10 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
+  const ahead = pl ? ordered.map((c) => c.job).filter((j) => isHigh(j, pl)) : [];
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
+    holdFor(states, ahead, job);
     const fits = states.filter((s) => fitsLane(s, job, pl));
     // A specialty job that fits nowhere elbows in past the cap (issue #762); else a critical one takes one lane over it
     // (issue #373). The extra lane drains when its job ends.

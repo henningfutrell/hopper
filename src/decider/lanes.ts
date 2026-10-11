@@ -1,6 +1,5 @@
 import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
-import { freePriority, priorityLaneNames } from './priority-lanes.ts';
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
@@ -80,8 +79,6 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
     const kept = m.reservedLanes!;
     return `reserved: ${kept} lane${kept === 1 ? '' : 's'} kept for jobs pinned to this machine`;
   }
-  const kept = freePriority(s.slots);
-  if (wait.length > 0 && kept.length > 0) return `${priorityLaneNames(kept)} kept free for high-priority jobs`;
   if (wait.length > 0) return 'no waiting job can run here (its executor, its pin, or an executor\'s lane cap)';
   if (hold.length > 0) {
     const first = hold[0]!.reason;

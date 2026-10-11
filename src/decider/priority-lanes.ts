@@ -1,6 +1,8 @@
-// Priority lanes in placement (issue #535, design.md "High priority everywhere"): a high-priority job takes a free
-// priority lane first, on the machine holding the best one; while none waits a priority lane stays free (keep-free)
-// or takes a default job last (share), never a low one. Pure, like the rest of the decider.
+// Priority lanes in placement (issue #535, design.md "High priority everywhere"): a high-priority job takes a free priority
+// lane first, on the machine holding the best one. A priority lane is held only on demand (issue #788): while a
+// high-priority job still to be placed could run on the machine, other jobs leave it as many free priority lanes as
+// those jobs (keep-free), or only low jobs do (share). With none to place, any job takes a priority lane, last. Pure,
+// like the rest of the decider.
 import { isHighPriority, LOW_PRIORITY_BELOW, type Job, type Lane, type LaneId, type PriorityLanesInput } from '../domain/types.ts';
 
 /** What placement knows of one machine's lanes, beside its counts. */
@@ -11,6 +13,8 @@ export interface LaneSlots {
   openIds: Set<LaneId>;
   /** Lanes busy or draining now, and those this Decision gives a job. */
   inUse: Set<LaneId>;
+  /** High-priority jobs still to be placed in this Decision that could run here: the priority lanes held for them. */
+  wanted: number;
 }
 
 export function laneSlots(machineId: string, lanes: readonly Lane[], input: PriorityLanesInput | undefined): LaneSlots {
@@ -19,22 +23,26 @@ export function laneSlots(machineId: string, lanes: readonly Lane[], input: Prio
     priority: (input?.lanes ?? []).filter((id) => id.startsWith(`${machineId}/lane-`)),
     openIds: new Set(mine.map((l) => l.id)),
     inUse: new Set(mine.filter((l) => l.state !== 'idle').map((l) => l.id)),
+    wanted: 0,
   };
 }
 
 export const isHigh = (job: Job, input: PriorityLanesInput | undefined): boolean => input !== undefined && isHighPriority(job.priority, input.highPriority);
 
-/** Whether the job may run on a priority lane: a high-priority job, or in share a job that is not low. */
-export function mayUsePriority(job: Job, input: PriorityLanesInput | undefined): boolean {
-  if (!input) return true;
-  return isHigh(job, input) || (input.whenIdle === 'share' && job.priority >= LOW_PRIORITY_BELOW);
-}
-
 /** The priority lanes no job holds or takes in this Decision. */
 export const freePriority = (s: LaneSlots): LaneId[] => s.priority.filter((id) => !s.inUse.has(id));
 
-/** How many lanes a job that may not use a priority lane must leave there. */
-export const keptFor = (s: LaneSlots, job: Job, input: PriorityLanesInput | undefined): number => (mayUsePriority(job, input) ? 0 : freePriority(s).length);
+/**
+ * How many free priority lanes the job must leave there: none for a high-priority job, or in share a job that is not
+ * low; else one for each high-priority job still to be placed that could run there (issue #788), at most the free ones.
+ */
+export function keptFor(s: LaneSlots, job: Job, input: PriorityLanesInput | undefined): number {
+  if (!input || isHigh(job, input) || (input.whenIdle === 'share' && job.priority >= LOW_PRIORITY_BELOW)) return 0;
+  return Math.min(s.wanted, freePriority(s).length);
+}
+
+/** Whether the job may take a priority lane: one is free beyond those it must leave. */
+const mayUsePriority = (s: LaneSlots, job: Job, input: PriorityLanesInput | undefined): boolean => freePriority(s).length > keptFor(s, job, input);
 
 const laneId = (machineId: string, n: number): LaneId => `${machineId}/lane-${n}`;
 
@@ -71,7 +79,7 @@ export function pickLane(machineId: string, maxLanes: number, s: LaneSlots, free
   if (idle) return take({ lane: idle });
   const free = (n: number): boolean => !s.openIds.has(laneId(machineId, n)) && !s.priority.includes(laneId(machineId, n));
   for (let n = 1; n <= maxLanes; n++) if (free(n)) return take({ opens: laneId(machineId, n) });
-  if (mayUsePriority(job, input)) {
+  if (mayUsePriority(s, job, input)) {
     const p = priorityPick();
     if (p) return p;
   }

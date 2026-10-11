@@ -76,7 +76,7 @@ Set them in the **Priority lanes** panel on **Machines** (admin):
 | **Priority lanes** | How many, 0 to 32. 0 turns them off. |
 | **Window, days** | The history that reliability is measured over. |
 | **Runs to be ranked** | The runs a lane needs before it is ranked. |
-| **While no high-priority job waits** | *a priority lane stays free* (default), or *it takes default jobs*: a default job takes one only when no other lane of that machine is free. A low-priority job never takes one. |
+| **While a high-priority job waits** | *only it takes a priority lane* (default), or *default jobs take one too*: then only low-priority jobs leave it. A priority lane is held only while a high-priority job waits for one and could run on that machine. While none waits, any job takes a priority lane, after the other lanes of that machine. When the high-priority job ends, its lane is open to any job again. |
 
 To choose the lanes yourself, tick them and select **Use these lanes**. **Choose by reliability** goes back to the hopper's choice. The Overview's **Lanes** panel marks each priority lane.
 
@@ -162,7 +162,7 @@ See [Command line and API](cli-and-api.md) for how the command line reaches the 
 | A job waits with `waiting for a lane: machine desk's lane cap is 4, all 4 in use` | Every lane it may use is busy. Add lanes, add a machine, or wait. |
 | The reason ends `(usage soft limit, used 82%)` | Usage is past the soft limit, so the lane cap is smaller. Wait for the reset, or move the limits on Usage. |
 | `usage hard limit stops executor …` | Usage is at the hard limit. Nothing new starts there until usage goes down. |
-| `machine desk keeps priority lane desk/lane-1 free for high-priority jobs` | A priority lane stays free. Set **While no high-priority job waits** to *it takes default jobs*, or set **Priority lanes** to 0. |
+| `machine desk holds priority lane desk/lane-1 for high-priority jobs still to be placed` | A high-priority job after this one in the queue order needs that lane. The lane is open to any job again once that job is placed. |
 | `machine desk keeps 1 of its 4 lanes for jobs pinned to it` | The machine's `reservedLanes` keep lanes for pinned jobs. |
 | Lane tuning says `not enough history` | The machine must run at least one lane for 10 minutes in the last 7 days. |
 | No **Apply** button | Auto-tune is off, the machine is offline, the recommendation is the lanes you have, it was dismissed, or you are not an admin. |

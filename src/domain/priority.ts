@@ -4,7 +4,10 @@
 import type { Job, JobId, LaneId, MachineId, Question } from './types.ts';
 import type { QuestionFork, QuestionShifts } from './phase.ts';
 
-/** What a priority lane does while no high-priority job waits: stays free for one, or takes a default job (never a low one). */
+/**
+ * Which jobs leave a free priority lane while a high-priority job waits for one (issue #788): every job that is not high
+ * priority (`keep-free`), or only low jobs (`share`). While none waits, any job takes a priority lane, last.
+ */
 export const PRIORITY_LANE_IDLE = ['keep-free', 'share'] as const;
 export type PriorityLaneIdle = typeof PRIORITY_LANE_IDLE[number];
 
