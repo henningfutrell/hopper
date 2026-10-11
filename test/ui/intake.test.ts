@@ -14,16 +14,16 @@ const DETAIL = {
   mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper',
   intake: [
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1' },
-    { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
-    { key: url(3), title: 'Also unassigned', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
-    { key: url(4), title: 'Old claim', repo: 'octo-user/hopper', reason: 'claimed by another hopper', action: 'release' },
-    { key: url(5), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner' },
-    { key: url(7), title: 'From a stranger', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', request: {
+    { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
+    { key: url(3), title: 'Also unassigned', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
+    { key: url(4), title: 'Old claim', repo: 'octo-user/hopper', reason: 'claimed by another hopper', action: 'release', group: 'other' },
+    { key: url(5), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
+    { key: url(7), title: 'From a stranger', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', group: 'request', request: {
       hash: 'a'.repeat(64), title: 'From a stranger', body: 'Please <img src=x onerror="alert(1)"> change the CI.', author: 'stranger',
       actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octo-user', trusted: true }, { role: 'assigned', login: 'octo-user', trusted: true }],
       why: ['written by stranger, not a trusted actor'],
     } },
-    { key: url(8), title: 'Edited since', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', request: {
+    { key: url(8), title: 'Edited since', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', group: 'request', request: {
       hash: 'b'.repeat(64), title: 'Edited since', body: 'one\nthree\n', author: 'stranger', approved: { title: 'Edited since', body: 'one\ntwo\n' },
       actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', app: 'helper[bot]', login: 'helper[bot]', trusted: false }, { role: 'assigned', login: 'octo-user', trusted: true }],
       why: ['written by stranger, not a trusted actor', 'labelled by an app or a bot (helper[bot])'],

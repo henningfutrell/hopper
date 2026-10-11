@@ -15,10 +15,10 @@ export const requeueBody = z.object({ freshSession: z.boolean().optional() }).st
 export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
 /**
  * Assign to me, or release a claim, on items a job source listed (issue #440); approve a request card (issue #652): one
- * item, with the hash of its title and body as the person read them.
+ * item, with the hash of its title and body as the person read them; take items off the backburner (issue #798).
  */
 export const intakeActionBody = z.object({
-  kind: z.enum(['assign', 'release', 'approve']),
+  kind: z.enum(['assign', 'release', 'approve', 'unbackburner']),
   keys: z.array(z.string().min(1)).min(1, 'name at least one item').max(100, 'at most 100 items at once'),
   hash: z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256, hex').optional(),
 }).strict()

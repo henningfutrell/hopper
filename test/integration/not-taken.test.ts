@@ -91,7 +91,7 @@ describe('issues not taken, grouped and acted on (issue #798)', () => {
   it('a new request card records source.request_opened once for its text, across syncs and a restart', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
-    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: sleepy, labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: sleepy, labels: ['hopper'], labelledBy: 'owner', assignedBy: 'owner' });
     await a.sync();
     await a.sync();
     const opened = await a.events('types=source.request_opened');

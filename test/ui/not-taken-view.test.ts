@@ -17,7 +17,7 @@ const DETAIL = {
   mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper',
   intake: [
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1', jobStatus: 'running' },
-    { key: url(2), title: 'Taken, job ended', repo: 'octo-user/hopper', jobId: 'j-2', jobStatus: 'done' },
+    { key: url(2), title: 'Taken, job ended', repo: 'octo-user/hopper', jobId: 'j-2', jobStatus: 'finished' },
     { key: url(3), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
     { key: url(4), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
     { key: url(5), title: 'Kept out too', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
@@ -29,7 +29,10 @@ const DETAIL = {
   ],
 };
 const SOURCES = [{ name: 'github-account', kind: 'github-account', state: 'ok', itemsSeen: 10, jobsCreated: 2, activeJobs: 1, detail: DETAIL }];
-const ACCOUNTS = { accounts: [] };
+const ACCOUNTS = { accounts: [{
+  provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', jobRepositories: ['octo-user/hopper'],
+  installations: [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/hopper'] }],
+}] };
 const MACHINES = { machines: [] };
 const DECISION = { id: 'd1', at: '2026-10-08T10:00:00.000Z', trigger: 'tick', start: [], hold: [], wait: [], advice: [], reasons: [], inputs: {}, lanes: [] };
 
@@ -134,7 +137,7 @@ describe('Sources: intake grouped, no inner scroll box, a taken issue whose job 
     expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other', 'taken']);
     expect(intake()!.querySelector('.overflow-y-auto')).toBeNull();
     expect(row(intake()!, url(1)).textContent).toContain('taken');
-    expect(row(intake()!, url(2)).textContent).toContain('its job ended: done');
+    expect(row(intake()!, url(2)).textContent).toContain('its job ended: finished');
     expect(row(intake()!, url(2)).querySelector('.text-ok')).toBeNull();
   });
 });

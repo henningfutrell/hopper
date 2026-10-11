@@ -9207,6 +9207,33 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
   is the user's act from Sources, never the hopper's own.
 
+## Issues not taken, surfaced (issue #798, 2026-10-11)
+
+Owner report: a source said "26 open labelled issues: 8 taken, 18 not taken", and on a phone the 18 looked gone. Nothing
+was dropped, but the intake list sat in an inner scroll box (`max-h-[32rem] overflow-y-auto`) inside the scrolling page,
+with no groups or counts; request cards lived only inside the source's card in Sources, with no badge and no event; the
+backburner issues had no action; and "taken" showed for an issue whose job had already ended, until the next sync.
+
+**As built:**
+- **Not-taken groups.** Each outcome not taken carries `group` (`NotTakenGroup`, `src/domain/intake.ts`): `request`,
+  `not-assigned`, `backburner`, `pr-waiting` (`hopper:pr-ready`), `partly-done`, `other`. `discoverIssues` sets it from
+  the reason; `source.ts` sets `request` where it makes the request card. The UI groups by it (`ui/src/model/intake.ts`,
+  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls.
+- **Not taken, a view.** `#not-taken`, after Queue: per source, the issues not taken, grouped, with every action Sources
+  has. Its nav badge counts the request cards (`requestsWaiting`). Sources keeps the full intake, grouped the same way,
+  taken last. A request card has no job, so the Queue (which lists jobs) does not show it.
+- **Take off the backburner.** `unbackburner` on `POST /ui/api/sources/:name/intake` (operator; only on an outcome the last
+  sync offered it for): the `hopper:backburner` label goes, `source.backburner_lifted { source, key }`, and the source
+  syncs at once. A label write, like Release claim.
+- **`source.request_opened`.** A new request card records `{ source, key, hash, author, why }`, once per item and text
+  hash: `IntakeContext.requestOpened` reads the events, and the source keeps the ids it saw, so a restart or a second
+  sync records nothing new, and an edit to the title or body records it again. Never the text. The Grok Bot routine
+  notifier posts it (`sourceName`, `issueUrl`, `author`, `why`); webhook subscribers get it like any event.
+- **Live job status.** `SourceStatus.detail.intake` is the list as of the last sync, but each taken outcome's `jobId` and
+  `jobStatus` are read when the status is (`liveIntake`, `src/sources/intake-live.ts`, for `/api/sources` and each SSE emit). The UI
+  prefers the job as its store knows it. An ended job's issue shows "its job ended: <status>" in place of "taken" until
+  the next sync says what became of it.
+
 ## Per-machine work trees (issue #361, 2026-10-08)
 
 Owner request: jobs failed when routed to a machine that did not have the configured work tree — four

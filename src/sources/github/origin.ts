@@ -2,11 +2,11 @@
 // assignment the hopper takes it by — the newest of each, from its events. Each act counts only when a trusted actor did
 // it, not through an app or as a bot; this hopper's own Assign to me is the user's act. An issue a job filed is never of
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
-// else it is a request card.
+// else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies.
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
-import type { IntakeTrust } from '../../domain/intake.ts';
+import type { IntakeContext, IntakeTrust } from '../../domain/intake.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 
 /** An issue's origin: trusted or approved (it may be taken), else the request card a person approves. */
@@ -71,4 +71,17 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     else verdicts.set(i.url, { request: { hash, title: i.title, body: i.body, author: i.author, actors, why, ...(approved ? { approved } : {}) } });
   }
   return verdicts;
+}
+
+/**
+ * Record `source.request_opened` for each request card whose text has none yet (issue #798): once per item and text, across
+ * syncs and restarts. `seen` keeps what this process already knows, so the events are read once per text.
+ */
+export function openRequests(source: string, intake: IntakeContext, requests: Map<string, IntakeRequest>, seen: Set<string>): void {
+  for (const [key, r] of requests) {
+    const id = `${key} ${r.hash}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (!intake.requestOpened(key, r.hash)) intake.record('source.request_opened', { source, key, hash: r.hash, author: r.author, why: r.why });
+  }
 }
