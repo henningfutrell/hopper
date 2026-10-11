@@ -3,7 +3,7 @@
 // onAnswered/onExpired run inside the transaction. tx rolls back on throw.
 import { vi } from 'vitest';
 import type { AnswerRequest, ConfigRecords, EscalationLevel, LevelReply, QuestionService, UserStore } from '../../src/domain/ports.ts';
-import { EVENT_SCHEMA_VERSIONS, type AutoAnswerSettings, type DomainEvent, type JevFirst, type Job, type NewEvent, type Question, type QuestionAttempt, type RaisedBy } from '../../src/domain/types.ts';
+import { EVENT_SCHEMA_VERSIONS, type AutoAnswerSettings, type DomainEvent, type Job, type QuestionRisk, type NewEvent, type Question, type QuestionAttempt, type RaisedBy } from '../../src/domain/types.ts';
 import { createQuestionService } from '../../src/questions/index.ts';
 
 export interface MemoryStore {
@@ -137,8 +137,8 @@ export interface RigOptions {
   renotifyMs?: number;
   humanTimeoutMs?: number;
   stageTimeoutMs?: number;
-  /** Jev first (issue #550): absent, the levels only. */
-  first?: JevFirst;
+  /** The Decider's risk call (issue #679): absent, the keyword risk rules check every answer. */
+  risk?: QuestionRisk;
 }
 
 export function rig(o: RigOptions = {}): Rig {
@@ -167,7 +167,7 @@ export function rig(o: RigOptions = {}): Rig {
     onExpired: (q) => expired.push({ q, depth: mem.depth() }),
     onDismissed: (q) => dismissed.push({ q, depth: mem.depth() }),
     onCorrected: (q) => corrected.push({ q, depth: mem.depth() }),
-    ...(o.first ? { minorDecisions: { first: o.first, gated: () => false } } : {}),
+    ...(o.risk ? { risk: o.risk } : {}),
   });
   const job = mem.addJob('build the thing', 'ship it');
   return {

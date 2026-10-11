@@ -1,9 +1,9 @@
-// Fixed answers (issue #629, design.md "Question pipeline"): before Jev and the levels, a question with an answer
+// Fixed answers (issue #629, design.md "Question pipeline"): before the levels, a question with an answer
 // fixed by facts is answered without a model — a permission dialog the allowed dialogs allow inside the job's work
 // tree, or a question a person already answered on the same item. The risk rules still run: a hit goes to a person.
-// Anything else goes on to Jev and the levels, as before.
+// Anything else goes on to the levels, as before.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { JevFirst, Job } from '../../src/domain/types.ts';
+import type { Job } from '../../src/domain/types.ts';
 import { rig, settle } from './support.ts';
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-09T10:00:00Z')); });
@@ -25,7 +25,7 @@ function raise(r: ReturnType<typeof rig>, text: string, detectedBy = 'blocked', 
   return r.mem.store.questions.create({ jobId: job.id, text, recentOutput: '', detectedBy, tier: r.svc.firstStage() });
 }
 
-describe('allowed dialogs: a permission dialog inside the job work tree is answered yes, without Jev or a level', () => {
+describe('allowed dialogs: a permission dialog inside the job work tree is answered yes, without a level', () => {
   it('an edit of a file inside the work tree: the dialog is answered with its Yes option', async () => {
     const r = rig();
     withTree(r);
@@ -48,17 +48,6 @@ describe('allowed dialogs: a permission dialog inside the job work tree is answe
     await settle();
     expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answer: '1', answeredBy: 'fixed' });
     expect(r.asked).toHaveLength(0);
-  });
-
-  it('Jev is not asked about a dialog the allowed dialogs answer', async () => {
-    const decide = vi.fn<JevFirst['decide']>(async () => ({ asked: false as const }));
-    const r = rig({ first: { decide } });
-    withTree(r);
-    const q = raise(r, EDIT_INSIDE);
-    r.svc.handle(q.id);
-    await settle();
-    expect(decide).not.toHaveBeenCalled();
-    expect(r.mem.store.questions.get(q.id)!.answeredBy).toBe('fixed');
   });
 
   it.each([
@@ -96,9 +85,8 @@ describe('allowed dialogs: a permission dialog inside the job work tree is answe
     expect(r.asked).toHaveLength(1);
   });
 
-  it('a risk rule hit goes to a person, past Jev and every level', async () => {
-    const decide = vi.fn<JevFirst['decide']>(async () => ({ asked: false as const }));
-    const r = rig({ first: { decide } });
+  it('a risk rule hit goes to a person, past every level', async () => {
+    const r = rig();
     withTree(r);
     const q = raise(r, dialog('Edit file', 'src/env.ts', '3 + const apiKey = load();', 'Do you want to make this edit to env.ts?', '1. Yes', '2. No'));
     r.svc.handle(q.id);
@@ -108,7 +96,6 @@ describe('allowed dialogs: a permission dialog inside the job work tree is answe
     expect(got.attempts).toEqual([expect.objectContaining({ tier: 'fixed', role: 'fixed', answer: '1', riskRules: ['credentials'], outcome: 'escalated' })]);
     expect(r.eventsOf('question.escalated_to_human')[0]!.data.reason).toBe('risk rules: credentials');
     expect(r.asked).toHaveLength(0);
-    expect(decide).not.toHaveBeenCalled();
     expect(r.answered).toHaveLength(0);
   });
 });
@@ -121,9 +108,8 @@ describe('a reused answer: a person already answered the same question on the sa
     return q;
   }
 
-  it('the same question again on the same job: the person\'s answer, without Jev or a level', async () => {
-    const decide = vi.fn<JevFirst['decide']>(async () => ({ asked: false as const }));
-    const r = rig({ first: { decide } });
+  it('the same question again on the same job: the person\'s answer, without a level', async () => {
+    const r = rig();
     const before = answeredByPerson(r, 'Which database?  ', 'use sqlite');
     const q = raise(r, 'which   database?', 'marker');
     r.svc.handle(q.id);
@@ -132,7 +118,6 @@ describe('a reused answer: a person already answered the same question on the sa
     expect(got).toMatchObject({ status: 'answered', answer: 'use sqlite', answeredBy: 'fixed' });
     expect(got.attempts).toEqual([expect.objectContaining({ tier: 'fixed', role: 'fixed', answer: 'use sqlite', riskRules: [], outcome: 'accepted', reason: expect.stringContaining(before.id) })]);
     expect(r.asked).toHaveLength(0);
-    expect(decide).not.toHaveBeenCalled();
   });
 
   it('a run again of the same item reuses the answer given on the job before it', async () => {
