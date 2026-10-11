@@ -18,7 +18,7 @@ const VIEW = { secrets: [{ id: 's1', name: 'KUBE', setBy: 'Ada', createdAt: '', 
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
-function fakeDaemon() {
+function fakeDaemon(o: { launch?: boolean } = {}) {
   const calls: Call[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
@@ -28,7 +28,7 @@ function fakeDaemon() {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/sources': { sources: [] }, '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
     '/api/vault': VIEW,
-    '/api/sandboxes': { launch: { available: true, runtime: 'podman' }, line: '--cap-drop ALL', boxes: [], problems: [] },
+    '/api/sandboxes': { launch: o.launch === false ? { available: false, problem: 'no socket.' } : { available: true, runtime: 'podman' }, boxes: [], problems: [] },
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const path = String(input).split('?')[0]!;
@@ -37,6 +37,7 @@ function fakeDaemon() {
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/ui/api/vault') return json(200, VIEW);
     if (path === '/ui/api/machines/sandbox') return json(200, { container: 'hopper-sandbox-kube' });
+    if (path === '/ui/api/machines/join') return json(200, { code: 'c0de', expiresAt: '2099-01-01T00:00:00.000Z', ...(body?.box ? { flags: '--cap-drop ALL --cpus 3 --memory 2048m' } : {}) });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
@@ -52,12 +53,12 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-function setup() {
+function setup(o: { launch?: boolean } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  const daemon = fakeDaemon();
+  const daemon = fakeDaemon(o);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   return daemon;
@@ -89,8 +90,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function openLaunch() {
-  const daemon = setup();
+async function openLaunch(o: { launch?: boolean } = {}) {
+  const daemon = setup(o);
   vi.resetModules();
   const path = '../../ui/src/views/machine-join.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { JoinMachineForm } = (await import(path)) as { JoinMachineForm: (p: Record<string, unknown>) => ReturnType<typeof createElement> };
@@ -99,7 +100,7 @@ async function openLaunch() {
   await click(buttons().find((b) => b.textContent?.startsWith('A sandbox box'))!);
   await vi.waitFor(() => expect(button('kube')).toBeDefined());
   await click(button('kube'));
-  await vi.waitFor(() => expect(button('Start the box')).toBeDefined());
+  await vi.waitFor(() => expect(button(o.launch === false ? 'Show the line' : 'Start the box')).toBeDefined());
   return daemon;
 }
 
@@ -135,6 +136,29 @@ describe('Add machine → A sandbox box: the launch\'s parameters (issue #708)',
     expect(document.querySelector('[data-launch-problem]')).toBeNull();
     expect(button('Start the box').disabled).toBe(false);
     expect(daemon.calls.some((x) => x.path === '/ui/api/machines/sandbox')).toBe(false);
+  });
+});
+
+describe('Add machine → A sandbox box: the line, when the hopper does not start the box (issue #708)', () => {
+  it('takes CPUs and memory from the template\'s defaults; the line carries the flags the hopper built for them', async () => {
+    const daemon = await openLaunch({ launch: false });
+    expect(field('CPUs').value).toBe('2');
+    expect(field('Memory in GiB').value).toBe('2');
+    // A box the hopper does not start has no record: no time limit, secrets subset, profile or tools to give it.
+    expect(document.querySelector('input[aria-label="Time limit in minutes"]')).toBeNull();
+    expect(document.querySelector('[role="group"][aria-label="Secrets for this box"]')).toBeNull();
+    await type(field('CPUs'), '3');
+    await click(button('Show the line'));
+    await vi.waitFor(() => expect(document.querySelector('code')?.textContent).toContain('--cpus 3 --memory 2048m'));
+    expect(daemon.calls.find((x) => x.path === '/ui/api/machines/join')!.body).toEqual({ template: 'kube', box: { cpus: 3, memoryMb: 2048 } });
+  });
+
+  it('a value the template does not allow: says why, and no line is made', async () => {
+    const daemon = await openLaunch({ launch: false });
+    await type(field('CPUs'), '9');
+    expect(document.querySelector('[data-launch-problem]')!.textContent).toBe('CPUs: at most 4 for the template kube');
+    expect(button('Show the line').disabled).toBe(true);
+    expect(daemon.calls.some((x) => x.path === '/ui/api/machines/join')).toBe(false);
   });
 });
 

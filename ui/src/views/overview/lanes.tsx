@@ -1,17 +1,17 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
-import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
+import { ExternalLink, FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
-import { JobTitle, LinkLostFlag, Since, UnassignedFlag } from '@/components/job';
+import { GhLink, JobTitle, LinkLostFlag, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { canPickUp, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
-import { goalOf } from '@/model/job';
+import { GROUP, canPickUp, laneJobState, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
+import { goalOf, issuePointer } from '@/model/job';
 import { REVIEW_UI } from '@/model/reviews';
 import type { Job, ReviewKind } from '@/model/wire';
 import { act, useHopper } from '@/store';
-import { useJobBoard } from '@/store/selectors';
+import { useJobBoard, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 import { useCanOperate } from '@/store/selectors';
 
@@ -98,7 +98,9 @@ export function AskButton({ job, kind }: { job: Job; kind: ReviewKind }) {
 
 /** What each lane state means, on hover (issue #381). */
 const LANE_MEANING = {
+  starting: 'Its job is starting: the executor is not running yet.',
   busy: 'Running a job.',
+  waiting: 'Its job waits, and still holds this lane.',
   idle: 'Open, with no job: the next waiting job takes it.',
   unopened: 'Room for a lane this machine may open; none is open there now.',
 } as const;
@@ -108,11 +110,13 @@ const ELBOWED_IN = 'A specialty job elbowed in: it started on a lane past this m
 function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
-  // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job.
-  const state = row.state === 'draining' ? 'busy' : row.state;
+  // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job. A lane with a job
+  // says what the job does now: starting, busy or waiting (issue #432).
+  const state = job ? laneJobState(job) : row.state === 'draining' ? 'busy' : row.state;
+  const pointer = job && issuePointer(job);
   return (
-    <div data-lane-job={job?.id} className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
-      state === 'busy' && 'border-busy/30 bg-busy/[0.04]', state === 'unopened' && 'border-dashed opacity-60')}>
+    <div data-lane-job={job?.id} data-lane-state={state} className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
+      state !== 'idle' && state !== 'unopened' && 'border-busy/30 bg-busy/[0.04]', state === 'unopened' && 'border-dashed opacity-60')}>
       <div className="mb-2 flex items-center gap-2 text-xs">
         <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
@@ -122,8 +126,13 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
         <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
           tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
       </div>
+      {pointer && (
+        <div data-slot="lane-target" className="mb-1 font-mono text-xs" title={`the issue this lane works on: ${pointer.label}`}>
+          <GhLink url={pointer.url}>{pointer.label}<ExternalLink className="size-3 opacity-60" /></GhLink>
+        </div>
+      )}
       {job ? (
-        <div data-job-group="running" data-job-id={job.id} data-status={job.status} className="space-y-2">
+        <div data-job-group={GROUP[job.status]} data-job-id={job.id} data-status={job.status} className="space-y-2">
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
@@ -139,6 +148,8 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
           <LinkLostFlag job={job} />
           <UnassignedFlag job={job} />
         </div>
+      ) : lane?.jobId ? (
+        <div data-lane-loading className="text-xs text-muted-foreground" title={`job ${lane.jobId}`}>job {lane.jobId.slice(0, 8)} · loading</div>
       ) : (
         <div data-lane-idle className="text-xs text-muted-foreground/70" title={idle}>
           {lane ? 'idle' : 'capacity, no lane open'}{idle && <> · <span className="text-muted-foreground">{idle}</span></>}
@@ -158,7 +169,7 @@ export function LanesPanel() {
   const machines = useHopper((s) => s.machines);
   const { running } = useJobBoard();
   const idle = useIdleReasons();
-  const rows = laneRows(machines, running);
+  const rows = laneRows(machines, running, useJobIndex());
   // A machine with no lane to show (its lane count is 0) still says why it runs nothing.
   const laneless = machines.filter((m) => !rows.some((r) => r.machine.id === m.id) && idle.has(m.id));
   // The priority lanes (issue #535): marked where open; the ones not open now named below.

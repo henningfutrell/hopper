@@ -4612,8 +4612,8 @@ deleted the home volume.
 - **The sandbox flags are built once** (`flags.ts`): every capability dropped, `no-new-privileges`, a read-only root,
   `/tmp` a tmpfs (`rw,nosuid,nodev`), the home volume at `/home/agent`, restart `unless-stopped`, the CPU and memory
   limits of the launch, and the image's own user — a launch refuses an image whose user is unset, `root` or uid 0.
-  The libpod body, the Docker body, and the `run` flags of the line Add machine shows (`GET /api/sandboxes` `line`,
-  with a box's default limits) all come from it; the UI imports nothing of `src/`, so it reads the flags from the API.
+  The libpod body, the Docker body, and the `run` flags of the line Add machine shows all come from it; the UI imports
+  nothing of `src/`, so it reads the line's flags from the API (part 6, below).
 - **A template is a base skeleton plus per-launch parameters.** `Template.limits` (`TemplateLimits`): `cpus` and
   `memoryMb` as `{default, max}`, `ttlMinutes` as `{default?, max?}`, `keepHome`. Absent: the hopper's defaults — 4
   CPUs (max 8), 8192 MiB (max 16384), no time limit, the home kept. Saved with `save-template` (`limits`, checked:
@@ -4651,8 +4651,13 @@ deleted the home volume.
   runs the same drafts through the page and through `resolveParams` and fails when they disagree.
 - **Not built yet:** a box with tools (issue #716) on a client
   target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
-  The line Add machine shows for a box the hopper does not start carries the hopper's default limits, not the
-  template's or the launch's.
+- **The line's limits (part 6, 2026-10-11).** The line Add machine shows for a box the hopper does not start gets its
+  `run` flags with its join code: `POST /ui/api/machines/join` with `box: { cpus?, memoryMb? }` answers `flags`, built
+  by `runFlags` from `lineFlags` (`launch.ts`), which resolves the CPUs and memory against the template as a launch
+  does (`resolveParams`): the template's defaults fill what is not asked, and a value over its max is refused (400)
+  before a code is made. A computer's line sends no `box` and gets no flags. `GET /api/sandboxes` no longer carries a
+  `line`. The page asks only the CPUs and memory there (`LaunchParamsInput` `limitsOnly`): a box the hopper does not
+  start has no record, so a time limit, a subset of secrets, a profile or tools would bind it to nothing.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 

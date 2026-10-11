@@ -129,8 +129,13 @@ export function overCap(machines: readonly MachineView[]): { machineId: string; 
   return machines.filter((m) => inUse(m) > m.maxLanes).map((m) => ({ machineId: m.id, inUse: inUse(m), lanes: m.maxLanes }));
 }
 
-export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
-  const byId = new Map(running.map((j) => [j.id, j]));
+/**
+ * `jobs`: every job the store holds. A job that waits (on a question or on its own wait) while its lane still names it
+ * shows on that lane too (issue #432), never an empty busy lane. An ended or parked job a stale lane names does not.
+ */
+export function laneRows(machines: MachineView[], running: Job[], jobs: ReadonlyMap<string, Job> = new Map()): LaneRow[] {
+  const waits = [...jobs.values()].filter((j) => GROUP[j.status] === 'waitingAnswer' || GROUP[j.status] === 'waitingOn');
+  const byId = new Map([...waits, ...running].map((j) => [j.id, j]));
   const byLane = new Map(running.filter((j) => j.laneId).map((j) => [j.laneId, j]));
   const placed = new Set<string>();
   const rows: LaneRow[] = [];
@@ -152,6 +157,14 @@ export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
     rows.push({ key: `orphan-${job.id}`, machine: { id: machineId, label: machineId }, job, ...(job.workTree ? { workTree: job.workTree } : {}), state: 'busy' });
   }
   return rows;
+}
+
+/** What a lane with a job does now (issue #432): its job starts (claimed), runs, or waits while it holds the lane. */
+export type LaneJobState = 'starting' | 'busy' | 'waiting';
+
+export function laneJobState(job: Job): LaneJobState {
+  if (job.status === 'claimed') return 'starting';
+  return job.status === 'running' ? 'busy' : 'waiting';
 }
 
 export interface Kpis {

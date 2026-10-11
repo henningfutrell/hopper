@@ -184,7 +184,6 @@ export type SandboxBox = Omit<SandboxRecord, 'userId'>;
  */
 export interface SandboxesView {
   launch: { available: boolean; problem?: string; runtime?: RuntimeKind };
-  line: string;
   boxes: SandboxBox[];
   problems: CleanupProblem[];
 }

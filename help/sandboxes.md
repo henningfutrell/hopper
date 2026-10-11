@@ -56,11 +56,12 @@ A value outside what the template allows is refused, with what it allows. It is 
 When the hopper has no runtime socket, Add machine says why and shows a line:
 
 1. Pick **A sandbox box**, a template, and **podman** or **docker**.
-2. Click **Show the line**.
-3. Run the line on the computer the hopper runs on. The join code in it works once, for 10 minutes.
-4. Sign its agent in once: `podman exec -it hopper-sandbox-<name> claude` (or `docker exec`).
+2. Set **CPUs** and **Memory in GiB**. The form starts at the template's defaults and shows the maximum of each. **Show the line** stays off while a value is more than the template allows.
+3. Click **Show the line**.
+4. Run the line on the computer the hopper runs on. The join code in it works once, for 10 minutes.
+5. Sign its agent in once: `podman exec -it hopper-sandbox-<name> claude` (or `docker exec`).
 
-The hopper does not own a box that you started from the line: it never stops or removes it.
+The hopper does not own a box that you started from the line: it never stops or removes it. The hopper keeps no record of it, so the line takes only CPUs and memory: no time limit, secrets, profile or tools.
 
 ### On another machine
 
