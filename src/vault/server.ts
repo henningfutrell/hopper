@@ -27,7 +27,7 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   // The master key (issue #659): HOPPER_MASTER_KEY, else the old token key while the install is moved from it. Checked
   // against the database's fingerprint at each user's first request: a wrong key seals nothing and opens nothing.
   const masterKey = launchKey(o.env);
-  const secret = runtimeSecrets(withMasterKey(o.env, masterKey));
+  const secret = runtimeSecrets(withMasterKey(o.env, masterKey).env);
   const databaseUrl = secret('HOPPER_DATABASE_URL');
   if (!databaseUrl) throw new Error('HOPPER_DATABASE_URL is not set: the vault keeps its secrets in the hopper\'s database');
   if (!secret(VAULT_KEY_VARIABLE)) throw new Error(`${VAULT_KEY_VARIABLE} is not set: the vault answers only the hopper, which shows it`);

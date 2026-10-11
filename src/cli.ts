@@ -20,6 +20,7 @@
 //   hopper proposal list|paths|select|accept|more-paths|steer|reject …
 //                                                     the proposals' paths on the running daemon (issue #651, cli-operator.ts)
 //   hopper master-key status [--url <hopper URL>]     the master key's source and fingerprint, never the key (issue #685, cli-operator.ts)
+//   hopper master-key rotate [--url <hopper URL>]     a new master key, every secret sealed again under it; prints it once (issue #659)
 //   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
 //   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
 //   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)

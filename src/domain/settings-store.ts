@@ -114,4 +114,13 @@ export interface InstanceSettingsRepository {
   /** The fingerprint of the master key a person said they saved (issue #659); undefined: none. */
   masterKeySaved(): string | undefined;
   setMasterKeySaved(fingerprint: string): void;
+  /** The last master key rotation (issue #659): the fingerprint of the key it replaced, and when; undefined: none. */
+  masterKeyRotation(): MasterKeyRotation | undefined;
+  setMasterKeyRotation(rotation: MasterKeyRotation): void;
+}
+
+/** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */
+export interface MasterKeyRotation {
+  from: string;
+  at: string;
 }

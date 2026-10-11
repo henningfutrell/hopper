@@ -23,6 +23,7 @@ import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
+import { masterKeyRotation } from './users/master-key-rotation.ts';
 import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
 import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
@@ -121,17 +122,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
   let masterKey: MasterKey;
   try {
-    masterKey = resolveMasterKey({
-      env, kept: () => store.keptSecrets(),
-      record: { fingerprint: () => store.settings.masterKeyFingerprint(), setFingerprint: (fp) => store.settings.setMasterKeyFingerprint(fp) },
-    });
+    const { settings } = store;
+    masterKey = resolveMasterKey({ env, kept: () => store.keptSecrets(), record: { fingerprint: () => settings.masterKeyFingerprint(), setFingerprint: (fp) => settings.setMasterKeyFingerprint(fp), rotation: () => settings.masterKeyRotation() } });
   } catch (e) {
     store.close();
     throw e;
   }
-  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings);
+  const { env: keyed, use: useKey } = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
+  // A rotation (issue #659): every secret sealed again, then the running hopper on the new key (src/users/master-key-rotation.ts).
+  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }));
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
-  const keyed = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
   // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
   const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });
   const { instance } = secrets;

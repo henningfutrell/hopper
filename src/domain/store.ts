@@ -484,6 +484,12 @@ export interface KeptSecrets {
   tokens: readonly string[];
 }
 
+/** What a master key rotation sealed again, and how many values an old key sealed that do not open (left as they were). */
+export interface MasterKeyResealed {
+  resealed: number;
+  unreadable: number;
+}
+
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
@@ -505,6 +511,12 @@ export interface InstanceStore {
   userStore(user: User): UserStore;
   /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
   keptSecrets(): KeptSecrets;
+  /**
+   * The master key rotation (issue #659): in one transaction, every value `from` sealed, in every schema, sealed again
+   * under `to`, its new fingerprint recorded, and the rotation. A value no `from` key sealed is left; one that does not
+   * open is counted, and left. Throws, and changes nothing, when a write fails.
+   */
+  rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
   holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;

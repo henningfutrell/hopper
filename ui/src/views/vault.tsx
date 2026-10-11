@@ -11,6 +11,7 @@
 // (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
 // what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>. The read
 // policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for.
+// The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659).
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -30,6 +31,7 @@ import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
 import { ToolsInput } from './vault-tools';
+import { MasterKeyRotation } from '@/app/master-key';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
@@ -320,6 +322,7 @@ export function Vault() {
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} />}
+      {view && <MasterKeyRotation />}
     </div>
   );
 }

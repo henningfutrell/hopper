@@ -144,6 +144,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.secret_removed': { name: 'KUBE_TOKEN', by: 'Ada' },
   'vault.secret_read': { name: 'system/connected-account.github.access-token', by: 'hopper', purpose: 'github' },
   'vault.secret_migrated': { name: 'system/webhook.3f2c.signing-secret', from: 'webhooks' },
+  'vault.master_key_rotated': { from: '9c1e04b7a2d35f60', to: '4b7d2e91c0a6f358', by: 'admin', resealed: 12, unreadable: 0 },
   'template.saved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }], by: 'Ada' },
   'template.removed': { template: 'kube', by: 'Ada' },
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },

@@ -135,6 +135,7 @@
         "vault.secret_removed",
         "vault.secret_read",
         "vault.secret_migrated",
+        "vault.master_key_rotated",
         "template.saved",
         "template.removed",
         "vault.approved",
