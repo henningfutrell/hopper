@@ -1,9 +1,9 @@
 // A job source's sync (issue #254): what it saw and made, when it last synced, and what is wrong with
 // it — on a source's card in Sources, and inside the GitHub connection's panel for that connection's source.
-import { Countdown, GhLink } from '@/components/job';
-import { useNow } from '@/hooks/use-now';
-import { ago } from '@/model/format';
+import { GhLink } from '@/components/job';
+import { ago, countdown } from '@/model/format';
 import type { SourceStatus } from '@/model/wire';
+import { useServerNow } from '@/store/selectors';
 import { SourceIntake } from './source-intake';
 
 const list = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v));
@@ -16,7 +16,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 /** A source's sync: what it saw and made, when, and what is wrong with it; and what its intake did with each item (issue #440). */
 export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepository?: ((repo: string) => Promise<boolean>) | undefined }) {
-  const now = useNow();
+  const now = useServerNow(); // the daemon's clock: its times are its own (issue #812)
   const d = s.detail ?? {};
   const repos = Array.isArray(d.installedRepos) ? (d.installedRepos as string[]) : [];
   return (
@@ -26,7 +26,8 @@ export function SourceSync({ s, addRepository }: { s: SourceStatus; addRepositor
       </div>
       <div className="num text-xs text-muted-foreground">
         <span className="font-mono">{s.kind}</span> · last sync <span title={s.lastSyncAt}>{ago(s.lastSyncAt, now)}</span>
-        {s.nextSyncAt && <> · next <Countdown iso={s.nextSyncAt} /></>}
+        {s.syncing ? <> · <span data-syncing>syncing now</span></>
+          : s.nextSyncAt && <> · next <span title={s.nextSyncAt}>{Date.parse(s.nextSyncAt) > now ? countdown(s.nextSyncAt, now) : 'now'}</span></>}
       </div>
       {s.lastError && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 text-xs break-words text-bad">{s.lastError}</div>}
       {str(d.setup) && <div className="rounded-md border border-warn/30 bg-warn/5 p-2 text-xs">Setup needed: <code className="font-mono">{String(d.setup)}</code></div>}

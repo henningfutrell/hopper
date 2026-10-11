@@ -8,7 +8,10 @@ export interface SourceStatus {
   lastSyncAt?: string;
   lastOkAt?: string;
   lastError?: string;
+  /** When the source's timer syncs it next; absent while a sync runs (issue #812). */
   nextSyncAt?: string;
+  /** A sync runs now (issue #812). */
+  syncing?: true;
   /** Eligible items seen by the last discover. */
   itemsSeen: number;
   /** Jobs this source created since the daemon started. */

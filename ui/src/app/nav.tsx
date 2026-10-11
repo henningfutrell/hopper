@@ -3,7 +3,7 @@
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
 // Not taken (issue #798) is badged with the request cards waiting for approval. The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it.
-import { Briefcase, ChevronsUp, CircleDashed, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+import { Briefcase, ChevronsUp, CircleDashed, FileCheck, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
