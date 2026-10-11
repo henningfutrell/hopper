@@ -8,8 +8,8 @@ import { checkWait } from '../domain/read-only-check.ts';
 import type { BoxTool, ContainerRuntime, LaunchParams, SandboxRecord, StartCheck } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { TemplateView } from '../domain/vault.ts';
-import { isRootUser } from './flags.ts';
-import { resolveParams } from './params.ts';
+import { isRootUser, runFlags } from './flags.ts';
+import { resolveParams, type LaunchTemplate } from './params.ts';
 import { toolsImage } from './tools.ts';
 
 /** The label on every box the hopper launches: its value is the hopper's instance id. */
@@ -79,6 +79,16 @@ export async function boxImage(runtime: ContainerRuntime, base: string, tools: r
 }
 
 const profileKey = (p: { operation: string; asset: { kind: string; name: string } }): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
+const launchTemplate = (t: TemplateView): LaunchTemplate => ({ name: t.name, gives: t.gives, profiles: t.profiles.map(profileKey), limits: t.limits, tools: t.tools });
+
+/**
+ * The `run` flags of the line Add machine shows for a box the hopper does not start (issue #708): the boxes' own
+ * builder, with the CPUs and memory asked for, each within the template's limits (the hopper's for a box of no template).
+ */
+export function lineFlags(t: TemplateView | undefined, p: Pick<LaunchParams, 'cpus' | 'memoryMb'>): { ok: true; flags: string } | { ok: false; error: string } {
+  const resolved = resolveParams(t && launchTemplate(t), p);
+  return resolved.ok ? { ok: true, flags: runFlags(resolved.params).join(' ') } : resolved;
+}
 
 export async function launchBox(c: LaunchContext, userId: string, l: LaunchRequest): Promise<SandboxRecord> {
   const t = l.template;
@@ -86,7 +96,7 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
   // The read-only check (issue #716): a template that needs one starts no box until its current version passed.
   const waits = t && checkWait(t);
   if (waits) throw new LaunchRefused(409, waits);
-  const resolved = resolveParams(t && { name: t.name, gives: t.gives, profiles: t.profiles.map(profileKey), limits: t.limits, tools: t.tools }, l.params);
+  const resolved = resolveParams(t && launchTemplate(t), l.params);
   if (!resolved.ok) throw new LaunchRefused(400, resolved.error);
   const { params } = resolved;
 

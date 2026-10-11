@@ -16,7 +16,8 @@ import type { TemplateView, MachinesConfig, SandboxesView, VaultView } from '@/m
 import { useHopper } from '@/store';
 import { LaunchParamsInput } from './launch-params';
 
-interface Minted { code: string; expiresAt: string }
+/** A box's line also gets its `run` flags (issue #708): the hopper's own builder, with the CPUs and memory asked for. */
+interface Minted { code: string; expiresAt: string; flags?: string }
 
 const time = (iso: string): string => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -44,9 +45,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
   // Whether the hopper starts a box itself (issue #603), and why not.
   const [launch, setLaunch] = useState<SandboxesView['launch'] | null>(null);
-  // The sandbox flags of the line: the hopper's own builder (issue #708). Until they are read, no box line is shown.
-  const [flags, setFlags] = useState<string | null>(null);
-  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => { setLaunch(v.launch); setFlags(v.line); }, () => setLaunch(null)); }, []);
+  useEffect(() => { get<SandboxesView>('/api/sandboxes').then((v) => setLaunch(v.launch), () => setLaunch(null)); }, []);
   const [started, setStarted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
@@ -56,7 +55,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   // The machines there were when the line was shown: the first new one online is the one that joined.
   const before = useRef<Set<string> | null>(null);
   const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, runtime, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
-  const line = minted && (choice.kind === 'computer' || flags !== null) ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)), flags: flags ?? '' }) : null;
+  const line = minted && (choice.kind === 'computer' || minted.flags !== undefined) ? joinLine(choice, { origin: window.location.origin, code: minted.code, join: boxPlace(config, String(config.port ?? window.location.port)), flags: minted.flags ?? '' }) : null;
 
   useEffect(() => {
     if (!before.current) return;
@@ -71,7 +70,9 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
     setBusy(true);
     try {
       before.current = new Set(machines.map((m) => m.id));
-      setMinted(await post<Minted>('/ui/api/machines/join', kind === 'box' && template ? { template: template.name } : {}));
+      // A box's line: its CPUs and memory, which the hopper checks against the template and answers as flags.
+      const box = kind === 'box' && params.ok ? { ...(template ? { template: template.name } : {}), box: { cpus: params.params.cpus, memoryMb: params.params.memoryMb } } : {};
+      setMinted(await post<Minted>('/ui/api/machines/join', box));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -149,9 +150,12 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           </div>
         </div>
       )}
+      {!hopperStarts && !line && kind === 'box' && (
+        <LaunchParamsInput template={template} draft={draft} busy={busy} problem={params.ok ? undefined : params.error} onChange={setDraft} limitsOnly />
+      )}
       {!hopperStarts && !line && (
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="lg" disabled={busy} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
+          <Button type="button" size="lg" disabled={busy || (kind === 'box' && !params.ok)} onClick={() => void mint()}>{busy ? 'Making a join code…' : 'Show the line'}</Button>
           <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
         </div>
       )}
