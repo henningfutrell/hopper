@@ -101,10 +101,13 @@ export function untrustedBlock(issue: Pick<GitHubIssue, 'title' | 'body'>, comme
 
 /**
  * What the job is told of the issue's declared parts (issue #729): how many are done, which to ship, and that only the
- * last part closes the issue.
+ * last part closes the issue; when every part is done, to check the issue and close it when nothing is left.
  */
 export function partsLine(n: number, parts: Parts): string {
-  return `parts: ${parts.done} of ${parts.total} done (the checklist under the heading "Parts" in the issue; each merged "Part of #${n}" pull request counts as one more done). Ship the next part that is not done. Open its pull request with "Part of #${n}", and use "Closes #${n}" only when it ships the last part`;
+  const what = `parts: ${parts.done} of ${parts.total} done (the checklist under the heading "Parts" in the issue, else its sub-issues; each merged "Part of #${n}" pull request counts as one more done; a part that names an issue, and a sub-issue, is done only when that issue is closed)`;
+  return parts.done >= parts.total
+    ? `${what}. Now every part is done: check the issue, and when nothing is left, close it as completed`
+    : `${what}. Ship the next part that is not done. Open its pull request with "Part of #${n}", and use "Closes #${n}" only when it ships the last part`;
 }
 
 /** The hopper's own context: where the issue is, its labels and priority, its parts, and what done means. */

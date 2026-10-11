@@ -1988,8 +1988,17 @@ source ref (`JobSourceRef.parts`), and its prompt says `parts: x of y done`, to 
 use `Closes #N` only for the last. When a part merges, following it reads the parts again, counting that merge even when
 GitHub does not list it yet, and keeps them in the job's source state (`parts`); when every part is done, the issue gets
 `hopper:done` in place of being offered again. It stays open: the hopper closes no issue for a part (issue #677). The job card shows
-`parts x/y`, as followed, else as offered. GitHub sub-issues and the parent ↔ child lineage of issues are the issue's
-next part.
+`parts x/y`, as followed, else as offered.
+
+A part whose text starts with an issue — `#N`, `owner/repo#N` or the issue's URL — is a **required child**: it is done only
+when that issue is closed (as completed or not planned: a person closed it), whatever its box says, and no merged pull
+request counts for it; the merged `Part of #N` pull requests count only for the parts that name no issue. Each required
+child is read once per parts read (`getIssue`); one that cannot be read counts by its box, read again next time. An issue
+with no checklist under `Parts` declares its **GitHub sub-issues** as its parts: a closed sub-issue is a done part, as
+GitHub counts them in the issue (`sub_issues_summary`, read with the issue: no extra call). So a parent is not done while a
+child it named in `Parts`, or a sub-issue, is open. When every part is done, the prompt says so and tells the job to check
+the issue and close it as completed when nothing is left. The parent ↔ child lineage of issues a job files, and its chain
+on the card, are the issue's next part.
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
 own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").

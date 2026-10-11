@@ -24,6 +24,8 @@ export interface GitHubIssue {
   closedAt?: string;
   /** Why it was closed: `completed`, `not_planned`, `duplicate` (GitHub's state_reason). */
   stateReason?: string;
+  /** Its GitHub sub-issues, how many and how many are closed (issue #729: its declared parts without a checklist); absent: none. */
+  subIssues?: { total: number; closed: number };
 }
 
 /** The pull request whose merge closed an issue (GitHub's ClosedEvent closer). */
