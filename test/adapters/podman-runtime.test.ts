@@ -11,6 +11,10 @@
 //   Scenario: inspect, list, start, stop and remove use the container id; gone is no error
 //   Scenario: volumes are made and removed by name; one that exists or is gone is no error
 //   Scenario: a rootful Podman is a problem; a reachable rootless one is none
+//   Scenario: a box's start check is its health check: bash with no profile and no rc fetches the hopper, run only when
+//     the hopper asks (issue #708)
+//   Scenario: startCheck runs the check now and answers what it wrote; a box with none answers nothing
+//   Scenario: inspect answers the names a container has on each network
 //   Scenario: a one-shot container runs its script on a terminal, never restarted; wait answers its exit code, logs its
 //     output with the frames taken off (issue #716)
 import { afterEach, describe, expect, it } from 'vitest';
@@ -173,6 +177,43 @@ describe('the Podman container runtime', () => {
     expect(await rt.logs('c1')).toBe('HOPPER-PROBE 0 1 aGkK\r\n');
     expect(api.seen[2]!.query.get('stdout')).toBe('true');
     expect(api.seen[2]!.query.get('stderr')).toBe('true');
+  });
+
+  it('a box\'s start check is its health check: bash with no profile and no rc fetches the hopper, run only when the hopper asks (issue #708)', async () => {
+    api = await startFakeRuntimeApi([on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'c1' } })]);
+    await createPodmanRuntime(api.socket).create({ ...spec, check: 'http://hopper:4790' });
+    expect((api.seen[0]!.body as { healthconfig: unknown }).healthconfig).toEqual({
+      Test: ['CMD', 'bash', '--noprofile', '--norc', '-c', "curl -fsS -m 5 -o /dev/null 'http://hopper:4790/client/install'"],
+      // No interval: no timer on the computer runs it (a WSL or a computer with no user systemd has none).
+      Interval: 0, Timeout: 10_000_000_000, Retries: 1,
+    });
+  });
+
+  it('startCheck runs the check now and answers what it wrote; a box with none answers nothing', async () => {
+    let status = 'unhealthy';
+    const log = (): unknown[] => [{ ExitCode: status === 'healthy' ? 0 : 7, Output: status === 'healthy' ? '' : "curl: (7) Failed to connect to hopper port 4790: Couldn't connect to server\n" }];
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/containers/c1/json`, () => ({ status: 200, body: { Id: 'c1', Config: { Healthcheck: { Test: ['CMD', 'true'] } }, State: { Status: 'running', Health: { Status: status, Log: log() } } } })),
+      on('GET', `${API}/containers/c1/healthcheck`, () => ({ status: 200, body: { Status: status, FailingStreak: 1, Log: null } })),
+      on('GET', `${API}/containers/old/json`, { status: 200, body: { Id: 'old', Config: {}, State: { Status: 'running' } } }),
+      on('GET', `${API}/containers/stopped/json`, { status: 200, body: { Id: 'stopped', Config: { Healthcheck: { Test: ['CMD', 'true'] } }, State: { Status: 'exited' } } }),
+    ]);
+    const rt = createPodmanRuntime(api.socket);
+    expect(await rt.startCheck('c1')).toEqual({ passed: false, output: "curl: (7) Failed to connect to hopper port 4790: Couldn't connect to server" });
+    expect(api.seen.some((r) => r.path === `${API}/containers/c1/healthcheck`)).toBe(true);
+    status = 'healthy';
+    expect(await rt.startCheck('c1')).toEqual({ passed: true, output: '' });
+    expect(await rt.startCheck('old')).toBeUndefined();
+    expect(await rt.startCheck('stopped')).toEqual({ passed: false, output: 'the box is exited, not running' });
+    expect(await rt.startCheck('gone')).toEqual({ passed: false, output: 'the box is gone' });
+  });
+
+  it('inspect answers the names a container has on each network', async () => {
+    api = await startFakeRuntimeApi([on('GET', `${API}/containers/self/json`, { status: 200, body: {
+      Id: 'abc', Name: 'hopper-hopper-1', ImageName: 'img', Config: { Labels: {} }, State: { Status: 'running' },
+      NetworkSettings: { Networks: { hopper_default: { Aliases: ['hopper', 'abc'], IPAddress: '10.89.0.2' } } },
+    } })]);
+    expect((await createPodmanRuntime(api.socket).inspect('self'))?.networks).toEqual({ hopper_default: ['hopper', 'abc'] });
   });
 
   it('a rootful Podman is a problem; a reachable rootless one is none', async () => {

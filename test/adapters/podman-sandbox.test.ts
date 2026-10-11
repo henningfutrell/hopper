@@ -9,9 +9,14 @@
 //     When an admin starts a box of it
 //     Then a container carries the hopper's labels, every capability dropped, no new privileges, a read-only root,
 //       /tmp a tmpfs, its home the volume, a non-root user and the launch's limits
+//     And its start check is its health check: bash with no profile and no rc, run in the box, passed at launch
 //     And its client joins, so its record is ready
 //     When its machine is removed
 //     Then no container and no record of it are left, and its home volume stays
+//   Scenario: a box on a network where the hopper does not answer does not start, and says why from inside (issue #708)
+//     Given rootless Podman, and the boxes' network a bridge the hopper is not on
+//     When an admin starts a box
+//     Then the launch fails with what the box's start check wrote, and no container, volume or record is left
 //   Scenario: a box on an attached machine starts in that machine's Podman, through its client (the remote runtime)
 //     Given a machine joined and dialled in, its client given the rootless Podman socket
 //     When an admin starts a box of an approved template on that machine
@@ -79,7 +84,7 @@ describe.skipIf(!SOCKET)('the sandbox module, real rootless Podman', () => {
     expect(r.body.container).toBe(name);
 
     const inspect = JSON.parse(podman('container', 'inspect', name))[0] as {
-      Config: { Labels: Record<string, string>; Env: string[]; User: string };
+      Config: { Labels: Record<string, string>; Env: string[]; User: string; Healthcheck?: { Test: string[] } };
       HostConfig: { CapAdd: string[]; SecurityOpt: string[]; ReadonlyRootfs: boolean; Tmpfs: Record<string, string>; RestartPolicy: { Name: string }; NanoCpus: number; CpuQuota: number; CpuPeriod: number; Memory: number };
       Mounts: { Type: string; Name?: string; Destination: string }[];
     };
@@ -96,6 +101,9 @@ describe.skipIf(!SOCKET)('the sandbox module, real rootless Podman', () => {
     expect(Object.keys(inspect.HostConfig.Tmpfs ?? {}).concat(inspect.Mounts.filter((m) => m.Type === 'tmpfs').map((m) => m.Destination))).toContain('/tmp');
     const caps = JSON.parse(podman('container', 'inspect', '--format', '{{json .EffectiveCaps}}', name)) as string[] | null;
     expect(caps ?? []).toEqual([]);
+    // The start check (issue #708): run in the box by Podman, it passed before the launch answered.
+    expect(inspect.Config.Healthcheck?.Test).toEqual(['CMD', 'bash', '--noprofile', '--norc', '-c', `curl -fsS -m 5 -o /dev/null '${a.url}/client/install'`]);
+    expect(a.app.instance.sandboxes.list()[0]!.check).toMatchObject({ passed: true });
 
     // Its own client joins the test hopper: once a machine names it, it is ready.
     const boxes = async (): Promise<{ name: string; state: string }[]> => (await a.api('GET', '/api/sandboxes', undefined, { 'x-hopper-session': session })).body.boxes;
@@ -168,4 +176,34 @@ describe.skipIf(!SOCKET)('the sandbox module, real rootless Podman', () => {
     expect(podman('ps', '-a', '--format', '{{.Names}}').split('\n')).not.toContain(name);
     expect(await boxes()).toEqual([]);
   }, 180_000);
+
+  it('a box on a network where the hopper does not answer does not start, and says why from inside', async () => {
+    const network = `hopper-t708-${Date.now().toString(36)}`;
+    podman('network', 'create', network);
+    cleanups.push(() => { try { podman('network', 'rm', '-f', network); } catch { /* gone */ } });
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    t = await startTestApp({
+      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, env: { HOPPER_SANDBOX_NETWORK: network, HOPPER_LAN_NAMES: 'hopper' },
+      plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['test'] } },
+      seams: { containerRuntime: createPodmanRuntime(SOCKET!), startCheckMs: 5000 },
+    });
+    const a = t;
+    const session = await a.login();
+    const template = `u${a.app.instance.settings.instanceId().slice(0, 8)}`;
+    const name = `hopper-sandbox-${template}`;
+    cleanups.push(() => {
+      try { podman('rm', '-f', '-t', '0', name); } catch { /* gone */ }
+      try { podman('volume', 'rm', '-f', `${name}-home`); } catch { /* gone */ }
+    });
+    await a.ui('/ui/api/vault', { action: 'save-template', name: template, image: IMAGE, secrets: [] }, { token: session });
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: template }, { token: session });
+
+    const r = await a.ui<{ container?: string; error: string }>('/ui/api/machines/sandbox', { template }, { token: session });
+    expect(r.status).toBe(502);
+    expect(r.body.error).toMatch(new RegExp(`^the sandbox box did not start: from inside the box ${name}, the hopper does not answer at http://hopper:\\d+: curl: \\(6\\) Could not resolve host: hopper`));
+    expect(podman('ps', '-a', '--format', '{{.Names}}').split('\n')).not.toContain(name);
+    expect(podman('volume', 'ls', '--format', '{{.Name}}').split('\n')).not.toContain(`${name}-home`);
+    expect(a.app.instance.sandboxes.list()).toEqual([]);
+  }, 120_000);
 });

@@ -8,6 +8,8 @@
 //   Scenario: inspect and list read Docker's names without the leading slash
 //   Scenario: stop, remove and volumes: gone is no error, and removing keeps the volumes
 //   Scenario: a rootful Docker is a problem: the hopper launches boxes only through a rootless runtime
+//   Scenario: a box's start check is its health check, which Docker runs on its own interval; startCheck reads the last
+//     run (issue #708)
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDockerRuntime } from '../../src/sandbox/docker.ts';
 import { on, startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
@@ -34,6 +36,27 @@ describe('the Docker container runtime', () => {
         NanoCpus: 2_000_000_000, Memory: 4096 * 1024 * 1024, RestartPolicy: { Name: 'unless-stopped' }, NetworkMode: 'hopper_default',
       },
     });
+  });
+
+  it('a box\'s start check is its health check, which Docker runs on its own interval; startCheck reads the last run (issue #708)', async () => {
+    let health: unknown = { Status: 'starting', Log: [] };
+    api = await startFakeRuntimeApi([
+      on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'd2' } }),
+      on('GET', `${API}/containers/d2/json`, () => ({ status: 200, body: { Id: 'd2', Config: { Healthcheck: { Test: ['CMD', 'true'] } }, State: { Status: 'running', Health: health } } })),
+      on('GET', `${API}/containers/old/json`, { status: 200, body: { Id: 'old', Config: {}, State: { Status: 'running' } } }),
+    ]);
+    const rt = createDockerRuntime(api.socket);
+    await rt.create({ ...spec, check: 'http://hopper:4790' });
+    expect((api.seen[0]!.body as { Healthcheck: unknown }).Healthcheck).toEqual({
+      Test: ['CMD', 'bash', '--noprofile', '--norc', '-c', "curl -fsS -m 5 -o /dev/null 'http://hopper:4790/client/install'"],
+      Interval: 10_000_000_000, Timeout: 10_000_000_000, Retries: 1,
+    });
+    expect(await rt.startCheck('d2')).toEqual({ passed: false, output: 'its first check has not run yet' });
+    health = { Status: 'unhealthy', Log: [{ ExitCode: 22, Output: 'curl: (22) The requested URL returned error: 421\n' }] };
+    expect(await rt.startCheck('d2')).toEqual({ passed: false, output: 'curl: (22) The requested URL returned error: 421' });
+    health = { Status: 'healthy', Log: [{ ExitCode: 0, Output: '' }] };
+    expect(await rt.startCheck('d2')).toEqual({ passed: true, output: '' });
+    expect(await rt.startCheck('old')).toBeUndefined();
   });
 
   it('a one-shot container runs its script on a TTY, never restarted; wait answers its exit code, logs its raw output (issue #716)', async () => {

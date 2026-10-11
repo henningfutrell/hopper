@@ -6,6 +6,8 @@
 //
 // Feature: the hopper owns the life of its sandbox boxes
 //   Scenario: adding a sandbox box starts its container and records it; it is ready once it joins
+//   Scenario: a box that cannot reach the hopper from inside does not start, and says why: nothing is left
+//   Scenario: a box that loses the hopper is unreachable, not ready, until its start check passes again
 //   Scenario: a box of a template runs the template's image, only once that image is approved
 //   Scenario: a launch fills in the template's defaults, takes parameters within its max, and records them
 //   Scenario: parameters outside what the template allows are refused, and nothing starts
@@ -52,7 +54,7 @@ async function boot(runtime: FakeContainerRuntime | undefined, dbPath?: string):
     cleanups.push(db.cleanup);
     path = db.dbPath;
   }
-  t = await startTestApp({ dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: runtime ? { containerRuntime: runtime } : {} });
+  t = await startTestApp({ dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: runtime ? { containerRuntime: runtime, startCheckMs: 1000 } : {} });
   return { a: t, session: await t.login(), dbPath: path };
 }
 
@@ -60,7 +62,7 @@ type Machine = { name: string; options: Record<string, unknown> };
 interface Box {
   name: string; state: string; agent: string; template?: { name: string; version: string }; image: string; runtime: string;
   params: { secrets: string[]; cpus: number; memoryMb: number; ttlMinutes?: number; profile?: string };
-  createdAt: string; expiresAt?: string; address: string;
+  createdAt: string; expiresAt?: string; address: string; check?: { passed: boolean; at: string; output?: string };
 }
 interface View { launch: { available: boolean; problem?: string; runtime?: string }; line: string; boxes: Box[]; problems: { container: string; reason: string; at: string }[] }
 const machines = async (a: TestApp): Promise<{ version: string; machines: Machine[] }> => (await a.api('GET', '/api/machines/config')).body;
@@ -106,11 +108,15 @@ describe('sandbox boxes the hopper starts', () => {
       limits: { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default },
       labels: { [BOX_LABEL]: a.app.instance.settings.instanceId(), [USER_LABEL]: 'admin' },
       env: { HOPPER_CLIENT_NAME: 'hopper-sandbox-claude' },
+      // Its start check fetches the hopper where the box dials it (issue #708): it passed before the launch answered.
+      check: a.url,
     });
     expect((await view(a, session)).boxes).toEqual([expect.objectContaining({
       name: 'hopper-sandbox-claude', state: 'starting', agent: 'claude', image: BOX_IMAGE, runtime: 'podman', address: a.url,
       params: { secrets: [], cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default },
+      check: { passed: true, at: expect.any(String) },
     })]);
+    expect(runtime.checks).toBeGreaterThan(0);
     expect((await view(a, session)).boxes[0]!.expiresAt).toBeUndefined();
 
     await boxJoins(a, runtime, 'hopper-sandbox-claude');
@@ -123,6 +129,41 @@ describe('sandbox boxes the hopper starts', () => {
     // A second box takes a free name, past a container someone else made.
     runtime.put({ name: 'hopper-sandbox-claude-2', image: 'x', network: 'host', volume: 'x-home', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'x' });
     expect((await launch(a, session, {})).body.container).toBe('hopper-sandbox-claude-3');
+  });
+
+  it('a box that cannot reach the hopper from inside does not start, and says why: nothing is left', async () => {
+    const runtime = createFakeContainerRuntime();
+    const { a, session } = await boot(runtime);
+    runtime.unreachable = "curl: (6) Could not resolve host: hopper";
+    const r = await launch(a, session, {});
+    expect(r.status).toBe(502);
+    expect(r.body.error).toBe(`the sandbox box did not start: from inside the box hopper-sandbox-claude, the hopper does not answer at ${a.url}: curl: (6) Could not resolve host: hopper`);
+    expect(runtime.boxes.size).toBe(0);
+    expect(runtime.volumes.size).toBe(0);
+    expect((await view(a, session)).boxes).toEqual([]);
+  });
+
+  it('a box that loses the hopper is unreachable, not ready, until its start check passes again', async () => {
+    const runtime = createFakeContainerRuntime();
+    const { a, session } = await boot(runtime);
+    await launch(a, session, {});
+    await boxJoins(a, runtime, 'hopper-sandbox-claude');
+    await reconcile(a);
+    expect((await view(a, session)).boxes.map((b) => b.state)).toEqual(['ready']);
+
+    // Every reconcile pass runs the check again, in the box.
+    runtime.unreachable = 'curl: (7) Failed to connect to hopper port 4790';
+    await a.app.sandboxes.reconcile();
+    const lost = (await view(a, session)).boxes[0]!;
+    expect(lost.state).toBe('unreachable');
+    expect(lost.check).toEqual({ passed: false, at: expect.any(String), output: 'curl: (7) Failed to connect to hopper port 4790' });
+    // It is not idle: its machine still names it, so it stays, and says why it is not ready.
+    await reconcile(a);
+    expect(runtime.boxes.has('hopper-sandbox-claude')).toBe(true);
+
+    runtime.unreachable = undefined;
+    await a.app.sandboxes.reconcile();
+    expect((await view(a, session)).boxes.map((b) => [b.state, b.check?.passed])).toEqual([['ready', true]]);
   });
 
   it('a box of a template runs the template\'s image, only once that image is approved', async () => {
