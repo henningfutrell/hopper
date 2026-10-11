@@ -217,6 +217,14 @@ export interface JobSourceRef {
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
   labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
+  /** The item's declared parts and how many are done, at intake (issue #729); absent: it declares none. */
+  parts?: Parts;
+}
+
+/** An item's declared parts (issue #729): how many there are, and how many are done. */
+export interface Parts {
+  done: number;
+  total: number;
 }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */

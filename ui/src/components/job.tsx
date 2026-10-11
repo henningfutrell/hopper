@@ -1,11 +1,12 @@
 // How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
-// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its artifacts
+// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its issue's
+// parts done (issue #729), its artifacts
 // (issue #624), ticking times, and the flags a running job carries: unassigned (issue #387), its credential files not
 // rewritten with its connection's new token (issue #647).
 import { ExternalLink, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { countdown, elapsed } from '@/model/format';
-import { afterDone, goalOf, issueRef } from '@/model/job';
+import { afterDone, goalOf, issueRef, partsOf } from '@/model/job';
 import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
 import { cn } from '@/lib/utils';
@@ -30,6 +31,7 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
   const routed = routedByLabel(job);
   const high = useIsHigh(job);
   const after = afterDone(job);
+  const parts = partsOf(job);
   return (
     <div className={cn('min-w-0', className)} title={`${goalOf(job)}\njob ${job.id}`}>
       <div className="truncate text-sm font-medium text-foreground">{goalOf(job)}</div>
@@ -47,6 +49,10 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
           <GhLink url={after.url} className={cn('rounded border px-1 text-[10px] no-underline', after.tone === 'warn' ? 'border-warn/40 text-warn' : 'border-ok/40 text-ok')}>
             <span data-after-done={after.label} title={after.title}>{after.label}</span>
           </GhLink>
+        )}
+        {parts && (
+          <span data-parts={`${parts.done}/${parts.total}`} className={cn('rounded border px-1 text-[10px]', parts.done >= parts.total && 'border-ok/40 text-ok')}
+            title={`${parts.done} of the ${parts.total} parts its issue declares are done`}>{parts.label}</span>
         )}
         {job.source?.source === 'github-app' && <span className="rounded border px-1 text-[10px]">app</span>}
         {routed && <span className="min-w-0 truncate rounded border px-1 text-[10px]" title={routed}>rule {job.spec.routedBy!.rule}</span>}

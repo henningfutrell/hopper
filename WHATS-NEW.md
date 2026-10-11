@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- An issue can list its parts as a checklist under a heading named Parts. The job card shows how many parts are done, the hopper works the parts one by one, and the issue is done when its last part merges.
 - You can send a finished job's pull request back for rework with your notes, from its card in Pull requests or the command line: the pull request turns into a draft, and a new job makes the changes on the same pull request before it counts as done again.
 - A job can now ask the hopper for the sandbox template its work needs, and the hopper makes it. Set a read policy on the Vault page, or from the command line, to let the hopper approve read access to the clusters and accounts you name with no person. Anything that writes, or anything outside the policy, still waits for you on the Vault page.
 - Report a bug is now on every failure, hand-off and question card, with that job's details filled in. Jobs can report a bug in the hopper too, without a GitHub sign-in. A report about a failed job now also finds open reports of the same error, even with a different title.

@@ -9,6 +9,18 @@ export function issueRef(job: Job): string | null {
   return s.repo && s.number != null ? `${s.repo.split('/').pop()}#${s.number}` : (s.title ?? s.key);
 }
 
+/** The parts done of a job's issue (issue #729): as followed after its part merged, else as offered. */
+export interface PartsShown { done: number; total: number; label: string }
+
+const isParts = (p: unknown): p is { done: number; total: number } =>
+  typeof p === 'object' && p !== null && typeof (p as { done?: unknown }).done === 'number' && typeof (p as { total?: unknown }).total === 'number';
+
+export function partsOf(job: Job): PartsShown | undefined {
+  const followed = (job.sourceState?.source as { parts?: unknown } | undefined)?.parts;
+  const p = isParts(followed) ? followed : job.source?.parts;
+  return p && { done: p.done, total: p.total, label: `parts ${p.done}/${p.total}` };
+}
+
 /** What a finished job's title says after done (issue #579): partly done, or where its pull request is now. */
 export interface AfterDone { label: string; tone: 'ok' | 'warn'; url: string | undefined; title: string }
 
