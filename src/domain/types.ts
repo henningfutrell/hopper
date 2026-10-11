@@ -479,6 +479,7 @@ export { ESCALATION_REASONS } from './questions.ts';
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
 export type { SourceStatus } from './sources.ts';
+export type { TaskCount } from './task-count.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
