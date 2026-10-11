@@ -102,6 +102,8 @@ export interface FakeHerdrOptions {
   windowsShell?: 'powershell' | 'cmd';
   /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
   repositories?: string[];
+  /** The repository (`owner/name`) each of `repositories` is a checkout of (issue #431). One not named is the job's own. */
+  origins?: Record<string, string>;
   /** Git refuses to make a job worktree. */
   worktreeFails?: boolean;
   /** What sharing dependencies in a job worktree says (issue #410). Default `none`: no lockfile. */

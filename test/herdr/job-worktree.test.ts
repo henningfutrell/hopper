@@ -2,46 +2,14 @@
 // pane's shell is sh here, the git is the machine's own, the origin a bare repository beside the work
 // tree. Nothing is faked: what these commands do to a repository is what they do in a job's pane.
 import { describe, expect, it } from 'vitest';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkoutWorktreeOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
 import { reapArgv } from '../../src/client/server.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
-const ID = 'abcdef12-3456-7890-abcd-ef1234567890';
-const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid', GIT_CONFIG_NOSYSTEM: '1' };
-
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', stdio: 'pipe' }).trim();
-
-/** Runs the command as the pane's shell would, then `after` in the same shell; what it printed. */
-function sh(cwd: string, command: string, after = ''): string {
-  // What the scratch command did first: the job's scratch dir, the scratch dirs ignored.
-  mkdirSync(jobScratchOf(cwd, ID), { recursive: true });
-  writeFileSync(join(cwd, '.hopper-scratch', '.gitignore'), '*\n');
-  const r = spawnSync('sh', ['-c', `${command}${after ? `\n${after}` : ''}`], { cwd, env: GIT_ENV, encoding: 'utf8' });
-  return `${r.stdout}${r.stderr}`;
-}
-
-/** A clone of a bare origin, with one commit on main, and the origin one commit ahead of it. */
-function repository(): { root: string; tree: string; origin: string } {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'jh-job-worktree-')));
-  const origin = join(root, 'origin.git');
-  git(root, 'init', '--quiet', '--bare', '--initial-branch=main', origin);
-  const tree = join(root, 'tree');
-  git(root, 'clone', '--quiet', origin, tree);
-  writeFileSync(join(tree, 'a.txt'), 'one\n');
-  git(tree, 'add', 'a.txt');
-  git(tree, 'commit', '--quiet', '-m', 'one');
-  git(tree, 'push', '--quiet', 'origin', 'main');
-  git(root, 'clone', '--quiet', origin, join(root, 'other'));
-  writeFileSync(join(root, 'other', 'b.txt'), 'two\n');
-  git(join(root, 'other'), 'add', 'b.txt');
-  git(join(root, 'other'), 'commit', '--quiet', '-m', 'two');
-  git(join(root, 'other'), 'push', '--quiet', 'origin', 'main');
-  return { root, tree, origin };
-}
+import { GIT_ENV, ID, git, repository, sh } from './job-worktree-support.ts';
 
 describe('the job worktree command (issue #379)', () => {
   it('makes the job its own git worktree of the work tree in its scratch dir, detached at the remote default branch as just fetched, and enters it', () => {
@@ -177,11 +145,12 @@ describe('the job\'s repository in a work tree that is no repository (issue #361
     expect(existsSync(join(plain, 'app', '.git'))).toBe(true);
   });
 
-  it('a work tree that is itself a repository gets no clone in it: its own job worktree, as before', () => {
-    const { root, tree } = repository();
-    const url = join(root, 'acme', 'app.git');
-    expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-made\n${jobWorktreeOf(tree, ID)}\n`);
-    expect(existsSync(join(tree, 'app'))).toBe(false);
+  it('a work tree that is a checkout of the job\'s own repository gets no clone in it: its own job worktree, as before (any case)', () => {
+    const { root, url } = plainTree();
+    const own = join(root, 'own');
+    git(root, 'clone', '--quiet', url, own);
+    expect(sh(own, makeJobWorktreeCommand(own, ID, { repo: 'Acme/App', url }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-made\n${jobWorktreeOf(own, ID)}\n`);
+    expect(existsSync(join(own, 'app'))).toBe(false);
   });
 });
 
