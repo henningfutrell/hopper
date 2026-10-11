@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHerdrCliClient } from '../../src/executors/herdr/index.ts';
-import { createOwnedHerdrKeeper, type HopperHerdr } from '../../src/machines/herdr-owned-ssh.ts';
+import { createOwnedHerdrKeeper, type HopperHerdr, type OwnedTarget } from '../../src/machines/herdr-owned-ssh.ts';
 import { testSshAuth } from '../support/ssh.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
@@ -37,6 +37,7 @@ beforeEach(() => {
     // node for the fake ssh and herdr (it may live outside /usr/bin); never this computer's own herdr.
     PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, FAKE_HERDR_RUNNING: '1' });
   delete process.env.XDG_CONFIG_HOME;
+  target = { target: 'seat', session: SESSION, sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) };
 });
 
 afterEach(() => {
@@ -45,7 +46,7 @@ afterEach(() => {
 });
 
 const ours = (version = '0.9.3', platform = PLATFORM): HopperHerdr => ({ path: join(dir, 'hopper-own', 'herdr'), version, platform });
-const target = { target: 'seat', session: SESSION, sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) };
+let target: OwnedTarget;
 const keeper = (h: HopperHerdr | { problem: string } = ours()) => {
   const lines: string[] = [];
   const keep = createOwnedHerdrKeeper({ herdr: () => h, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
@@ -103,7 +104,10 @@ describe('owned herdr keeper', () => {
     expect(readlinkSync(current())).toBe('0.9.3');
     expect(existsSync(join(ownedDir('0.9.3'), 'switch-tried'))).toBe(true);
     expect(readFileSync(join(dir, 'server-now'), 'utf8')).toBe('0.9.3 22');
-    expect(lines).toEqual(['hopper: ssh seat: its herdr session server now runs the hopper\'s herdr 0.9.3 (it ran 0.8.2)']);
+    expect(lines).toEqual([
+      'hopper: ssh seat: installed the hopper\'s herdr 0.9.3 at ~/.local/share/hopper/herdr/0.9.3/herdr',
+      'hopper: ssh seat: its herdr session server now runs the hopper\'s herdr 0.9.3 (it ran 0.8.2)',
+    ]);
   });
 
   it('tried once for this version and still another protocol: never again, and what to do', async () => {

@@ -46,10 +46,10 @@ describe('herdr CLI client over ssh', () => {
     expect(lines('calls.jsonl')[0]!.argv).toEqual(['--session', 'jh-test-x', 'agent', 'prompt', 'jh-a', text]);
   });
 
-  it('calls herdr by name, from ~/.local/bin and then the machine\'s PATH: no binary path to name (issues #311, #741)', async () => {
+  it('calls the hopper\'s own herdr when it is linked there, else herdr by name, from ~/.local/bin and then the machine\'s PATH (issues #311, #741)', async () => {
     await remote().getAgent('jh-a');
     const argv = lines('ssh-calls.jsonl')[0]!.argv;
-    expect(argv.at(-1)).toBe(`PATH="$HOME/.local/bin:$PATH" exec 'herdr' '--session' 'jh-test-x' 'agent' 'get' 'jh-a'`);
+    expect(argv.at(-1)).toBe(`h="$HOME/.local/share/hopper/herdr/current/herdr"; [ -x "$h" ] || { PATH="$HOME/.local/bin:$PATH"; h=herdr; }; exec "$h" '--session' 'jh-test-x' 'agent' 'get' 'jh-a'`);
   });
 
   // Issue #741: a seat image baked an old herdr into /usr/local/bin, on the PATH; herdr's own install in ~/.local/bin

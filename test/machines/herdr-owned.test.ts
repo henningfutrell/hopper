@@ -26,12 +26,12 @@ describe('decideHerdrSwitch', () => {
 
   it('the server is the container\'s main process (PID 1): never a switch; the image must change', () => {
     expect(decideHerdrSwitch({ ...IDLE, container: true, server: { pid: 1, ppid: 0 } })).toEqual({
-      switch: false, why: 'its herdr session server is the container\'s main process: update the herdr its image puts in place to 0.9.3',
+      switch: false, why: 'its herdr session server is the container\'s main process: update the herdr its image puts in place to 0.9.3', hold: true,
     });
   });
 
   it('the server\'s parent is the container\'s init: never a switch', () => {
-    expect(decideHerdrSwitch({ ...IDLE, container: true, server: { pid: 31, ppid: 1 } })).toMatchObject({ switch: false, why: expect.stringContaining('container\'s main process') });
+    expect(decideHerdrSwitch({ ...IDLE, container: true, server: { pid: 31, ppid: 1 } })).toMatchObject({ switch: false, why: expect.stringContaining('container\'s main process'), hold: true });
   });
 
   it('in a container, a server started by another process is switched', () => {
