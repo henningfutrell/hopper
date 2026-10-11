@@ -1,6 +1,7 @@
 // The settings repositories' ports, apart from store.ts for its size (re-exported there): a user's settings and the
 // instance's. Each value is absent until set.
 
+import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
@@ -110,6 +111,9 @@ export interface InstanceSettingsRepository {
   /** The store installs, by id (issue #93). */
   getPluginInstalls(): PluginInstall[];
   setPluginInstalls(installs: readonly PluginInstall[]): void;
+  /** The shared rate limiter's settings (issue #436); absent fields were never set, their defaults apply. */
+  getGitHubRateLimiter(): Partial<RateLimiterSettings>;
+  setGitHubRateLimiter(settings: RateLimiterSettings): void;
   /** The plugin store setting (issue #445); undefined: never set. */
   getPluginStoreSource(): PluginStoreSource | undefined;
   setPluginStoreSource(source: PluginStoreSource): void;

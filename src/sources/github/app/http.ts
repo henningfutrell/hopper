@@ -1,17 +1,20 @@
-// HTTP plumbing for the App adapter: one `@octokit/request` bound to the API base URL, Link-header
-// pagination, and the mapping of Octokit request errors onto GitHubApiError.
+// HTTP plumbing for the App adapter: one `@octokit/request` bound to the API base URL, through the shared rate limiter
+// (issue #436), Link-header pagination, and the mapping of Octokit request errors onto GitHubApiError.
 
 import { request as octokitRequest } from '@octokit/request';
+import { githubLimiter, type GitHubLimiter } from '../../../github-limiter/limiter.ts';
 import { GitHubApiError, isPermanent } from '../api.ts';
 
 export type Request = typeof octokitRequest;
 
 const MAX_PAGES = 100;
 
-export function makeRequest(baseUrl: string): Request {
+/** Every GitHub call of the hopper goes through one of these: `limiter` is the process's own unless a test gives one. */
+export function makeRequest(baseUrl: string, limiter: GitHubLimiter = githubLimiter): Request {
   return octokitRequest.defaults({
     baseUrl,
     headers: { 'user-agent': 'hopper', 'x-github-api-version': '2022-11-28' },
+    request: { hook: limiter.hook },
   });
 }
 

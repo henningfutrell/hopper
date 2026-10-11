@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
 import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
@@ -258,7 +259,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
   };
 }
 
-/** The instance's settings: self-update, the plugin store (issue #445) and the store installs. */
+/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -281,6 +282,8 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setPluginInstalls(installs) {
       write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
     },
+    getGitHubRateLimiter: () => JSON.parse(read('githubRateLimiter') ?? '{}') as Partial<RateLimiterSettings>,
+    setGitHubRateLimiter: (s) => write('githubRateLimiter', JSON.stringify({ slowBelowPercent: s.slowBelowPercent, reserve: s.reserve, batchSize: s.batchSize })),
     getPluginStoreSource() {
       const text = read('pluginStore');
       return text === undefined ? undefined : JSON.parse(text) as PluginStoreSource;
