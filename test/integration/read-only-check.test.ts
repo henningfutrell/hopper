@@ -27,6 +27,7 @@
 //   Scenario: a check box no run holds (a hopper stopped mid-check) is removed, and its check runs again
 //   Scenario: a need the vault cannot mint a credential for fails the check, saying why, and runs no check box
 //   Scenario: a read Access does not allow fails the check, saying so, and mints nothing
+//   Scenario: with the vault in a container of its own (issue #586), the check box gets its read credentials the same way
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -43,6 +44,7 @@ import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { fakeKubeApi, fakeSts, MINTED_AWS, MINTED_KUBE_TOKEN, type FakeApi } from '../support/fake-mint-apis.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const apps: TestApp[] = [];
@@ -64,9 +66,13 @@ const ACCOUNT = '123456789012';
 const KUBE_MINTING_TOKEN = 'check-minting-token-never-in-the-box';
 const AWS_MINTING_SECRET = 'check-minting-secret-never-in-the-box';
 
-async function boot(policy: string[]): Promise<Booted> {
+/** `container`: the vault in a container of its own (issue #586), holding the master key and the minting credentials. */
+async function boot(policy: string[], o: { container?: boolean } = {}): Promise<Booted> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: KEY }) : undefined;
+  if (vault) cleanups.push(() => { void vault.stop(); });
+  const keys = vault ? { secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_MASTER_KEY: KEY } };
   const kube = await fakeKubeApi();
   const sts = await fakeSts(ACCOUNT);
   cleanups.push(kube.close, sts.close);
@@ -74,7 +80,7 @@ async function boot(policy: string[]): Promise<Booted> {
   cleanups.push(cloud.cleanup);
   const runtime = createFakeContainerRuntime();
   runtime.runScript = cloud.runScript;
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
+  const a = await startTestApp({ dbPath: db.dbPath, ...keys, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);
   const token = await a.login();
   expect((await a.ui('/ui/api/vault', { action: 'set-read-policy', assets: policy }, { token })).status).toBe(200);
@@ -329,5 +335,18 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(runtime.ran.size).toBe(0);
     expect(kube.seen).toHaveLength(0);
     expect((await a.events()).find((e) => e.type === 'vault.check_mint_refused')?.data).toMatchObject({ template: t.name, mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, decision: expect.any(String) });
+  });
+
+  it('with the vault in a container of its own (issue #586), the check box gets its read credentials the same way', async () => {
+    const { a, token, runtime, kube, sts } = await boot(['cluster/lab', `aws-role/${ACCOUNT}/*`], { container: true });
+    const creds = await runningJob(a);
+    await skill(a, creds, NEEDS);
+    await a.app.sandboxes.check();
+    expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
+    expect(kube.seen).toHaveLength(1);
+    expect(sts.seen).toHaveLength(1);
+    const env = JSON.stringify([...runtime.ran.values()][0]!.env);
+    for (const minted of [MINTED_AWS.SessionToken, MINTED_KUBE_TOKEN, kube.url, sts.url]) expect(env).toContain(minted);
+    expect(env).not.toContain(KUBE_MINTING_TOKEN);
   });
 });

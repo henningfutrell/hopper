@@ -7,9 +7,11 @@
 //
 // Feature: a job asks the hopper for the template its work needs
 //   Scenario: read needs inside the read policy are approved with no person
-//     Given the read policy holds cluster/lab and aws-account/*
+//     Given the read policy holds cluster/lab and aws-role/123456789012/*
+//     And minting credentials for cluster lab and aws-account 123456789012, so the read-only check box gets its read
+//       credentials (issue #797)
 //     And a job running on the hopper's machine
-//     When the job runs `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012"`
+//     When the job runs `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-role/123456789012/readonly"`
 //     Then the template is approved by the read policy, and the job waits for its read-only check (issue #716, item 4;
 //       test/integration/read-only-check.test.ts)
 //     When the check passes
@@ -40,13 +42,14 @@ import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { fakeKubeApi, fakeSts } from '../support/fake-mint-apis.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const BOX = 'ghcr.io/henningfutrell/hopper:box-claude';
 const LAB_READ = { operation: 'read', asset: { kind: 'cluster', name: 'lab' } } as const;
 const LAB_WRITE = { operation: 'write', asset: { kind: 'cluster', name: 'lab' } } as const;
-const AWS_READ = { operation: 'read', asset: { kind: 'aws-account', name: '123456789012' } } as const;
+const AWS_READ = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } } as const;
 
 const apps: TestApp[] = [];
 const cleanups: (() => void)[] = [];
@@ -73,6 +76,12 @@ async function boot(policy?: string[]): Promise<{ a: TestApp; token: string }> {
   apps.push(a);
   const token = await a.login();
   if (policy) expect((await a.ui('/ui/api/vault', { action: 'set-read-policy', assets: policy }, { token })).status).toBe(200);
+  // The read-only check box's read credentials (issue #797): minted from these, against an STS and a Kubernetes API on loopback.
+  const kube = await fakeKubeApi();
+  const sts = await fakeSts('123456789012');
+  cleanups.push(kube.close, sts.close);
+  expect((await a.ui('/ui/api/vault', { action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: 'minting' }) }, { token })).status).toBe(200);
+  expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: '123456789012' }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: 'minting', Endpoint: sts.url }) }, { token })).status).toBe(200);
   return { a, token };
 }
 
@@ -117,13 +126,13 @@ const check = async (a: TestApp, token: string, template: string, profile: { ope
 
 describe('a job asks the hopper for the template its work needs (issue #716)', () => {
   it('read needs inside the read policy are approved with no person; the same needs again get the same template', async () => {
-    const { a, token } = await boot(['cluster/lab', 'aws-account/*']);
+    const { a, token } = await boot(['cluster/lab', 'aws-role/123456789012/*']);
     const creds = await runningJob(a);
-    const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012']);
+    const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ is approved; waiting for the read-only check of asked-[0-9a-f]+: it has not run on this version yet/);
     await a.app.sandboxes.check();
-    const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012']);
+    const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
     expect(r.code, r.stdout).toBe(0);
     const [t] = await asked(a, token);
     expect(t).toMatchObject({ image: BOX, tools: ['aws', 'helm', 'kubectl'], secrets: [], profiles: [LAB_READ, AWS_READ], approval: { image: BOX, tools: ['aws', 'helm', 'kubectl'], by: 'the read policy' }, pending: { secrets: [], image: false, profiles: [] } });
@@ -131,13 +140,13 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     expect(r.stdout).toContain(`template ${t!.name} is ready`);
     expect(r.stdout).toContain('approved by the read policy');
     expect(r.stdout).toContain('sh "$HOPPER_SKILL" kube-diagnostics cluster/lab');
-    expect(r.stdout).toContain('sh "$HOPPER_SKILL" aws-diagnostics aws-account/123456789012');
+    expect(r.stdout).toContain('sh "$HOPPER_SKILL" aws-diagnostics aws-role/123456789012/readonly');
     expect(r.stdout).toContain(`hopper sandbox launch --template ${t!.name}`);
     expect((await check(a, token, t!.name, LAB_READ)).allowed).toBe(true);
 
     // The same needs, in another order and another job: the same template.
     const other = await runningJob(a);
-    const again = await skill(a, other, ['sandbox-template', '--needs', 'read/aws-account/123456789012, read/cluster/lab']);
+    const again = await skill(a, other, ['sandbox-template', '--needs', 'read/aws-role/123456789012/readonly, read/cluster/lab']);
     expect(again.code, again.stdout).toBe(0);
     expect(again.stdout).toContain(`template ${t!.name} is ready`);
     expect((await asked(a, token)).length).toBe(1);

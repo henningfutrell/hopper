@@ -5,7 +5,7 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
-import type { AwsMintingCredential } from '../domain/minting.ts';
+import { awsRegionOf, type AwsMintingCredential } from '../domain/minting.ts';
 import type { CredentialMinter } from '../domain/ports.ts';
 
 const TIMEOUT_MS = 15_000;
@@ -40,7 +40,7 @@ function postJson(url: URL, token: string, body: unknown, ca: string | undefined
 
 /** An STS client at the minting credential's region and endpoint, signing with `keys`. */
 const stsAt = (credential: AwsMintingCredential, keys: { AccessKeyId: string; SecretAccessKey: string; SessionToken?: string | undefined }): STSClient => new STSClient({
-  region: credential.Region ?? 'us-east-1',
+  region: awsRegionOf(credential),
   ...(credential.Endpoint ? { endpoint: credential.Endpoint } : {}),
   credentials: { accessKeyId: keys.AccessKeyId, secretAccessKey: keys.SecretAccessKey, ...(keys.SessionToken ? { sessionToken: keys.SessionToken } : {}) },
   maxAttempts: 1,

@@ -9,10 +9,11 @@
 //     When the check runs in a box of the image with kubectl added
 //     Then it passed, every probe with its exit code and output
 //     And no container and no volume of it are left
-//   Scenario: with no credential in the box, the hopper's own probes fail closed
-//     Given a template of read on cluster lab with kubectl and helm, and no kubeconfig in its box
+//   Scenario: with a credential for a cluster it cannot reach, the hopper's own probes fail closed, and use the kubeconfig given
+//     Given a template of read on cluster lab with kubectl and helm, and a token minted for a cluster no server answers at
 //     When the check runs
 //     Then it failed: every probe is an error (no write was refused, no read worked), none is counted a refusal
+//     And kubectl asked the server the kubeconfig names (issue #797), not its default
 import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import type { Probe, Template } from '../../src/domain/types.ts';
@@ -29,8 +30,14 @@ const template = (tools: Template['tools']): Template => ({
   readOnly: true, savedBy: 'job 1', savedAt: '2026-10-10T20:00:00.000Z',
 });
 
+/** A minted token for a cluster whose API server nothing listens at (issue #797): the box gets its kubeconfig. */
+const NOWHERE = 'https://127.0.0.1:9';
+const credentials: CheckContext['credentials'] = {
+  credential: async () => ({ minted: { kind: 'kube', token: 'minted-in-test', expirationTimestamp: '2030-01-01T00:00:00Z' }, reach: { kind: 'kube', server: NOWHERE } }),
+};
+
 const context = (probes: CheckContext['probes']): CheckContext => ({
-  runtime: createPodmanRuntime(SOCKET!), instanceId: 'test-716', network: 'host', probes,
+  runtime: createPodmanRuntime(SOCKET!), credentials, instanceId: 'test-716', network: 'host', probes,
   clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
 });
 
@@ -58,7 +65,7 @@ describe.skipIf(!SOCKET)('the read-only check, real rootless Podman (issue #716)
     left(name);
   }, 600_000);
 
-  it('with no credential in the box, the hopper\'s own probes fail closed', async () => {
+  it('with a credential for a cluster it cannot reach, the hopper\'s own probes fail closed, and use the kubeconfig given', async () => {
     const name = `hopper-check-t${Date.now().toString(36)}`;
     const check = await runCheck(context(HOPPER_PROBES), 'admin', template(['helm', 'kubectl']), name);
     expect(check.state).toBe('failed');
@@ -66,6 +73,7 @@ describe.skipIf(!SOCKET)('the read-only check, real rootless Podman (issue #716)
     for (const p of check.probes) {
       expect(p.outcome, `${p.id}: ${p.output}`).toBe('error');
       expect(p.exit).toBeGreaterThan(0);
+      if (p.id !== 'helm.install') expect(p.output, p.id).toContain('127.0.0.1:9');
     }
     left(name);
   }, 600_000);

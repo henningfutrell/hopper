@@ -375,7 +375,7 @@ export function createVaultService(o: {
     mintFrom,
     testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
-    ...templateChecks(o.store),
+    ...templateChecks(o.store, { access: o.access, mintFrom }),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

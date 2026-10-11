@@ -8890,13 +8890,49 @@ replaces them; test with doubles, and state the gap to a real environment.
   writable place) and runs it alone under `timeout` (300 s), with its asset in `$ASSET`. It prints one line per probe,
   `HOPPER-PROBE <n> <exit> <output in base64>`; `readResults` reads them, and a probe with no line did not run.
 
-**The gap to a real environment, stated.** The check box gets no vault secret and no minted credential: today a box gets
-a credential only when a job on it loads a skill, and the check runs no job. So against a real account or cluster the
-hopper's probes find no credential, every one is an `error`, and the check fails closed: a template of read needs on an
-AWS account, a cluster or a Terraform workspace takes no box until the check box is given the read credential its needs
-mint. That delivery (a read session or a `view` token minted for the check box, under Access), the terraform wrapper, a
-read-only state backend, `terraform destroy` and `state rm` against the workspace's real state, and the check on a
-schedule are #715's. A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
+**The check box's read credentials (issue #797, 2026-10-11).** Reported from a real run: a template of read on an
+`aws-role` failed its check, every read `NoCredentials` and every write probe an `error`, while `hopper vault mint-test`
+on the same role passed. The check box got no credential at all, so no read could work and no write could be refused
+by the account. Now, before the check box starts, the vault mints the read credential of each read need, as for a job:
+
+- **What is minted** (`mintKindFor`, `src/domain/minting.ts`): for read on an `aws-role`, an AWS read session (900 s,
+  the `ReadOnlyAccess` session policy, named `hopper-read-only-check` or as the minting credential says: `CHECK_MINT_ID`
+  in place of the job id); for read on a `cluster` or a `namespace`, a TokenRequest token for `hopper-read` (600 s).
+  `mintTarget` decides, as for a job. A need of another kind (`aws-account`, `argocd-app`, `terraform-workspace`) has no
+  minter: the check fails, saying so.
+- **Under Access** (`decideCheckMint`, `src/authz/service.ts`). The check runs no job, so Access is asked as for a live
+  job of the template — a made-up job `running` the template, told as a contextual tuple, as a trial is — and the
+  decision is recorded with `check: {box}`; Settings → Access names it *read-only check <box>*. A deny (the template's
+  read revoked) mints nothing.
+- **Where** (`src/vault/checks.ts`, `VaultService.mintForCheck`). In the hopper, or with the vault in a container of
+  its own (#586) through the same `MintFrom` as a job's mint: the minting credential never leaves it. `MintFrom` now also
+  answers `reach`: the minting credential's region and STS endpoint, or its API server and CA — not secrets, what the box
+  needs to reach the account or cluster. `vault.check_minted` records each mint, `vault.check_mint_refused` each refusal;
+  never a credential. The minting credential's `lastUsed` stays a job's.
+- **Fails closed, before the box.** A need that gets no credential — no minter for its kind, Access denied it, no
+  minting credential for the account or cluster, STS or the Kubernetes API refused — fails the check with every reason
+  (`the check box gets no credential for read on cluster lab: …`), and no check box runs.
+- **Into the box** (`checkEnv`, `checkScript`, `src/sandbox/check-script.ts`). The credentials are in the check box's
+  environment, `HOPPER_CHECK_<n>_<NAME>`, never in its script. The script takes each into a shell variable and out of the
+  environment at its start, and writes each kubeconfig (the server, its CA, the token; JSON) under the box's `/tmp`
+  (mode 600). Each probe runs with the credential of its own asset only (`ProbeRun.kind` and `asset` pick it): the AWS
+  CLI's `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION` (the minting credential's
+  `Region`, else `us-east-1`, the region the hopper asks STS in: `awsRegionOf`) and `AWS_ENDPOINT_URL_STS` when its STS
+  is not AWS's; `KUBECONFIG` for kubectl and helm.
+- **Kubernetes minting, decided.** The kube minter is built (issue #580): it needs, in the cluster, the service account
+  `hopper-read` (bound to `view`) in each namespace a template reads, or in `hopper` for a whole cluster, and a minting
+  credential for `cluster/<name>` whose token may only `create` `serviceaccounts/token`. `docs/deploy.md` "Minting
+  short-lived credentials" has the manifest. No kubeconfig in the template is needed: the hopper writes the check box's.
+
+**Residual risk, stated (issue #797).** The minted read credentials are in the check box's container spec until it is
+removed, at most the check's 30 minutes: anyone who can inspect the hopper's containers (the hopper's own user) can read
+them, and they stay valid until they expire (15 and 10 minutes). They are read credentials of the template's own read
+needs, which Access allowed. A check that outlasts them (a slow terraform init) sees later probes refused for an expired
+credential: an `error`, and the check fails closed.
+
+**What stays #715's.** The terraform wrapper, a read-only state backend, `terraform destroy` and `state rm` against the
+workspace's real state, a credential for an `aws-account`, an Argo CD app or a Terraform workspace, and the check on a
+schedule. A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
 `hopper-read-only-check`.
 
 **Not built.** The check on an attached machine's runtime (it runs on the hopper's own); the check on a schedule; the check
@@ -8907,17 +8943,22 @@ not): with a writable credential, `ssm put-parameter` and `iam create-user` make
 it. That is what the check exists to find, and it fails then. Every probe runs under the sandbox flags, as the box's user.
 
 Tests: `test/integration/read-only-check.test.ts` (the real daemon, the real `hopper-skill`, the runtime as a double whose
-one-shot containers run the real check script under `sh` with fake `aws`, `kubectl`, `helm` and `terraform`, OpenFGA as a
-double: a read-only credential passes and the job's wait ends with the template ready, a box of it then starts; a writable
+one-shot containers run the real check script under `sh` with fake `aws`, `kubectl`, `helm` and `terraform`, which answer
+only with the minted credentials (issue #797) — minted by the real minting adapters against an STS and a Kubernetes API
+faked on loopback —, OpenFGA as a double: the check box gets a read session and a token, each after an allowing decision
+recorded as the check's, and no minting credential; a need with no minter or no minting credential, and a read Access
+denies, fail the check with the reason and run no box; the same through the vault's own container; a read-only credential passes and the job's wait ends with the template ready, a box of it then starts; a writable
 one fails, launch 409, until a person runs it again and it passes; a save makes it stale; a template with a write need, and
 one a person saved, take none; a check box no run holds is removed and its check runs again),
 `test/sandbox/check-script.test.ts` (the script under `sh`: every probe of every kind, the cleanup of a write that went
-through, terraform on `PATH` and past it, a probe with no line, a catalog of its own), `test/adapters/podman-runtime.test.ts`
+through, terraform on `PATH` and past it, a probe with no line, a catalog of its own, each probe with its own asset's
+credential and none in the script or left in the environment), `test/adapters/podman-runtime.test.ts`
 and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and without frames),
 `test/integration/template-requests.test.ts`, `test/integration/operator-cli-vault.test.ts` (`template check`),
 `test/ui/vault.test.ts`. Against real rootless Podman, `test/adapters/podman-check.test.ts` (runs where
 `HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
-removed with its volume; with no credential in it, the hopper's own cluster probes were all `error`, and the check failed.
+removed with its volume; with a token minted for a cluster no server answers at, the hopper's own cluster probes were
+all `error`, kubectl asked the server its kubeconfig names, and the check failed.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 

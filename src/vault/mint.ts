@@ -7,9 +7,9 @@
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
-import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type Minted, type MintKind, type MintTarget } from '../domain/minting.ts';
+import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
-import { awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
+import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 
@@ -19,9 +19,10 @@ export interface MintAsk { mint: MintKind; operation: string; asset: string; tok
  * Mints from the minting credential `name` for `target`: in the hopper, or (issue #586) in the vault's own container,
  * which holds the value, for the job `jobId` (an AWS session is named for it, `awsSessionName`). Called only after
  * Access allowed it, or for a person's mint test (issue #781): `identify` then asks STS who the minted session is, where
- * the credential's STS is known. Never says the minting credential's value.
+ * the credential's STS is known. `reach`: where the minted credential is used (issue #797), never a secret. Never says
+ * the minting credential's value.
  */
-export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<{ minted: Minted; sessionName?: string; identity?: CallerIdentity } | { refused: string }>;
+export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<{ minted: Minted; reach: MintReach; sessionName?: string; identity?: CallerIdentity } | { refused: string }>;
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
@@ -127,11 +128,13 @@ export function mintHere(o: { vault: Pick<VaultRepository, 'get'>; minter?: Cred
         if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
         const sessionName = awsSessionName(c, jobId);
         const minted = await o.minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, durationSeconds: target.durationSeconds });
-        return { minted, sessionName, ...(identify ? { identity: await o.minter.awsCallerIdentity(c, minted) } : {}) };
+        const reach: MintReach = { kind: 'aws', region: awsRegionOf(c), ...(c.Endpoint ? { stsEndpoint: c.Endpoint } : {}) };
+        return { minted, reach, sessionName, ...(identify ? { identity: await o.minter.awsCallerIdentity(c, minted) } : {}) };
       }
       const c = mintingCredentialOf('kube', read.value);
       if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
-      return { minted: await o.minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds }) };
+      const reach: MintReach = { kind: 'kube', server: c.server, ...(c.certificateAuthorityData ? { certificateAuthorityData: c.certificateAuthorityData } : {}) };
+      return { minted: await o.minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds }), reach };
     } catch (e) {
       return { refused: `minting from ${name} failed: ${(e as Error).message}` };
     }

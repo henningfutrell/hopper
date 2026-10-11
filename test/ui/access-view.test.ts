@@ -34,6 +34,7 @@ const VIEW = {
   decisions: [
     { id: 'd2', at: '2026-10-09T12:01:00.000Z', allowed: false, reason: 'template kubectl-diag is not approved to write on cluster x', template: 'kubectl-diag', operation: 'write', asset: { kind: 'cluster', name: 'x' }, requester: { kind: 'job', userId: 'admin', jobId: 'j1' } },
     { id: 'd1', at: '2026-10-09T12:00:30.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, trial: { by: 'alice' }, path: [running, read, grant] },
+    { id: 'd0', at: '2026-10-09T12:00:00.000Z', allowed: true, reason: 'template kubectl-diag is approved to read on cluster x', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'x' }, check: { box: 'hopper-check-kubectl-diag-1' }, path: [running, read, grant] },
   ],
 };
 
@@ -133,7 +134,7 @@ describe('Settings → Access', () => {
     expect(approval.textContent).toContain('alice');
     expect(approval.textContent).toContain('template kubectl-diag is approved for read on cluster x');
     const decisions = [...panel()!.querySelectorAll('[data-decision]')];
-    expect(decisions.map((d) => d.getAttribute('data-allowed'))).toEqual(['false', 'true']);
+    expect(decisions.map((d) => d.getAttribute('data-allowed'))).toEqual(['false', 'true', 'true']);
     expect(decisions[0]!.textContent).toContain('not approved to write on cluster x');
     expect(decisions[1]!.textContent).toContain('this job runs from template kubectl-diag');
   });
@@ -143,6 +144,8 @@ describe('Settings → Access', () => {
     expect(panel()!.querySelector('[data-slot="access-matrix"]')).toBeNull();
     expect(panel()!.querySelector('a[href="#settings/permissions"]')?.textContent).toBe('Permission matrix');
     expect(panel()!.querySelector('[data-decision="d2"]')!.textContent).toContain('job j1');
+    // A read-only check's mint (issue #797) is named by its check box.
+    expect(panel()!.querySelector('[data-decision="d0"]')!.textContent).toContain('read-only check hopper-check-kubectl-diag-1');
   });
 
   it('shows each template\'s blast radius and its reasons next to it, and what waits for approval (issue #584)', async () => {
