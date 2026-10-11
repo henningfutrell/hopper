@@ -37,8 +37,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { hopperAddress, ownContainer } from './sandbox/address.ts';
-import { createSandboxes, hopperNetwork, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperAddress, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';

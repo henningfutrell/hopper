@@ -18,6 +18,7 @@ import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runti
 
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
+export { hopperAddress, ownContainer } from './address.ts';
 
 /** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
 export const COMPOSE_NETWORK = 'hopper_default';
