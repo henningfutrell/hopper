@@ -224,7 +224,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn.
 
 | field | type | required |
 |---|---|---|
@@ -233,6 +233,24 @@ Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's 
 ```json
 {
   "reason": "daemon restart"
+}
+```
+
+## `job.link_lost`
+
+Version 1 (`docs/schemas/job.link_lost.v1.json`). The link to the running job's machine (`machine`) dropped while it was watched (issue #752). The job is held: it stays `running` on its lane, and the hopper asks every second whether its pane is alive again. `since`: when the link was found down. `failsAt`: when the job fails if the link is not back (the reconnect grace). It goes on with `job.reattached` (reason `link restored`), or fails with "machine <id> did not reconnect within <n> s" and its cleanup deferred.
+
+| field | type | required |
+|---|---|---|
+| `machine` | string | yes |
+| `since` | string | yes |
+| `failsAt` | string | yes |
+
+```json
+{
+  "machine": "lab",
+  "since": "2026-10-10T12:00:00.000Z",
+  "failsAt": "2026-10-10T12:02:00.000Z"
 }
 ```
 

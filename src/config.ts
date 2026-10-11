@@ -174,7 +174,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_ROUTER_CHEAP_BOOST: 'priority boost for a job the router calls cheap',
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
-  HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
+  HOPPER_RECONNECT_GRACE_MS: 'after a restart, or once a running job\'s machine link drops, how long the job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
   HOPPER_DONE_RECHECK_MS: 'a job that ended done whose source finds it not done is asked again after this long (GitHub may not show a new pull request at once) before it fails; 0: at once',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',

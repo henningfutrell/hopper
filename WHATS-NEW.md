@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A running job no longer fails when its box loses the link to the hopper for a short time. The job waits on its lane, shows when it fails if the link does not come back, and goes on by itself when the link is back.
 - Jev can now check each answer before it goes into a job: it reads what the question and the answer mean, says how risky they are and of which kinds, and sends a risky one to you. Turn it on in Settings → Decider ("The risk in a question and its answer"); until then the keyword rules check, the card says so, and Jev's check is only recorded next to theirs. Jev no longer picks an answer to a question with listed options. Settings → Question gates now shows how sure each level was of its answers, and warns you when most of them fall below the threshold.
 - An issue a job files is now linked to the job's own issue. The job's card shows its parent issue and its child issues, and the new issue names its parent. When a job says the new issue must be done first, the parent issue is not marked done until it is closed.
 - With yolo mode on, the hopper now merges a ready pull request even when its job's issue came from someone you do not trust, or from an app. That check now only decides whether a job runs. Such a pull request no longer waits for a person while its checks pass.

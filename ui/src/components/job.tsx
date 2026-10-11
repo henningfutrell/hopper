@@ -2,10 +2,10 @@
 // (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its issue's
 // parts done and its lineage, parent and children (issue #729), its artifacts
 // (issue #624), ticking times, and the flags a running job carries: unassigned (issue #387), its credential files not
-// rewritten with its connection's new token (issue #647).
-import { ExternalLink, UserX } from 'lucide-react';
+// rewritten with its connection's new token (issue #647), held while its machine's link is down (issue #752).
+import { ExternalLink, Unplug, UserX } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
-import { countdown, elapsed } from '@/model/format';
+import { ago, clock, countdown, elapsed } from '@/model/format';
 import { afterDone, goalOf, issueRef, partsOf } from '@/model/job';
 import { routedByLabel } from '@/model/routing';
 import type { Job } from '@/model/wire';
@@ -78,6 +78,22 @@ export function Countdown({ iso, className }: { iso: string; className?: string 
  * A started job whose issue is no longer assigned to the account it was taken for (issue #387): it runs on
  * until the user stops it (the row's cancel), or the issue is assigned to them again.
  */
+/**
+ * A running job held because its machine's link dropped (issue #752): it stays on its lane and goes on when the link is
+ * back, or fails at `failsAt`.
+ */
+export function LinkLostFlag({ job }: { job: Job }) {
+  const now = useNow();
+  const l = job.linkLost;
+  if (!l) return null;
+  return (
+    <div data-link-lost className="flex items-center gap-1.5 text-xs text-warn" title={`the link to machine ${l.machine} is down since ${l.since}`}>
+      <Unplug className="size-3.5 shrink-0" />
+      <span>held: link lost {ago(l.since, now)}, fails at {clock(l.failsAt)} ({countdown(l.failsAt, now)})</span>
+    </div>
+  );
+}
+
 export function UnassignedFlag({ job }: { job: Job }) {
   const at = job.sourceState?.sync?.unassignedAt;
   if (typeof at !== 'string') return null;

@@ -473,7 +473,8 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.failed` | `{ error }` |
 | `job.cancelled` | `{ reason }` |
 | `job.requeued` | `{ from, reason: "daemon restart" }` |
-| `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup") |
+| `job.reattached` | `{ reason: "daemon restart" }` — restart recovery kept a running job running on its lane (Phase 2 "Recovery at startup"); `{ reason: "link restored" }` — issue #752, the link came back during a link-lost hold |
+| `job.link_lost` | `{ machine, since, failsAt }` — issue #752, the running job's machine link dropped; the job is held on its lane until `failsAt` ("Link-lost hold") |
 | `job.reprioritized` | `{ from, to, reason }` — phase 3, source re-sort |
 | `job.respecified` | `{ from, to }` — issue #375, a waiting job that has not started takes the config as it is now |
 | `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
@@ -1229,6 +1230,19 @@ so a running job's pane and Claude outlive a restart.
 - `pendingAnswer` is cleared in the same tx that records the resume's outcome (not at claim),
   so a restart mid-resume does not lose the answer; a herdr-claude job mid-resume is
   `running` and follows the first two rules (its resume turn is the saved `turn`).
+
+**Link-lost hold** (issue #752). The same wait, while the daemon runs: a client target's link drops under a running
+job. The herdr client of a machine with a link says whether that link is down (`HerdrClient.linkDown`, true while the
+client is not dialled in). The monitor ends its watch at the first herdr error with the link down, as `failed` marked
+`linkLost`; with the link up, errors count toward the three in a row that fail the job, as before. The runner does not
+record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, records `job.link_lost` with the same
+data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
+cleared, and `executor.reattach` watches the turn again from its saved anchor; nothing is sent. Gone → failed
+`interrupted while the link to machine <id> was down`. No answer within the reconnect grace (`failsAt`) → failed
+`machine <id> did not reconnect within <n> s`; its cleanup cannot reach the machine, so it is deferred. Cancel, park and
+shutdown abort the hold as they abort a run; a job held at shutdown keeps `linkLost` and is recovered as above, which
+clears it. The lane stays busy for the hold, as for the wait at recovery. The hold adds no authority: the box keeps
+only what it had, and every privileged step still needs a live hopper.
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job
 `cancelled`.
@@ -3313,7 +3327,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
-| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup"); issue #752: how long a link-lost hold lasts ("Link-lost hold") |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |

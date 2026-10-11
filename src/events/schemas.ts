@@ -134,6 +134,7 @@ export const EVENT_SCHEMAS = {
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
   'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
   'job.reattached': strict({ reason: z.string() }),
+  'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional() }),
   'job.wait_ended': strict({ by: z.literal('person'), note: z.string().optional() }),
