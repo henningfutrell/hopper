@@ -2520,6 +2520,32 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
+## `github_rate_limiter.settings_changed`
+
+Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), and how many polls run at once in a batch (`batchSize`). `from` and `to`. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "slowBelowPercent": 25,
+    "reserve": 50,
+    "batchSize": 10
+  },
+  "to": {
+    "slowBelowPercent": 40,
+    "reserve": 50,
+    "batchSize": 10
+  },
+  "by": "admin"
+}
+```
+
 ## `github_proxy.done`
 
 Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.

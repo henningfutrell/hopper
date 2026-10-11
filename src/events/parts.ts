@@ -108,6 +108,12 @@ export const pointedJobEvents = {
   'pointed_job.status_changed': strict({ id: z.string(), from: pointedJobStatus, to: pointedJobStatus, lane: z.string().optional(), by: z.string() }),
 };
 
+// The shared rate limiter (issue #436): the hopper's admin changed its settings.
+const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
+export const rateLimiterEvents = {
+  'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
+};
+
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
 export const taskCount = strict({ done: z.number().int().min(0), total: z.number().int().min(1) })
   .refine((t) => t.done <= t.total, { message: 'done must not exceed total' });

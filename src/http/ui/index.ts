@@ -38,7 +38,8 @@ import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
-export interface UiRouteOptions {
+/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436). */
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
@@ -63,8 +64,6 @@ export interface UiRouteOptions {
   artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
   sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
-  /** The master key's status (issue #659): the one reveal, and a person's word that they saved it. */
-  masterKey: Parameters<typeof registerInstanceRoutes>[1]['masterKey'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -353,8 +352,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // Self-update and the master key (issues #44, #659): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, by: (req) => userName(sessionOf(req)!) });
+  // Self-update, the master key and the shared GitHub rate limiter (issues #44, #659, #436): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

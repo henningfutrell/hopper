@@ -133,6 +133,7 @@
         "question.corrected",
         "auto_answer.settings_changed",
         "auto_park.settings_changed",
+        "github_rate_limiter.settings_changed",
         "github_proxy.done",
         "github_proxy.refused",
         "github_proxy.failed",
