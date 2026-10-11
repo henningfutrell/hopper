@@ -10526,8 +10526,8 @@ stretch with no sample longer than 3 × the machine's usual spacing (at least 5 
 
 **UI.** The usage graph card (`ui/src/components/usage-graph-card.tsx`) draws it, with its own lines (`linesOf`,
 `ui/src/model/machine-history.ts`) and redrawn on `machine.recorded`. On Machines, each card says CPU and memory now,
-draws a CPU sparkline of the last day, and *Resources over time* opens its graph: CPU, memory, swap, disk and lanes in
-use, one colour each (lanes dashed). On the Usage page, *Machine resources over time* sits under the usage limits, at
+draws a CPU sparkline of the last day, and *Resources, lanes and usage* opens its graph: CPU, memory, swap, disk and lanes in
+use, one colour each (lanes dashed), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
 the same day range as their usage line: every machine one colour, CPU solid, memory dashed, disk dotted; swap and lanes
 hidden until shown from the legend.
 
@@ -12138,11 +12138,25 @@ the machine and usage samples (both kept for the history retention).
 - Not in the issue's list and not known to the hopper: an `artifact` or `maintenance` job kind. The hopper keeps no field
   that says so (an artifact deliverable is a line of the issue's text), so those jobs count as `code` until one exists.
 
+**The graph** (part 6 of the issue). One machine's resource graph (`GET /api/machines/:id/history`, "Machine resources
+over time") overlays what lane tuning reads. Beside its resource lines and its lanes in use (a share of its lane cap,
+dashed), it carries:
+- `usage`: the usage that limits the machine, at the resource step — the lines of its own usage samples and of a
+  budget every machine shares (machine id `''`), as the usage graph draws them (`UsageHistoryQuery.limiting`,
+  `src/store/usage-history.ts`). Another machine's readings are not in it.
+- `laneChanges`: its `lanes.applied` and `lanes.undone` in the range, oldest first, as the plan's `changes` reads them
+  (`laneChangeOf`, `src/domain/lane-tuning.ts`). A hand edit of the lanes is no event: the lanes in use line shows its new
+  cap only.
+`GET /api/machines/history` (every machine) carries neither. On Machines, the card's *Resources, lanes and usage* opens
+it (`machineLines`, `ui/src/model/machine-history.ts`): the usage lines in one colour of their own after the resources,
+a week dashed and an informational one dotted and hidden, as on the usage graph; each lane change a dotted line down
+the graph in the lanes colour (`GraphLine.marks`), named in the hover box when the pointer is within half a step of it
+(`marksAt`): `Applied: 2 → 4 lanes, by <who>. <reason>`, `Undone: 4 → 2 lanes, by <who>`.
+
 **Not built yet** (left for the next parts of issue #688):
 - **Placement by expected cost**: the job cost profile of a job's group as an input to the machine it goes to.
 - **The Decider** (issue #550) as a decision point for the lane count and the job's machine, with these rules as its
   fallback, and lane reliability (issue #535) among its inputs.
-- **The graph** on Machines that overlays resources, running lanes and usage over time.
 
 Tests: `test/decider/lane-tuning.test.ts` (headroom: none without history, pressure and its resource, a few pressured
 samples, the room past the most seen, one lane count; the recommendation: free, near, soft, hard, bounds, off, offline,
@@ -12155,7 +12169,9 @@ Undo and its refusals after a hand edit, `hopper lanes plan`, `tune`, `apply`, `
 `test/store/tenant-migration-38.test.ts` (the applied lanes become configured lanes; the mode goes),
 `test/decider/job-costs.test.ts` (job cost kind, a profile per finished or failed job, runs added up, groups),
 `test/integration/job-costs.test.ts` (the real daemon: a run's share net of the baseline, its usage burned, a parked job
-left out, `hopper lanes costs`), `test/ui/job-costs.test.ts`, `test/ui/job-costs-view.test.ts` (the panel and its groupings),
+left out, `hopper lanes costs`), `test/integration/machine-history.test.ts` (one machine's graph: the usage that limits it, its lane changes in
+range; every machine's graph carries neither), `test/ui/machine-history.test.ts` (the usage lines and the lane change marks),
+`test/ui/usage-history.test.ts` (a mark named under the pointer), `test/ui/job-costs.test.ts`, `test/ui/job-costs-view.test.ts` (the panel and its groupings),
 `test/ui/lane-tuning.test.ts` (the model), `test/ui/lane-tuning-view.test.ts` (the panel: the line, Save sends what
 changed, crossing bounds refused, Apply and Dismiss, a dismissed one, the history, undo, a viewer reads only).
 

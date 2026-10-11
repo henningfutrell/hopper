@@ -1,5 +1,5 @@
 // Machine resources over time (issue #560): a machine's resource graph — CPU, memory, swap, disk and its lanes in
-// use — on its Machines card, behind a toggle; a CPU sparkline of its last day on the card; and every machine's
+// use, with the usage that limits it and its lane changes marked (issue #688) — on its Machines card, behind a toggle; a CPU sparkline of its last day on the card; and every machine's
 // resources in one graph on the Usage page, beside plan usage. Each a usage graph card (components/usage-graph-card.tsx)
 // over GET /api/machines/history, read again as the stream tells of new machine samples.
 import { useCallback, useEffect, useState } from 'react';
@@ -12,11 +12,13 @@ import { useHopper } from '@/store';
 
 const EMPTY = 'No machine samples in this range yet. Each online machine is read every minute from now on; an offline one leaves a gap.';
 
-/** One machine's resource graph. */
+const linesOfMachine = (h: MachineHistory) => machineLines(h.series, h.usage, h.laneChanges);
+
+/** One machine's graph: its resources and lanes in use, the usage that limits it, and its lane changes. */
 export function MachineResourcesGraph({ machineId }: { machineId: string }) {
   return (
-    <UsageGraphCard<MachineHistory> path={`/api/machines/${encodeURIComponent(machineId)}/history`} linesOf={(h) => machineLines(h.series)}
-      title="Resources over time" what="resource history" recordedBy="machine" empty={EMPTY} />
+    <UsageGraphCard<MachineHistory> path={`/api/machines/${encodeURIComponent(machineId)}/history`} linesOf={linesOfMachine}
+      title="Resources, lanes and usage over time" what="resource history" recordedBy="machine" empty={EMPTY} />
   );
 }
 

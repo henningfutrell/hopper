@@ -161,7 +161,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.hopperUrl && <p className="text-xs text-muted-foreground">Its jobs reach the hopper at <code>{m.hopperUrl}</code>.</p>}
       <CpuSparkline series={ctx.sparks} machineId={m.id} />
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide resources' : 'Resources over time'}</Button>
+        <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide the graph' : 'Resources, lanes and usage'}</Button>
         {actions}
       </div>
       {graph && <MachineResourcesGraph machineId={m.id} />}

@@ -157,7 +157,8 @@ describe('lanes and usage on one machine\'s graph (issue #688)', () => {
 
     const r = await history(a, '/api/machines/laptop/history?range=24h');
     expect(r.status).toBe(200);
-    const usage = r.body.usage!;
+    // The test app's own usage source reads a budget every machine shares too: only the seeded account here.
+    const usage = r.body.usage!.filter((s) => s.account === 'claude');
     expect(usage.map((s) => [s.account, s.window])).toEqual([['claude', 'session'], ['claude', 'week']]);
     expect(Math.max(...usage[0]!.points.map((p) => p.usedFrac))).toBeCloseTo(0.6);
     expect(usage[1]!.points.map((p) => p.usedFrac)).toEqual([0.3]);
@@ -168,7 +169,7 @@ describe('lanes and usage on one machine\'s graph (issue #688)', () => {
     expect(all.body).not.toHaveProperty('usage');
     expect(all.body).not.toHaveProperty('laneChanges');
     const none = await history(a, '/api/machines/nowhere/history?range=24h');
-    expect(none.body.usage!.map((s) => s.window)).toEqual(['week']);
+    expect(none.body.usage!.filter((s) => s.account === 'claude').map((s) => s.window)).toEqual(['week']);
     expect(none.body.laneChanges).toEqual([]);
   });
 });

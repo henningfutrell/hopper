@@ -2,10 +2,11 @@
 // swap, disk and its lanes in use, one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
 // Machines view; every machine's lines at once on the Usage page, one colour per machine and a dash per resource,
 // swap and lanes hidden until shown; a machine row's CPU sparkline; and the resource facts a machine card says now.
+// One machine's graph overlays the usage that limits it and marks its lane changes on its lanes in use (issue #688).
 // Pure: tested from test/ui/machine-history.test.ts.
-import type { MachineResource, ResourceReading, ResourceSeries, UsageSeries } from '../../../src/domain/types.ts';
+import type { LaneChange, MachineResource, ResourceReading, ResourceSeries, UsageSeries } from '../../../src/domain/types.ts';
 import { gb } from './machines.ts';
-import { ACCOUNT_COLORS, type GraphLine, type LineDash } from './usage-history.ts';
+import { ACCOUNT_COLORS, graphLines, type GraphLine, type GraphMark, type LineDash } from './usage-history.ts';
 
 export const RESOURCE_NAMES: Readonly<Record<MachineResource, string>> = { cpu: 'CPU', memory: 'memory', swap: 'swap', disk: 'disk', lanes: 'lanes in use' };
 const RESOURCE_COLORS: Readonly<Record<MachineResource, string>> = { cpu: 'var(--busy)', memory: 'var(--ok)', swap: 'var(--question)', disk: 'var(--warn)', lanes: 'var(--operator)' };
@@ -17,11 +18,30 @@ const HIDDEN_ON_USAGE: ReadonlySet<MachineResource> = new Set(['swap', 'lanes'])
 const asUsage = (s: ResourceSeries, account: string, window?: string): UsageSeries =>
   ({ account, ...(window !== undefined ? { window } : {}), informational: false, unit: '%', points: s.points, gaps: s.gaps, resets: [] });
 
-/** One machine's lines, in the order CPU, memory, swap, disk, lanes in use. */
-export const machineLines = (series: readonly ResourceSeries[]): GraphLine[] => series.map((s) => ({
-  key: s.resource, label: RESOURCE_NAMES[s.resource], color: RESOURCE_COLORS[s.resource], dash: s.resource === 'lanes' ? 'dashed' : 'solid',
-  shownByDefault: true, series: asUsage(s, RESOURCE_NAMES[s.resource]),
-}));
+/** The usage lines' one colour on a machine's graph: none of its resources' colours. */
+const USAGE_COLOR = 'var(--bad)';
+
+const lanesText = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
+
+/** A lane change as its mark on the graph reads. */
+const markOf = (c: LaneChange): GraphMark => {
+  const what = `${c.kind === 'applied' ? 'Applied' : 'Undone'}: ${c.from} → ${lanesText(c.to)}${c.by ? `, by ${c.by}` : ''}`;
+  return { at: c.at, label: c.kind === 'applied' && c.reason ? `${what}. ${c.reason}` : what };
+};
+
+/**
+ * One machine's lines, in the order CPU, memory, swap, disk, lanes in use — its lane changes marked on that line —,
+ * then a line per usage window that limits it, in one colour, dashed and shown as on the usage graph.
+ */
+export function machineLines(series: readonly ResourceSeries[], usage: readonly UsageSeries[] = [], changes: readonly LaneChange[] = []): GraphLine[] {
+  const resources: GraphLine[] = series.map((s) => ({
+    key: s.resource, label: RESOURCE_NAMES[s.resource], color: RESOURCE_COLORS[s.resource], dash: s.resource === 'lanes' ? 'dashed' : 'solid',
+    shownByDefault: true, series: asUsage(s, RESOURCE_NAMES[s.resource]),
+    ...(s.resource === 'lanes' && changes.length ? { marks: changes.map(markOf) } : {}),
+  }));
+  const used = graphLines(usage).map((l) => ({ ...l, key: `usage|${l.key}`, label: `usage · ${l.label}`, color: USAGE_COLOR }));
+  return [...resources, ...used];
+}
 
 /** Every machine's lines, named `<machine label> · <resource>`; a colour per machine, in the order machines first appear. */
 export function allMachineLines(series: readonly ResourceSeries[], labelOf: (machineId: string) => string): GraphLine[] {
