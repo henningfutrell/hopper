@@ -86,6 +86,23 @@ export const expiryOf = (m: Minted): string => (m.kind === 'aws' ? m.Expiration 
 export interface CredentialMinter {
   awsSession(credential: AwsMintingCredential, r: { roleArn: string; sessionName: string; policyArns: string[]; durationSeconds: number }): Promise<Extract<Minted, { kind: 'aws' }>>;
   kubeToken(credential: KubeMintingCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /** Who STS says the minted session is (`GetCallerIdentity`), asked at the credential's STS with the session's keys (issue #781). */
+  awsCallerIdentity(credential: AwsMintingCredential, session: Extract<Minted, { kind: 'aws' }>): Promise<CallerIdentity>;
+}
+
+/** Who STS says a session is: for a minted session, the role it assumed and the session name, as `arn`. */
+export interface CallerIdentity { arn: string; account: string; userId: string }
+
+/**
+ * A mint test (issue #781): the hopper mints an AWS read session for a person, as for a job, and asks STS who that
+ * session is. Its session is named as a job's is, with `MINT_TEST_ID` in place of the job id.
+ */
+export const MINT_TEST_ID = 'mint-test';
+
+/** What a mint test answers: the role, what was asked of STS, and who STS says the session is. Never a key. */
+export interface MintTestResult {
+  asset: Asset; credential: string; roleArn: string; sessionName: string; durationSeconds: number; policyArns: string[]; expiresAt: string;
+  identity: CallerIdentity;
 }
 
 /** The minting credential's value read as `kind` wants it, or why it cannot be. Never says the value. */

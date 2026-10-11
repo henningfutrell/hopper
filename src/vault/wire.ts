@@ -57,6 +57,8 @@ export const vaultOps = {
       z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400) }),
     ]),
     jobId: z.string().max(64),
+    /** A mint test (issue #781): ask STS who the minted session is, at the minting credential's STS. */
+    identify: z.boolean().optional(),
   }),
 } as const;
 

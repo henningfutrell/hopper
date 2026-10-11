@@ -431,7 +431,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   carries the `ReadOnlyAccess` session policy. The hopper names each session `hopper-<job id>`. When the role's trust
   policy allows only one session name (a condition on `sts:RoleSessionName`), add `"SessionName": "<that name>"` to
   the value; when it allows a prefix (`StringLike`, `ci-*`), add `"SessionNamePrefix": "ci-"`, and the hopper names
-  each session `ci-<job id>`. Then the IAM role needs no change.
+  each session `ci-<job id>`. Then the IAM role needs no change. To check it before a job needs it, run
+  `hopper vault mint-test aws-role/<id>/<role>`: the hopper mints a read session (named `hopper-mint-test`,
+  `<prefix>mint-test`, or the fixed name) and shows the role STS says it assumed, as `aws sts get-caller-identity` would.
+  When STS refuses, it shows why.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

@@ -11156,6 +11156,18 @@ that is not refuses the mint and says why. It lives in the minting credential, n
 allows the principal the credential is, and only the vault that opens the credential reads it. A fixed name makes
 the mints of every job look the same in CloudTrail; `vault.minted` still names the job.
 
+**The mint test** (issue #781, `src/vault/mint-test.ts`). A person checks an AWS minting credential before a job needs
+it: `hopper vault mint-test aws-role/<account>/<role>`, which is `POST /ui/api/vault/mint-test` (admin). The vault mints a
+read session from the minting credential for that account, as for a job — 900 s, the `ReadOnlyAccess` session policy,
+the session name `awsSessionName` gives with `mint-test` in place of the job id (`hopper-mint-test`, `<prefix>mint-test`,
+or the fixed `SessionName`) — and asks STS `GetCallerIdentity` with that session (`CredentialMinter.awsCallerIdentity`, at
+the credential's region and endpoint). The answer is the role, the session name, the expiry and STS's `identity` (`arn`,
+`account`, `userId`): the `arn` is `arn:aws:sts::<account>:assumed-role/<role>/<session name>`. Both calls run where the
+minting credential is opened: in the hopper, or in the vault's own container (the `mint` op's `identify`). The minted
+session never leaves the vault side; the answer and the `vault.mint_tested` event carry no key. STS's refusal is the
+answer (422), with its reason. No job and no template take part, so Access is not asked: the test is a person's act, and
+a read session that only asks who it is reaches nothing. AWS only; a Kubernetes token has no test.
+
 **What is minted** for an operation profile (`mintTarget`, pure):
 
 | form | asset | minted |
@@ -11216,7 +11228,10 @@ session with the read-only policy, named `hopper-<job id>`, its renewal recorded
 given out nor in a template's scope; an undeclared profile and a wrong asset kind refused; the minting credentials in
 no event, log line or file of the box), `test/client/vault.test.ts` (the mint ask, its sealed answer, the minted
 output), `test/integration/skills.test.ts` (the minted link), `test/ui/vault.test.ts` (*Mints for*), `test/vault/aws-session-name.test.ts`
-(the session name, its prefix and their limits).
+(the session name, its prefix and their limits), `test/integration/vault-mint-test.test.ts` (the mint test through the
+operator CLI: AssumeRole with the session name, 900 s and the read-only policy, then GetCallerIdentity signed with the
+minted session, the assumed role answered; through the vault's own container; STS's refusal said, no GetCallerIdentity;
+an account with no minting credential and a non-AWS asset refused, STS not asked; no key in the answer, events or log).
 
 ### The KMS: an optional key provider (issue #586, 2026-10-09)
 

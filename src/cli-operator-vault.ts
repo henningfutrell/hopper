@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
-// (issue #716, item 1), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// (issue #716, item 1), tests an AWS minting credential (issue #781), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -12,6 +12,8 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper vault set <name> --shared [--scope <text>] [--reader <user id>]...
                                                      share a secret with every user's agents, or the readers named (the hopper's admin)
   hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
+  hopper vault mint-test aws-role/<account>/<role>   mint a read session from the account's minting credential and show
+                                                     the role and session name STS says it is (sts get-caller-identity)
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
@@ -35,7 +37,8 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      fewer of its tools, or any tool on a box of no template`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
-const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared]`;
+const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>';
+const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]...';
 const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
@@ -51,6 +54,11 @@ export function vaultCall(args: string[], stdin: () => string): Call {
   const flags = Object.keys(values).length > 0;
   if (verb === undefined && !flags) return { role: 'viewer', path: '/api/vault' };
   if (values.reader && !values.shared) throw new OperatorRefusal('--reader names who may read a shared secret: add --shared');
+  // A mint test (issue #781): the vault mints a read session and STS says who it is; never a key.
+  if (verb === 'mint-test') {
+    if (!name || extra.length > 0 || flags) throw usage(VAULT_MINT_TEST);
+    return { role: 'admin', path: '/ui/api/vault/mint-test', body: async () => ({ asset: name }) };
+  }
   if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined && !values.reader) return (values.shared ? shared : edit)({ action: 'remove', name });
   if (verb !== 'set' || !name || extra.length > 0) throw usage(verb === 'set' ? VAULT_SET : VAULT_VERBS);
   const value = stdin().trim();

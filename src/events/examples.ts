@@ -170,6 +170,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Settings → Vault (the first-time gate)',
     decision: '6c1d2e3f-0000-4000-8000-000000000003',
   },
+  'vault.mint_tested': {
+    asset: { kind: 'aws-role', name: '123456789012/diag' }, credential: 'AWS_LAB', sessionName: 'hopper-mint-test',
+    arn: 'arn:aws:sts::123456789012:assumed-role/diag/hopper-mint-test', expiresAt: '2026-10-09T12:15:00.000Z', by: 'Ada',
+  },
   'vault.refused': { name: 'PROD_KEY', machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'kube is not approved for PROD_KEY: a person adds it to the template and approves it' },
   'vault.credential_asked': { request: 'c9d0e1f2-0000-4000-8000-000000000583', skill: 'example-api', template: 'web', machine: 'hopper-sandbox-web', job: 'f3b1c2d4-0000-4000-8000-000000000001', why: 'deploy the web service' },
   'vault.grant_asked': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', machine: 'hopper-sandbox-web', template: 'web', name: 'KUBE_TOKEN' },
