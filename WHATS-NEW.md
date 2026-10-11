@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The update check now asks GitHub with your GitHub connection, so it is no longer refused for GitHub's small limit for unknown callers. When GitHub's limit is reached, the update notice says when the hopper asks again, instead of showing GitHub's error.
 - The hopper now spaces its GitHub calls before it reaches GitHub's rate limit, instead of being refused, and asks again only for what changed. Settings → GitHub rate limit shows how many calls are left and lets the hopper's admin change when it slows down.
 - Click a bar or a question on the lane timeline, or a job's line in Live activity or Events, to open that job's own page: its state, lane, times, error and what happened to it.
 - Issues on the backburner no longer look gone: the Not taken menu entry and the Queue show how many there are, and each one shows its issue number, how long it has been on the backburner and who put it there.
