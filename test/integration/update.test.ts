@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ShippedCompose, StackDrift, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
-import { copyBuilder, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
+import { copyBuilder, createInstall, createUpstream, readInstall, releaseCheck, tempDir } from '../update/support.ts';
 
 const apps: TestApp[] = [];
 const cleanups: (() => void)[] = [];
@@ -39,10 +39,24 @@ describe('self-update over HTTP', () => {
     expect(s).toMatchObject({ state: 'unavailable', channel: 'stable', autoUpdate: false });
   });
 
+  it('holds a head that is no merged pull request with passing checks: says why, and refuses to apply it (issue #652)', async () => {
+    const w = world();
+    const release = releaseCheck((c) => ({ passed: false, reason: `the checks of pull request #4 have not finished: pr / test (${c.slice(0, 7)})` }));
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: w.appDir, builder: copyBuilder(), release, restart: async () => {} } } });
+    apps.push(app);
+    const token = await app.login();
+    const checked = await app.ui<UpdateStatus>('/ui/api/update', { action: 'check' }, { token });
+    expect(checked.body).toMatchObject({ state: 'held', target: { commit: w.c2, ref: 'stable' }, reason: `the checks of pull request #4 have not finished: pr / test (${w.c2.slice(0, 7)})` });
+    expect((await app.api<UpdateStatus>('GET', '/api/update')).body.state).toBe('held');
+    const applied = await app.ui('/ui/api/update', { action: 'apply' }, { token });
+    expect(applied.status).toBe(409);
+    expect((await app.events()).filter((e) => e.type.startsWith('update.'))).toEqual([]);
+  });
+
   it('checks, sets auto-update and the channel, and applies only with a UI session', async () => {
     const w = world();
     const restarts: number[] = [];
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: w.appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: w.appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => { restarts.push(1); } } } });
     apps.push(app);
     expect((await app.ui('/ui/api/update', { action: 'check' })).status).toBe(403);
     const token = await app.login();
@@ -75,7 +89,7 @@ describe('self-update over HTTP', () => {
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const restarts: number[] = [];
     const appDir = createInstall(root, w.up.dir, w.c1, 'stable', 'image');
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => { restarts.push(1); } } } });
     apps.push(app);
     const token = await app.login();
     const set = await app.ui<UpdateStatus>('/ui/api/update', { action: 'settings', autoUpdate: true }, { token });
@@ -96,7 +110,7 @@ describe('self-update over HTTP', () => {
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const appDir = createInstall(root, w.up.dir, w.c1, 'beta', 'image');
     writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices: {}\n');
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => {} } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => {} } } });
     apps.push(app);
     const c = await app.api<ShippedCompose>('GET', '/api/update/compose');
     expect(c.status).toBe(200);
@@ -117,7 +131,7 @@ describe('self-update over HTTP', () => {
     writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices:\n  hopper:\n    environment:\n      HOPPER_OPENFGA_URL: x\n  openfga:\n    image: o\n');
     const asked: string[] = [];
     const stackProbe = { resolves: async (name: string) => { asked.push(name); return false; }, vaultCommit: async () => null };
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => {}, stackProbe } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => {}, stackProbe } } });
     apps.push(app);
     const d = await app.api<StackDrift>('GET', '/api/update/drift');
     expect(d.status).toBe(200);
@@ -132,7 +146,7 @@ describe('self-update over HTTP', () => {
     const root = tempDir('jh-update-it-');
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
     const w = world();
-    const app = await startTestApp({ dbPath: db.dbPath, seams: { update: { appDir: createInstall(root, w.up.dir, w.c1), builder: copyBuilder(), restart: async () => {} } } });
+    const app = await startTestApp({ dbPath: db.dbPath, seams: { update: { appDir: createInstall(root, w.up.dir, w.c1), builder: copyBuilder(), release: releaseCheck(), restart: async () => {} } } });
     apps.push(app);
     const c = await app.api<{ error: string }>('GET', '/api/update/compose');
     expect(c.status).toBe(404);
@@ -143,7 +157,7 @@ describe('self-update over HTTP', () => {
     const w = world();
     const root = tempDir('jh-update-it-');
     cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: createInstall(root, w.up.dir, w.c2), builder: copyBuilder(), restart: async () => {} } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir: createInstall(root, w.up.dir, w.c2), builder: copyBuilder(), release: releaseCheck(), restart: async () => {} } } });
     apps.push(app);
     const h = (await app.api<VersionHistory>('GET', '/api/update/history')).body;
     expect(h.versions.map((v) => ({ commit: v.commit, changes: v.changes }))).toEqual([{ commit: w.c2, changes: ['Updates arrive on their own.'] }]);
@@ -152,7 +166,7 @@ describe('self-update over HTTP', () => {
   it('reports update.applied on the boot after, and keeps the settings and the queue', async () => {
     const w = world();
     const restarts: number[] = [];
-    const seams = { update: { appDir: w.appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } };
+    const seams = { update: { appDir: w.appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => { restarts.push(1); } } };
     const first = await startTestApp({ dbPath: w.dbPath, seams });
     apps.push(first);
     const token = await first.login();

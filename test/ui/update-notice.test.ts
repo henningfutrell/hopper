@@ -97,3 +97,22 @@ describe('the container update notice, slim (issue #521)', () => {
     expect(notice.querySelector('[data-slot="image-update"]')).toBeNull();
   });
 });
+
+describe('the update notice names the commit (issue #652)', () => {
+  it('an available update: the commit, and the pull request whose checks passed, linked', async () => {
+    const pullRequest = { number: 9, url: 'https://github.com/o/r/pull/9' };
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { ...image, target: { ...image.target, pullRequest } });
+    const line = document.querySelector('[data-update-notice] [data-slot="update-target"]')!;
+    expect(line.textContent).toBe('dev beef000 · pull request #9, checks passed');
+    expect(line.querySelector('a')?.getAttribute('href')).toBe('https://github.com/o/r/pull/9');
+  });
+
+  it('a held update: why, the commit, and nothing to apply or run', async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { ...image, state: 'held', reason: 'beef000 is not the merge of a pull request' });
+    const notice = document.querySelector('[data-update-notice]')!;
+    expect(notice.textContent).toContain('Update held: beef000 is not the merge of a pull request');
+    expect(notice.querySelector('[data-slot="update-target"]')?.textContent).toBe('dev beef000');
+    expect(button(notice, 'How to update')).toBeUndefined();
+    expect(button(notice, 'Update now')).toBeUndefined();
+  });
+});

@@ -17,7 +17,7 @@ import { databaseUrlFor, untouchedUrlFor } from '../support/database.ts';
 import { runCli } from '../../src/cli.ts';
 import { rmSync } from 'node:fs';
 import { createStickyExecutor } from '../support/doubles.ts';
-import { copyBuilder, createInstall, createUpstream, tempDir } from '../update/support.ts';
+import { copyBuilder, createInstall, createUpstream, releaseCheck, tempDir } from '../update/support.ts';
 import { createStoreRepo, entry } from '../plugin-store/support.ts';
 
 let t: TestApp | undefined;
@@ -253,7 +253,7 @@ describe('the instance\'s parts are shared', () => {
     const restarts: number[] = [];
     const sticky = createStickyExecutor();
     try {
-      const a = await start({ seams: { executors: [sticky], update: { appDir, builder: copyBuilder(), restart: async () => { restarts.push(1); } } } });
+      const a = await start({ seams: { executors: [sticky], update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => { restarts.push(1); } } } });
       const admin = await a.login();
       await a.addUser('Bea');
       await a.addThisMachine('bea');

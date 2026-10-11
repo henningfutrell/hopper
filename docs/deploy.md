@@ -807,6 +807,12 @@ starts. `beta` and `stable` therefore only ever hold what ran one step below; no
 on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
 there. There is no schedule and nothing promotes on its own: the maintainer decides.
 
+**What a hopper updates to (issue #652).** A hopper offers its channel's head only when that commit is the merge of a
+pull request whose checks passed (asked of GitHub's API). Promote a merge commit of `dev` (`scripts/promote.sh` takes
+`dev`'s head by default, which is one). A direct push to a channel's branch, or a pull request merged with no checks or
+failed checks, is **held**: the update notice says "Update held" and why, and no hopper applies it until a merged pull
+request with passing checks is the branch's head.
+
 **A change with a store migration.** Moving a hopper to a steadier channel installs that channel's head,
 which can be older than the build that already migrated its database. So a migration must leave a store
 the build before it still runs on: add tables, columns and values; never drop, rename or reshape what the

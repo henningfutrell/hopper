@@ -1,7 +1,7 @@
 // The update notice's words and links (issue #44): pure, from GET /api/update.
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { CHANNELS, channelBadge, headline, imageUpdate, parseContainerTool, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
+import { CHANNELS, channelBadge, headline, imageUpdate, parseContainerTool, reloadNeeded, showNotice, targetLine } from '../../ui/src/model/update.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -94,10 +94,24 @@ describe('update model', () => {
     });
   });
 
+  it('a held head says why, and offers nothing (issue #652)', () => {
+    const held = status({ state: 'held', target: { commit: B, ref: 'stable' }, reason: 'bbbbbbb is not the merge of a pull request' });
+    expect(headline(held)).toBe('Update held: bbbbbbb is not the merge of a pull request');
+    expect(imageUpdate({ ...held, installed: { ...installed, kind: 'image' } })).toBeUndefined();
+  });
+
+  it('the notice names the commit to update to, and the pull request whose checks passed (issue #652)', () => {
+    const pullRequest = { number: 9, url: 'https://github.com/o/r/pull/9' };
+    expect(targetLine(status({ state: 'available', target: { commit: B, ref: 'stable', pullRequest } }))).toBe('stable bbbbbbb · pull request #9, checks passed');
+    expect(targetLine(status({ state: 'held', target: { commit: B, ref: 'stable' } }))).toBe('stable bbbbbbb');
+    expect(targetLine(status({}))).toBeUndefined();
+  });
+
   it('shows the notice only when there is something to act on or watch', () => {
     expect(showNotice(status({ state: 'available' }))).toBe(true);
     expect(showNotice(status({ state: 'applying' }))).toBe(true);
     expect(showNotice(status({ state: 'error' }))).toBe(true);
+    expect(showNotice(status({ state: 'held' }))).toBe(true);
     expect(showNotice(status({}))).toBe(false);
     expect(showNotice(status({ state: 'unavailable' }))).toBe(false);
     expect(showNotice(null)).toBe(false);

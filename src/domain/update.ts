@@ -30,7 +30,17 @@ export interface InstallInfo {
   installedAt: string;
 }
 
-export type UpdateState = 'unavailable' | 'current' | 'available' | 'applying' | 'error';
+/**
+ * `held` (issue #652): the channel has a newer commit, but it is not the merge of a pull request whose checks passed, or
+ * GitHub could not say so. It is not offered, announced or applied; `reason` says why.
+ */
+export type UpdateState = 'unavailable' | 'current' | 'available' | 'held' | 'applying' | 'error';
+
+/** The pull request a target is the merge of, whose checks passed (issue #652). */
+export interface UpdatePullRequest { number: number; url: string }
+
+/** What an update goes to: a commit of the channel's branch, and, when it is offered, its pull request. */
+export interface UpdateTarget { commit: string; ref: string; pullRequest?: UpdatePullRequest }
 
 export interface UpdateApply {
   /** `building` the new install beside the running one; `waiting` for running jobs a restart would lose; `restarting`. */
@@ -67,11 +77,11 @@ export interface VersionHistory {
 
 export interface UpdateStatus extends UpdateSettings {
   state: UpdateState;
-  /** Why updates are unavailable, or the last check's or apply's error. */
+  /** Why updates are unavailable, why the target is held, or the last check's or apply's error. */
   reason?: string;
   installed?: InstallInfo;
-  /** The newest commit of the channel: the head of its branch. */
-  target?: { commit: string; ref: string };
+  /** The newest commit of the channel: the head of its branch; `pullRequest` set when it is offered (issue #652). */
+  target?: UpdateTarget;
   /** What's new: the target's WHATS-NEW.md bullets the installed version lacks, newest first, in plain words. */
   whatsNew: string[];
   /** What the installed version brought: the newest bullets of its own WHATS-NEW.md, update or not. */

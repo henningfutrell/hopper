@@ -8,7 +8,7 @@ import type { InstanceStore, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
 import { createUpdater, type UpdaterOptions } from '../../src/update/index.ts';
-import { copyBuilder, createUpstream, tempDir, type Upstream } from './support.ts';
+import { copyBuilder, createUpstream, releaseCheck, tempDir, type Upstream } from './support.ts';
 
 const dirs: string[] = [];
 const stores: { close(): void }[] = [];
@@ -36,7 +36,7 @@ export function updater(w: World, appDir: string, o: Partial<UpdaterOptions> = {
   const restarts: number[] = [];
   const u = createUpdater({
     appDir, dataDir: w.dataDir, settings: w.instance.settings, events: w.store.events, clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
-    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => 0, checkMs: 0, waitMs: 20,
+    builder: copyBuilder(), restart: async () => { restarts.push(Date.now()); }, restartBlockers: () => 0, checkMs: 0, waitMs: 20, release: releaseCheck(),
     ...o,
   });
   updaters.push(u);

@@ -38,7 +38,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'question.dismissed': { questionId: 'q1' },
   'question.expired': { questionId: 'q1', after_ms: 1000 },
   'question.lapsed': { questionId: 'q1', lapsesAt: '2026-10-07T21:43:59.000Z' },
-  'update.available': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable', changes: 3 },
+  'update.available': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable', changes: 3, pullRequest: 775 },
   'update.started': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable' },
   'update.applied': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable' },
   'update.failed': { to: 'e4f5a6b', error: 'the new build does not load: SyntaxError' },

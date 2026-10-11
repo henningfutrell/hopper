@@ -12,7 +12,7 @@ import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
-import type { AuthorizationServer, ContainerRuntime, InstanceStore, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { AuthorizationServer, ContainerRuntime, InstanceStore, ReleaseCheck, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
@@ -29,7 +29,7 @@ import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
-import { createInstallScriptBuilder, createRestarter, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createReleaseCheck, createRestarter, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
@@ -87,7 +87,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
-  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe };
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
 }
 
 const PLUGINS_CONFIG_CHECK_MS = 5000;
@@ -256,6 +256,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     appDir, dataDir: workDir, settings: instance.settings, events: runtimes.events, clock, logger,
     builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(workDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
+    // Only the merge of a pull request whose checks passed (issue #652), asked of github.com's API with no token.
+    release: seams.update?.release ?? createReleaseCheck({ apiUrl: 'https://api.github.com', clock }),
     // A restart would lose the running jobs of every user.
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
