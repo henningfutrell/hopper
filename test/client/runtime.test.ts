@@ -11,6 +11,8 @@
 //   Scenario: a box's start check is carried: the create with its health check, and the check run on the hopper's box only
 //   Scenario: a tools image's build is carried as a tar of its one Containerfile
 //   Scenario: a build of anything but a tools image, with other build options, or of another context, is refused
+//   Scenario: a check box is carried: its script, its end awaited, and its output as the bytes the runtime sent
+//   Scenario: a script on a sandbox box, a check box without its one script, and a wait or a read of a sandbox box are refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
 import { libpodCreateBody, dockerCreateBody } from '../../src/sandbox/flags.ts';
@@ -196,6 +198,67 @@ describe('the remote runtime, on the machine', () => {
     expect(a.seen).toEqual([]);
   });
 });
+
+describe('the read-only check on the machine (issue #708)', () => {
+  it('a check box is carried: its script, its end awaited, and its output as the bytes the runtime sent', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const made = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody(checkSpec) });
+    expect(made.status).toBe(201);
+    const id = (JSON.parse(made.text) as { Id: string }).Id;
+    expect(libpod.containers.get(id)!.body).toMatchObject({ entrypoint: ['/bin/sh'], command: ['-c', 'echo HOPPER-PROBE'], terminal: true, restart_policy: 'no' });
+    // A frame longer than 127 bytes: its length is no UTF-8 text, so only the bytes as sent keep it.
+    libpod.containers.get(id)!.run = { exit: 3, logs: LOGS };
+    await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/start` });
+    const ended = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/wait?condition=exited&condition=stopped`, timeoutMs: 30 * 60_000 });
+    expect(ended).toMatchObject({ status: 200, text: '3' });
+    const logs = await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/${id}/logs?stdout=true&stderr=true` });
+    expect(logs.status).toBe(200);
+    expect(Buffer.from(logs.base64!, 'base64').equals(LOGS)).toBe(true);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/volumes/${checkSpec.volume}?force=true` })).status).toBe(404);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/containers/${id}?force=true&timeout=10` })).status).toBe(204);
+  });
+
+  it('a script on a sandbox box, a check box without its one script, and a wait or a read of a sandbox box are refused', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const check = libpodCreateBody(checkSpec);
+    const { entrypoint: _e, command: _c, terminal: _t, ...noScript } = check;
+    for (const [body, why] of [
+      [libpodCreateBody({ ...spec, script: 'id' }), "its image's own entrypoint"],
+      [{ ...noScript, restart_policy: 'unless-stopped' }, 'runs its script once'],
+      [{ ...check, entrypoint: ['/bin/bash'] }, 'runs its script once'],
+      [{ ...check, command: ['-c', 'id', 'more'] }, 'runs its script once'],
+      [{ ...check, restart_policy: 'always' }, 'runs its script once'],
+      [{ ...check, name: 'hopper-sandbox-kube' }, 'hopper-check-'],
+      [{ ...check, cap_drop: [] }, 'every capability dropped'],
+    ] as const) {
+      const r = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body });
+      expect(r.status, why).toBe(403);
+      expect(JSON.parse(r.text).message).toContain(why);
+    }
+    expect(a.seen.filter((s) => s.path.endsWith('/containers/create'))).toEqual([]);
+    const box = (JSON.parse((await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody(spec) })).text) as { Id: string }).Id;
+    const theirs = libpod.put({ name: 'postgres', image: 'postgres', labels: {} });
+    for (const id of [box, theirs]) {
+      for (const [method, path] of [['POST', `/containers/${id}/wait`], ['GET', `/containers/${id}/logs?stdout=true&stderr=true`]] as const) {
+        const r = await clientRuntimeCall(t, { method, path: API + path });
+        expect(r.status).toBe(403);
+        expect(r.base64).toBeUndefined();
+      }
+    }
+    expect(a.seen.filter((s) => /\/(wait|logs)$/.test(s.path))).toEqual([]);
+  });
+});
+
+const checkSpec = {
+  ...spec, name: 'hopper-check-asked-1', volume: 'hopper-check-asked-1-home', env: {}, labels: { 'io.hopper.check': 'i-1', 'io.hopper.user': 'admin' },
+  script: 'echo HOPPER-PROBE',
+};
+const frame = (s: string): Buffer => { const b = Buffer.from(s); const h = Buffer.from([1, 0, 0, 0, 0, 0, 0, 0]); h.writeUInt32BE(b.length, 4); return Buffer.concat([h, b]); };
+const LOGS = Buffer.concat([frame('HOPPER-PROBE 0 1 '), frame('x'.repeat(200)), frame('\r\n')]);
 
 const TAG = 'localhost/hopper-box-tools:0123456789abcdef';
 const FILE = 'FROM example.org/kube-box:1\nLABEL io.hopper.tools="kubectl"\n';

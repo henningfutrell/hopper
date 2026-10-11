@@ -9,6 +9,8 @@ export interface LibpodContainer {
   id: string; name: string; image: string; labels: Record<string, string>; state: string; body: Record<string, unknown>;
   /** Its start check's next run (issue #708), when its create carried one: passes unless a test says otherwise. */
   check?: { passed: boolean; output: string };
+  /** A one-shot box's run (a check box, issue #708): its exit code, and its logs as libpod sends them. */
+  run?: { exit: number; logs: Buffer };
 }
 
 export interface FakeLibpod {
@@ -65,7 +67,7 @@ export function createFakeLibpod(): FakeLibpod {
       return { status: 201, body: { Id: id } };
     }
     if (r.method === 'GET' && path(r, /^\/containers\/json$/)) return { status: 200, body: [...containers.values()].filter((c) => matches(c, r.query)).map(listed) };
-    if ((m = path(r, /^\/containers\/([^/]+)(\/json|\/start|\/stop|\/healthcheck)?$/))) {
+    if ((m = path(r, /^\/containers\/([^/]+)(\/json|\/start|\/stop|\/healthcheck|\/wait|\/logs)?$/))) {
       const c = byRef(decodeURIComponent(m[1]!));
       if (!c) return { status: 404, body: { message: 'no such container' } };
       const health = c.check && { Status: c.check.passed ? 'healthy' : 'unhealthy', Log: [{ ExitCode: c.check.passed ? 0 : 1, Output: c.check.output }] };
@@ -75,6 +77,8 @@ export function createFakeLibpod(): FakeLibpod {
       if (r.method === 'GET' && m[2] === '/healthcheck') return health ? { status: 200, body: { Status: health.Status, FailingStreak: 0, Log: null } } : { status: 409, body: { message: `container ${c.id} has no defined healthcheck` } };
       if (r.method === 'POST' && m[2] === '/start') { c.state = 'running'; return { status: 204 }; }
       if (r.method === 'POST' && m[2] === '/stop') { c.state = 'exited'; return { status: 204 }; }
+      if (r.method === 'POST' && m[2] === '/wait') { c.state = 'exited'; return { status: 200, text: String(c.run?.exit ?? 0) }; }
+      if (r.method === 'GET' && m[2] === '/logs') return { status: 200, bytes: c.run?.logs ?? Buffer.alloc(0) };
       if (r.method === 'DELETE' && m[2] === undefined) { containers.delete(c.id); return { status: 204 }; }
     }
     return undefined;

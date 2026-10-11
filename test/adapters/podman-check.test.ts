@@ -14,12 +14,18 @@
 //     When the check runs
 //     Then it failed: every probe is an error (no write was refused, no read worked), none is counted a refusal
 //     And kubectl asked the server the kubeconfig names (issue #797), not its default
+//   Scenario: a check box runs on a client target, its Podman reached through the machine's client (issue #708)
+//     When the same check runs through the remote runtime of a real client on that Podman
+//     Then it passed, its output read whole through the client, and nothing of it is left
 import { execFileSync } from 'node:child_process';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { runtimeRelay } from '../../src/executors/client.ts';
 import type { Probe, Template } from '../../src/domain/types.ts';
 import { runCheck, type CheckContext } from '../../src/sandbox/check.ts';
 import { createPodmanRuntime } from '../../src/sandbox/podman.ts';
 import { HOPPER_PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
+import { createRemoteRuntime } from '../../src/sandbox/remote.ts';
+import { startTestClient, type TestClient } from '../support/client.ts';
 
 const SOCKET = process.env.HOPPER_TEST_PODMAN_SOCKET;
 const IMAGE = process.env.HOPPER_TEST_PODMAN_IMAGE ?? 'ghcr.io/henningfutrell/hopper:box-claude';
@@ -40,6 +46,9 @@ const context = (probes: CheckContext['probes']): CheckContext => ({
   runtime: createPodmanRuntime(SOCKET!), credentials, instanceId: 'test-716', network: 'host', probes,
   clock: { now: () => new Date() }, logger: { info: () => {}, warn: () => {} },
 });
+
+let client: TestClient | undefined;
+afterEach(async () => { await client?.stop(); client = undefined; });
 
 const left = (name: string): void => {
   expect(podman('ps', '-a', '--format', '{{.Names}}').split('\n')).not.toContain(name);
@@ -75,6 +84,23 @@ describe.skipIf(!SOCKET)('the read-only check, real rootless Podman (issue #716)
       expect(p.exit).toBeGreaterThan(0);
       if (p.id !== 'helm.install') expect(p.output, p.id).toContain('127.0.0.1:9');
     }
+    left(name);
+  }, 600_000);
+
+  it('a check box runs on a client target, its Podman reached through the machine\'s client (issue #708)', async () => {
+    const token = 'c'.repeat(43);
+    client = await startTestClient({ token: () => token, herdrBin: '/bin/false', session: 'hopper', runtimeSockets: () => ({ podman: SOCKET! }) });
+    const probes: Probe[] = [
+      { id: 'own.read', title: 'kubectl is there', kinds: ['cluster'], tool: 'kubectl', expect: 'allowed', script: 'kubectl version --client' },
+      { id: 'own.long', title: 'a long output', kinds: ['cluster'], tool: 'kubectl', expect: 'allowed', script: 'seq 1 2000; id -u' },
+    ];
+    const name = `hopper-check-t${Date.now().toString(36)}`;
+    const runtime = createRemoteRuntime('studio', runtimeRelay(client.transport(token, 'studio')));
+    const check = await runCheck({ ...context(probeCatalog(probes)), runtime }, 'admin', template(['kubectl']), name);
+    expect(check.problem).toBeUndefined();
+    expect(check.state).toBe('passed');
+    expect(check.probes[1]!.output.startsWith('1\n2\n3\n')).toBe(true);
+    expect(check.probes[1]!.output.endsWith('2000\n1000')).toBe(true);
     left(name);
   }, 600_000);
 });
