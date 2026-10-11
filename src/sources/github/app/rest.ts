@@ -4,6 +4,7 @@
 import type { GitHubComment, GitHubIssue, IssueEvent, SubIssue } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
+import type { PostedComment } from '../api.ts';
 
 interface RestIssue {
   number: number; title: string; body?: string | null; state: string; html_url: string; updated_at: string;
@@ -13,7 +14,7 @@ interface RestIssue {
   repository_url?: string;
 }
 interface RestIssueWithRepo extends RestIssue { repository?: { full_name?: string } | null }
-interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string }
+interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string; author_association?: string }
 
 export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
   return {
@@ -34,7 +35,7 @@ export function subIssueFrom(i: RestIssue, repo: string): SubIssue {
 }
 
 function commentFrom(c: RestComment): GitHubComment {
-  return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url };
+  return { id: c.id, author: c.user?.login ?? '', body: c.body ?? '', createdAt: c.created_at, url: c.html_url, ...(c.author_association ? { association: c.author_association } : {}) };
 }
 
 const auth = (token: string) => ({ authorization: `token ${token}` });
@@ -106,8 +107,9 @@ export async function addLabels(req: Request, token: string, repo: string, numbe
   await req('POST /repos/{owner}/{repo}/issues/{issue_number}/labels', { ...splitRepo(repo), issue_number: number, labels, headers: auth(token) });
 }
 
-export async function postComment(req: Request, token: string, repo: string, number: number, body: string): Promise<void> {
-  await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...splitRepo(repo), issue_number: number, body, headers: auth(token) });
+export async function postComment(req: Request, token: string, repo: string, number: number, body: string): Promise<PostedComment> {
+  const c = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...splitRepo(repo), issue_number: number, body, headers: auth(token) })).data as RestComment | undefined;
+  return { id: c?.id ?? 0, url: c?.html_url ?? '' };
 }
 
 export async function reopenIssue(req: Request, token: string, repo: string, number: number): Promise<void> {

@@ -105,6 +105,11 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     const p = paginate(ctx, req, issue.comments.map((c) => restComment(repo, issue.number, c)));
     return { status: 200, body: p.items, headers: p.headers };
   }
+  if (req.method === 'POST' && sub === '/comments') {
+    const c = { id: ctx.state.nextCommentId++, author: ctx.bot, body: String(body.body ?? ''), createdAt: ctx.now().toISOString() };
+    issue.comments.push(c);
+    return { status: 201, body: restComment(repo, issue.number, c) };
+  }
   if (req.method === 'GET' && sub === '/events') {
     // Its labels and assignments, each by its author (issue #652: who added them is what intake trusts).
     const actor = { login: issue.author, type: 'User' };

@@ -28,6 +28,7 @@ import { Countdown, JobTitle } from '@/components/job';
 import { CardText, Markdown } from '@/components/markdown';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
+import { ThreadState } from '@/components/thread-ask';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
@@ -130,6 +131,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
         {!movedOn && <ParkButton job={job} />}</div>}
       {q.tier === 'human' && <ReasonBanner q={q} />}
       <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
+      <ThreadState q={q} />
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>

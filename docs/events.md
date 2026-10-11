@@ -2520,6 +2520,82 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
+## `question.thread_held`
+
+Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `repo` | string | yes |
+| `number` | integer | yes |
+
+```json
+{
+  "questionId": "q1",
+  "repo": "someone/library",
+  "number": 12
+}
+```
+
+## `question.thread_approved`
+
+Version 1 (`docs/schemas/question.thread_approved.v1.json`). A person approved a held question for its issue thread (issue #435); the next sync of its source posts it (`question.thread_posted`).
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "questionId": "q1",
+  "by": "admin"
+}
+```
+
+## `question.thread_posted`
+
+Version 1 (`docs/schemas/question.thread_posted.v1.json`). A question at the human stage of a GitHub job went on its issue thread as one comment (issue #435), `url`. Its job is parked; the first reply by the connected account or a maintainer of the repository (author association owner, member or collaborator) answers it (`question.answered`, `by: thread:<login>`) and resumes the job. `approvedBy`: who approved it; absent: the policy posted it with no review.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `url` | string | yes |
+| `approvedBy` | string | no |
+
+```json
+{
+  "questionId": "q1",
+  "url": "https://github.com/someone/library/issues/12#issuecomment-1",
+  "approvedBy": "admin"
+}
+```
+
+## `thread_ask.settings_changed`
+
+Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed the policy for asking on the issue thread (issue #435): for repositories the connected account owns (`ownRepos`) and for any other (`otherRepos`), `post`, `review` or `off`. `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "ownRepos": "post",
+    "otherRepos": "review"
+  },
+  "to": {
+    "ownRepos": "post",
+    "otherRepos": "off"
+  },
+  "by": "admin"
+}
+```
+
 ## `github_proxy.done`
 
 Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.

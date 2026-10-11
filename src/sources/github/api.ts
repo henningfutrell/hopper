@@ -87,7 +87,12 @@ export interface GitHubComment {
   body: string;
   createdAt: string;
   url: string;
+  /** GitHub's `author_association` (issue #435: a maintainer's reply answers a thread question); absent: not known. */
+  association?: string;
 }
+
+/** The comment a post made (issue #435): its id and link; id 0 when GitHub did not say. */
+export interface PostedComment { id: number; url: string }
 
 /**
  * A label or an assignment on an issue, from its events (issue #652): who did it, and through which app. What the trust
@@ -146,9 +151,10 @@ export interface GitHubApi {
   closeAsCompleted(repo: string, number: number): Promise<void>;
   /**
    * Post a comment on an issue: only a person's resolution of a hand-off (issue #551), the user's own act, and the one
-   * that links the merged pull request when the hopper closes the issue after its merge (issue #677).
+   * that links the merged pull request when the hopper closes the issue after its merge (issue #677), and a question asked on
+   * the issue thread (issue #435). Answers the comment made.
    */
-  postComment(repo: string, number: number, body: string): Promise<void>;
+  postComment(repo: string, number: number, body: string): Promise<PostedComment>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */

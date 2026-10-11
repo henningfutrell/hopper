@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneDismissals, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneDismissals, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, ThreadAskSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts';
@@ -199,6 +199,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setAutoPark(settings) {
       write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes }));
     },
+    getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
+    setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
     getTldr() {
       const text = read('tldr');
       return text === undefined ? undefined : JSON.parse(text) as TldrSettings;

@@ -22,6 +22,7 @@ import { liveIntake } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
+import { createThreadAsks } from './thread-asks.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -167,7 +168,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   function onEvent(e: DomainEvent) {
-    if (running && writeBacks.follows(e)) return;
+    if (running && (writeBacks.follows(e) || threadAsks.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
     const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
@@ -262,8 +263,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         st.itemsSeen = seen;
         st.jobsCreated += created;
       } else {
-        st.itemsSeen = 0;
-        slot.notRerun = [];
+        [st.itemsSeen, slot.notRerun] = [0, []];
       }
       await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
@@ -271,7 +271,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
-      await afterDone.catchUp(slot.source, jobsOf(slot));
+      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot)), threadAsks.catchUp(slot.source, jobsOf(slot))]);
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -327,20 +327,20 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
 
-  const writeBacks = createWriteBacks({
-    store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: (jobId) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined),
-  });
+  const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
+  const retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
+  const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob });
+  const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
   const afterDone = createAfterDone({
     store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
-    failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); }, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief),
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief),
   });
 
   const rerunning = createRerun({
-    host, flagsOf, enqueue,
-    sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
     syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
   });
 

@@ -143,6 +143,20 @@ In **Settings → Question gates**:
 - **Default escalation machine**: where a `claude-cli` level with no machine runs when the job's machine cannot run `claude`.
 - **Auto-answer**: on or off, and the threshold.
 
+### Ask on the issue thread
+
+A job from a GitHub issue that is blocked on a question for you can ask it on the issue, so the people there can answer too:
+
+1. The question reaches you. The job parks: its machine is free, and its session and work tree are kept.
+2. The hopper posts the question on the issue as one comment, under your account. Or it holds the question for your review first.
+3. The first reply from your account, or from a maintainer of the repository (owner, member or collaborator), answers the question. The job resumes by itself with the reply. Replies from other people do not count.
+
+A reply from someone other than you reaches the job as information, not as instructions. You can still answer in the hopper at any time; your answer wins.
+
+To approve a held question, select **Post on the issue** on its card or its row in **Parked**.
+
+In **Settings → Issue thread**, set what happens for repositories you own and for other repositories: **Post at once**, **Hold for my review** or **Do not post**. The default is to post at once in your own repositories and to hold for your review in others. A question that a risk rule or the guard sent to you is never posted.
+
 ### Research this and Propose this
 
 Some questions need research or a proposal first. On a question card, select **Research this** or **Propose this**, give an optional note, and pick a mode:
@@ -166,7 +180,7 @@ Ask for one with the label `hopper:research` or `hopper:proposal`, a `Research` 
 - It tells you of a question that reaches you, through your notifiers and webhooks, and again every 15 minutes while it waits (`HOPPER_HUMAN_RENOTIFY_MS`).
 - It parks the job when its question waits on you too long (30 minutes by default, **Settings → Auto-park**). The lane is free again. A question a risk rule or the guard sent to you never parks its job.
 - It reuses your answer when the same question comes again on the same issue.
-- It keeps every handled question in **Settings → Question history**, in its own database. It never sends them to GitHub.
+- It keeps every handled question in **Settings → Question history**, in its own database. It sends a question to GitHub only to ask it on the issue thread, as **Settings → Issue thread** allows.
 
 ## Limits and troubleshooting
 
@@ -175,6 +189,8 @@ Ask for one with the label `hopper:research` or `hopper:proposal`, a `Research` 
 | The job failed with `question unanswered` | Nobody answered within 24 hours (`HOPPER_HUMAN_TIMEOUT_MS`). Run it again. A parked job's question never expires. |
 | A question shows `lapsed` | A dialog's countdown ran out, and Claude denied it by itself. The job went on. |
 | Every question comes to you | Auto-answer is off, there are no levels, or the levels cannot run. Check **Settings → Question gates**. |
+| A question is not on the issue thread | The policy for that repository is **Do not post** or **Hold for my review**, or a risk rule or the guard sent it to you. Check **Settings → Issue thread** and the question's card. |
+| A reply on the issue did not resume the job | Only your account and the repository's owners, members and collaborators answer. The hopper reads the issue at each sync of its source. |
 | A level never answers | Its `claude` is not signed in on its machine, or its API key is not set. The level escalates. |
 | Jev applies nothing | The decision point is in shadow, the TypeSafe key is not set, or the pick is below the threshold. |
 | You cannot save the TypeSafe key | OpenFGA is not reachable. Save needs Access. |

@@ -74,6 +74,7 @@ export function createWorld(): World {
     store,
     // No snapshot is kept here (issue #662): nothing changed since one.
     changedSince: () => undefined,
+    answerFromThread: () => false,
     ingest(it, source) {
       calls.ingest.push(it);
       const known = store.jobs.getBySourceKey(it.key);

@@ -11,6 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -366,6 +367,7 @@ export const EVENT_SCHEMAS = {
   ...ITEM_EVENT_SCHEMAS,
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
+  ...THREAD_ASK_EVENT_SCHEMAS,
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents,
 } satisfies Record<EventType, z.ZodType>;
 

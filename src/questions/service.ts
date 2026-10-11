@@ -273,7 +273,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     clearTimers(q.id);
     const at = iso();
     store.questions.addAttempt(q.id, {
-      tier: by, role: by === HUMAN ? 'human' : by.startsWith('fork:') ? 'fork' : 'level', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
+      tier: by, role: by === HUMAN || by.startsWith('thread:') ? 'human' : by.startsWith('fork:') ? 'fork' : 'level', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
       ...(reason ? { reason } : status === 'closed' ? { reason: 'closed without answering' } : via ? { reason: 'answered in the pane' } : {}),
     });
     const updated = store.questions.update(q.id, { status, answer, answeredBy: by });

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questionId": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "approvedBy": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "questionId",
+    "url"
+  ],
+  "additionalProperties": false
+}

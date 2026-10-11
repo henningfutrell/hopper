@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "ownRepos": {
+          "type": "string",
+          "enum": [
+            "post",
+            "review",
+            "off"
+          ]
+        },
+        "otherRepos": {
+          "type": "string",
+          "enum": [
+            "post",
+            "review",
+            "off"
+          ]
+        }
+      },
+      "required": [
+        "ownRepos",
+        "otherRepos"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "ownRepos": {
+          "type": "string",
+          "enum": [
+            "post",
+            "review",
+            "off"
+          ]
+        },
+        "otherRepos": {
+          "type": "string",
+          "enum": [
+            "post",
+            "review",
+            "off"
+          ]
+        }
+      },
+      "required": [
+        "ownRepos",
+        "otherRepos"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

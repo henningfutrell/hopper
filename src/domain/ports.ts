@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -469,7 +469,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests {
+export interface JobSource extends FollowsPullRequests, HasThread {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
@@ -582,7 +582,7 @@ export class SourceError extends Error {
  * What the sync loop may do to the hopper. Engine-owned: every method is one store.tx with
  * compare-and-set on the job's current status.
  */
-export interface SourceHost {
+export interface SourceHost extends AnswersFromThread {
   store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: SourceRef): Job | null;

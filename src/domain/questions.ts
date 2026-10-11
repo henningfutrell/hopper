@@ -2,6 +2,7 @@
 import type { Confidence, QuestionCorrection } from './auto-answer.ts';
 import type { RiskCategory, RiskDecision, RiskLevel } from './minor-decisions.ts';
 import type { AttemptPhaseFields, QuestionPhaseFields } from './phase.ts';
+import type { ThreadAsk } from './thread-ask.ts';
 import type { Tldr } from './tldr.ts';
 import type { JobId, LaneId, MachineId } from './types.ts';
 
@@ -139,6 +140,8 @@ export interface Question extends QuestionPhaseFields {
   corrected?: QuestionCorrection;
   /** A risk rule or the consequential guard sent it to a person (issue #650): its job never parks by itself. */
   keptBy?: 'risk' | 'guard';
+  /** Its place on its issue thread (issue #435); absent: not asked there. */
+  thread?: ThreadAsk;
   /** Why it came to a person (issue #679). Absent: not at the human stage yet, or sent there before this was recorded. */
   escalation?: Escalation;
   /** Human tier: when it was first and last notified, and how often. */

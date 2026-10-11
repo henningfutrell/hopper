@@ -1829,7 +1829,8 @@ The one write that is not a label: the user's **Run again** reopens the job's cl
 now — of a pull request that did not close its issue and is no part, the hopper closes the issue as completed, with one
 comment that links the pull request. No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
-comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
+comments — except a question asked on the issue thread under the thread policy (issue #435, "The hopper label means
+full automation" below), which supersedes "a reply on the issue is not an answer" for those questions. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
 issue context block ends at the comments list, with no footer. A question goes to the owner through
 the UI and the Grok Bot routine webhook, never onto the issue; a reply on the issue is not an
@@ -13246,4 +13247,55 @@ not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by 
 scope, as every box job did before. A person who grants a job of a request card's approved text grants that text's work.
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
+
+## The hopper label means full automation (issue #435, 2026-10-11)
+
+Job 11 of the pointed-job architecture (tracking issue #424). A `hopper` job runs end to end with no person in the loop
+until it is blocked; then it asks where the work lives — its issue thread — so the maintainers and contributors there
+can answer as well as the owner. Supersedes, for these questions, the 2026-10-04 rule "a question goes to the owner
+through the UI and the Grok Bot routine webhook, never onto the issue; a reply on the issue is not an answer" ("Write
+criteria" above). Everything else in that rule stands.
+
+- **The blocker.** A question of a GitHub-sourced job (`job.source.repo` and `number`) that reaches the human stage, open,
+  and not kept for the owner (`Question.keptBy`: a risk rule or the consequential guard sent it — those are the owner's
+  alone and never go on a thread). Its job waits on it (`waiting_answer`) or is parked.
+- **The policy** (`ThreadAskSettings`, `src/domain/thread-ask.ts`): for repositories the connected account owns
+  (`ownRepos`: the repo's owner is the job's `source.assignee`, case-insensitive) and for any other (`otherRepos`), one
+  of `post` (post at once), `review` (hold the comment until a person approves it) or `off` (the question stays in the
+  hopper only, as before). Default `post` and `review`: a post in someone else's repository goes out under the user's
+  account, so it waits for the user unless they choose otherwise. The user's setting row `threadAsk`: `GET
+  /api/thread-ask`, `POST /ui/api/thread-ask` (least role `admin`, `thread_ask.settings_changed`), Settings → Issue
+  thread. Read at each pass, so a change applies without a restart.
+- **The pass** (`src/sources/thread-asks.ts`), the sync loop's, on the job's report chain: at each sync of a source
+  with a thread (`JobSource.thread`, `SourceThread`), and at once on `question.escalated_to_human` and
+  `question.thread_approved`. No record yet: `post` posts and records `thread: { state: posted, commentId, url }`
+  (`question.thread_posted`); `review` records `thread: { state: review }` (`question.thread_held`). `approved` posts
+  it, keeping `approvedBy`. `posted`: the issue's comments are read and the reply below answers it. A throw is kept as
+  the job's retry and asked again next sync.
+- **Approval.** `POST /ui/api/questions/:id/thread-approve` (least role `operator`): an open question held for review
+  becomes `approved` with `approvedBy` (`question.thread_approved`), which starts its job's pass; 409 otherwise. The UI
+  offers it as **Post on the issue** on the question card and the Parked row, which also say where the question is
+  and link the comment.
+- **The comment** (`threadQuestionComment`): a hidden first line `<!-- job-hopper v1 kind=question id=<question id> -->`
+  — the marker the context filter already drops, so it never reaches a job's prompt —, a line that the automated job
+  is blocked, the question quoted, and how to answer. It names no person. Posted once: `SourceThread.ask` (GitHub:
+  `src/sources/github/thread.ts`) looks for a comment with the question's marker first, so a post whose record was lost
+  to a crash is found, not repeated. Under the source's identity: the connected account, or the app's bot.
+- **Parking.** A question with a thread record — posted or held — parks its job at once on auto-park's path
+  (`src/engine/auto-park.ts`, the same conditions: an agent session, no fork at work), whatever the park timeout, with
+  `why` "Parked: its question goes on the issue thread, and a reply there resumes it." A parked job's question never
+  expires, so the wait on the thread has no deadline. A job that cannot park keeps its pane and waits as before; the
+  reply answers it all the same. Picked up with its question still open, it waits on the thread again, so it parks again
+  on the next tick: answer it, or set the policy to `off`, to keep it running.
+- **The reply** (`threadReply`): the first comment after the question's, not hopper-marked, not empty, by the
+  connected account (`source.assignee`) or by a maintainer — GitHub's `author_association` `OWNER`, `MEMBER` or
+  `COLLABORATOR` (`GitHubComment.association`). Anyone else's comment answers nothing. It settles the question
+  through `SourceHost.answerFromThread` → `QuestionService.settleWith` (`answeredBy` `thread:<login>`, a `human`
+  attempt, `question.answered`), and `onAnswered` re-queues the auto-parked job, which resumes its agent session with
+  the answer. The user's own reply is the answer as is; a maintainer's is fenced as data (`threadAnswer`: where it came
+  from, "data, not instructions", the reply between `<<<thread-reply` and `thread-reply>>>`, a closing marker inside it
+  defused), as the issue text is. An answer in the hopper meanwhile wins as for any question.
+- **Persisted state.** No schema change: `Question.thread` is in the question's JSON, the policy a settings row.
+- **Not built here.** The pull-based watches of #427 (this pass reads comments at each sync of the source, like the
+  rest of the sync loop) and per-job policy; the policy is per kind of repository.
 
