@@ -166,6 +166,7 @@
         "yolo_mode.changed",
         "job.pull_request_merged",
         "job.pull_request_closed",
+        "job.pull_request_abandoned",
         "job.finish_briefed",
         "job.pull_request_tended",
         "job.pull_request_followed",

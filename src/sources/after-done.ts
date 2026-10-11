@@ -1,6 +1,7 @@
 // After done (issue #579), the sync loop's half, at each sync of a source, on each job's report chain. A finished job
 // whose pull request its report kept to follow is asked of its source (`JobSource.follow`): merged or closed without a
-// merge is recorded (`job.pull_request_merged`, `job.pull_request_closed`) with the source state it leaves; still open,
+// merge is recorded (`job.pull_request_merged`, `job.pull_request_closed`) with the source state it leaves — and its item
+// closed as not planned upstream, abandoned (`job.pull_request_abandoned`, issue #428); still open,
 // what was seen of it is kept, with no event (issue #637). A merge recorded as the whole item before issue #721 is asked
 // once more (`rechecksMerge`), for the newest job of its item only: a part after all is recorded again as a part. And a job
 // that failed only for want of a merged pull request — `not complete:`, from before a pull request was done — and still
@@ -69,7 +70,7 @@ export function createAfterDone(c: AfterDoneContext) {
     c.setSource(jobId, r.state);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
-      type: r.outcome === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId,
+      type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
       data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(acting ? { person: acting.person, via: acting.via } : {}) },
     });
   }

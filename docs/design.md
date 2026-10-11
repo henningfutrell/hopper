@@ -1988,6 +1988,13 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
 | merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+| still open, or none found yet, and the issue closed as not planned (issue #428) | abandoned: `job.pull_request_abandoned`; `follow: abandoned`, followed no more and never merged, yolo mode or not; the pull request is left as it is; `hopper:pr-ready`, `hopper:partly-done` and `hopper:failed` come off and no end label goes on. A person's Merge now or Close PR still goes through. Reopened with the pull request still open, reconciling (issue #763) follows it again |
+
+**Pull-based completion** (issue #428). The item is resolved upstream; the hopper only follows. Closed as completed — by
+a person, a commit, or a pull request — the follow ends merged (first row above, `hopper:done`) with no hopper action,
+within one sync of the job's source. Closed as not planned, it ends abandoned (last row). It is the same for every job
+repository, owned or not. The `hopper:complete-at-merge` and `hopper:complete-at-pr` labels went with issue #579: done is
+always a pull request, and the follow decides the rest.
 
 **The merge re-check** (issue #721). Before it, a merged part on a branch named for its issue was recorded as the whole
 issue (`follow: merged`, no `part`), and `hopper:done` stopped the hopper from working the rest. Each sync, the newest job
