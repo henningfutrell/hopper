@@ -7,6 +7,16 @@
     },
     "part": {
       "type": "boolean"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli"
+      ]
     }
   },
   "required": [

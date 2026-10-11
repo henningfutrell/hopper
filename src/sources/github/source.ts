@@ -318,8 +318,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     unfinishedPullRequest(job) {
       return unfinishedPullRequest(api, job);
     },
-    follow(job) {
-      return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job);
+    follow(job, act) {
+      return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     closedAsComplete(job) {
       return closedAsComplete(api, job);

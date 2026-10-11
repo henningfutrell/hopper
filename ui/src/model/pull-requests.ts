@@ -34,6 +34,10 @@ export const MERGEABLE_TEXT: Record<PullRequestCard['mergeable'], string> = {
 
 export const closesText = (c: PullRequestCard): string => `${c.part ? 'part of' : 'closes'} #${c.issue.number}`;
 
+/** What Merge now and Close PR ask before they act (issue #677). */
+export const mergeQuestion = (c: PullRequestCard): string => `Merge #${c.pullRequest?.number} into ${c.base ?? 'its base branch'} now?`;
+export const closeQuestion = (c: PullRequestCard): string => `Close #${c.pullRequest?.number} without a merge?`;
+
 /** What yolo mode does for a repository, on or off. */
 export const yoloNote = (on: boolean): string => on
   ? 'On: the hopper merges a ready pull request when its checks pass, or when it has no checks.'

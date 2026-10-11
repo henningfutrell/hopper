@@ -6,14 +6,19 @@
 // that failed only for want of a merged pull request — `not complete:`, from before a pull request was done — and still
 // waits on a person is judged again: done or partly done now, it is finished (its hand-off closes on `job.finished`) and
 // its end reported again, so its issue loses `hopper:failed`. A throw is kept as a retry and asked again next sync.
-import type { JobSource, SourceHost, UserStore } from '../domain/ports.ts';
-import { following, judge, rechecksMerge, type Job } from '../domain/types.ts';
+// A person's Merge now or Close PR (issue #677) is the same follow, with the act, on the same chain: recorded the same
+// way, with who pressed it; a throw goes back to the person.
+import type { JobSource, PullRequestActResult, SourceHost, UserStore } from '../domain/ports.ts';
+import { SourceError } from '../domain/ports.ts';
+import { following, judge, rechecksMerge, type ActingPerson, type FollowUp, type Job, type PullRequestAct } from '../domain/types.ts';
 
 export interface AfterDoneContext {
   store: Pick<UserStore, 'jobs' | 'events' | 'handoffs'>;
   host: Pick<SourceHost, 'finishComplete'>;
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
+  /** The job's source while the sync loop runs it, else undefined. */
+  sourceOf(job: Job): JobSource | undefined;
   /** Whether the job's end is reported to its source. */
   finalReported(job: Job): boolean;
   /** Keep the job's new source state. */
@@ -32,17 +37,47 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
   const rechecks = (j: Job) => rechecksMerge(j) && (!j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id);
 
-  async function follow(source: JobSource, jobId: string): Promise<void> {
-    const job = store.jobs.get(jobId);
-    if (!job || !(following(job) || rechecks(job))) return;
-    const r = await source.follow!(job);
-    if (!r) return;
+  /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
+  function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     c.setSource(jobId, r.state);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId,
-      data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}) },
+      data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(acting ? { person: acting.person, via: acting.via } : {}) },
     });
+  }
+
+  async function follow(source: JobSource, jobId: string): Promise<void> {
+    const job = store.jobs.get(jobId);
+    if (!job || !(following(job) || rechecks(job))) return;
+    const r = await source.follow!(job);
+    if (r) record(jobId, r);
+  }
+
+  /** A person's Merge now or Close PR (issue #677), on the job's report chain. */
+  async function act(jobId: string, what: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult> {
+    const job = store.jobs.get(jobId);
+    if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
+    const source = c.sourceOf(job);
+    if (!source?.follow) return { ok: false, reason: 'conflict', message: `job ${jobId}: its source is not running, or follows no pull request` };
+    let result: PullRequestActResult = { ok: false, reason: 'source', message: 'not sent' };
+    await c.enqueue(jobId, async () => { result = await actOn(source, jobId, what, acting); });
+    return result;
+  }
+
+  /** Asked of the source with the act, then recorded as a follow is; a throw goes back to the person. */
+  async function actOn(source: JobSource, jobId: string, what: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult> {
+    const job = store.jobs.get(jobId);
+    if (!job || !following(job)) return { ok: false, reason: 'conflict', message: `job ${jobId} has no open pull request` };
+    try {
+      const r = await source.follow!(job, what);
+      if (!r) return { ok: false, reason: 'conflict', message: `job ${jobId} has no open pull request` };
+      record(jobId, r, acting);
+      return { ok: true, outcome: r.outcome, pullRequest: r.pullRequest, part: r.part };
+    } catch (e) {
+      const refused = e instanceof SourceError && e.permanent;
+      return { ok: false, reason: refused ? 'conflict' : 'source', message: `${what === 'merge' ? 'merge' : 'close'} refused: ${(e as Error).message}` };
+    }
   }
 
   async function judgeAgain(source: JobSource, jobId: string): Promise<void> {
@@ -56,6 +91,7 @@ export function createAfterDone(c: AfterDoneContext) {
   const waitsOnPerson = (j: Job) => j.status === 'failed' && NOT_COMPLETE.test(j.error ?? '') && store.handoffs.forJob(j.id)?.status === 'open';
 
   return {
+    act,
     /** One sync of the source: every job of its to follow, or to judge again. */
     async catchUp(source: JobSource, jobs: Job[]): Promise<void> {
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>

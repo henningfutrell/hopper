@@ -1931,7 +1931,8 @@ seen), `mergeable` (`mergeable`, `conflicts`, `unknown`), `draft`, `openedAt`, `
 not started`, `merge refused` (`mergeError` says what GitHub said), `ready` (issue #677); `base`, the branch it merges into. At the top, `yolo: { on, total }` over those repositories, and `waiting`:
 per repository and reason, how many, the most first. All of it is what the last sync saw (`seen`), never asked of GitHub
 at read time. Only the newest job of an item counts. Each repository's yolo switch is `POST /ui/api/yolo-mode` with
-`repos`; `hopper yolo <owner/repo> on|off|default`.
+`repos`; `hopper yolo <owner/repo> on|off|default`. An open card has Merge now and Close PR (issue #677, "No checks means
+ready").
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are
@@ -8295,7 +8296,9 @@ commands, on the same footing as issue #374's.
     `done-by-hand <id> [--note] [--link <url>]`, `wont-do <id> --note <why>`;
   - `hopper failure list` (the open failures), `retry <id>`;
   - issue #637: `hopper prs` (the Pull requests list, `GET /api/pull-requests`), `hopper yolo <owner/repo> on|off|default`
-    (admin; `POST /ui/api/yolo-mode` with `repos`) and `hopper backfill done-check` (`POST /ui/api/backfill/done-check`).
+    (admin; `POST /ui/api/yolo-mode` with `repos`) and `hopper backfill done-check` (`POST /ui/api/backfill/done-check`);
+  - issue #677: `hopper pr merge <n>` and `hopper pr close <n>` (`POST /ui/api/pull-requests/merge|close`, "No checks
+    means ready").
     `--json` is taken by every command and changes nothing: the answer is JSON.
   A list is `GET /api/failures`, narrowed; each other command is the UI's own `POST /ui/api/failures/*`. The
   verbs are the glossary's words: the issue asked for `settle`, `done`, `run-again` and `clear`, but `settle` would
@@ -11519,14 +11522,30 @@ card never stays `not checked yet` or without its pull request for more than one
 **Persisted state.** `pushedAt` and `base` are new, optional fields in a job's source state. A build before this one
 ignores them; a `seen` without `pushedAt` counts as pushed long ago.
 
-**Not built in this part** (carried in issue #677): spotting repositories with no checks and recommending a job that adds
-them (`hopper repo checks`); Merge now and Close PR on each card, with `hopper pr merge` and `hopper pr close`; closing the
-linked issue after a merge when the pull request has no closing keyword.
-
 Tests: `test/sources/pull-request-list.test.ts` (each card state, the grace window), `test/sources/github-follow.test.ts`
 (no checks merges after the window, waits inside it; a pull request the report missed is found and named, a part as a
 part), `test/integration/pull-requests.test.ts` (the real daemon: waits for checks to start, a late check holds it, an old
 one with no checks merges), `test/ui/pull-requests-view.test.ts` (the plain words).
+
+**Merge now and Close PR** (the second part of issue #677, `src/http/ui/pull-request-acts.ts`). An open card with a pull
+request has two actions for an operator, each confirmed once in a dialog: **Merge now** and **Close PR**. Both take the
+yolo path: `POST /ui/api/pull-requests/merge` or `/close` with the card's `jobId` →
+`SourceRegistry.pullRequestAct` → on the job's report chain, `JobSource.follow(job, act)`. With `merge`, the follow merges
+the open pull request (`GitHubApi.merge`, a merge commit) whatever yolo mode and its checks say; with `close`, it closes it
+without a merge (`GitHubApi.closeWithoutMerge`, `PATCH /pulls/{n}` `state: closed`). The rest is the follow's own: the
+merge closes the issue through the pull request's closing keyword and the item gets `hopper:done` (a part: the next part
+is offered), a close flags the item `hopper:pr-closed`, and `job.pull_request_merged` or `job.pull_request_closed` is
+recorded with `person` and `via` (`ui`, `cli`): who pressed it. GitHub still refuses a draft, merge conflicts or a required
+check: the person gets 409 with what GitHub said, nothing is kept, and the card stays. A job with no open pull request
+(merged, closed, none found yet) is 409; GitHub out of reach is 502. Least role: operator, as for a job's other actions.
+`hopper pr merge <n>` and `hopper pr close <n>` (`src/cli-operator-pr.ts`) find the open card of pull request `<n>` on
+the Pull requests list and post the same route; `--repo <owner/repo>` picks one when two repositories have that number.
+
+Tests: `test/integration/pull-requests.test.ts` (Merge now with yolo off and checks pending; a refused merge; Close PR;
+the CLI), `test/ui/pull-requests-view.test.ts` (the buttons, the confirmation, none for a viewer).
+
+**Not built yet** (carried in issue #677): spotting repositories with no checks and recommending a job that adds them
+(`hopper repo checks`); closing the linked issue after a merge when the pull request has no closing keyword.
 
 ## Lane tuning (issue #688, 2026-10-10)
 

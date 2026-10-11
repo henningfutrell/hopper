@@ -12,8 +12,10 @@
 // with a closing keyword. Any other merge — a part, a mention, a pull request named for the issue only on its branch — is a
 // part: the issue is offered again. A merge recorded as the whole item before that rule is checked once by the same rule
 // (`mergeChecked`), and one that did not close the issue loses `hopper:done`. A throw is asked again on a later sync.
+// A person's Merge now or Close PR (issue #677) takes the same path: merged whatever yolo mode and its checks say — GitHub
+// still refuses a draft, merge conflicts or a required check —, or closed without a merge; a refusal throws to the person.
 
-import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestSeen } from '../../domain/types.ts';
+import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
@@ -60,8 +62,19 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
   return { state: (await api.pullRequest(repo, numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
 }
 
-/** An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge. True: merged. */
-async function waiting(ctx: FollowContext, repo: string, url: string, before: PullRequestSeen | undefined): Promise<{ merged: true } | { seen: PullRequestSeen }> {
+/**
+ * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge. A person's act (issue
+ * #677): merged or closed now, GitHub's refusal thrown.
+ */
+async function waiting(ctx: FollowContext, repo: string, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct): Promise<{ ended: 'merged' | 'closed' } | { seen: PullRequestSeen }> {
+  if (act === 'close') {
+    await ctx.api.closeWithoutMerge(repo, numberOf(url));
+    return { ended: 'closed' };
+  }
+  if (act === 'merge') {
+    await ctx.api.merge(repo, numberOf(url));
+    return { ended: 'merged' };
+  }
   const pr = await ctx.api.pullRequest(repo, numberOf(url));
   if (!pr) return { seen: before ?? { draft: false, conflicting: false, checks: 'none' } };
   const pushedAt = pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt;
@@ -72,7 +85,7 @@ async function waiting(ctx: FollowContext, repo: string, url: string, before: Pu
   if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
   try {
     await ctx.api.merge(repo, numberOf(url));
-    return { merged: true };
+    return { ended: 'merged' };
   } catch (err) {
     if (err instanceof GitHubApiError && !err.permanent) throw err;
     return { seen: { ...seen, mergeError: (err as Error).message } };
@@ -102,11 +115,13 @@ async function recheckMerge(api: GitHubApi, repo: string, number: number, s: Fol
   return { outcome: 'merged', pullRequest: url, part: true, state: { ...s, part: true } };
 }
 
-export async function followPullRequest(ctx: FollowContext, job: Job): Promise<FollowUp | undefined> {
+/** Followed after its end; with `act`, a person's Merge now or Close PR on its open pull request (issue #677). */
+export async function followPullRequest(ctx: FollowContext, job: Job, act?: PullRequestAct): Promise<FollowUp | undefined> {
   let s = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown>;
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   try {
+    if (act && s.follow !== 'open') throw new SourceError('its pull request is not open', true);
     if (rechecksMerge(job)) return await recheckMerge(ctx.api, repo, number, s);
     if (s.follow !== 'open') return undefined;
     if (!s.pullRequest) {
@@ -114,17 +129,18 @@ export async function followPullRequest(ctx: FollowContext, job: Job): Promise<F
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
     }
     let now = await stateOf(ctx.api, repo, number, s);
+    if (!now && act) throw new SourceError('no pull request is found for it yet', true);
     if (!now) return undefined;
     const part = s.part === true;
     let byHopper = false;
     if (now.state === 'open') {
-      const w = await waiting(ctx, repo, now.url, s.seen);
+      const w = await waiting(ctx, repo, now.url, s.seen, act);
       if ('seen' in w) {
         if (JSON.stringify(w.seen) === JSON.stringify(s.seen)) return undefined;
         return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen } };
       }
-      now = { state: 'merged', url: now.url };
-      byHopper = true;
+      now = { state: w.ended, url: now.url };
+      byHopper = !act;
     }
     // A merge that did not close the issue is a part (issue #721), whatever the report took it for.
     const whole = now.state === 'merged' && !part && await closedByMerge(ctx.api, repo, number, now.url);
@@ -138,6 +154,9 @@ export async function followPullRequest(ctx: FollowContext, job: Job): Promise<F
     const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}) };
     return { outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper ? { byHopper } : {}), state: after };
   } catch (err) {
-    throw err instanceof SourceError ? err : new SourceError((err as Error).message, false);
+    if (err instanceof SourceError) throw err;
+    // A person's act is answered GitHub's refusal as it is (issue #677); a sync asks again later.
+    if (act && err instanceof GitHubApiError) throw new SourceError(err.message, err.permanent, err.status);
+    throw new SourceError((err as Error).message, false);
   }
 }

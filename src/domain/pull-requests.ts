@@ -6,6 +6,10 @@
 // closed without a merge. Pure but for the source it asks.
 import type { Job } from './types.ts';
 
+/** A person's act on a followed pull request (issue #677): Merge now, or Close PR without a merge. */
+export const PULL_REQUEST_ACTS = ['merge', 'close'] as const;
+export type PullRequestAct = (typeof PULL_REQUEST_ACTS)[number];
+
 /** A pull request's head commit checks (issue #637): all passed, some still running, or one failed. None: absent. */
 export type ChecksState = 'passing' | 'pending' | 'failing';
 
@@ -28,8 +32,10 @@ export interface FollowsPullRequests {
    * Follow an ended job's pull request, as its source state after its report names it: undefined while it waits as it
    * did; open, with what was seen of it, when that changed (issue #637); merged — with yolo mode on, by the hopper once it
    * is ready — or closed without a merge, with the source state to keep. A throw is asked again on a later sync. Absent: nothing followed.
+   * `act` (issue #677): a person's Merge now or Close PR on its open pull request, on the same path — merged whatever
+   * yolo mode and its checks say, or closed without a merge; GitHub's refusal throws, and nothing is kept of it.
    */
-  follow?(job: Job): Promise<FollowUp | undefined>;
+  follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
 }
 
 /**

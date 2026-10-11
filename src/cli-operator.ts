@@ -1,7 +1,7 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
 // accept, reject or run a job again, order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
-// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
+// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
@@ -21,9 +21,10 @@ import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
 import { MASTER_KEY_USAGE, masterKeyCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { PR_USAGE, prCall } from './cli-operator-pr.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -48,6 +49,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper failure list                                the open failures
   hopper failure retry <id>                          run a failure's job again
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
+${PR_USAGE}
   hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
   hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
   hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
@@ -268,6 +270,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
+  if (command === 'pr') return prCall(args);
   if (command === 'yolo') return yoloCall(args);
   if (command === 'backfill') return backfillCall(args);
   if (command === 'job') return jobCall(args);
@@ -305,7 +308,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(
