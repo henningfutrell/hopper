@@ -16,6 +16,8 @@ export interface UserLink {
   named(machine: string): ClientTransport | undefined;
   /** The hopper's URL as the client target named `machine` dialled it; undefined for any other machine. */
   dialled(machine: string): string | undefined;
+  /** The client targets dialled in now, by name (issue #708: the read-only check runs on one when the hopper has no runtime). */
+  dialledIn(): string[];
 }
 
 export function createUserLink(o: { store: UserStore; links: MachineLinks; userId: string; targets: () => AttachedMachine[] }): UserLink {
@@ -33,5 +35,6 @@ export function createUserLink(o: { store: UserStore; links: MachineLinks; userI
     key, transport,
     named: (machine) => { const m = client(machine); return m && transport(m.name, m.client.key); },
     dialled: (machine) => { const m = client(machine); return m && o.links.urlOf(o.userId, m.client.key); },
+    dialledIn: () => o.targets().flatMap((m) => ('client' in m && o.links.urlOf(o.userId, m.client.key) ? [m.name] : [])),
   };
 }

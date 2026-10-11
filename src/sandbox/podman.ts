@@ -4,7 +4,7 @@
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
@@ -94,9 +94,9 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async logs(id) {
-      const a = await socketBytes(socket, 'GET', API + `/containers/${enc(id)}/logs?stdout=true&stderr=true`);
-      if (a.status < 200 || a.status >= 300) throw refusal(`read what the box ${id} wrote`, { status: a.status, text: a.bytes.toString('utf8') });
-      return logText(a.bytes);
+      const a = await call('GET', `/containers/${enc(id)}/logs?stdout=true&stderr=true`);
+      if (!ok(a)) throw refusal(`read what the box ${id} wrote`, a);
+      return logText(a.bytes ?? Buffer.from(a.text, 'utf8'));
     },
 
     async inspect(id) {

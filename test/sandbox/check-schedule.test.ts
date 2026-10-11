@@ -40,7 +40,7 @@ function setup() {
     return cloud.runScript(spec);
   };
   const pass = createCheckPass({
-    runtime, instanceId: 'i', network: 'n', probes: HOPPER_PROBES, clock: { now: () => new Date(now) }, logger: { info: () => {}, warn: () => {} },
+    local: runtime, place: async () => ({ machine: 'local', runtime, network: 'n' }), instanceId: 'i', probes: HOPPER_PROBES, clock: { now: () => new Date(now) }, logger: { info: () => {}, warn: () => {} },
     credentials: { credential: async () => ({ minted: { kind: 'kube', token: 't', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://k' } }) },
   }, {
     templates: () => [{ userId: 'u', template }],

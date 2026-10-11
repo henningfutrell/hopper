@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export interface SeenRequest { method: string; path: string; query: URLSearchParams; body: unknown }
-export interface Reply { status: number; body?: unknown; text?: string }
+/** `bytes`: a body sent as it is, binary (a container's framed logs). */
+export interface Reply { status: number; body?: unknown; text?: string; bytes?: Buffer }
 export type Handler = (r: SeenRequest) => Reply | undefined;
 
 export interface FakeRuntimeApi {
@@ -32,7 +33,7 @@ export async function startFakeRuntimeApi(handlers: Handler[] = []): Promise<Fak
       api.seen.push(seen);
       const reply = api.handlers.map((h) => h(seen)).find((r) => r !== undefined) ?? { status: 404, body: { message: 'no such thing' } };
       res.writeHead(reply.status, { 'content-type': 'application/json' });
-      res.end(reply.text ?? (reply.body === undefined ? '' : JSON.stringify(reply.body)));
+      res.end(reply.bytes ?? reply.text ?? (reply.body === undefined ? '' : JSON.stringify(reply.body)));
     });
   });
   await new Promise<void>((resolve) => server.listen(socket, resolve));

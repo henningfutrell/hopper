@@ -128,9 +128,9 @@ export async function clientRuntimeWhich(t: ClientTransport): Promise<{ kind: 'p
 
 /** One container runtime call on the client target's own runtime (issue #708): its runtime's answer. */
 export async function clientRuntimeCall(t: ClientTransport, call: RuntimeRelayCall): Promise<RuntimeAnswer> {
-  const r = await clientCall<{ status?: unknown; text?: unknown }>(t, '/runtime', call, call.timeoutMs ?? 30000);
+  const r = await clientCall<{ status?: unknown; text?: unknown; base64?: unknown }>(t, '/runtime', call, call.timeoutMs ?? 30000);
   if (typeof r.status !== 'number' || typeof r.text !== 'string') throw new ClientError(`client ${t.machine}: its runtime answer has no status`);
-  return { status: r.status, text: r.text };
+  return { status: r.status, text: r.text, ...(typeof r.base64 === 'string' ? { base64: r.base64 } : {}) };
 }
 
 /** The relay a remote runtime (src/sandbox/remote.ts) drives the client target's own runtime through. */
