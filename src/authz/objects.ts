@@ -35,6 +35,8 @@ export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTu
 export const artifactObject = (a: { userId: string; id: string }): string => `artifact:${a.userId}/${a.id}`;
 /** A source item (issue #662), by its owner and the SHA-256 of its key: a key is a URL, which an object id cannot carry. */
 export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
+/** The vault grant of a user's item (issue #652): its key hashed, as an item's. */
+export const vaultGrantObject = (g: { ownerId: string; key: string }): string => `vault_grant:${g.ownerId}/${createHash('sha256').update(g.key).digest('hex')}`;
 /** A GitHub login (issue #652), lowercased: GitHub logins compare without case. */
 export const githubLoginObject = (login: string): string => `github_login:${encodeURIComponent(login.toLowerCase())}`;
 /** A user's intake (issue #652). */

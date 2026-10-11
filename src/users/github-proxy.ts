@@ -62,10 +62,11 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // (issue #624) puts what the job makes for a person to see.
         files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT },
         paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE },
-        // The vault's helper (issue #558), where the machine's client serves one: it asks with this job's proxy token.
+        // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
+        // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
-          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
+          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
           ...jobGitConfig(url, o.accounts.endpoints('github').url),
         },
       };

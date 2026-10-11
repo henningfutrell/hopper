@@ -39,6 +39,7 @@ import { createFakeAuthorizationServer } from '../support/fake-authorization-ser
 import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
+import { grantVault } from '../support/vault-box.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -150,6 +151,7 @@ async function boxWithJob(a: TestApp, session: string): Promise<{ dir: string; j
   await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'hopper-sandbox-kube' && m.online), { timeoutMs: 10000, what: 'the box online' });
   const job = (await a.pull({ op: 'sleep', ms: 60000 })).id;
   expect((await a.waitForStatus(job, 'running', 10000)).laneId).toBe('hopper-sandbox-kube/lane-1');
+  await grantVault(a, job);
   const token = join(temp('job-credentials-'), 'token');
   writeFileSync(token, `${proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job)}\n`, { mode: 0o600 });
   return { dir, job, token };

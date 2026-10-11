@@ -22,6 +22,7 @@ import { registerSourceIntakeRoutes } from './source-intake.ts';
 import { registerIntakeActorRoutes } from './intake-actors.ts';
 import { registerTldrRoutes } from './tldr.ts';
 import { registerVaultRoutes } from './vault.ts';
+import { registerVaultGrantRoutes } from './vault-grants.ts';
 import { registerYoloModeRoutes } from './yolo-mode.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerYoloModeRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerYoloModeRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes] as const;

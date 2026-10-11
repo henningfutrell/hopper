@@ -15,6 +15,7 @@ import { createVaultService, openVault, type ClientTarget } from './service.ts';
 import { localVault, withCredentialRequests, type Vault } from './vault.ts';
 import type { SharedSecrets } from './shared.ts';
 import { withSharedSecrets } from './shared-delivery.ts';
+import { withVaultGrants } from './grants.ts';
 
 export { clientTargets } from './service.ts';
 export { withLaunch, type LaunchScope } from './box.ts';
@@ -24,7 +25,7 @@ export { approvalWait } from '../domain/vault.ts';
 export async function openUserVault(o: {
   vaultUrl?: string; kms?: { url: string; key: string };
   env: Record<string, string | undefined>; user: string;
-  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings'>; access?: VaultAccess; clock: Clock;
+  store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs' | 'settings' | 'vaultGrants'>; access?: VaultAccess; clock: Clock;
   /** Mints short-lived credentials (issue #580): here, or, with a vault container, in it, which holds the minting credential. */
   minter?: CredentialMinter; logger: { info(line: string): void; warn(line: string): void };
   targets: () => ClientTarget[]; holds: (parts: ProxyTokenParts) => boolean;
@@ -34,7 +35,9 @@ export async function openUserVault(o: {
   shared?: SharedSecrets;
 }): Promise<Vault> {
   const vault = await open(o);
-  return o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds }) : vault;
+  const shared = o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds }) : vault;
+  // Outermost (issue #652): no box job gets a vault secret, a shared secret or a minted credential without a vault grant.
+  return withVaultGrants(shared, { store: o.store, clock: o.clock, targets: o.targets, holds: o.holds });
 }
 
 async function open(o: Parameters<typeof openUserVault>[0]): Promise<Vault> {

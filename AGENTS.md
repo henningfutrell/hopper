@@ -44,7 +44,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   default or a release branch —; it changes no job, question, webhook or setting, only records a push. **A job holds no
   GitHub token** (issue #652): no `GH_TOKEN`, no gh config, no ssh agent. A box's vault ask (issue #558, `docs/design.md` "The vault"):
   `POST /client/vault`, signed with its client token and carrying the job's proxy token, is answered a vault secret
-  sealed to that request; it records only the delivery or refusal. A running job's skill request (issue #582, `docs/design.md` "Skills: what the
+  sealed to that request; it records only the delivery or refusal. **The vault gives only to a job a person granted it**
+  (issue #652, `docs/design.md` "Vault grants"): a box job's item with no **vault grant** is refused and becomes a grant
+  ask; Grant and Revoke are a person's acts through the UI session, after Access (`vault_grant#can_grant`); a job asks,
+  never grants. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential

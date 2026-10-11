@@ -39,6 +39,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
+import { grantVault } from '../support/vault-box.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -111,6 +112,7 @@ async function joinMachine(a: TestApp, session: string, name: string, template?:
 async function runningJob(a: TestApp, machine: string): Promise<string> {
   const job = await a.pull({ op: 'sleep', ms: 60000 });
   expect((await a.waitForStatus(job.id, 'running', 10000)).laneId).toBe(`${machine}/lane-1`);
+  await grantVault(a, job.id);
   return job.id;
 }
 

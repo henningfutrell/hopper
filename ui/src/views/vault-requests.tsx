@@ -11,6 +11,9 @@ import { giveProblem, kindChoices, requestWaiting } from '@/model/vault';
 import type { CredentialRequest } from '@/model/wire';
 import type { Send } from './vault';
 
+// Vault grants (issue #652) sit beside Asked for on the Vault page: both are what jobs on boxes wait on a person for.
+export { VaultGrants } from './vault-grants';
+
 /** A credential request (issue #583): what jobs wait on, how to get the credential, and the admin's answer. */
 function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolean; busy: boolean; send: Send }) {
   const [kind, setKind] = useState(r.kinds[0]?.id ?? 'other');

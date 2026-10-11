@@ -2983,6 +2983,64 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 }
 ```
 
+## `vault.grant_asked`
+
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine, the template, and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `machine` | string | yes |
+| `template` | string | yes |
+| `name` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "machine": "hopper-sandbox-web",
+  "template": "web",
+  "name": "KUBE_TOKEN"
+}
+```
+
+## `vault.granted`
+
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "by": "octocat"
+}
+```
+
+## `vault.grant_revoked`
+
+Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "by": "octocat"
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.

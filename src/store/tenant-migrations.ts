@@ -28,6 +28,7 @@ import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
 import { originPendingBackfill } from './migration-origin-pending.ts';
 import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
+import { VAULT_GRANT_TABLE } from './vault-grants.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -49,13 +50,7 @@ const TENANT_BASE = `
   );
   CREATE INDEX jobs_status ON jobs (status);
   CREATE INDEX jobs_source_key ON jobs (source_key);
-  CREATE TABLE lanes (
-    id TEXT PRIMARY KEY,
-    machine_id TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    body TEXT NOT NULL,
-    UNIQUE (machine_id, number)
-  );
+  CREATE TABLE lanes (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (machine_id, number));
   CREATE TABLE decisions (
     seq BIGSERIAL PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
@@ -350,6 +345,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   laneRecommendationsOnly,
   // 39: Queued GitHub jobs with no origin wait for it (issue #652, the backfill); the build before ignores the flag.
   originPendingBackfill,
+  // 40: Vault grants (issue #652): a person's grant of the vault to an item's jobs. A table: the build before runs on it.
+  VAULT_GRANT_TABLE,
 ];
 
 /** A user schema's version once migrated. */
