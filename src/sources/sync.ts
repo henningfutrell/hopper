@@ -17,7 +17,7 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, Source
 import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
-import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { REMOVED, detailOf, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
 import { liveIntake } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
@@ -253,6 +253,12 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   async function syncOnce(slot: Slot) {
     const st = slot.status;
+    // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
+    // source fires, at the next sync time shown; and the old next time goes while it runs.
+    clearTimeout(slot.timer);
+    delete st.nextSyncAt;
+    st.syncing = true;
+    emit(slot);
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
@@ -282,20 +288,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    delete st.syncing;
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    // Every item the source listed, taken (with its job, read when the status is: `live`) or not (with its reason) — issue
-    // #440. None while paused.
-    const intake = paused === undefined ? slot.source.intake?.() : undefined;
-    st.detail = {
-      ...slot.source.describe(),
-      ...(intake ? { intake } : {}),
-      ...(paused !== undefined ? { paused } : {}),
-      permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
-      reportRetries: slot.retrying.size,
-      ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
-    };
+    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
