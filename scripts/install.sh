@@ -123,10 +123,10 @@ if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_
   fi
 fi
 # The master key (issue #659, docs/deploy.md "The master key") is not made here: the daemon makes one at its first
-# start and shows it once, in its log and in the UI, to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
+# start and shows it once, in the UI only (never in its log), to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
 # A HOPPER_TOKEN_KEY line from before is read until then, and the daemon says to rename it.
 [ -n "$(env_line HOPPER_MASTER_KEY)" ] || [ -n "$(env_line HOPPER_TOKEN_KEY)" ] \
-  || echo "the master key: the first start makes one; save it from journalctl --user -u hopper, then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
+  || echo "the master key: the first start makes one; save it from the UI banner (Show the key (once)), then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 # The operator CLI against the daemon's database, given the way daemon.env gives it.

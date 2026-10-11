@@ -13,7 +13,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | | where |
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
-| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. A leftover `HOPPER_SECRET_KEY` line: delete it. |
+| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
 | Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, never from a file or a volume: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
@@ -154,11 +154,11 @@ a running container: `--force-recreate` does. A plain `restart` keeps the old en
 
 The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
 start (`start check: system secret <name> cannot be opened: …`) and on Settings → Vault.
-Keep the key with the database: a hopper on the database with neither key reads the connection as
+Keep using the same key with this database: a hopper on the database with neither key reads the connection as
 *cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
 "One grant per connection").
 
-Mounted secrets: in compose, a `secrets:` entry (added to `compose.yaml`) appears at `/run/secrets/<name>` — set
+Mounted secrets: in compose, a `secrets:` entry (in `compose.override.yaml`; never edit `compose.yaml`) appears at `/run/secrets/<name>` — set
 `<NAME>_FILE=/run/secrets/<name>`; in Kubernetes, a Secret volume; under systemd, `LoadCredential=` in
 a drop-in with `Environment=<NAME>_FILE=%d/<name>`.
 
@@ -385,9 +385,10 @@ Publish on that address only, never on every interface: the port then stays off 
 
 ## Access: OpenFGA
 
-Before the vault gives a job a credential, access asks OpenFGA whether the job's template is approved for it
-(issue #559, docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach,
-every credential is denied, and Settings → Access says why.
+Access (OpenFGA) decides each mint and each renewal, each shared-secret read and each vault grant (issue #559,
+docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach, the vault mints
+nothing, gives no shared secret, and nobody can grant a job the vault; Settings → Access says why. Intake asks it too (`intake#can_start_jobs`): without
+OpenFGA no login is a trusted actor, every issue is a request card, and Approve and Accept the new text are refused.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/openfga/openfga` as `openfga-migrate` and `openfga`,
   with its tables in the `openfga` schema of the hopper's Postgres. The `postgres` service writes OpenFGA's config
@@ -406,7 +407,8 @@ every credential is denied, and Settings → Access says why.
 - **Without OpenFGA** (issue #696): every page shows a banner that says why access checks are off, with this fix, and
   How to update says it too. A change that needs Access — the TypeSafe API key on Settings → Decider — is off with
   the same reason, and a save tried anyway answers 503 `access checks are unavailable: OpenFGA is not reachable`.
-  Nothing else changes: your other secrets, your GitHub connection and your session stay as they were.
+  Intake trusts nobody, so no issue becomes a job until OpenFGA is back. Your other secrets, your GitHub connection
+  and your session stay as they were.
   `GET /api/access/status` answers the state to any reader.
 - **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
   copy services into it. Run the update ("In containers, with Podman" → Upgrade, issue #697): it puts in the
@@ -438,6 +440,8 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
+- **A vault grant** is needed too: a job gets a minted credential only after a person grants it the vault
+  (Settings → Vault, Vault grants).
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
@@ -573,7 +577,7 @@ pick the machine, then **Start the box**. The box is on that machine's network a
 the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
 sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
 away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
-again.
+again. A box with tools cannot start on another machine yet: the tools image is built only beside the hopper.
 
 ## Vault backends (optional)
 
@@ -628,7 +632,9 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 installs `hopper.service` and `hopper-herdr.service`, writes `HOPPER_DATABASE_URL` into
 `~/.config/hopper/daemon.env` (mode 600, the unit's EnvironmentFile) when it is not there yet,
 and writes the starter rules when the database has none (edit them in Settings → Question gates).
-Secrets go in the same `daemon.env`.
+Secrets go in the same `daemon.env`. The first start makes the master key and shows it once in the UI: save it, add
+`HOPPER_MASTER_KEY=<it>` to `daemon.env`, and run `systemctl --user restart hopper` ("The master key"). No OpenFGA is
+installed: set `HOPPER_OPENFGA_URL` ("Access: OpenFGA"), or every credential is denied.
 Open the UI at `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
@@ -863,7 +869,8 @@ a channel in its Settings, or install again.
 
 ## Repository setup
 
-A job pushes only to a branch of its own work, and yolo mode merges only after a check passed. GitHub keeps everyone
+A job pushes only to a branch of its own work, and yolo mode merges only a trusted or approved job's pull request, after its checks pass (a repository with no checks:
+after a two-minute grace window). GitHub keeps everyone
 else off the release branches. Sources → **Repository setup** checks each job repository and names what is missing
 (`docs/design.md` "Repository setup"). For the hopper's own repository (https://github.com/henningfutrell/hopper),
 and the same for any job repository:
