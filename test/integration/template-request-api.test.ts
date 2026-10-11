@@ -8,9 +8,11 @@
 //
 // Feature: an agent asks the hopper for a template over the API
 //   Scenario: read needs inside the read policy are approved with no person, checked read-only, and a box of it launches
-//     Given the read policy holds cluster/lab and aws-account/*
+//     Given the read policy holds cluster/lab and aws-role/123456789012/*
+//     And minting credentials for cluster lab and aws-account 123456789012, so the read-only check box gets its read
+//       credentials (issue #797)
 //     And an agent holds an API token of the admin
-//     When the agent posts `request-template` with the needs "read/cluster/lab read/aws-account/123456789012"
+//     When the agent posts `request-template` with the needs "read/cluster/lab read/aws-role/123456789012/readonly"
 //     Then the answer is the vault's view, with `request`: the template's name, not ready, waiting for the read-only check
 //     And the vault holds the template: the box image, the tools its needs use, no secret, the two read profiles,
 //       approved by the read policy
@@ -29,6 +31,7 @@ import { databaseUrlFor } from '../support/database.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { fakeKubeApi, fakeSts } from '../support/fake-mint-apis.ts';
 import { rawRequest } from '../support/http.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
@@ -36,7 +39,7 @@ import { KEY } from '../support/webhooks.ts';
 const BOX = 'ghcr.io/henningfutrell/hopper:box-claude';
 const LAB_READ = { operation: 'read', asset: { kind: 'cluster', name: 'lab' } } as const;
 const LAB_WRITE = { operation: 'write', asset: { kind: 'cluster', name: 'lab' } } as const;
-const AWS_READ = { operation: 'read', asset: { kind: 'aws-account', name: '123456789012' } } as const;
+const AWS_READ = { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } } as const;
 
 let t: TestApp | undefined;
 const cleanups: (() => unknown)[] = [];
@@ -59,6 +62,12 @@ async function boot(policy?: string[]): Promise<{ a: TestApp; runtime: FakeConta
   });
   const session = await t.login();
   if (policy) expect((await t.ui('/ui/api/vault', { action: 'set-read-policy', assets: policy }, { token: session })).status).toBe(200);
+  // The read-only check box's read credentials (issue #797): minted from these, against an STS and a Kubernetes API on loopback.
+  const kube = await fakeKubeApi();
+  const sts = await fakeSts('123456789012');
+  cleanups.push(kube.close, sts.close);
+  expect((await t.ui('/ui/api/vault', { action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: 'minting' }) }, { token: session })).status).toBe(200);
+  expect((await t.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: '123456789012' }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: 'minting', Endpoint: sts.url }) }, { token: session })).status).toBe(200);
   return { a: t, runtime, session };
 }
 
@@ -85,10 +94,10 @@ const asked = async (a: TestApp, token: string): Promise<TemplateView[]> =>
 
 describe('an agent asks the hopper for a template over the API (issue #718)', () => {
   it('read needs inside the read policy are approved with no person, checked read-only, and a box of it launches', async () => {
-    const { a, runtime, session } = await boot(['cluster/lab', 'aws-account/*']);
+    const { a, runtime, session } = await boot(['cluster/lab', 'aws-role/123456789012/*']);
     const token = await apiToken(a, session);
 
-    const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/cluster/lab read/aws-account/123456789012' });
+    const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/cluster/lab read/aws-role/123456789012/readonly' });
     expect(r.status, r.text).toBe(200);
     const [made] = await asked(a, token);
     expect(made).toMatchObject({
@@ -108,7 +117,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(checked!.check).toMatchObject({ state: 'passed' });
     expect(checked!.check!.probes.every((p) => p.passed)).toBe(true);
 
-    const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/aws-account/123456789012, read/cluster/lab' });
+    const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/aws-role/123456789012/readonly, read/cluster/lab' });
     expect(again.body.request).toMatchObject({ template: made!.name, ready: true });
     expect(again.body.request.text).toContain('approved by the read policy');
     expect(again.body.request.text).toContain('sh "$HOPPER_SKILL" kube-diagnostics cluster/lab');
