@@ -202,10 +202,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
-    getTldr() {
-      const text = read('tldr');
-      return text === undefined ? undefined : JSON.parse(text) as TldrSettings;
-    },
+    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
     setTldr(settings) {
       write('tldr', JSON.stringify({ enabled: settings.enabled }));
     },

@@ -383,10 +383,7 @@ function step(db: Db, m: Migration, record: () => void): void {
 export function migrateTenant(db: Db, to = TENANT_SCHEMA_VERSION): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const version = (): number => Number(db.get('SELECT version FROM schema_version')?.version ?? 0);
-  const record = (v: number) => () => {
-    db.run('DELETE FROM schema_version');
-    db.run('INSERT INTO schema_version (version) VALUES (?)', v);
-  };
+  const record = (v: number) => () => { db.run('DELETE FROM schema_version'); db.run('INSERT INTO schema_version (version) VALUES (?)', v); };
   const from = version();
   if (from > TENANT_SCHEMA_VERSION) throw new Error(newerStore(`a user schema is at version ${from}`, TENANT_SCHEMA_VERSION));
   if (from === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));

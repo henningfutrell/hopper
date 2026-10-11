@@ -366,12 +366,9 @@ export const EVENT_SCHEMAS = {
   'skill.listed': strict(skillAsked),
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
-  // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS,
-  ...ITEM_EVENT_SCHEMAS,
-  // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
-  ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS,
+  // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts. Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
+  // Thread asks (issue #435): src/events/thread-ask-schemas.ts.
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...LANE_TUNING_EVENT_SCHEMAS, ...THREAD_ASK_EVENT_SCHEMAS,
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents,
 } satisfies Record<EventType, z.ZodType>;
 
