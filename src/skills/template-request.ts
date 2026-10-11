@@ -91,7 +91,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   const name = requestedName(needs);
   const was = u.template(name);
   if (was && !sameNeeds(was.profiles, needs)) {
-    return { status: 409, reason: `a person changed template ${name} since a job asked for it: a job does not change it back. Ask a person in Settings → Vault, or find another way.` };
+    return { status: 409, reason: `a person changed template ${name} since it was asked for: a request does not change it back. Ask a person in Settings → Vault, or find another way.` };
   }
   if (!was) {
     const readOnly = needs.every((p) => p.operation === 'read');

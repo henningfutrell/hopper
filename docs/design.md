@@ -8766,11 +8766,13 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** The read-only negative suite (#715) run before a new template's first use. The
+**Built since (issue #718).** The read-only negative suite run before a requested template's first box ("The read-only
+check", issue #716, item 4). The
 token-scoped API for agents is built, after the owner's decision: "API tokens" (issue #718). Shared secrets (issue #718, item 3) are
 built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
 policy, is built ("Templates on request"); so is `template read-policy`. Tools assembled per run are built, with
-`template save --tool` and `sandbox launch --tool` ("Tools assembled per run").
+`template save --tool` and `sandbox launch --tool` ("Tools assembled per run"). An agent with an API token, or the CLI, asks for a
+template as a job does: `request-template`, `hopper template request` ("Template requests over the API").
 
 ## Templates on request (issue #716, item 1, 2026-10-10)
 
@@ -8825,6 +8827,31 @@ need waits, and the job's `--wait` ends when a person approves; no policy, a rea
 widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
 entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
 (`template read-policy`), `test/ui/vault-read-policy.test.ts`.
+
+## Template requests over the API (issue #718, 2026-10-11)
+
+Issue #718's acceptance: an agent with no UI session asks the hopper for a read-only diagnostics template, launches a
+box of it, all over the API. Before it, only a running job could ask ("Templates on request"); an API caller had to
+write the template itself with `save-template` and approve it as an admin, so the read policy did not decide.
+
+- **The ask.** `POST /ui/api/vault` `request-template` with `needs`, written as a job writes them
+  (`"read/cluster/lab read/aws-account/123456789012"`), or `hopper template request --needs "…"`. Like every vault edit
+  it is the `admin` role's, and an API token reaches it ("API tokens"). It is not a second path: the route calls the same
+  `requestTemplate` with the same user side (`templateRequestUser`, `src/http/vault.ts`), which `POST /job/skill` uses
+  too. So the name, the image, the tools, the profiles, the read policy's approval and the refusals are the job's, and a
+  template of read needs only takes the read-only check before its first box ("The read-only check"), as a job's does.
+- **Who asked.** The template's `savedBy`, and `template.saved`, name the token's or the session's person, not a job.
+  An approval the read policy gives is still `by` **the read policy**: the admin's own role does not approve it. A person
+  who wants more approves it after, as for any template.
+- **The answer.** The vault's view, as every vault edit answers, plus `request`: `template` (its name), `ready` (true
+  when a job would get 200; false when it waits for a person) and `text`, what a job would be told. 400 for needs it
+  cannot read, 409 when a person changed the template since it was asked for. The CLI prints `request` only.
+
+Tests: `test/integration/template-request-api.test.ts` (the real daemon, an API token, OpenFGA and the container runtime as
+doubles, the check box running the check's real script with fake cloud tools: read needs inside the policy approved by
+the policy; a box refused until the read-only check passed; the same needs again, the same template, ready; a box of it
+launched with the same token; a write need waits and no box launches; needs it cannot read refused; a viewer's token
+refused; the CLI). This is the acceptance of issue #718, over an API token from end to end.
 
 ## Tools assembled per run (issue #716, item 2, 2026-10-10)
 
@@ -10662,8 +10689,8 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** The read-only negative suite run before a new template's first use (item 5),
-which waits on #715's suite. The token-scoped API (item 4) is built: "API tokens".
+**Built since (issue #718).** The read-only check before a requested template's first box (item 5): "The read-only
+check". The token-scoped API (item 4): "API tokens". A template request over the API: "Template requests over the API".
 
 Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
 for every user, sealed in the instance's vault, refused to an admin of their own user only; given to a job only once the

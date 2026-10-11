@@ -2,8 +2,9 @@
 // for one —, or point one at where a vault backend keeps it (issue #585) —, or mark one a minting credential (issue #580) —, or remove it; save a template (its image, scope and operation profiles), remove it, approve it as it is now,
 // or approve one of its operation profiles explicitly (issue #584: the gate for a write, sync or apply profile); give or
 // decline a credential request (issue #583, "The dynamic vault"); keep a system secret of the user's in a vault backend
-// (issue #658); set the read policy (issue #716); run a template's read-only check again (issue #716). Each answers the
-// vault's view, never a value, and is not cached.
+// (issue #658); set the read policy (issue #716); run a template's read-only check again (issue #716); ask for the
+// template some needs name, as a running job does (issue #718, "Templates on request"). Each answers the vault's view,
+// never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
@@ -13,8 +14,9 @@ import type { UserStore } from '../../domain/ports.ts';
 import { CREDENTIAL_NOTE_MAX, systemBackendRefusal, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX, type SystemSecretName } from '../../domain/vault.ts';
 import type { SystemChanger, SystemResult } from '../../vault/system.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import { needsOf, requestedName, requestTemplate } from '../../skills/template-request.ts';
 import { holdsTemplate, type Vault } from '../../vault/vault.ts';
-import { vaultAnswer } from '../vault.ts';
+import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
 
@@ -58,6 +60,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('decline-credential'), request: z.string().max(64), reason: z.string().max(CREDENTIAL_NOTE_MAX) }),
   // The read policy (issue #716): the assets read is approved on with no person, for a template a job asks for.
   z.strictObject({ action: z.literal('set-read-policy'), assets: z.array(z.string().max(220)).max(256) }),
+  // A template request (issue #718): the needs, as a job's `sandbox-template --needs` says them.
+  z.strictObject({ action: z.literal('request-template'), needs: z.string().max(4000) }),
 ]);
 
 const STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409, unavailable: 503 } as const;
@@ -92,6 +96,13 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
       const r = await systemInBackend(vault, parts.store, edit, { userId: s.userId, admin: s.role === 'admin', by });
       if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
       return await vaultAnswer(parts);
+    }
+    if (edit.action === 'request-template') {
+      const r = await requestTemplate(templateRequestUser(parts), edit.needs, by);
+      if ('reason' in r) throw new HttpError(r.status, r.reason);
+      const needs = needsOf(edit.needs);
+      const template = typeof needs === 'string' ? undefined : requestedName(needs);
+      return { ...await vaultAnswer(parts), request: { template, ready: r.status === 200, text: r.text } };
     }
     const said = { ...('scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {}), ...('mints' in edit && edit.mints !== undefined ? { mints: edit.mints } : {}) };
     const r = edit.action === 'set' ? await vault.set({ name: edit.name, value: edit.value, ...said }, by)
