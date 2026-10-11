@@ -17,6 +17,7 @@ import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
+import { gitHubThread } from './github/thread.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
@@ -126,6 +127,8 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   return {
     name: o.name,
     kind,
+    // The issue thread goes through the account's own api (issue #435): a disconnect stops its next call.
+    thread: gitHubThread(api),
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
     discover: () => current()?.discover() ?? Promise.resolve([]),

@@ -169,6 +169,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
+      return { id: c.id, url: c.url };
     },
     async closeAsCompleted(repo, n) {
       enter('closeAsCompleted', [repo, n]);
@@ -264,9 +265,9 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? issue.author, issue.updatedAt);
       return copy(issue);
     },
-    addComment(repo, n, author, body) {
+    addComment(repo, n, author, body, association) {
       const i = find(repo, n);
-      const c: GitHubComment = { id: ++commentId, author, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
+      const c: GitHubComment = { id: ++commentId, author, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}`, ...(association ? { association } : {}) };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
       return { ...c };
     },

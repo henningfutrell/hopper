@@ -235,6 +235,9 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       });
     },
 
+    // A reply on the issue thread (issue #435): the question settles as a person's answer, and its job resumes.
+    answerFromThread: (questionId, answer, by) => c.questions.settleWith(questionId, answer, by, 'a reply on the issue thread') !== undefined,
+
     finishOperatorLed(jobId) {
       return store.tx(() => {
         if (store.jobs.get(jobId)?.status !== 'operator_led') return false;

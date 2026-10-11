@@ -2,7 +2,7 @@
 // and number, the machine it resumes on, how long it has been parked, its open question's first line, and whether its
 // agent session resumes or it starts fresh —, high-priority jobs first, then the longest parked on top. Expanded, the
 // full question and, where the session may act, an answer box: Answer and pick up sends the answer and picks the job up
-// in one step. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
+// in one step. A question asked on its issue thread (issue #435) says so, with Post on the issue while it is held for review. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
 // up with its question still open waits on it again, and the question is back in Questions.
 import { ChevronRight, CirclePause, Play } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -21,6 +21,7 @@ import type { Job, QuestionView } from '@/model/wire';
 import { act, actFor, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
 import { CancelButton, PickUpButton } from '@/views/overview/lanes';
+import { ThreadState } from '@/components/thread-ask';
 
 /** The answer box of an expanded row: the answer is sent, then the job picked up; a fresh start is confirmed first. */
 function AnswerAndPickUp({ job, q }: { job: Job; q: QuestionView }) {
@@ -83,6 +84,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
         {answered && <StatusBadge status="answered" tone="ok" title="Answered: picked up, it resumes with the answer." />}
       </div>
       {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}
+      {q && <ThreadState q={q} className="pl-8" />}
       {q && !open && <div data-slot="question-line" className="truncate pl-8 text-xs text-question" title={q.text}><InlineMarkdown text={firstLine(q.text)} /></div>}
       {q && open && (
         <div className="space-y-2 pt-1 pl-8">

@@ -22,6 +22,7 @@ import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
+import { gitHubThread } from './thread.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
@@ -243,6 +244,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   return {
     name: o.name,
     kind: o.kind ?? o.name,
+    thread: gitHubThread(api),
     intake: () => outcomes.map((x) => ({ ...x })),
     intakeAction: (a) => intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, approve }, a),
     ...(o.paused ? { paused: o.paused } : {}),

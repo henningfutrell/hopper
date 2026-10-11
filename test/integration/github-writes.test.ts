@@ -4,10 +4,13 @@
 // comment at all: not claim, progress, question, answered, failure, cancel or completion; a
 // question goes to the owner through the UI, never onto the issue, and a reply on the issue is not
 // an answer. Jobs get no way to write to their issue (no token file, no comment helper).
+// Issue #435 added one more write under the thread policy: a question that reaches a person goes on the issue as one
+// comment, and a reply answers it. These tests pin the rest with the policy off, and the last one checks that comment
+// through the real App adapter.
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, Job } from '../../src/domain/types.ts';
+import { ADMIN_ID, type DomainEvent, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/app/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -33,7 +36,7 @@ afterEach(async () => {
 
 type Mode = 'account' | 'app';
 
-async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}) {
+async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}, thread: 'off' | 'post' = 'off') {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const jobSources = mode === 'account'
@@ -44,6 +47,7 @@ async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, 
   if (gh !== undefined) a.scripted.ships(mergesPullRequest(gh));
   apps.push(a);
   connectGitHub(a, [REPO]);
+  a.user(ADMIN_ID).store.settings.setThreadAsk({ ownRepos: thread, otherRepos: thread });
   return a;
 }
 
@@ -180,5 +184,35 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     // hopper:claimed and its holder label (issue #440), one DELETE each.
     expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`, `DELETE /repos/${REPO}/issues/1/labels/:name`]);
     expect(fake.state.tokens.some((t) => t.body.permissions !== undefined || t.body.repositories !== undefined)).toBe(false);
+  });
+});
+
+describe('a question on the issue thread through HTTP (node:http fake GitHub, real App adapter; issue #435)', () => {
+  it('with the policy post, the question goes on the issue once, as the bot, and the owner\'s reply answers it', async () => {
+    const fake = await createFakeGitHubServer({
+      appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
+      installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
+        { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?' }) },
+      ] }] }],
+    });
+    servers.push(fake);
+    const a = await boot('app', undefined, { apiUrl: fake.url }, 'post');
+    const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
+    await a.sync();
+    const job = (await jobFor(a, `https://github.com/${REPO}/issues/1`))!;
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    await waitFor(() => issue.comments.length === 1, { what: 'the question on the thread' });
+    await a.sync();
+    expect(issue.comments).toHaveLength(1);
+    expect(issue.comments[0]!.body).toContain(`kind=question id=${q.id}`);
+    expect(issue.comments[0]!.author).toBe(`${SLUG}[bot]`);
+    expect((await a.questionsOf(job.id))[0]!.thread).toMatchObject({ state: 'posted', commentId: issue.comments[0]!.id });
+
+    issue.comments.push({ id: fake.state.nextCommentId++, author: 'owner', body: 'go ahead', createdAt: new Date().toISOString() });
+    await a.sync();
+    await waitFor(async () => (await a.questionsOf(job.id))[0]!.status === 'answered', { what: 'answered from the thread' });
+    expect((await a.questionsOf(job.id))[0]).toMatchObject({ answer: 'go ahead', answeredBy: 'thread:owner' });
+    const posts = fake.state.requests.filter((r) => r.method === 'POST' && /\/comments$/.test(r.path));
+    expect(posts).toHaveLength(1);
   });
 });

@@ -7,7 +7,7 @@ import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -77,6 +77,9 @@ export interface UserSettingsRepository {
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
   getAutoPark(): AutoParkSettings | undefined;
   setAutoPark(settings: AutoParkSettings): void;
+  /** Asking on the issue thread (issue #435): the policy for own and other repositories; absent: never set. */
+  getThreadAsk(): ThreadAskSettings | undefined;
+  setThreadAsk(settings: ThreadAskSettings): void;
   /** The TL;DR setting (issue #569); absent: never set, on. */
   getTldr(): TldrSettings | undefined;
   setTldr(settings: TldrSettings): void;

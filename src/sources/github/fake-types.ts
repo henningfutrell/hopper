@@ -14,7 +14,8 @@ export interface FakeGitHub extends GitHubApi {
   /** Assign `login`, recorded as an `assigned` event at `at` (default the fake's clock) by `by` (default the fake's login). */
   assign(repo: string, number: number, login: string, at?: string, by?: FakeActor): void;
   unassign(repo: string, number: number, login: string): void;
-  addComment(repo: string, number: number, author: string, body: string): GitHubComment;
+  /** A comment by `author`; `association`: GitHub's `author_association` of it (issue #435), absent: none told. */
+  addComment(repo: string, number: number, author: string, body: string, association?: string): GitHubComment;
   /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662); its `updatedAt` becomes `at`. */
   editIssue(repo: string, number: number, change: { title?: string; body?: string }, editor: string, at?: string): void;
   /**
