@@ -9,9 +9,8 @@ import type { ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
-import { runFlags } from './flags.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
-import { DEFAULT_LIMITS, launchScopeOf, type LaunchedProfile } from './params.ts';
+import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
@@ -90,9 +89,6 @@ export interface Sandboxes {
   stop(): Promise<void>;
 }
 
-/** The sandbox flags of the line Add machine shows: the boxes' own builder, with a box's default limits. */
-const LINE = runFlags({ cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default }).join(' ');
-
 export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const problems: Problems = new Map();
   const launching = new Set<string>();
@@ -141,7 +137,6 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       const problem = o.runtime ? await o.runtime.problem() : NO_RUNTIME;
       return {
         launch: { available: problem === undefined, ...(problem !== undefined ? { problem } : {}), ...(o.runtime ? { runtime: o.runtime.kind } : {}) },
-        line: LINE,
         boxes: o.repo.list().filter((r) => r.userId === userId).map(({ userId: _u, ...box }) => box),
         problems: [...problems.values()].filter((p) => p.userId === userId).map(({ userId: _u, machine: _m, ...p }) => p),
       };

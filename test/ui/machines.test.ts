@@ -276,7 +276,7 @@ describe('an ssh target that is this machine', () => {
 describe('the Add machine line (issue #308)', () => {
   const code = 'c'.repeat(64);
   const join = { boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' };
-  // The sandbox flags come from the hopper (GET /api/sandboxes `line`), built by the same builder as the boxes it starts (issue #708).
+  // The sandbox flags come from the hopper (the join answer's `flags`), built by the same builder as the boxes it starts (issue #708).
   const flags = runFlags({ cpus: 4, memoryMb: 8192 }).join(' ');
 
   it('a computer: the hopper\'s install script, from the URL this page is open at, joined with the code', () => {

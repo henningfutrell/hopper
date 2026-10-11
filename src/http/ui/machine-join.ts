@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, InstanceStore } from '../../domain/ports.ts';
 import { mintJoinCode } from '../../machines/join-code.ts';
+import { lineFlags } from '../../sandbox/launch.ts';
 import { LaunchRefused, type Sandboxes } from '../../sandbox/service.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { userIdOf, type TenantParts } from '../tenants.ts';
@@ -14,7 +15,6 @@ import { joinTemplate } from './vault.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
-export const machineJoinBody = z.strictObject({ template: z.string().min(1).max(64).optional() });
 /** The agents a sandbox box runs, as the published box images carry them (issue #308). */
 export const BOX_AGENTS = ['claude'] as const;
 /** A launch's parameters (issue #708): each within what the template allows, checked by the sandbox module. */
@@ -26,6 +26,11 @@ export const launchParams = z.strictObject({
   profile: z.string().max(300).optional(),
   tools: z.array(z.string().max(32)).max(16).optional(),
 });
+/**
+ * `box`: the line is a sandbox box's (issue #708), and its CPUs and memory, within the template's limits: the answer
+ * carries the box's `run` flags. Absent: a computer's line, no flags.
+ */
+export const machineJoinBody = z.strictObject({ template: z.string().min(1).max(64).optional(), box: launchParams.pick({ cpus: true, memoryMb: true }).optional() });
 /** `machine`: the client target the box starts on (issue #708); absent, the computer the hopper runs on. */
 export const machineSandboxBody = z.strictObject({ agent: z.enum(BOX_AGENTS).default('claude'), template: z.string().min(1).max(64).optional(), params: launchParams.default({}), machine: z.string().min(1).max(63).optional() });
 
@@ -36,8 +41,12 @@ export function registerMachineJoinRoutes(app: FastifyInstance, o: {
     const id = userIdOf(req);
     if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
     // A sandbox box of a template (issue #558): the code names it, so the box joins as an instance of it.
-    const template = joinTemplate(o.tenant(req).vault, parseWith(machineJoinBody, req.body ?? {}).template);
-    return mintJoinCode(o.instance, o.clock, id, template === undefined ? {} : { template });
+    const body = parseWith(machineJoinBody, req.body ?? {});
+    const vault = o.tenant(req).vault;
+    const template = joinTemplate(vault, body.template);
+    const line = body.box && lineFlags(vault.view().templates.find((x) => x.name === template), body.box);
+    if (line && !line.ok) throw new HttpError(400, line.error);
+    return { ...mintJoinCode(o.instance, o.clock, id, template === undefined ? {} : { template }), ...(line ? { flags: line.flags } : {}) };
   });
 
   app.post('/ui/api/machines/sandbox', o.admin, async (req) => {

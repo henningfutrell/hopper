@@ -592,7 +592,8 @@ To turn it off: remove the four lines and run `podman compose up -d --remove-orp
 
 Optional (issues #603, #708). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox
 boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
-flags and default limits as the boxes the hopper starts: one builder makes both.
+flags as the boxes the hopper starts: one builder makes both. Its CPUs and memory start at the template's defaults
+(the hopper's for a box of no template); change them before *Show the line*, within the template's max.
 
 **Requirement: a rootless runtime.** Podman is the default whenever it is reachable. Rootless Docker works too, through
 the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its socket, used when no Podman socket is
