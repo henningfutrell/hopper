@@ -238,7 +238,7 @@ Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's 
 
 ## `job.link_lost`
 
-Version 1 (`docs/schemas/job.link_lost.v1.json`). The link to the running job's machine (`machine`) dropped while it was watched (issue #752). The job is held: it stays `running` on its lane, and the hopper asks every second whether its pane is alive again. `since`: when the link was found down. `failsAt`: when the job fails if the link is not back (the reconnect grace). It goes on with `job.reattached` (reason `link restored`), or fails with "machine <id> did not reconnect within <n> s" and its cleanup deferred.
+Version 1 (`docs/schemas/job.link_lost.v1.json`). The link to the running job's machine (`machine`) dropped while it was watched (issue #752). The job is held: it stays `running` on its lane, and the hopper asks every second whether its pane is alive again. `since`: when the link was found down. `failsAt`: when the job fails if the link is not back (the link grace). It goes on with `job.reattached` (reason `link restored`), or fails with "machine <id> did not reconnect within <n> s" and its cleanup deferred.
 
 | field | type | required |
 |---|---|---|

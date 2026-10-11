@@ -1,5 +1,5 @@
 // A machine's link drops while its herdr-claude job runs (issue #752): the job is held on its lane, not failed, and is
-// watched again once the link is back and its pane is alive; it fails only when the reconnect grace runs out. The fake
+// watched again once the link is back and its pane is alive; it fails only when the link grace runs out. The fake
 // herdr's setUnreachable stands for a client target whose link is down: every call rejects, the pane lives on.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeHerdrClient, type FakeHerdrClient, type FakeTurn } from '../../src/executors/herdr/index.ts';
@@ -28,7 +28,7 @@ async function running(herdr: FakeHerdrClient, graceMs: number): Promise<{ app: 
   const db = tempDbPath();
   cleanup = db.cleanup;
   app = await startTestApp({
-    dbPath: db.dbPath, source: createManualSource(), env: { HOPPER_RECONNECT_GRACE_MS: String(graceMs) },
+    dbPath: db.dbPath, source: createManualSource(), env: { HOPPER_LINK_GRACE_MS: String(graceMs), HOPPER_RECONNECT_GRACE_MS: '7000' },
     plugins: { executors: EXECUTORS, machines: lanes(4) }, seams: { herdr },
   });
   const pulled = await app.pull({}, item);
@@ -67,7 +67,7 @@ describe('herdr-claude job when its machine\'s link drops', () => {
     expect(events.some((e) => e.type === 'job.failed' || e.type === 'job.requeued')).toBe(false);
   });
 
-  it('the link not back within the reconnect grace: failed with a reason naming the machine, its cleanup deferred', async () => {
+  it('the link not back within the link grace: failed with a reason naming the machine, its cleanup deferred', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [LONG] });
     const { app: a, jobId, paneId } = await running(herdr, 500);
     herdr.setUnreachable(true);

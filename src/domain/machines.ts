@@ -209,7 +209,7 @@ export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: num
 export interface JobMachineLink {
   /**
    * Set while the job is held because its machine's link dropped: it stays `running` on its lane until the link is back
-   * and its pane is alive, or it fails at `failsAt` (the reconnect grace). `since`: when the link was found down.
+   * and its pane is alive, or it fails at `failsAt` (the link grace). `since`: when the link was found down.
    */
   linkLost?: { machine: string; since: string; failsAt: string };
 }

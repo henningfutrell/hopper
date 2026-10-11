@@ -128,8 +128,9 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
    * work is alive again and `job.reattached` is recorded; else the outcome that ends it.
    */
   async function whenReachable(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal, why: 'daemon restart' | 'link restored'): Promise<ExecutionOutcome | undefined> {
-    const until = c.clock.now().getTime() + c.reconnectGraceMs;
     const restart = why === 'daemon restart';
+    const graceMs = restart ? c.reconnectGraceMs : c.linkGraceMs;
+    const until = c.clock.now().getTime() + graceMs;
     for (;;) {
       const alive = await executor.canReattach!(job).catch(() => undefined);
       if (signal.aborted) return { kind: 'failed', error: 'aborted' };
@@ -139,7 +140,7 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
         return undefined;
       }
       if (c.clock.now().getTime() >= until) {
-        return { kind: 'failed', error: `machine ${machineId} did not reconnect within ${c.reconnectGraceMs / 1000} s${restart ? ' after the daemon restart' : ''}` };
+        return { kind: 'failed', error: `machine ${machineId} did not reconnect within ${graceMs / 1000} s${restart ? ' after the daemon restart' : ''}` };
       }
       await sleep(REACHABLE_EVERY_MS, undefined, { signal }).catch(() => {});
     }
@@ -147,18 +148,18 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
 
   /**
    * Issue #752: the job's machine link dropped while its work was watched. The job is held — `running` on its lane,
-   * `linkLost` on it — until its work is alive again (undefined) or the reconnect grace runs out (the outcome that ends it).
+   * `linkLost` on it — until its work is alive again (undefined) or the link grace runs out (the outcome that ends it).
    * A job held across a restart has `linkLost` still set: the reattach at recovery clears it.
    */
   async function holdThroughLinkLoss(executor: Executor, job: Job, claim: Claim, machineId: string, signal: AbortSignal): Promise<ExecutionOutcome | undefined> {
     const now = c.clock.now().getTime();
-    const linkLost = { machine: machineId, since: new Date(now).toISOString(), failsAt: new Date(now + c.reconnectGraceMs).toISOString() };
+    const linkLost = { machine: machineId, since: new Date(now).toISOString(), failsAt: new Date(now + c.linkGraceMs).toISOString() };
     if (c.stopping()) return { kind: 'failed', error: 'shutdown' };
     c.store.tx(() => {
       c.store.jobs.update(job.id, { linkLost });
       c.store.events.append({ type: 'job.link_lost', jobId: job.id, laneId: claim.laneId, data: linkLost });
     });
-    console.warn(`job ${job.id}: the link to machine ${machineId} dropped; held up to ${c.reconnectGraceMs / 1000} s for it to come back`);
+    console.warn(`job ${job.id}: the link to machine ${machineId} dropped; held up to ${c.linkGraceMs / 1000} s for it to come back`);
     return whenReachable(executor, job, claim, machineId, signal, 'link restored');
   }
 

@@ -1238,7 +1238,7 @@ client is not dialled in). The monitor ends its watch at the first herdr error w
 record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, records `job.link_lost` with the same
 data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
 cleared, and `executor.reattach` watches the turn again from its saved anchor; nothing is sent. Gone → failed
-`interrupted while the link to machine <id> was down`. No answer within the reconnect grace (`failsAt`) → failed
+`interrupted while the link to machine <id> was down`. No answer within the link grace (`failsAt`; `HOPPER_LINK_GRACE_MS`, default 10 min) → failed
 `machine <id> did not reconnect within <n> s`; its cleanup cannot reach the machine, so it is deferred. Cancel, park and
 shutdown abort the hold as they abort a run; a job held at shutdown keeps `linkLost` and is recovered as above, which
 clears it. The lane stays busy for the hold, as for the wait at recovery. The hold adds no authority: the box keeps
@@ -3327,7 +3327,8 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RESUME_BOOST` | `20` |
 | `HOPPER_MAX_QUESTIONS` | `5` |
 | `HOPPER_KEEP_PANES` | `false` |
-| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup"); issue #752: how long a link-lost hold lasts ("Link-lost hold") |
+| `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
+| `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |

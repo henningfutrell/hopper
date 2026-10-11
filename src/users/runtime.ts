@@ -342,7 +342,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     policy: { softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
       laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing },
     tickMs: config.tickMs,
-    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, doneRecheckMs: config.doneRecheckMs,
+    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     verdict: (job) => judge(sourceOf(job), job),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
