@@ -131,6 +131,13 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(() => loadConfig({ ...DB, HOPPER_PUBLIC_URL: url })).toThrow(msg);
   });
 
+  it('HOPPER_TUNNEL_API is the tunnel agent\'s local API, and only with the public URL it forwards (issue #795)', () => {
+    expect(loadConfig(DB).tunnelApi).toBeUndefined();
+    expect(loadConfig({ ...DB, HOPPER_PUBLIC_URL: 'https://h.example', HOPPER_TUNNEL_API: 'http://tunnel:4040' }).tunnelApi).toBe('http://tunnel:4040');
+    expect(() => loadConfig({ ...DB, HOPPER_TUNNEL_API: 'http://tunnel:4040' })).toThrow(/HOPPER_TUNNEL_API: needs HOPPER_PUBLIC_URL/);
+    expect(() => loadConfig({ ...DB, HOPPER_PUBLIC_URL: 'https://h.example', HOPPER_TUNNEL_API: 'tunnel:4040' })).toThrow(/HOPPER_TUNNEL_API/);
+  });
+
   it('a part-choosing variable is no longer read: it lands in leftoverEnv with every other unread HOPPER_* variable, unvalidated', () => {
     const c = loadConfig({
       HOPPER_EXECUTORS: 'Not A Name', HOPPER_LOCAL_LANES: '-1', HOPPER_CLAUDE_CWD: '~/w', HOPPER_SOURCES_FILE: '~/s.yaml',
