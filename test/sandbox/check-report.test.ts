@@ -61,7 +61,7 @@ describe('the read-only check\'s report (issue #715)', () => {
     const recorded: ReadOnlyCheck[] = [];
     const warned: string[] = [];
     const pass = createCheckPass({
-      runtime, instanceId: 'i', network: 'n', probes: HOPPER_PROBES, clock: { now: () => new Date(T0) }, logger: { info: () => {}, warn: (l) => { warned.push(l); } },
+      local: runtime, place: async () => ({ machine: 'local', runtime, network: 'n' }), instanceId: 'i', probes: HOPPER_PROBES, clock: { now: () => new Date(T0) }, logger: { info: () => {}, warn: (l) => { warned.push(l); } },
       credentials: { credential: async () => ({ minted: { kind: 'kube', token: 't', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://k' } }) },
     }, {
       templates: () => [{ userId: 'u', template: t }],
