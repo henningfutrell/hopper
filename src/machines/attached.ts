@@ -10,7 +10,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
-import type { AttachedMachine, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
+import type { AttachedMachine, HerdrVersions, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
 import type { DiskReading } from '../domain/machines.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { DF_COMMAND, judged, readDf } from './disk.ts';
@@ -18,7 +18,8 @@ import { RESOURCES_COMMAND, readResources } from './resources.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import { createHerdrCliClient } from '../executors/herdr/index.ts';
+import { HerdrError, createHerdrCliClient } from '../executors/herdr/index.ts';
+import { herdrMismatch, readHerdrStatus } from './herdr-version.ts';
 import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
 import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
 import { isAddressLine, addressCommand, networkFix, readAddress } from './hopper-address.ts';
@@ -44,6 +45,10 @@ export interface MachineProbe {
   hopperUrl?: string;
   /** An ssh target: why its jobs cannot reach the hopper (issue #698). Absent: one is reached, or not asked. */
   addressProblem?: string;
+  /** An ssh target running herdr: its herdr client and server versions (issue #741). Absent: not read. */
+  herdr?: HerdrVersions;
+  /** An ssh target running herdr: why its herdr client cannot work with its herdr server (issue #741). */
+  herdrProblem?: string;
 }
 
 interface AttachedOptions {
@@ -87,6 +92,9 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   // Where its jobs reach the hopper, or why they cannot (issue #698); each probe says afresh.
   let hopperUrl: string | undefined;
   let addressProblem: string | undefined;
+  // Its herdr client and server, and why they cannot work together (issue #741); each probe says afresh.
+  let herdr: HerdrVersions | undefined;
+  let herdrProblem: string | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -106,11 +114,12 @@ export function createAttachedMachineSource(o: AttachedOptions & {
       (p) => {
         online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
         hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined;
-        const noJob = [workTreeProblem, addressProblem].filter((x) => x !== undefined).join('; ');
+        herdr = p.online ? p.herdr : undefined; herdrProblem = p.online ? p.herdrProblem : undefined;
+        const noJob = [workTreeProblem, addressProblem, herdrProblem].filter((x) => x !== undefined).join('; ');
         say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`
           : noJob ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${noJob}` : `hopper: attached machine ${name} online (${reached()})`);
       },
-      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; herdr = undefined; herdrProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -126,21 +135,42 @@ export function createAttachedMachineSource(o: AttachedOptions & {
         const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
         return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
       }
-      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
+      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session, ...herdr } } : {}), ...(m.herdr && herdrProblem ? { herdrProblem } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
     },
   };
 }
 
 const withFix = (addressFix: string | undefined): { addressFix?: string } => (addressFix ? { addressFix } : {});
 
-/** Whether the machine's herdr session is running: `herdr --session <s> status server` over ssh. Rejects when ssh fails. */
-export async function probeHerdrOverSsh(o: { target: string; session: string; controlDir: string; sshBin?: string; auth: () => SshAuth }): Promise<boolean> {
+/**
+ * Whether the machine's herdr session is running — `herdr --session <s> status server` over ssh —, and (issue #741) the
+ * herdr client the hopper calls there and the server it talks to, with a herdr problem when the server does not take
+ * that client: then every job start there would fail. `status client` that fails says no client version, nothing more.
+ * Rejects when ssh fails.
+ */
+export async function probeHerdrOverSsh(o: { target: string; session: string; controlDir: string; sshBin?: string; auth: () => SshAuth }): Promise<HerdrProbe> {
   const herdr = createHerdrCliClient({
     session: o.session, timeoutMs: 15000,
     ssh: { target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) },
   });
-  return /^status: running$/m.test(await herdr.exec(['status', 'server']));
+  let server: string;
+  try {
+    server = await herdr.exec(['status', 'server']);
+  } catch (e) {
+    const herdrProblem = e instanceof HerdrError ? herdrMismatch(e.message) : undefined;
+    if (herdrProblem) return { online: true, herdrProblem };
+    throw e;
+  }
+  const client = await herdr.exec(['status', 'client']).catch((e: unknown) => {
+    if (e instanceof HerdrError && e.code === 'ssh') throw e;
+    return undefined;
+  });
+  const r = readHerdrStatus(server, client);
+  return { online: r.running, ...(Object.keys(r.versions).length ? { herdr: r.versions } : {}), ...(r.herdrProblem ? { herdrProblem: r.herdrProblem } : {}) };
 }
+
+/** What probeHerdrOverSsh found (issue #741): the session running, the herdr versions there, and a herdr problem. */
+export type HerdrProbe = Pick<MachineProbe, 'online' | 'herdr' | 'herdrProblem'>;
 
 /**
  * An ssh target's home, asked over ssh with the hopper's key: it answers, so it is online (issue #142),

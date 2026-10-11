@@ -43,9 +43,9 @@ HOST_KEY="$(printf '%s\n' "$KNOWN" | awk '$2 == "ssh-ed25519" { print $2, $3; ex
 [ -n "$HOST_KEY" ] || die "no host key for $TARGET in ~/.ssh/known_hosts: connect once by hand (ssh $TARGET), check its fingerprint, then run this again"
 
 step "check herdr and claude on $TARGET"
-# The hopper calls herdr there by name, from its PATH and then ~/.local/bin (issue #311): look it up
-# the same way.
-HERDR_PATH='PATH="$PATH:$HOME/.local/bin"'
+# The hopper calls herdr there by name, from ~/.local/bin and then its PATH (issues #311, #741): look it
+# up the same way.
+HERDR_PATH='PATH="$HOME/.local/bin:$PATH"'
 for bin in herdr claude; do
   remote "$HERDR_PATH; command -v $bin >/dev/null" || die "$bin not found on $TARGET (not on its PATH, not in ~/.local/bin)"
 done

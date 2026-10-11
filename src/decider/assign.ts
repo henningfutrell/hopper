@@ -70,6 +70,12 @@ export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTr
  */
 export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && job.pendingAnswer === undefined;
 
+/**
+ * A machine whose herdr client its herdr server does not take takes no new job (issue #741): every job start there
+ * would fail. The job waits for a machine whose herdr works, never fails there. A job resuming there returns to the pane it holds.
+ */
+export const herdrHolds = (m: MachineSnapshot, job: Job): boolean => m.herdrProblem !== undefined && job.pendingAnswer === undefined;
+
 /** Why such a machine holds a job (issue #711): it is off-network, why, and the command that joins it when one fits. */
 const offNetwork = (m: MachineSnapshot): string => `is off-network: ${m.addressProblem}${m.addressFix ? `. Fix: ${m.addressFix}` : ''}`;
 
@@ -107,8 +113,12 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
       return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id} ${offNetwork(m)}`).join('; ')}`;
     }
     const reaching = tree.filter((m) => !addressHolds(m, job));
-    if (reaching.every((m) => templateHolds(m, job))) return `${reaching.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
-    const usable = reaching.filter((m) => !templateHolds(m, job));
+    if (reaching.every((m) => herdrHolds(m, job))) {
+      return `no machine running executor ${executor} has a working herdr: ${reaching.map((m) => `${m.id}: ${m.herdrProblem}`).join('; ')}`;
+    }
+    const working = reaching.filter((m) => !herdrHolds(m, job));
+    if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
+    const usable = working.filter((m) => !templateHolds(m, job));
     if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
     return undefined;
   }
@@ -119,6 +129,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
   if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
+  if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
@@ -225,14 +236,14 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
+    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
   return gateHold(job, usable, gate);
 }
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
-    && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !templateHolds(s.machine, job)
+    && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }
 

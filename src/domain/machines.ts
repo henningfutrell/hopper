@@ -11,6 +11,23 @@ import type { RuntimeKind, SandboxRecord } from './sandboxes.ts';
  */
 export type AttachedMachine = SshMachine | ContainerMachine | ClientMachine;
 
+/** One side of an ssh target's herdr (issue #741): its version and protocol, as `herdr status` prints them. */
+export interface HerdrSide { version?: string; protocol?: number }
+
+/** An ssh target's herdr client (and the binary the hopper calls) and the herdr server of its session (issue #741). */
+export interface HerdrVersions { client?: HerdrSide & { binary?: string }; server?: HerdrSide }
+
+/** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
+export interface MachineHerdr {
+  /**
+   * An attached machine's herdr: hopper's session there, herdr found by name (issue #311); this machine's, the herdr session it was added with (issue #260).
+   * An ssh target's also carries the herdr client the hopper calls there and the herdr server of its session, as its last probe read them (issue #741).
+   */
+  herdr?: { session: string } & HerdrVersions;
+  /** An ssh target: why its herdr client cannot work with its herdr server, as its last probe found (issue #741): no new job is routed to it. */
+  herdrProblem?: string;
+}
+
 interface AttachedBase {
   /** The machine id; never `local`. */
   name: string;

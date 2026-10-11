@@ -1,6 +1,6 @@
 // Known causes (issue #509): the built-in ones, matched by the error text, and the ones a person named for a
 // signature (`NamedCause`), which win. Shared causes first: a machine that cannot be reached is not a hiccup. Pure.
-import type { FailureClass, FailureDecision, KnownCause, NamedCause } from '../domain/types.ts';
+import type { CauseCheck, FailureClass, FailureDecision, KnownCause, MachineSnapshot, NamedCause } from '../domain/types.ts';
 
 interface BuiltinCause extends KnownCause { pattern: RegExp }
 
@@ -26,6 +26,11 @@ export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
     id: 'machine-offline', name: 'Machine offline', cls: 'shared', decision: 'redirect', scope: 'machine', check: 'online',
     description: 'The hopper cannot reach the machine: its jobs cannot start or report there until it is back.',
     pattern: /did not reconnect|is not attached|is not dialled in|machine \S+ (is )?(offline|unreachable)|EHOSTUNREACH|ECONNREFUSED|no route to host|ssh: connect to host|could not resolve hostname|host is down/i,
+  }),
+  cause({
+    id: 'herdr-outdated', name: 'Herdr outdated', cls: 'shared', decision: 'redirect', scope: 'machine', check: 'herdr',
+    description: 'The herdr client the hopper calls on the machine is older than the herdr server of its session: every job start there fails until the server\'s herdr is installed where the hopper calls it (issue #741).',
+    pattern: /client protocol \d+ is older than server protocol \d+/i,
   }),
   cause({
     id: 'daemon-restart', name: 'Daemon restart', cls: 'transient', decision: 'retry', scope: 'machine',
@@ -89,4 +94,11 @@ export function matchCause(text: string, signature: string, named: readonly Name
 /** Every known cause, the named ones first, as the Failures view lists them. */
 export function knownCauses(named: readonly NamedCause[]): KnownCause[] {
   return [...named.map(namedCause), ...BUILTIN_CAUSES.map(({ pattern: _p, ...c }) => c)];
+}
+
+/** Whether a check sees its cause on the problem's machine: offline, its disk low, its herdr problem (issue #741). */
+export function causePresent(check: CauseCheck, m: MachineSnapshot): boolean {
+  if (check === 'online') return !m.online;
+  if (check === 'disk') return m.disk?.low === true;
+  return m.herdrProblem !== undefined;
 }

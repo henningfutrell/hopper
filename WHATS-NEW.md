@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- On a machine you reach over ssh, the hopper now uses the herdr that herdr itself installed and updates, not an older copy elsewhere on the machine. When the herdr there is too old for its session, Machines shows both versions and says so, and jobs go to another machine or wait with the reason, instead of failing one after another.
 - When the hopper merges a pull request that does not close its issue, and the pull request is not one part of the issue, the hopper now closes the issue itself and leaves a comment with a link to the pull request.
 - An issue can list its parts as a checklist under a heading named Parts. The job card shows how many parts are done, the hopper works the parts one by one, and the issue is done when its last part merges.
 - You can send a finished job's pull request back for rework with your notes, from its card in Pull requests or the command line: the pull request turns into a draft, and a new job makes the changes on the same pull request before it counts as done again.

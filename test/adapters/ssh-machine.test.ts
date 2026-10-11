@@ -178,13 +178,13 @@ describe('probeHerdrOverSsh', () => {
   });
   const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, session: 'hopper', controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
 
-  it('true when the remote herdr session reports running', async () => {
+  it('online when the remote herdr session reports running', async () => {
     process.env.FAKE_HERDR_RUNNING = '1';
-    expect(await probe('laptop')).toBe(true);
+    expect(await probe('laptop')).toEqual({ online: true });
   });
 
-  it('false when the session is not running', async () => {
-    expect(await probe('laptop')).toBe(false);
+  it('offline when the session is not running', async () => {
+    expect(await probe('laptop')).toEqual({ online: false });
   });
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {
@@ -324,7 +324,7 @@ describe('resolveSshTarget', () => {
   it('else ~/.local/bin/herdr when it is executable, as every herdr call there finds it', async () => {
     executable(join(home, '.local', 'bin', 'herdr'));
     expect(await resolve('laptop')).toEqual({ hostKey: TEST_HOST_KEY });
-    expect(sshCalls()[0]!.at(-1)).toMatch(/^PATH="\$PATH:\$HOME\/\.local\/bin"; command -v herdr /);
+    expect(sshCalls()[0]!.at(-1)).toMatch(/^PATH="\$HOME\/\.local\/bin:\$PATH"; command -v herdr /);
   });
 
   it('a target the user has never connected to: rejected before any connection', async () => {

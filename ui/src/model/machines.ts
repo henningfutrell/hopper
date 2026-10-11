@@ -89,6 +89,19 @@ export function offNetwork(m: MachineSnapshot): { problem: string; fix?: string 
   return { problem: m.addressProblem, ...(m.addressFix ? { fix: m.addressFix } : {}) };
 }
 
+/** One side of a machine's herdr as Machines shows it (issue #741): its version, then its protocol and binary when read. */
+function herdrSide(what: string, side: { version?: string; protocol?: number; binary?: string } | undefined): string | null {
+  if (!side) return null;
+  const said = [side.protocol !== undefined ? `protocol ${side.protocol}` : null, side.binary ?? null].filter((x) => x !== null).join(', ');
+  return `${what}${side.version ? ` ${side.version}` : ''}${said ? ` (${said})` : ''}`;
+}
+
+/** An ssh target's herdr client and server versions on Machines (issue #741); null when its probe read none. */
+export function herdrText(m: MachineSnapshot): string | null {
+  const sides = [herdrSide('client', m.herdr?.client), herdrSide('server', m.herdr?.server)].filter((x) => x !== null);
+  return sides.length ? sides.join(', ') : null;
+}
+
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
 

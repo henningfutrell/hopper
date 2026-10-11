@@ -35,7 +35,19 @@ else if (cmd.startsWith('pane run')) process.stdout.write(''); // herdr prints n
 else if (cmd.startsWith('pane read')) process.stdout.write('line one\n● HOPPER_DONE\n');
 else if (cmd.startsWith('agent prompt') || cmd.startsWith('pane send-keys') || cmd.startsWith('pane close w7:p5')) out({ result: { type: 'ok' } });
 else if (cmd.startsWith('pane close')) fail('pane_not_found', `pane ${argv[4]} not found`);
-else if (cmd === 'status server') process.stdout.write(process.env.FAKE_HERDR_RUNNING ? 'status: running\nsocket: /x/herdr.sock\n' : 'status: not running\nsocket: /x/herdr.sock\n');
+// FAKE_HERDR_SERVER / FAKE_HERDR_CLIENT (issue #741): `version protocol [compatible]` / `version protocol`, as herdr
+// prints them; FAKE_HERDR_PROTOCOL_ERROR: the error an older client gives a newer server.
+else if (cmd === 'status server' && process.env.FAKE_HERDR_PROTOCOL_ERROR) { process.stderr.write('Error: client protocol 17 is older than server protocol 22\n'); process.exit(1); }
+else if (cmd === 'status server') {
+  const [version, protocol, compatible] = (process.env.FAKE_HERDR_SERVER ?? '').split(' ');
+  process.stdout.write(process.env.FAKE_HERDR_RUNNING
+    ? `status: running\n${version ? `version: ${version}\nprotocol: ${protocol}\n` : ''}${compatible ? `compatible: ${compatible}\n` : ''}socket: /x/herdr.sock\n`
+    : 'status: not running\nsocket: /x/herdr.sock\n');
+}
+else if (cmd === 'status client' && process.env.FAKE_HERDR_CLIENT) {
+  const [version, protocol] = process.env.FAKE_HERDR_CLIENT.split(' ');
+  process.stdout.write(`version: ${version}\nchannel: stable\nprotocol: ${protocol}\nbinary: ${process.argv[1]}\n`);
+}
 else if (cmd.startsWith('slow')) setTimeout(() => out({ result: {} }), 5000);
 else if (cmd.startsWith('usage')) { process.stderr.write('error: bad usage'); process.exit(2); }
 else fail('unknown', `unhandled: ${cmd}`);
