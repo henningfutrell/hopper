@@ -2,7 +2,10 @@
 // that reaches a person goes onto its issue as one comment, the job parks, and the first reply from someone who may answer
 // settles the question and resumes the job. Posts go out under the user's account, so a policy says per kind of repo
 // whether the hopper posts at once, holds the comment until a person approves it, or keeps the question off the thread.
-// A question a risk rule or the consequential guard sent to a person (`keptBy`) is the owner's alone: never posted. Pure.
+// A question a risk rule or the consequential guard sent to a person (`keptBy`) is the owner's alone: never posted. Once
+// posted, a GitHub watch (issue #427) follows the issue while the question is open, and a sync reads the thread only when
+// the watch cannot tell whether a reply came. Pure.
+import type { GitHubWatch } from './github-watch.ts';
 
 /** What the hopper does with a question at the human stage: post it, hold it for a person's review, or keep it off the thread. */
 export type ThreadAskPolicy = 'post' | 'review' | 'off';
@@ -116,6 +119,20 @@ export function threadAnswer(reply: ThreadComment, account: string | undefined):
 
 /** Who answered, as `question.answered` records it. */
 export const threadAnsweredBy = (reply: ThreadComment): string => `thread:${reply.author}`;
+
+/** A question whose issue a GitHub watch follows: open, and posted on its thread. */
+export const watchesThread = (q: { status: string; thread?: ThreadAsk }): boolean => q.status === 'open' && q.thread?.state === 'posted';
+
+/**
+ * Whether a sync reads the thread of a posted question: the watch on its issue cannot tell — none, a problem, or no poll
+ * since the post — or its snapshot holds a comment after the question's, which may be a reply. False: the watch saw no
+ * comment after the question, and its next change starts the read.
+ */
+export function threadUnseen(ask: ThreadAsk, watch: GitHubWatch | undefined): boolean {
+  if (ask.state !== 'posted' || ask.commentId === undefined) return false;
+  if (!watch?.snapshot || watch.error !== undefined || (watch.polledAt ?? '') < ask.at) return true;
+  return watch.snapshot.comments.some((c) => c.id > ask.commentId!);
+}
 
 /** What the parked card and `job.parked` say about a job parked on its thread question, posted or held for review. */
 export const THREAD_PARK_WHY = 'Parked: its question goes on the issue thread, and a reply there resumes it.';

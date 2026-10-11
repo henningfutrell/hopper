@@ -7,14 +7,16 @@
 // connected account or a maintainer settles the question (`SourceHost.answerFromThread`), which resumes the job. The
 // engine parks the job as soon as its question has a thread record (src/engine/auto-park.ts). A throw is kept as the
 // job's retry and asked again next sync.
+// The replies are read on the GitHub watch of the job's issue (issue #427): a `github_watch.changed` of the job with new
+// comments starts its pass at once. A sync reads them only when the watch cannot tell (`threadUnseen`).
 import type { JobSource, SourceHost, UserStore } from '../domain/ports.ts';
 import type { DomainEvent } from '../domain/types.ts';
 import {
-  DEFAULT_THREAD_ASK, threadAnswer, threadAnsweredBy, threadPolicy, threadReply, type Job, type Question, type ThreadAsk,
+  DEFAULT_THREAD_ASK, threadUnseen, threadAnswer, threadAnsweredBy, threadPolicy, threadReply, type Job, type Question, type ThreadAsk,
 } from '../domain/types.ts';
 
 export interface ThreadAsksContext {
-  store: Pick<UserStore, 'jobs' | 'questions' | 'events' | 'settings' | 'tx'>;
+  store: Pick<UserStore, 'jobs' | 'questions' | 'events' | 'settings' | 'tx' | 'githubWatches'>;
   host: Pick<SourceHost, 'answerFromThread'>;
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
@@ -25,8 +27,12 @@ export interface ThreadAsksContext {
   sourceOf(jobId: string): JobSource | undefined;
 }
 
-/** The events that start a job's pass at once: its question reached a person, or a person approved it for the thread. */
-const STARTS = new Set(['question.escalated_to_human', 'question.thread_approved']);
+/** The events that start a job's pass at once: its question reached a person, a person approved it for the thread, or the watch of its issue saw a new comment. */
+const starts = (e: DomainEvent): boolean => e.type === 'question.escalated_to_human' || e.type === 'question.thread_approved'
+  || (e.type === 'github_watch.changed' && ((e.data.changes as { comments?: { added?: unknown[] } } | undefined)?.comments?.added?.length ?? 0) > 0);
+
+/** What started a pass: a sync reads the thread only when the watch cannot tell; an event always reads it. */
+type Start = 'sync' | 'event';
 
 const ON_A_QUESTION = new Set(['waiting_answer', 'parked']);
 
@@ -53,7 +59,7 @@ export function createThreadAsks(c: ThreadAsksContext) {
     record(q, { state: 'posted', at: c.now(), commentId, url, ...(approvedBy ? { approvedBy } : {}) }, 'question.thread_posted', { url, ...(approvedBy ? { approvedBy } : {}) });
   }
 
-  async function tend(source: JobSource, jobId: string): Promise<void> {
+  async function tend(source: JobSource, jobId: string, by: Start): Promise<void> {
     const job = store.jobs.get(jobId);
     const q = job && askable(store, job);
     if (!job || !q) return;
@@ -67,32 +73,32 @@ export function createThreadAsks(c: ThreadAsksContext) {
       return;
     }
     if (ask.state === 'approved') return post(source, job, q, ask.approvedBy);
-    if (ask.state !== 'posted') return;
+    if (ask.state !== 'posted' || (by === 'sync' && !threadUnseen(ask, store.githubWatches.get(jobId)))) return;
     const reply = threadReply(await source.thread!.comments(repo, number), ask, account);
     if (reply) c.host.answerFromThread(q.id, threadAnswer(reply, account), threadAnsweredBy(reply));
   }
 
   /** One job's pass, on its report chain. */
-  const one = (source: JobSource, jobId: string): Promise<void> => c.enqueue(jobId, async () => {
+  const one = (source: JobSource, jobId: string, by: Start): Promise<void> => c.enqueue(jobId, async () => {
     try {
-      await tend(source, jobId);
+      await tend(source, jobId, by);
     } catch (e) {
       c.failed(jobId, e);
     }
   });
 
   return {
-    /** A question reached a person, or was approved: its job's pass now. True when the event was one; listeners fire inside append, so never a source call from there. */
+    /** A question reached a person, was approved, or the watch saw a comment: its job's pass now. True when the event was one; listeners fire inside append, so never a source call from there. */
     follows(e: DomainEvent): boolean {
-      if (!STARTS.has(e.type) || !e.jobId) return false;
+      if (!starts(e) || !e.jobId) return false;
       const { jobId } = e;
-      setImmediate(() => { const source = c.sourceOf(jobId); if (source?.thread) void one(source, jobId); });
+      setImmediate(() => { const source = c.sourceOf(jobId); if (source?.thread) void one(source, jobId, 'event'); });
       return true;
     },
     /** Every job of the source on a question it can ask on its thread. */
     async catchUp(source: JobSource, jobs: Job[]): Promise<void> {
       if (!source.thread) return;
-      await Promise.all(jobs.filter((j) => askable(store, j)).map((j) => one(source, j.id)));
+      await Promise.all(jobs.filter((j) => askable(store, j)).map((j) => one(source, j.id, 'sync')));
     },
   };
 }

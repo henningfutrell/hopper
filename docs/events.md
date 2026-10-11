@@ -4192,7 +4192,7 @@ Version 1 (`docs/schemas/pointed_job.status_changed.v1.json`). A pointed job mov
 
 ## `github_watch.changed`
 
-Version 1 (`docs/schemas/github_watch.changed.v1.json`). A GitHub watch saw its pointed job's item change (issue #427): one event per poll that found a change, with every change of that poll in `changes` — `state` (`from`, `to`: `open`, `closed` or `merged`; `reason` GitHub's state reason; `mergedAt`), `labels` (`added`, `removed`), `comments` (`added`: `id`, `author`, `at`; `removed`: how many went), `reviews` (`added`: `id`, `author`, `state`, `at`), `linkedPullRequests` (`added`, `removed`, by URL). `pointedJob`, `repo`, `pointer`: what is watched. A poll that sees no change, and the first poll of a watch, record nothing. Never a comment's text.
+Version 1 (`docs/schemas/github_watch.changed.v1.json`). A GitHub watch saw its pointed job's item change (issue #427): one event per poll that found a change, with every change of that poll in `changes` — `state` (`from`, `to`: `open`, `closed` or `merged`; `reason` GitHub's state reason; `mergedAt`), `labels` (`added`, `removed`), `comments` (`added`: `id`, `author`, `at`; `removed`: how many went), `reviews` (`added`: `id`, `author`, `state`, `at`), `linkedPullRequests` (`added`, `removed`, by URL). `pointedJob`, `repo`, `pointer`: what is watched. A job on a question posted on its issue thread is watched too (issue #435): then `pointedJob` is the job's id, and the event carries `jobId`, on the job's timeline. A poll that sees no change, and the first poll of a watch, record nothing. Never a comment's text.
 
 | field | type | required |
 |---|---|---|
