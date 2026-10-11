@@ -339,9 +339,7 @@ export const EVENT_SCHEMAS = {
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
   'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean() }),
-  'vault.mint_refused': strict({
-    mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(),
-  }),
+  'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),
   // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
   'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string() }),
   'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
@@ -367,8 +365,7 @@ export const EVENT_SCHEMAS = {
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS,
-  ...ITEM_EVENT_SCHEMAS,
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS,
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   ...THREAD_ASK_EVENT_SCHEMAS,

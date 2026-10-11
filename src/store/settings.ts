@@ -202,13 +202,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
-    getTldr() {
-      const text = read('tldr');
-      return text === undefined ? undefined : JSON.parse(text) as TldrSettings;
-    },
-    setTldr(settings) {
-      write('tldr', JSON.stringify({ enabled: settings.enabled }));
-    },
+    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
+    setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },
     getGitHubWatch: () => { const t = read('githubWatch'); return t === undefined ? undefined : JSON.parse(t) as GitHubWatchSettings; },
     setGitHubWatch: (s) => write('githubWatch', JSON.stringify({ intervalSeconds: s.intervalSeconds })),
     getYoloMode() {
@@ -220,13 +215,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; },
     setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
-    getIntakeActors() {
-      const text = read('intakeActors');
-      return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings;
-    },
-    setIntakeActors(settings) {
-      write('intakeActors', JSON.stringify({ actors: settings.actors }));
-    },
+    getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
+    setIntakeActors(settings) { write('intakeActors', JSON.stringify({ actors: settings.actors })); },
     getRepoChecksDismissed() {
       const text = read('repoChecksDismissed');
       return text === undefined ? [] : JSON.parse(text) as string[];
