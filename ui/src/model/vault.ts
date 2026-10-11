@@ -115,12 +115,14 @@ export function giveProblem(g: { name: string; kind: string; note: string; value
  * The read-only check of a template in words (issue #716): none when it takes none; else whether the check of its
  * current version passed, failed (with the probes that failed), runs, or has not run. `waits`: its boxes wait for it.
  */
-export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; outcome: string; passed: boolean }[]; problem?: string } }): { text: string; waits: boolean } | undefined {
+export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; outcome: string; passed: boolean }[]; problem?: string; artifact?: string } }): { text: string; waits: boolean; report?: string } | undefined {
   if (!t.readOnly) return undefined;
   const c = t.check?.version === t.savedAt ? t.check : undefined;
   if (!c) return { text: 'not run on this version yet: it runs once the template is approved', waits: true };
   if (c.state === 'running') return { text: 'runs now', waits: true };
-  if (c.state === 'passed') return { text: `passed: ${c.probes.length} probes, every write refused, every read worked`, waits: false };
+  // Its report, an artifact of the job that asked for the template (issue #715).
+  const report = c.artifact ? { report: `#artifacts/${c.artifact}` } : {};
+  if (c.state === 'passed') return { text: `passed: ${c.probes.length} probes, every write refused, every read worked`, waits: false, ...report };
   const failed = c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
-  return { text: `failed: ${[...failed, ...(c.problem ? [c.problem] : [])].join('; ')}`, waits: true };
+  return { text: `failed: ${[...failed, ...(c.problem ? [c.problem] : [])].join('; ')}`, waits: true, ...report };
 }

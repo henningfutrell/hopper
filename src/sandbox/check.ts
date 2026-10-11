@@ -11,12 +11,14 @@
 // Issue #715, part 2: a terraform workspace's probes run with the AWS read session of the template's aws-role read need.
 // Issue #708: a check runs beside the hopper when it is given a runtime, else on a client target of the template's user,
 // dialled in with a runtime there (`CheckPassContext.place`). With neither, the template waits for its check.
+// Issue #715, part 4: each ended check's report is an artifact of the job that asked for the template (check-report.ts).
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
 import { currentCheck, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
+import { keepReport, type ReportUser } from './check-report.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
 import { boxImage, USER_LABEL } from './launch.ts';
 import { DEFAULT_LIMITS } from './params.ts';
@@ -36,6 +38,8 @@ export interface CheckTemplates {
   record(userId: string, name: string, check: ReadOnlyCheck): Promise<void>;
   /** The read credential the check box `check` gets for one read need of the template (issue #797): minted after Access, or why not. */
   credential(userId: string, template: string, check: string, profile: OperationProfile): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
+  /** Keeps an ended check's report as an artifact (issue #715): its id; undefined when no job asked for the template. */
+  report(userId: string, t: Template, check: ReadOnlyCheck): Promise<string | undefined>;
 }
 
 export interface CheckContext {
@@ -180,7 +184,12 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
         // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
         if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
         const check = await runCheck({ ...c, runtime: at.runtime, network: at.network }, userId, t, name);
-        await templates.record(userId, t.name, check);
+        // A report that cannot be kept never changes the check: it is kept with no artifact, and the log says why.
+        const artifact = await templates.report(userId, t, check).catch((e: unknown) => {
+          c.logger.warn(`hopper: the read-only check of template ${t.name} ${check.state}, but its report was not kept: ${e instanceof Error ? e.message : String(e)}`);
+          return undefined;
+        });
+        await templates.record(userId, t.name, artifact ? { ...check, artifact } : check);
         c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
       } finally {
         holds.delete(name);
@@ -189,10 +198,11 @@ export function createCheckPass(c: CheckPassContext, templates: CheckTemplates):
   };
 }
 
-/** What the check pass reads of a user's vault: its templates, where a check is kept, and the check box's mints. */
+/** What the check pass reads of a user's vault: its templates, where a check is kept, the check box's mints, and where its report goes. */
 interface UserVault {
   user: { id: string };
-  store: { vault: { templates(): Template[] } };
+  store: { vault: { templates(): Template[] }; jobs: ReportUser['jobs'] };
+  artifacts: ReportUser['artifacts'];
   vault: {
     recordCheck(name: string, check: ReadOnlyCheck): boolean;
     mintForCheck(ask: { template: string; check: string; profile: OperationProfile }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
@@ -206,5 +216,9 @@ export const usersTemplates = (all: () => readonly UserVault[]): CheckTemplates 
   credential: async (userId, template, check, profile) => {
     const rt = all().find((x) => x.user.id === userId);
     return rt ? rt.vault.mintForCheck({ template, check, profile }) : { refused: `no user ${userId}` };
+  },
+  report: async (userId, t, check) => {
+    const rt = all().find((x) => x.user.id === userId);
+    return rt ? keepReport({ artifacts: rt.artifacts, jobs: rt.store.jobs }, t, check) : undefined;
   },
 });

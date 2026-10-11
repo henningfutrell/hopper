@@ -100,7 +100,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(checked.check!.probes.length).toBe(10);
     expect(checked.check!.probes.every((p) => p.passed)).toBe(true);
     const event = (await a.events()).find((e) => e.type === 'template.checked');
-    expect(event?.data).toEqual({ template: t.name, state: 'passed', failed: [] });
+    expect(event?.data).toEqual({ template: t.name, state: 'passed', failed: [], artifact: checked.check!.artifact });
 
     expect((await launch(a, token, t.name)).status).toBe(200);
     // A passed check is not run again.
@@ -117,7 +117,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const t = await asked(a, token);
     expect(t.check).toMatchObject({ state: 'failed' });
     const failed = ['kube.create-namespace on lab (allowed)', 'kube.delete-pod on lab (error)', 'helm.install on lab (allowed)'];
-    expect((await a.events()).find((e) => e.type === 'template.checked')?.data).toEqual({ template: t.name, state: 'failed', failed });
+    expect((await a.events()).find((e) => e.type === 'template.checked')?.data).toEqual({ template: t.name, state: 'failed', failed, artifact: t.check!.artifact });
 
     const refused = await launch(a, token, t.name);
     expect(refused.status).toBe(409);

@@ -40,7 +40,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     },
     need: (ask, asker) => parts.vault.need(ask, asker),
     // Issue #716: the template the job's needs say, through the vault's own save and approve, the user's read policy deciding.
-    requestTemplate: (needs, job) => requestTemplate(templateRequestUser(parts), needs, `job ${job.id}`),
+    requestTemplate: (needs, job) => requestTemplate(templateRequestUser(parts), needs, `job ${job.id}`, job.id),
   };
 }
 

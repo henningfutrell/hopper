@@ -44,7 +44,7 @@ export function templateChecks(store: Pick<UserStore, 'vault' | 'events' | 'tx'>
         if (!t || t.savedAt !== check.version) return false;
         vault.saveTemplate({ ...t, check });
         if (check.state !== 'running') {
-          events.append({ type: 'template.checked', data: { template: name, state: check.state, failed: failedProbes(check), ...(check.problem ? { problem: check.problem } : {}) } });
+          events.append({ type: 'template.checked', data: { template: name, state: check.state, failed: failedProbes(check), ...(check.problem ? { problem: check.problem } : {}), ...(check.artifact ? { artifact: check.artifact } : {}) } });
         }
         return true;
       });

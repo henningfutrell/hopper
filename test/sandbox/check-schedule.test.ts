@@ -46,6 +46,7 @@ function setup() {
     templates: () => [{ userId: 'u', template }],
     record: async (_u, _n, check) => { recorded.push(check); template = { ...template, check }; },
     credential: async () => ({ refused: 'unused' }),
+    report: async () => undefined,
   });
   return { pass, cloud, runtime, recorded, seenWhileRunning, at: (ms: number) => { now = T0 + ms; }, template: () => template };
 }

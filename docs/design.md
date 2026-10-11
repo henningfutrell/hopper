@@ -9302,11 +9302,46 @@ base with `terraform` built with rootless Podman, its network open; as the box's
 6.68.0 from the mirror; `hashicorp/null` was not found, through the wrapper with `TF_CLI_CONFIG_FILE=/dev/null` given and
 past it; `providers lock` and `mirror` were refused; the mirror could not be written.
 
-**What stays of #715 (part 4 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
+**Part 4: the suite's result as a job artifact (2026-10-11).** Issue #715 asks for the results to be recorded as a job
+artifact. Before, a check's result was on the template (the last one only) and in `template.checked` (the failed probes
+only): no page showed each probe's output, and a person could not share it.
+
+- **The job that asked** (`Template.askedBy`). A job's template request (`requestTemplate`, `POST /job/skill`) saves the
+  template with its job's id. The vault keeps the first one through every save, as it keeps `readOnly`: a person's
+  later save does not move the report. A template a person or an API caller asked for (`request-template`) has none.
+- **The check report** (`checkReport`, `src/sandbox/check-report.ts`). An HTML page: the template, its needs, a bar of the
+  probes that passed and failed (an inline SVG, so the artifact is a visual), and a table of each probe — its id, asset,
+  what it expected, its outcome, its exit code and the end of its output. Every text is escaped; the page runs no script.
+  Its summary is the one line the check ended with (`passed: 10 probes, every write refused, every read worked`, or
+  `failed: 3 of 10 probes failed (…)` and the problem).
+- **One artifact per template, a revision per check** (`keepReport`). After each check ends, the check pass
+  (`CheckTemplates.report`) puts the report as an artifact of the asking job, `read-only-check-<template>.html`, made by
+  `read-only check` (`UserArtifacts.put`'s new `by`). The next check — the daily one, or one a person asks for — finds
+  that job's artifact of that name and adds a revision, with the check's state and time as the note ("One piece of work,
+  one artifact"). A person who removed it gets a new one at the next check. The artifact's limits, retention, shares and
+  Access are an artifact's: a revision past the retention goes, the latest stays.
+- **Named on the check.** `ReadOnlyCheck.artifact` and `template.checked`'s `artifact` carry its id; Settings → Vault
+  links **Check report** (`#artifacts/<id>`) in the template's **Read-only check** row.
+- **It never changes the check.** A report that cannot be kept (the job is gone, the user's artifacts are full) is logged
+  (`… passed, but its report was not kept: …`), and the check is kept with no artifact: the gate reads the check, never
+  the report. A template no job asked for keeps its check on the template only.
+
+Considered and not built: an artifact with no job (the `artifacts.job_id` column is `NOT NULL`, and every view of an
+artifact names its job; a migration for one case the template itself already covers), the report on every job that waits
+on the template (one shared template, many copies of one result), and a JSON artifact (a person reads the report; the
+check on the template is the machine-readable form, in `GET /api/vault`).
+
+Tests: `test/sandbox/check-report.test.ts` (the page: each probe, escaped output, the bar, the summary; the pass keeps each
+ended check's report and names it on the check; a report that fails or has no job leaves the check as it is),
+`test/integration/read-only-check-report.test.ts` (the real daemon: a job asks, the check passes, the artifact is the
+job's with the summary and each probe, `template.checked` and the template name it; the account turns writable, a person
+runs the check again: the same artifact, revision 2, the failure in its summary; a template a person asked for keeps no
+artifact), `test/ui/vault.test.ts` (the link only for the current version's check).
+
+**What stays of #715 (part 5 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
 probes plan and apply a one-resource stack with local state, so the IAM layer is proved for `apply` only; a probe on the
 real backend needs the workspace's backend configuration, which the hopper does not hold. Egress limited to the AWS,
-Kubernetes and GitHub endpoints (the check box and boxes run on the hopper's network today). The suite's result as a job
-artifact: it is on the template and in `template.checked` today.
+Kubernetes and GitHub endpoints (the check box and boxes run on the hopper's network today).
 
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and

@@ -139,6 +139,8 @@ A template that a job asked for with read needs only must pass the **read-only c
 
 The template shows the result in its **Read-only check** row. A failed check does not run again by itself: click **Run the check again**, or run `hopper template check <name>`.
 
+Each check that ends keeps a **check report**: a page that shows each probe, the result it expected and the result it got. The check report is an artifact of the job that asked for the template. Open it from **Check report** in the **Read-only check** row, or in the Artifacts view. Each later check (the daily check, or a check you run again) adds a new revision to the same artifact. A template that a person asked for has no job, so its check keeps no check report: the result is on the template only.
+
 A passed check runs again once a day, because an account or a cluster can change. The template stays usable while it runs. If it fails, no new box of the template starts and its boxes take no new job, until a person runs it again and it passes.
 
 A box of such a template cannot change infrastructure, in two layers:
@@ -162,7 +164,7 @@ To read a Terraform workspace, ask for read on the workspace and read on the AWS
 
 - **The start check fails** with `the hopper does not answer at <address>`: the rest is curl's own words from inside the box. `Could not resolve host`: the name is not known on that network. `Failed to connect`: nothing listens there. `403` or `421`: the hopper refused the box; check `HOPPER_LAN_PEERS` and `HOPPER_LAN_NAMES`.
 - **No "Start the box" button**: the hopper has no rootless runtime socket. The deploy guide has the steps; or run the line.
-- **The read-only check of a Terraform workspace fails.** The hopper does not yet make a credential for a Terraform workspace, so the check of a template that reads one fails and says so. Reads of an AWS role, a cluster or a namespace get their credentials.
+- **The read-only check of a Terraform workspace needs one AWS role.** A workspace uses the read session of the template's one `aws-role` read need. A template with no such need, or with more than one, fails the check and says why.
 - **Not built.** A box with tools on another machine (the image build is not carried there). The read-only check on another machine's runtime. Other agents than `claude` in a box.
 - **One job at a time.** Jobs on one box share its user. A box of a template with secrets is best run with one lane.
 
