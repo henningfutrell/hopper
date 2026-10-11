@@ -191,8 +191,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     async closeAsCompleted(repo, n) {
       enter('closeAsCompleted', [repo, n]);
-      const i = find(repo, n);
-      Object.assign(i, { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' });
+      Object.assign(find(repo, n), { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' });
     },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
