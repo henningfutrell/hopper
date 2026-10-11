@@ -16,6 +16,7 @@ import type { RuntimeAnswer, RuntimeRelay, RuntimeRelayCall } from '../domain/sa
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskOf } from '../machines/disk.ts';
 import { resourcesOf } from '../machines/resources.ts';
+import { keepAlive, type PingTiming } from '../client/keepalive.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
 /** Reaching a client target. */
@@ -26,6 +27,8 @@ export interface ClientTransport {
   link: () => Duplex | undefined;
   /** The client token, derived from the hopper's link key and the machine key; read at each call. */
   token: () => string;
+  /** The link's keepalive (src/client/keepalive.ts, issue #752); default PING_TIMING. */
+  ping?: PingTiming;
 }
 
 export interface ClientAnswer { code: number; stdout: string; stderr: string }
@@ -43,7 +46,11 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
   if (open) return open;
   const opened = new Promise<ClientHttp2Session>((resolve, reject) => {
     const s = connect('http://hopper-client', { createConnection: () => link });
-    s.once('connect', () => resolve(s));
+    s.once('connect', () => {
+      // A dead or half-open link is dropped within seconds (issue #752): the machine is then not dialled in.
+      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping);
+      resolve(s);
+    });
     s.once('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));
     s.once('close', () => sessions.delete(link));
   });

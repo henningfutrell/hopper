@@ -1233,7 +1233,9 @@ so a running job's pane and Claude outlive a restart.
 
 **Link-lost hold** (issue #752). The same wait, while the daemon runs: a client target's link drops under a running
 job. The herdr client of a machine with a link says whether that link is down (`HerdrClient.linkDown`, true while the
-client is not dialled in). The monitor ends its watch at the first herdr error with the link down, as `failed` marked
+client is not dialled in). Both ends of a link send an HTTP/2 PING on it every 5 s (`src/client/keepalive.ts`); a
+PING not answered within 10 s drops the link on that end, so a dead or half-open link (no FIN) is found within seconds,
+not at a call's timeout: the hopper then sees the link down, and the client dials in again. The monitor ends its watch at the first herdr error with the link down, as `failed` marked
 `linkLost`; with the link up, errors count toward the three in a row that fail the job, as before. The runner does not
 record that outcome: it sets `linkLost { machine, since, failsAt }` on the job, records `job.link_lost` with the same
 data, and asks `canReattach` every second as above. Alive → `job.reattached { reason: "link restored" }`, `linkLost`
