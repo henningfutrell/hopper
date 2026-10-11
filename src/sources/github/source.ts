@@ -18,6 +18,7 @@ import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
+import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
@@ -351,6 +352,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
     closedAsComplete(job) {
       return closedAsComplete(api, job);

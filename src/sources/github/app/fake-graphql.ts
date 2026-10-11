@@ -4,7 +4,8 @@
 // accessible by integration"); a login of the other kind is NOT_FOUND. Also
 // `repository(owner, name).issue(number)`: the pull request whose merge closed the issue, and the
 // open ones whose merge will close it. And `repository(owner, name).issueOrPullRequest(number)` (issue #618): a pull
-// request any issue of the repo knows, by its number; an issue; or NOT_FOUND.
+// request any issue of the repo knows, by its number; an issue; or NOT_FOUND. And an issue's cross-references (issue
+// #430): its closing pull requests — the open ones and the merged one that closed it — and the pull requests that mention it.
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
@@ -39,6 +40,12 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   }
   const issue = repo.issues.get(Number(b.variables?.number));
   if (!issue) return { status: 200, body: { data: { repository: { issue: null } }, errors: [{ type: 'NOT_FOUND', path: ['repository', 'issue'], message: 'Could not resolve to an Issue.' }] } };
+  if (/commitRepository/.test(b.query ?? '')) {
+    const repository = { nameWithOwner: `${repo.owner}/${repo.name}` };
+    const closing = [...issue.openPullRequests, ...(issue.closedByPullRequest ? [issue.closedByPullRequest] : [])].map((p) => ({ url: p.url, body: issue.mentionedBy.find((m) => m.url === p.url)?.body ?? '', repository }));
+    const nodes = issue.mentionedBy.map((m) => ({ __typename: 'CrossReferencedEvent', source: { __typename: 'PullRequest', url: m.url, body: m.body, repository: { nameWithOwner: m.repo } } }));
+    return { status: 200, body: { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: closing }, timelineItems: { nodes } } } } } };
+  }
   if (/CROSS_REFERENCED_EVENT/.test(b.query ?? '')) {
     const nodes = issue.mentionedBy.map(({ repo: nameWithOwner, ...m }) => ({ source: { __typename: 'PullRequest', ...withHead(m), repository: { nameWithOwner } } }));
     return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };

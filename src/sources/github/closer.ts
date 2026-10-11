@@ -4,11 +4,14 @@
 // (`closedByPullRequestsReferences`: a closing keyword, on a pull request to the default branch), and the pull
 // requests that mention it in any state (the issue's cross-references, issue #579: a part says "Part of #N"), and a pull
 // request by its number (issue #618: one an issue names to update), and the open pull requests of a repository with their
-// branches (issue #637: one named for an issue). Each says when its head commit was made, and its checks (issue #637).
+// branches (issue #637: one named for an issue). Each says when its head commit was made, and its checks (issue #637). And
+// an issue's cross-references (issue #430): the pull requests and commits that mention it, with their text, and the ones
+// GitHub links as closing it.
 
 import { GitHubApiError } from './api.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 import type { ChecksState } from '../../domain/pull-requests.ts';
+import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
 
 /** A pull request's head commit, when it was made (issue #618), and its checks (issue #637). */
 const HEAD_COMMIT = 'commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
@@ -134,4 +137,55 @@ export function repoPullRequestsFrom(body: unknown, what: string): BranchPullReq
   const nodes = response(body, what).data?.repository?.pullRequests?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt && n.headRefName
     ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '', ...headOf(n) }] : []);
+}
+
+/**
+ * An issue's cross-references (issue #430): the pull requests GitHub links as closing it, in any state
+ * (`closedByPullRequestsReferences`), and its timeline's newest 100 cross-references, commit references and closes.
+ */
+export const CROSS_REFERENCES_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) {
+    closedByPullRequestsReferences(first: 50, includeClosedPrs: true) { nodes { url body repository { nameWithOwner } } }
+    timelineItems(itemTypes: [CROSS_REFERENCED_EVENT, REFERENCED_EVENT, CLOSED_EVENT], last: 100) { nodes {
+      __typename
+      ... on CrossReferencedEvent { source { __typename ... on PullRequest { url body repository { nameWithOwner } } } }
+      ... on ReferencedEvent { commit { url message } commitRepository { nameWithOwner } }
+      ... on ClosedEvent { closer { __typename ... on Commit { url message repository { nameWithOwner } } } }
+    } }
+  } }
+}`;
+
+interface Text { __typename?: string; url?: string; body?: string; message?: string; repository?: { nameWithOwner?: string } }
+interface CrossData {
+  data?: { repository?: { issue?: {
+    closedByPullRequestsReferences?: { nodes?: (Text | null)[] };
+    timelineItems?: { nodes?: ({ __typename?: string; source?: Text | null; commit?: Text | null; commitRepository?: { nameWithOwner?: string }; closer?: Text | null } | null)[] };
+  } | null } | null };
+}
+
+/** The issue's cross-references as the port tells them: each mention once, by its URL; a GraphQL error throws. */
+export function crossReferencesFrom(body: unknown, what: string): IssueCrossReferences {
+  response(body, what);
+  const issue = (body as CrossData).data?.repository?.issue;
+  const mentions: Mention[] = [];
+  const closing: IssueCrossReferences['closing'] = [];
+  const mention = (kind: CrossReferenceKind, t: Text | null | undefined, repo: string | undefined, text: string | undefined): Mention | undefined => {
+    if (!t?.url || !repo) return undefined;
+    const m = { kind, repo, url: t.url, text: text ?? '' };
+    if (!mentions.some((x) => x.url === m.url)) mentions.push(m);
+    return m;
+  };
+  for (const pr of issue?.closedByPullRequestsReferences?.nodes ?? []) {
+    const m = mention('pull_request', pr, pr?.repository?.nameWithOwner, pr?.body);
+    if (m) closing.push({ kind: m.kind, repo: m.repo, url: m.url });
+  }
+  for (const n of issue?.timelineItems?.nodes ?? []) {
+    if (n?.__typename === 'CrossReferencedEvent' && n.source?.__typename === 'PullRequest') mention('pull_request', n.source, n.source.repository?.nameWithOwner, n.source.body);
+    if (n?.__typename === 'ReferencedEvent') mention('commit', n.commit, n.commitRepository?.nameWithOwner, n.commit?.message);
+    if (n?.__typename === 'ClosedEvent' && n.closer?.__typename === 'Commit') {
+      const m = mention('commit', n.closer, n.closer.repository?.nameWithOwner, n.closer.message);
+      if (m && !closing.some((c) => c.url === m.url)) closing.push({ kind: m.kind, repo: m.repo, url: m.url });
+    }
+  }
+  return { mentions, closing };
 }

@@ -1,6 +1,7 @@
-// Cross-reference detection (issue #430) in the GitHub source: the links of a job's issue — the pull requests and commits,
+// Cross-reference detection (issue #430) in the GitHub source: the cross-references of a job's issue — the pull requests and
+// commits,
 // of its repository or another, whose text closes it with a closing keyword, confirmed by what GitHub links as closing it
-// (`closedByPullRequestsReferences`, a commit's close). A text reference GitHub does not treat as closing is not linked. And
+// (`closedByPullRequestsReferences`, a commit's close). A text reference GitHub does not treat as closing is not kept. And
 // the GraphQL answer as the port reads it.
 import { describe, expect, it } from 'vitest';
 import { CLOSING_KEYWORDS } from '../../src/domain/cross-references.ts';
@@ -16,14 +17,14 @@ function withIssue() {
   return s;
 }
 
-describe('the links of a job\'s issue', () => {
-  it.each(CLOSING_KEYWORDS.map((k) => [k]))('a pull request of its repository saying "%s #1": linked, with the keyword', async (keyword) => {
+describe('the cross-references of a job\'s issue', () => {
+  it.each(CLOSING_KEYWORDS.map((k) => [k]))('a pull request of its repository saying "%s #1": kept, with the keyword', async (keyword) => {
     const { gh, source } = withIssue();
     const url = gh.mentionIssue(REPO, 1, { text: `${keyword} #1`, closes: true, createdAt: AT });
     expect(await source.crossReferences!(jobForIssue(1))).toEqual([{ kind: 'pull_request', repo: REPO, url, keyword }]);
   });
 
-  it('pull requests of another repository, by owner/repo#N and by the issue URL: linked', async () => {
+  it('pull requests of another repository, by owner/repo#N and by the issue URL: kept', async () => {
     const { gh, source } = withIssue();
     const byName = gh.mentionIssue(REPO, 1, { from: OTHER, text: `Fixes ${REPO}#1`, closes: true, createdAt: AT });
     const byUrl = gh.mentionIssue(REPO, 1, { from: OTHER, text: `Resolves https://github.com/${REPO}/issues/1`, closes: true, createdAt: AT });
@@ -34,7 +35,7 @@ describe('the links of a job\'s issue', () => {
     ]);
   });
 
-  it('a text reference GitHub does not treat as closing is not linked: a mention, a part, a closing text GitHub does not confirm', async () => {
+  it('a text reference GitHub does not treat as closing is not kept: a mention, a part, a closing text GitHub does not confirm', async () => {
     const { gh, source } = withIssue();
     gh.mentionIssue(REPO, 1, { text: 'Refs #1', closes: false, createdAt: AT });
     gh.openPartPullRequest(REPO, 1, { createdAt: AT });
@@ -43,7 +44,7 @@ describe('the links of a job\'s issue', () => {
     expect(await source.crossReferences!(jobForIssue(1))).toEqual([]);
   });
 
-  it('a commit that closed the issue: linked, with its message\'s keyword', async () => {
+  it('a commit that closed the issue: kept, with its message\'s keyword', async () => {
     const { gh, source } = withIssue();
     const url = gh.mentionIssue(REPO, 1, { kind: 'commit', text: 'Close #1: done', closes: true, createdAt: AT });
     expect(url).toMatch(/\/commit\/[0-9a-f]+$/);

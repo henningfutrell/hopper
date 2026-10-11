@@ -16,6 +16,7 @@
 
 import type { Job, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
+import { closingReferences } from '../../domain/cross-references.ts';
 import type { ClosingPullRequest, GitHubApi, GitHubIssue, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 /** The job's own pull request: opened at or after the job was created. */
@@ -212,14 +213,12 @@ export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): b
   pr.repo.toLowerCase() === repo.toLowerCase() && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
 
 /**
- * A pull request body that closes issue `n` of `repo` with one of GitHub's closing keywords (issue #721): close, closes,
- * closed, fix, fixes, fixed, resolve, resolves or resolved, then `#n`, `repo#n` or the issue's URL.
+ * A pull request body that closes issue `n` of `repo` with one of GitHub's closing keywords (issues #721, #430): close,
+ * closes, closed, fix, fixes, fixed, resolve, resolves or resolved, then `#n`, `repo#n` or the issue's URL
+ * (`closingReferences`).
  */
-export function closesByKeyword(body: string, repo: string, n: number): boolean {
-  const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)${n}(?!\\d)`;
-  return new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+${target}`, 'i').test(body);
-}
+export const closesByKeyword = (body: string, repo: string, n: number): boolean =>
+  closingReferences(body, repo).some((r) => r.number === n && r.repo.toLowerCase() === repo.toLowerCase());
 
 /**
  * A pull request that only mentions issue `n` and closes or ships part of another issue of `repo` (issue #786): it is that

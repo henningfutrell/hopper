@@ -8,6 +8,7 @@
 // but for the source it asks.
 import type { ActingPerson } from './failures.ts';
 import type { Job } from './types.ts';
+import type { CrossReference } from './cross-references.ts';
 
 /** A person's act on a followed pull request (issue #677): Merge now, or Close PR without a merge. */
 export const PULL_REQUEST_ACTS = ['merge', 'close'] as const;
@@ -47,6 +48,12 @@ export interface FollowsPullRequests {
    * again on a later sync. Absent: nothing is reconciled.
    */
   unfollowedPullRequests?(jobs: Job[]): Promise<FoundPullRequest[]>;
+  /**
+   * The cross-references of the job's item (issue #430): each pull request or commit the source confirms closes it, with the closing
+   * keyword its text used. Asked at each sync while the job follows its pull request, before the follow, and kept on the
+   * job (`crossReferences` in its source state). None for a job of no item there. A throw is asked again on a later sync. Absent: none.
+   */
+  crossReferences?(job: Job): Promise<CrossReference[]>;
 }
 
 /** An open pull request of a done job's item that the job does not follow (issue #763); `part`: it ships part of the item. */

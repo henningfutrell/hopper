@@ -1,7 +1,7 @@
-// Cross-reference detection (issue #430): a done job that follows its pull request keeps the links of its issue on the
-// job (`sourceState.source.links`) — every pull request and commit, of its repository or another, that closes the issue
-// with a closing keyword and that GitHub confirms. A text reference GitHub does not treat as closing is not linked. The
-// links are asked again at each sync while the job follows its pull request. Real daemon, real database; the in-memory
+// Cross-reference detection (issue #430): a done job that follows its pull request keeps the cross-references of its issue on
+// the job (`sourceState.source.crossReferences`) — every pull request and commit, of its repository or another, that closes the issue
+// with a closing keyword and that GitHub confirms. A text reference GitHub does not treat as closing is kept. The
+// cross-references are asked again at each sync while the job follows its pull request. Real daemon, real database; the in-memory
 // fake GitHub at the GitHubApi seam.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
@@ -34,10 +34,10 @@ const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease d
 const now = () => new Date().toISOString();
 const jobFor = async (app: TestApp, url: string): Promise<Job> =>
   (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url)!;
-const linksOf = async (app: TestApp, id: string) => ((await app.job(id)).sourceState?.source as { links?: unknown } | undefined)?.links;
+const crossReferencesOn = async (app: TestApp, id: string) => ((await app.job(id)).sourceState?.source as { crossReferences?: unknown } | undefined)?.crossReferences;
 
 describe('cross-reference detection (issue #430)', () => {
-  it('a followed job keeps its issue\'s confirmed closing links, same repository and another; a mention and an unconfirmed keyword are not linked', async () => {
+  it('a followed job keeps its issue\'s cross-references GitHub confirms, same repository and another; a mention and an unconfirmed keyword are not kept', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
@@ -54,8 +54,8 @@ describe('cross-reference detection (issue #430)', () => {
     gh.mentionIssue(REPO, issue.number, { text: `Resolves #${issue.number}`, closes: false, createdAt: now() });
     await app.sync();
 
-    const links = await waitFor(async () => { const l = await linksOf(app, job.id); return Array.isArray(l) && l.length === 2 ? l : undefined; }, { what: 'the links on the job' });
-    expect(links).toEqual([
+    const kept = await waitFor(async () => { const l = await crossReferencesOn(app, job.id); return Array.isArray(l) && l.length === 2 ? l : undefined; }, { what: 'the cross-references on the job' });
+    expect(kept).toEqual([
       { kind: 'pull_request', repo: REPO, url: own, keyword: 'closes' },
       { kind: 'pull_request', repo: OTHER, url: other, keyword: 'fixes' },
     ]);

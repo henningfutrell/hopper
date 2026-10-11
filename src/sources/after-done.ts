@@ -22,6 +22,9 @@
 // The tending queue (issue #796): after every follow of the sync, at most one tend starts per job repository, and none
 // while its head holds it (`queueHead`): a tend job at work, or a pull request on its way to the hopper's merge. The next
 // is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`).
+// Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
+// asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
+// they are asked again next sync.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { queueHead, repoOf, tendOrder, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
@@ -71,9 +74,23 @@ export function createAfterDone(c: AfterDoneContext) {
     });
   }
 
+  /** Keep the cross-references of a following job's item (issue #430), when they changed; a throw is logged, not kept as a retry. */
+  async function crossReference(source: JobSource, job: Job): Promise<void> {
+    if (!source.crossReferences || !following(job)) return;
+    try {
+      const crossReferences = await source.crossReferences(job);
+      const s = store.jobs.get(job.id)?.sourceState?.source ?? {};
+      if (JSON.stringify(crossReferences) !== JSON.stringify(s.crossReferences ?? [])) c.setSource(job.id, { ...s, crossReferences });
+    } catch (e) {
+      console.warn(`hopper: ${source.name}: the cross-references of job ${job.id} failed, asked again next sync: ${(e as Error).message}`);
+    }
+  }
+
   async function follow(source: JobSource, jobId: string): Promise<void> {
-    const job = store.jobs.get(jobId);
+    let job = store.jobs.get(jobId);
     if (!job || !(following(job) || rechecks(job))) return;
+    await crossReference(source, job);
+    job = store.jobs.get(jobId) ?? job;
     const r = await source.follow!(job);
     if (r) record(jobId, r);
   }

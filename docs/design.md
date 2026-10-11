@@ -13368,3 +13368,33 @@ clone in the scratch dir, the work tree untouched; one lane, two jobs of two rep
 its own; a later job fetches; a checkout of another repository there is refused; the reap keeps the checkout; the
 job's own repository in any case as before), `test/herdr/executor-job-worktree.test.ts` (the executor's side over
 the fake herdr: the checkout saved and named in the prompt; the job's own repository unchanged).
+
+## Cross-references (issue #430, 2026-10-11)
+
+Part 5 of the pointed-job architecture (tracking issue #424). A job keeps its issue's **cross-references**: each pull
+request or commit, of its repository or another, that closes the issue on GitHub. They tie pull requests to jobs, the
+input of pull-based completion (issue #428) and of the issue graph (issue #437).
+
+**The text proposes, GitHub confirms.** `closingReferences` (`src/domain/cross-references.ts`, pure) reads the closing
+references of a text: a closing keyword, then `#N`, `owner/repo#N` or the issue's URL; each issue needs its own keyword;
+code spans, code blocks and HTML comments are left out. `confirmedCrossReferences` keeps only what GitHub links as
+closing the issue, and adds the keyword the text used. So a text reference GitHub does not treat as closing is never
+kept: a mention (`Refs #N`), a part (`Part of #N`), a closing keyword GitHub did not act on (a pull request to a branch
+that is not the default one). A pull request GitHub links with no keyword in its text (by hand, in its Development box)
+is kept, with no keyword. An issue's own text never closes anything on GitHub, so it gives no cross-references.
+
+**One GraphQL call** (`GitHubApi.crossReferences`, `CROSS_REFERENCES_QUERY` in `src/sources/github/closer.ts`): the
+issue's `closedByPullRequestsReferences` (any state, `includeClosedPrs`) with their bodies, and its newest 100 timeline
+items of three kinds: `CrossReferencedEvent` (a pull request that mentions it, with its body), `ReferencedEvent` (a
+commit, with its message) and `ClosedEvent` (a commit that closed it). The mentions are each text once, by URL; the
+closing ones are the closing pull requests and the commit closers.
+
+**When, and where it is kept.** At each sync, before the follow of a job that follows its pull request (`follow: open`,
+`src/sources/after-done.ts`), `JobSource.crossReferences` is asked; a change replaces `crossReferences` in the job's
+source state. The follow, a tend and a reconcile keep the field, as they keep every other one. A throw is only logged:
+the follow goes on, and the next sync asks again. No event: the field is a view of GitHub, asked again each sync, as
+`seen` is. A job of no GitHub issue has none and asks nothing.
+
+**Pointed jobs.** A job of the hopper reads as a pointed job on its issue (issue #425, `pointedJobOf`), so its
+cross-references are that pointed job's. A pointed job whose pointer is a pull request (the issues it closes,
+`closingIssuesReferences`) is not read yet: nothing runs one until the tracking service (issue #426) does.

@@ -5,6 +5,7 @@
 
 import type { ChecksState } from '../../domain/pull-requests.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
+import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -155,6 +156,11 @@ export interface GitHubApi {
   openClosingPullRequests(repo: string, number: number): Promise<OpenPullRequest[]>;
   /** The pull requests that mention the issue, newest 100, any state (issue #579); none is []. */
   referencingPullRequests(repo: string, number: number): Promise<ReferencingPullRequest[]>;
+  /**
+   * The issue's cross-references (issue #430): the pull requests and commits that mention it, with their text, and the
+   * ones GitHub links as closing it — a pull request of any repository and state, a commit that closed it.
+   */
+  crossReferences(repo: string, number: number): Promise<IssueCrossReferences>;
   /** Pull request `number` of `repo` (issue #618); undefined when the number is an issue or names nothing. */
   pullRequest(repo: string, number: number): Promise<NumberedPullRequest | undefined>;
   /** The open pull requests of `repo`, newest 100, each with its branch (issue #637: one named for an issue); none is []. */
