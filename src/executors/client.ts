@@ -9,6 +9,7 @@
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
+import type { IsolationStop } from '../client/isolation.ts';
 import type { ClientRelease } from '../client/release.ts';
 import type { FixedListRelease } from '../machines/client-bridge.ts';
 import type { DiskReading } from '../domain/machines.ts';
@@ -69,10 +70,11 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
 /**
  * The id of the client release the client target runs, whether it loads any release its manifest vouches for
  * (`manifest`, issue #545; a client before that checks a fixed list of file names), and its home when it says (a
- * client before issue #323 does not).
+ * client before issue #323 does not). `jobs`: the jobs running there, which the client stops when cut off from the
+ * hopper too long; its answer says the jobs it stopped so (issue #752).
  */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string; door?: string }> {
-  const { release, loads, home, disk, resources, vault, door } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown; door?: unknown }>(t, '/release', {}, 15000);
+export async function clientRunningRelease(t: ClientTransport, jobs: readonly string[]): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string; door?: string; isolationStops?: IsolationStop[] }> {
+  const { release, loads, home, disk, resources, vault, door, isolationStops } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown; door?: unknown; isolationStops?: unknown }>(t, '/release', { jobs }, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
@@ -84,7 +86,16 @@ export async function clientRunningRelease(t: ClientTransport): Promise<{ releas
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};
   // Its client door (issue #695): a loopback URL there; a client older than this says none.
   const open = typeof door === 'string' && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(door) ? { door } : {};
-  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper, ...open };
+  const stops = isolationStopsOf(isolationStops);
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper, ...open, ...(stops.length ? { isolationStops: stops } : {}) };
+}
+
+/** The isolation stops a client said (issue #752): each a job id, a time and a duration; anything else is dropped. */
+function isolationStopsOf(v: unknown): IsolationStop[] {
+  if (!Array.isArray(v)) return [];
+  return v.slice(0, 100).flatMap((x: { jobId?: unknown; at?: unknown; cutOffMs?: unknown }) =>
+    typeof x?.jobId === 'string' && /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(x.jobId) && typeof x.at === 'string' && !Number.isNaN(Date.parse(x.at)) && typeof x.cutOffMs === 'number' && x.cutOffMs >= 0
+      ? [{ jobId: x.jobId, at: new Date(x.at).toISOString(), cutOffMs: x.cutOffMs }] : []);
 }
 
 /**

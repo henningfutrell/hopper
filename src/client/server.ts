@@ -20,19 +20,21 @@
 // mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
+// The client pings the hopper down its link; cut off from it longer than its max isolation, it stops the jobs the
+// hopper last named in `/release`, and the next `/release` answer says so (issue #752, isolation.ts).
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { execFile } from 'node:child_process';
-import { statfsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
+import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Session, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
+import { startIsolationWatch, type StartedIsolationWatch } from './isolation.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { reachOf } from './reach.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
-import { createResourceMeter } from './resources.ts';
+import { createResourceMeter, diskOfHome } from './resources.ts';
 import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
@@ -66,6 +68,10 @@ export interface ClientOptions {
   door?: () => string | undefined;
   /** Where this machine's own Podman and Docker sockets are (runtime.ts, issue #708); default under its runtime dir. */
   runtimeSockets?: () => RuntimeSockets;
+  /** Cut off from the hopper this long, the client stops the jobs the hopper last named (issue #752); 0: never. Default 30 min. */
+  maxIsolationMs?: number;
+  /** How often it pings the hopper and checks; default 15 s. */
+  pingEveryMs?: number;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -121,7 +127,7 @@ const resources = createResourceMeter();
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -141,7 +147,8 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}) });
+  watch.heard();
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
@@ -217,6 +224,11 @@ export function startClient(o: ClientOptions): Client {
   let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
+  let session: ServerHttp2Session | undefined;
+  const watch = startIsolationWatch({ ...o, log, session: () => session, stopJob: async (jobId) => {
+    const r = await runArgv(reapArgv(jobId), SCRIPT_TIMEOUT_MS);
+    if (!readReap(r.stdout)) throw new Error(`the reap did not finish (${r.code}): ${r.stderr.slice(0, 200)}`);
+  } });
 
   const again = (why: string, started: number): void => {
     if (stopped) return;
@@ -234,17 +246,18 @@ export function startClient(o: ClientOptions): Client {
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
       link = socket;
-      const session = performServerHandshake(socket);
-      session.on('stream', (stream, headers) => {
-        serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
+      const open = session = performServerHandshake(socket);
+      open.on('stream', (stream, headers) => {
+        serve(o, nonces, releases, watch, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);
           if (!stream.destroyed) stream.close();
         });
       });
-      session.on('error', (e) => log(`hopper-client: link session: ${e.message}`));
+      open.on('error', (e) => log(`hopper-client: link session: ${e.message}`));
       socket.on('error', (e) => log(`hopper-client: link: ${e.message}`));
       socket.once('close', () => {
         link = undefined;
+        if (session === open) session = undefined;
         close();
         again('the link ended', started);
       });
@@ -260,20 +273,11 @@ export function startClient(o: ClientOptions): Client {
     async stop() {
       stopped = true;
       clearTimeout(timer);
+      watch.close();
       link?.destroy();
       await exited;
     },
   };
-}
-
-/** The disk this user's home is on (issue #401), for the hopper's warning before it fills; none when it cannot be read. */
-function diskOfHome(): { disk?: { freeBytes: number; totalBytes: number } } {
-  try {
-    const s = statfsSync(homedir());
-    return { disk: { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize } };
-  } catch {
-    return {};
-  }
 }
 
 // ---- The reap and the survey (issues #401, #410, design.md "Work tree" → "The reap") ----
