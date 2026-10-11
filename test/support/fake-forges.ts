@@ -17,6 +17,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
 import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
@@ -47,7 +48,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends RepoChecksForge, SubIssuesForge {
+export interface FakeForge extends RepoChecksForge, SubIssuesForge, ForksForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -296,7 +297,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       }
       // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
       const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
-      if (r.method === 'GET' && rest === '') return { status: 200, body: { full_name: repo, default_branch: 'dev' } };
+      const repoAnswer = forksRoute(forge, o.gitRoot, base, login, r.method, repo, rest, r.body); if (repoAnswer) return repoAnswer;
       if (r.method === 'POST' && (rest === 'issues' || /^issues\/\d+\/comments$/.test(rest)) && forge?.issuesRefused) return { status: forge.issuesRefused, body: { message: 'Resource not accessible by integration' } };
       if (r.method === 'POST' && rest === 'issues') {
         const issue: FakeIssue = {
