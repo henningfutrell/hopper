@@ -98,6 +98,18 @@ export async function closePullRequest(req: Request, token: string, repo: string
   await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, state: 'closed', headers: auth(token) });
 }
 
+/**
+ * Make open pull request `number` a draft (issue #724: rework): GitHub's GraphQL `convertPullRequestToDraft`, by its node
+ * id. A draft stays a draft. GitHub's refusal throws.
+ */
+export async function convertToDraft(req: Request, token: string, repo: string, number: number): Promise<void> {
+  const pull = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, headers: auth(token) })).data as { node_id: string; draft?: boolean };
+  if (pull.draft === true) return;
+  const query = 'mutation($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { isDraft } } }';
+  const d = (await req('POST /graphql', { query, variables: { id: pull.node_id }, headers: auth(token) })).data as { errors?: { message?: string }[] };
+  if (d.errors?.length) throw new Error(`convert ${repo}#${number} to a draft: ${d.errors.map((e) => e.message ?? '').join('; ')}`);
+}
+
 /** Removes each label; one the issue does not carry (404) is fine. */
 export async function removeLabels(req: Request, token: string, repo: string, number: number, labels: string[]): Promise<void> {
   for (const name of labels) {

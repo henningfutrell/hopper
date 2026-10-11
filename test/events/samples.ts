@@ -36,6 +36,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'queue.ordered': { jobIds: 'j1' },
   'job.claimed_by_operator': { by: 'someone' },
   'job.rerun': { by: 'pre-sort' },
+  'job.rework_requested': { pullRequest: 'https://github.com/owner/repo/pull/14', notes: 7, nextJobId: 'j-2' },
   'job.work_kept': { paths: 'p' },
   'job.work_removed': { paths: [] },
   'job.cleanup_deferred': {},

@@ -13,6 +13,7 @@ import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
+import type { JobRework } from './pull-requests.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -174,6 +175,8 @@ export interface Job extends JobPhaseFields {
   source?: JobSourceRef;
   /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
   rerunOf?: JobId;
+  /** Set when this job reworks a pull request a person sent back (issue #724): it, the notes, who. */
+  rework?: JobRework;
   /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
   dismissedAt?: string;
   /**
@@ -214,6 +217,14 @@ export interface JobSourceRef {
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
   labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
+  /** The item's declared parts and how many are done, at intake (issue #729); absent: it declares none. */
+  parts?: Parts;
+}
+
+/** An item's declared parts (issue #729): how many there are, and how many are done. */
+export interface Parts {
+  done: number;
+  total: number;
 }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
@@ -514,7 +525,7 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID, type InstanceTotals, type
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type ShippedCompose, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type ShippedCompose, type StackDrift, type StackGap, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 

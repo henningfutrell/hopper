@@ -343,8 +343,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   return {
     statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    rerun: rerunning.rerun,
-    continueJob: rerunning.continueJob,
+    // Run again, Continue and Rework.
+    ...rerunning,
     pullRequestAct: afterDone.act,
     async intakeAction(name, action) {
       const slot = slots.get(name);

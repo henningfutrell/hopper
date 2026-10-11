@@ -48,7 +48,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential
-  request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A running job's
+  request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A **template
+  request** (issue #716, `docs/design.md` "Templates on request"), `sandbox-template` with the job's needs, saves the
+  template those needs name through the vault's own save, never widening one a person changed, and approves it only when
+  it makes it now and the user's **read policy** holds every need as a read; it never approves anything else. A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
   job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
@@ -75,7 +78,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (issue #354) reopens the job's closed issue, so the new job can finish against it; Assign to me in Sources (issue #440)
   assigns a labelled issue to the user's connected account; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
-  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first. A job's own request through the GitHub proxy (issue #563) is
+  label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's. A job's own request through the GitHub proxy (issue #563) is
 the job's act, as when it pushes: its text is the job's, under the publishing rule; an issue filed that way ends with the
 hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
 - **Nothing leans on the machine** (issue #40, `docs/design.md` "Deployable"). Everything the daemon

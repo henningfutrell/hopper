@@ -494,6 +494,13 @@ export interface JobSource extends FollowsPullRequests {
    */
   rerun?(job: Job): Promise<SourceItem>;
   /**
+   * Take a done job's item back to rework its open pull request (issue #724): the pull request the job follows becomes a
+   * draft and stays open on its branch, then the item is taken back as for `rerun`. Answers the item, the pull request,
+   * and the job's source state from now on (it no longer follows the pull request). Throws RerunRefused when there is no
+   * open pull request to rework, SourceError when the source cannot be reached. Absent: the source cannot rework.
+   */
+  rework?(job: Job): Promise<{ item: SourceItem; pullRequest: string; state: Record<string, unknown> }>;
+  /**
    * The item as it would be with `text` (issue #662): its title, body, prompt and environment rendered from that text, the
    * rest as read. A source that sets `SourceItem.text` has it: a later job of the item runs its snapshot's text this way.
    */
@@ -615,6 +622,12 @@ export interface SourceHost {
    * session. job.continued. Refused (not_found, conflict) when it is gone, no longer failed, or a newer job of its item exists.
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
+  /**
+   * Its source gave a done job's item back for rework (issue #724): the ended job's source state is replaced by `state`
+   * (it no longer follows its pull request), and the new job for `item` is created as `rerun` does, told the rework brief,
+   * with `rework` set; job.rework_requested on the ended job, in one tx.
+   */
+  rework(jobId: JobId, item: SourceItem, source: SourceRef, rework: { pullRequest: string; notes: string; state: Record<string, unknown> }, acting?: ActingPerson): Job;
 }
 
 /**
@@ -636,6 +649,12 @@ export interface SourceRegistry {
    * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
+  /**
+   * Send a done job's open pull request back for rework (issue #724): its source makes the pull request a draft and gives
+   * the item back, and a new job is queued at once, told `notes`. Only a finished job that follows an open pull request,
+   * the newest of its item, once its end was reported to the source.
+   */
+  rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
@@ -674,6 +693,14 @@ export interface UpdateBuilder {
 
 /** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
 export type Restarter = () => Promise<void>;
+
+/** What the hopper sees of the stack it runs in (issue #697, "The stack against its compose file"): from inside its container, never the container runtime's. */
+export interface StackProbe {
+  /** Whether `service` has a name on the compose network: compose names each running service's container by it. */
+  resolves(service: string): Promise<boolean>;
+  /** The commit the vault in its own container says it runs; null when it is not reached or does not say. */
+  vaultCommit(): Promise<string | null>;
+}
 
 /** The daemon's self-update: GET /api/update, POST /ui/api/update. */
 export interface Updater {

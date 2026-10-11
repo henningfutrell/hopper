@@ -12,7 +12,7 @@ import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
-import type { AuthorizationServer, ContainerRuntime, InstanceStore, Restarter, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { AuthorizationServer, ContainerRuntime, InstanceStore, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
@@ -28,7 +28,7 @@ import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
-import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createRestarter, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
@@ -85,7 +85,8 @@ export interface AppSeams extends UserSeams {
   /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. */
   containerRuntime?: ContainerRuntime;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
-  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
+  /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe };
 }
 
 const PLUGINS_CONFIG_CHECK_MS = 5000;
@@ -283,7 +284,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     return user;
   };
   const server = createServer({
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus,
+    // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),

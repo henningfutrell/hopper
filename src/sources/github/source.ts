@@ -16,6 +16,8 @@ import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
+import { declaredParts, partsOf } from './parts.ts';
+import { sendBack } from './rework.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
@@ -112,6 +114,19 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     return config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
   };
 
+  /**
+   * The issue's declared parts and how many are done (issue #729). Its merged parts cannot be read now: the ticked ones
+   * only, read again next sync.
+   */
+  const issueParts = async (issue: GitHubIssue) => {
+    try {
+      return await partsOf(api, issue.repo, issue.number, issue.body);
+    } catch {
+      const d = declaredParts(issue.body);
+      return d && { done: d.ticked, total: d.total };
+    }
+  };
+
   const toItem = async (issue: GitHubIssue, known: Set<string>, rerun: Set<string>, p: ReturnType<typeof priorityOf>, bot: BotLogin, assignee: string | undefined): Promise<SourceItem> => {
     // An item whose job has not ended is offered only to follow its priority: its comments are not read (issue #662: its
     // text is compared without them).
@@ -119,13 +134,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const comments = unread || config.recentComments === 0 ? [] : await api.listComments(issue.repo, issue.number);
     const seen = contextComments(comments, assignee, config.recentComments, bot);
     const untrusted = untrustedBlock(issue, seen, config.recentComments, mode);
-    const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false);
+    const parts = await issueParts(issue);
+    const context = contextBlock(issue, p, o.yoloMode?.(issue.repo) ?? false, parts);
     return {
       text: { title: issue.title, body: issue.body, ...(unread ? {} : { comments: seen.map((c) => ({ author: c.author, at: c.createdAt, body: c.body })) }) },
       key: issue.url, url: issue.url, title: issue.title, body: issue.body,
       prompt: issuePrompt(untrusted, context), env: issueEnv(issue),
       author: issue.author, ...(assignee !== undefined ? { assignee } : {}), priority: p.priority, priorityReason: p.reason,
-      labels: issue.labels, repo: issue.repo, number: issue.number,
+      labels: issue.labels, repo: issue.repo, number: issue.number, ...(parts ? { parts } : {}),
       executor: config.executor,
       ...(config.model ? { model: config.model } : {}),
       ...(issue.body.trim() === '' ? { invalid: 'empty issue body' } : {}),
@@ -298,6 +314,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
+    },
+    async rework(job) {
+      const back = await sendBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const bot = await botLogin();
+      const projects = await readProjects(api, config, [back.issue]);
+      const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), bot, o.assignee());
+      return { item, pullRequest: back.pullRequest, state: back.state };
     },
     withText(item, text) {
       return { ...item, ...promptWithText(item, text, config.recentComments, mode) };

@@ -2,7 +2,7 @@
 // pull request ready for review, merged, or closed without a merge — and the pull request it links to.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { afterDone } from '../../ui/src/model/job.ts';
+import { afterDone, partsOf } from '../../ui/src/model/job.ts';
 
 const PR = 'https://github.com/owner/repo/pull/12';
 const job = (o: Partial<Job> = {}): Job => ({
@@ -26,5 +26,15 @@ describe('after done', () => {
   it('a part: partly done until its pull request merges, then the next part runs', () => {
     expect(afterDone(job({ partlyDone: PR }))).toEqual({ label: 'partly done', tone: 'ok', url: PR, title: 'it shipped part of its issue; the rest runs once this pull request merges' });
     expect(afterDone(followed({ pullRequest: PR, follow: 'merged', part: true }, { partlyDone: PR }))).toEqual({ label: 'part merged', tone: 'ok', url: PR, title: 'its part was merged; the next part runs' });
+  });
+});
+
+describe('parts (issue #729)', () => {
+  const source = { source: 'github', kind: 'github', key: 'k' };
+  it('the parts done of the issue: as followed after a merge, else as offered; none without declared parts', () => {
+    expect(partsOf(job())).toBeUndefined();
+    expect(partsOf(job({ status: 'queued', source: { ...source, parts: { done: 1, total: 3 } } }))).toEqual({ done: 1, total: 3, label: 'parts 1/3' });
+    expect(partsOf(followed({ follow: 'merged', part: true, parts: { done: 2, total: 3 } }, { source: { ...source, parts: { done: 1, total: 3 } } })))
+      .toEqual({ done: 2, total: 3, label: 'parts 2/3' });
   });
 });

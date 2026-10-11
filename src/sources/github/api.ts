@@ -137,6 +137,8 @@ export interface GitHubApi {
   merge(repo: string, number: number): Promise<void>;
   /** Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR). */
   closeWithoutMerge(repo: string, number: number): Promise<void>;
+  /** Make open pull request `number` of `repo` a draft (issue #724: a person sent it back for rework). A draft stays one. GitHub's refusal throws. */
+  toDraft(repo: string, number: number): Promise<void>;
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one

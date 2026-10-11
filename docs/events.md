@@ -748,6 +748,28 @@ Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the fa
 }
 ```
 
+## `job.rework_requested`
+
+Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finished job's open pull request back for rework (issue #724: the card in Pull requests, `hopper job rework`, or `POST /ui/api/jobs/:id/rework`), with notes: the pull request became a draft and stays open on its branch, the job no longer follows it, and the new job of its item (`nextJobId`, its `rerunOf` this job) reworks it, told the notes. That job is done only when it pushed to the pull request after the rework and marked it ready. `person` and `via` (`ui`, `cli`): who acted and the way.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `notes` | string | yes |
+| `nextJobId` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "notes": "Rename the flag.",
+  "nextJobId": "j-2",
+  "person": "operator",
+  "via": "ui"
+}
+```
+
 ## `job.dismissed`
 
 Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked entry (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`.
@@ -2799,6 +2821,25 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 }
 ```
 
+## `vault.read_policy_set`
+
+Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`). Write, sync and apply always wait for a person. Empty: the hopper approves nothing by itself.
+
+| field | type | required |
+|---|---|---|
+| `assets` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "assets": [
+    "cluster/lab",
+    "aws-account/*"
+  ],
+  "by": "Ada"
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
@@ -2827,7 +2868,7 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
 
 ## `job.pull_request_merged`
 
-Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. A part that makes every part the item declares done marks the item done (issue #729). `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
 
 | field | type | required |
 |---|---|---|
@@ -3352,7 +3393,7 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
 
 ## `bug_report.filed`
 
-Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. Never its text.
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. Never its text.
 
 | field | type | required |
 |---|---|---|
@@ -3362,6 +3403,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 | `url` | string | yes |
 | `jobId` | string | no |
 | `by` | string | yes |
+| `fromJob` | boolean | no |
 
 ```json
 {
@@ -3376,7 +3418,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 
 ## `bug_report.failed`
 
-Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId` and `by` as in `bug_report.filed`.
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
 
 | field | type | required |
 |---|---|---|
@@ -3384,6 +3426,7 @@ Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed
 | `error` | string | yes |
 | `jobId` | string | no |
 | `by` | string | yes |
+| `fromJob` | boolean | no |
 
 ```json
 {

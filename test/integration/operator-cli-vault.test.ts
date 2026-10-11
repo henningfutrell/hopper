@@ -22,6 +22,7 @@
 //   Scenario: a sandbox box of an approved template is launched with parameters, and listed
 //   Scenario: a parameter outside the template's limits is refused with the daemon's reason; nothing starts
 //   Scenario: revoke and remove a template
+//   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView } from '../../src/domain/types.ts';
@@ -152,5 +153,16 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(kube(await hopper(a, ['template', 'revoke', 'kube']))).toMatchObject({ gives: [] });
     expect((await hopper(a, ['template', 'remove', 'kube'])).code).toBe(0);
     expect(json<TemplateView[]>(await hopper(a, ['template', 'list']))).toEqual([]);
+  });
+
+  it('shows, sets and clears the read policy; an entry it cannot read is refused', async () => {
+    const { a } = await boot();
+    expect(json<string[]>(await hopper(a, ['template', 'read-policy']))).toEqual([]);
+    const set = await hopper(a, ['template', 'read-policy', 'set', 'cluster/lab', 'aws-account/*']);
+    expect(set.code, set.err).toBe(0);
+    expect(json<string[]>(set)).toEqual(['cluster/lab', 'aws-account/*']);
+    expect(json<string[]>(await hopper(a, ['template', 'read-policy']))).toEqual(['cluster/lab', 'aws-account/*']);
+    expect(await hopper(a, ['template', 'read-policy', 'set', 'planet/mars'])).toMatchObject({ code: 2, err: expect.stringContaining('the asset kind is one of') });
+    expect(json<string[]>(await hopper(a, ['template', 'read-policy', 'set']))).toEqual([]);
   });
 });

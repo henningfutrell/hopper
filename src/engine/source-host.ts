@@ -2,7 +2,7 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
-import { asksOf, isRerunnable, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
+import { asksOf, isRerunnable, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
@@ -26,6 +26,7 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     ...(item.number !== undefined ? { number: item.number } : {}),
     ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
     labels: [...item.labels],
+    ...(item.parts ? { parts: { ...item.parts } } : {}),
   };
 }
 
@@ -262,6 +263,19 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         // A sync that offered the item between the source giving it back and now made the new job already.
         const job = ingest(item, source, brief) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
+        return job;
+      });
+    },
+
+    rework(jobId, item, source, rework, acting) {
+      return store.tx(() => {
+        const ended = store.jobs.get(jobId);
+        if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
+        // It no longer follows its pull request: the new job does, once it ends done (issue #724).
+        store.jobs.update(jobId, { sourceState: { ...ended.sourceState, source: rework.state } });
+        const made = ingest(item, source, reworkBrief(rework.pullRequest, rework.notes)) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = store.jobs.update(made.id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: nowIso(c), ...acting } });
+        store.events.append({ type: 'job.rework_requested', jobId, data: { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id, ...acting } });
         return job;
       });
     },

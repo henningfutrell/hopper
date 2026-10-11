@@ -49,6 +49,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'queue.ordered': { jobIds: ['j2', 'j1'] },
   'job.claimed_by_operator': {},
   'job.rerun': { by: 'user' },
+  'job.rework_requested': { pullRequest: 'https://github.com/owner/repo/pull/14', notes: 'Rename the flag.', nextJobId: 'j-2', person: 'operator', via: 'ui' },
   'job.dismissed': { by: 'user' },
   'job.work_kept': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper'] },
   'job.work_removed': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'] },
@@ -146,6 +147,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'template.removed': { template: 'kube', by: 'Ada' },
   'vault.approved': { template: 'kube', image: 'localhost/box-kubectl:1', secrets: ['KUBE_TOKEN'], by: 'Ada' },
   'vault.revoked': { template: 'kube', by: 'Ada' },
+  'vault.read_policy_set': { assets: ['cluster/lab', 'aws-account/*'], by: 'Ada' },
   'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
   'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
   'vault.minted': {

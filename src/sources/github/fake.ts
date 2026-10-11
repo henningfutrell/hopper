@@ -242,6 +242,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (!p) throw notFound(`${repo}/pull/${n}`);
       if (p.state === 'open') p.state = 'closed';
     },
+    async toDraft(repo, n) {
+      enter('toDraft', [repo, n]);
+      const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
+      if (!p) throw notFound(`${repo}/pull/${n}`);
+      if (p.state !== 'open') throw new GitHubApiError(`Pull request is ${p.state} (HTTP 422): ${p.url}`, true, 422);
+      p.isDraft = true;
+    },
   };
 
   // A connected account's listing across repos; the app's installation token has none.

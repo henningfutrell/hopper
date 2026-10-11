@@ -61,13 +61,13 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`) — and the one place a runtime is selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697), the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
+| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
@@ -79,7 +79,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 | `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
-| `src/cli-update.ts` | the operator CLI's `hopper update` (issue #697): the update script of a container install, its carry step, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
+| `src/cli-update.ts` | the operator CLI's `hopper update` (issue #697): the update script of a container install, its carry and override steps, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
 
 ## The decider
 
@@ -1853,6 +1853,22 @@ call, recorded as `job.finish_briefed`. Its next end is judged again. At most `M
 or with no such pull request, an executor that cannot resume, or any other state, the job fails `not complete:` and is
 handed to a person as before.
 
+**Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
+to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
+(Send back for rework), the operator CLI (`hopper job rework <id> --notes <text>`) or `POST /ui/api/jobs/:id/rework`
+(least role operator), always with notes. It is open only for a finished job that follows an open pull request (**PR
+waiting**), the newest job of its item, its end reported. On the job's report chain, its source (`JobSource.rework`)
+makes the pull request a draft — it stays open on its branch, never merged or closed — and gives the item back as Run
+again does (on GitHub the end labels go, `hopper:pr-ready` with them). Then, in one tx (`SourceHost.rework`), the ended
+job's source state stops following the pull request (`follow: reworked`: no card, no yolo merge), and a new job of the
+item is queued, its `rerunOf` the ended job and its `rework` the pull request, the notes and who asked, told the
+**rework brief** (`reworkBrief`) after its prompt: check out that branch, make the changes, push, mark it ready, open no
+new pull request. `job.rework_requested` on the ended job. A draft is not done, so the pull request never counts as done
+while it is in rework. The new job's done-check counts the reworked pull request as its own (a part, a finish step) but
+counts it done only once the job pushed to it after the job began (`isUpdatedBy`): marking it ready again with no push is
+`not complete: … the pull request sent back for rework, #N, has no push since the rework`. Once done, the new job follows
+the pull request as any other. The notes go to the job only, never to GitHub.
+
 **Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
 repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
 settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every
@@ -1902,7 +1918,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 |------------------|------|
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
-| merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's, puts `hopper:done` on it |
+| merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
 
 **The merge re-check** (issue #721). Before it, a merged part on a branch named for its issue was recorded as the whole
@@ -1912,6 +1928,20 @@ of its item whose merge is so recorded and not checked yet (`rechecksMerge`: `fo
 `checked`, no event). Not: it was a part — `hopper:done` comes off, `part: true`, `job.pull_request_merged` with
 `part: true` — and the next sync offers the issue again. An older job of the item is never asked: its merge must not
 take off a `hopper:done` that a later job, or a person, set.
+
+**Declared parts** (issue #729, `src/sources/github/parts.ts`). An issue declares its parts as a checklist under a heading
+`Parts` (any level), up to the next heading of that level or higher; a checklist in a code block, or anywhere else in the
+issue, is not parts (an acceptance checklist must not count as work). A part is done when its box is ticked, and each
+merged pull request of the issue's repo that says `Part of #N` counts as one more: the parts done are the larger of the
+two, never more than the parts. The hopper never ticks a box: it never edits an issue's text, so it counts. At each sync
+the source reads the parts of each issue it offers (one `referencingPullRequests` per issue that declares parts; a read
+that fails counts the ticked boxes only) and gives them with the item (`SourceItem.parts`); the job keeps them in its
+source ref (`JobSourceRef.parts`), and its prompt says `parts: x of y done`, to ship the next part with `Part of #N` and to
+use `Closes #N` only for the last. When a part merges, following it reads the parts again, counting that merge even when
+GitHub does not list it yet, and keeps them in the job's source state (`parts`); when every part is done, the issue gets
+`hopper:done` in place of being offered again. It stays open: the hopper closes no issue for a part (issue #677). The job card shows
+`parts x/y`, as followed, else as offered. GitHub sub-issues and the parent ↔ child lineage of issues are the issue's
+next part.
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
 own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").
@@ -6007,8 +6037,14 @@ the time>`) and `.env`, under `umask 077`; pulls the image; runs `hopper update 
 `compose.yaml` on stdin; `src/update/compose-carry.ts`), which answers the `.env` lines that keep what the install
 changed in the file — the first published port's address as `HOPPER_BIND` (none: every interface, `0.0.0.0`), a fixed
 published port as `HOPPER_PORT`, and each hopper setting written in place or under another default than the
-new compose file's — and notes what it cannot move (a service the new file lacks: for `compose.override.yaml`); appends each line
-whose name `.env` lacks, and sets `HOPPER_IMAGE` to the image; writes the image's `compose.yaml` and shows the
+new compose file's; appends each line
+whose name `.env` lacks, and sets `HOPPER_IMAGE` to the image; then runs `hopper update override` the same way, with the
+install's own `compose.override.yaml` in `HOPPER_UPDATE_OVERRIDE`, which answers that file with what `.env` cannot hold added —
+a service the new file lacks and the hopper never shipped, with the top-level volumes it names; a host path mounted into a
+service (a shipped file mounts only named volumes); a key of a service no shipped file ever set; the install's own project
+`name` (another would start the stack on new, empty volumes) — its comments kept, nothing
+it has replaced, each move named; the script backs the old one up as `compose.override.yaml.bak-<commit>`, shows the diff and
+writes it (nothing moves: nothing written); writes the image's `compose.yaml` and shows the
 `diff -u`; then `compose pull` and `compose up -d --force-recreate` for the whole stack (never `--no-deps`); and checks
 that the hopper answers `/api/health` and OpenFGA `/healthz`, from inside the hopper's container. A failing step after
 the backups says how to go back (the backups, then `up -d --force-recreate`). The compose file's own settings, so it can
@@ -6016,8 +6052,25 @@ be replaced whole: the published port's address is `HOPPER_BIND` (default `127.0
 notice's commands are the script's two lines and the prune. **The agent update skill** (`src/update/update-skill.ts`):
 the same update as steps for an agent — the compose file of the image updated to, always; never the hopper service alone; settings in
 `.env` or `compose.override.yaml`, never in `compose.yaml` — served as Markdown at `GET /api/update/skill` and printed by
-`hopper update skill`. Still to come (issue #697): the hopper comparing the running stack with its own compose file at
-start.
+`hopper update skill`.
+
+**The stack against its compose file (issue #697).** An update that recreated the hopper service alone left the stack on
+an old compose file with nothing to say so. A container hopper now checks: `src/update/drift.ts` `checkStack` compares the
+stack it runs in with the compose file its own image ships with, through the `StackProbe` port (`src/update/stack-probe.ts`)
+— it sees only from inside its container, never the container runtime: (1) each service that must run — every service
+but `hopper`, with no profile or a profile `COMPOSE_PROFILES` turns on (compose passes `.env` into the hopper), and not
+restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s); (2) the
+settings the file's `hopper` service gives its container, by name, against the hopper's environment (compose sets a
+`${X:-}` default as an empty value, so a name the environment lacks means an older compose file); (3) the commit
+`hopper-vault` answers at `/health` (its build's, from install.json) against the hopper's, when it runs. Each gap is a
+`StackGap` (`service`, `setting`, `version`) with what it turns off. `GET /api/update/drift` answers a `StackDrift`, with
+`image` — `HOPPER_IMAGE` from `.env`, else the published image of install.json's branch — that the fix, the update
+script, is made from; `unchecked` with the reason for an install, or a build that ships no compose file. The check runs
+at start (a gap is a warning line in the log, with the fix) and at each read. The UI reads it once signed in and each
+minute, and shows one banner over every view (`ui/src/app/drift.tsx`): the gaps, what each turns off, and the fix for the
+container tool this browser chose. When OpenFGA is one of them the OpenFGA banner (issue #696) gives way: one cause, said
+once; what needs Access stays off with its reason, as #696 made it. Not compared: a service of the install's own, and the
+versions of OpenFGA and Postgres (nothing from inside the container answers them).
 
 **The notice is one line (issue #521).** Above the overview it holds the headline, *What's new*, *How to update*
 (an image install) or *Update now* (an install), and Dismiss. What's new and How to update open below the line,
@@ -8349,11 +8402,64 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
+**Not built (carried on issue #718).** Tools assembled per run; the read-only negative suite (#715) run before a new template's
 first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
 token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
-built: `vault set <name> --shared` ("Shared secrets").
+built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
+policy, is built ("Templates on request"); so is `template read-policy`.
+
+## Templates on request (issue #716, item 1, 2026-10-10)
+
+Owner's model (issue #716): you ask the hopper to make the template a job needs, and the hopper makes it. Before it, a
+template was only what a person saved on Settings → Vault, or with `hopper template save`. Owner, issue #718: jobs do
+not get write access over the API; they still ask the hopper. So a job asks through the skill request it already has
+(`POST /job/skill`, "Skills: what the hopper can set up for a box"), and the hopper decides.
+
+- **The ask.** `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" [--wait]`.
+  Each **need** is an operation profile, written as the CLI writes one, `<operation>/<kind>/<asset>`; split by spaces,
+  commas or lines; at most 16; each once. A need the hopper cannot read is a 400 that says how to write it.
+- **The template** (`requestTemplate`, `src/skills/template-request.ts`). Its name is `asked-` and 12 hex of a SHA-256
+  over the sorted needs: the same needs, in any order and from any job, get the same template, so a later job with the
+  same needs makes no second one. It runs the hopper's box image (`ghcr.io/henningfutrell/hopper:box-claude`), holds no
+  vault secret, and declares one operation profile per need. It is saved through the vault's own `saveTemplate`, by
+  `job <id>`: the same checks and the same `template.saved` event as a person's save. No secret goes in its scope: when a
+  job on its box loads a skill, the dynamic vault asks a person for that credential ("The dynamic vault"), and a person's
+  giving it approves only that one secret.
+- **The read policy** (`ReadPolicy`, `src/domain/read-policy.ts`; the user's settings, key `readPolicy`, no migration).
+  The assets the hopper approves read on with no person. Each entry is an asset as Access names it (`cluster/lab`), or
+  one that ends in `*` (`aws-account/*`, `namespace/lab/*`): every asset of that kind whose name starts with what is before
+  it. At most 64 entries. An admin sets it on Settings → Vault (panel **Read policy**), with `POST /ui/api/vault`
+  `set-read-policy` (`assets`; replaces it; empty clears it), or `hopper template read-policy set <entry>...`; each set is
+  `vault.read_policy_set`. `GET /api/vault` answers it as `readPolicy`. Empty, or never set: the hopper approves nothing.
+- **The approval.** The hopper approves the template with no person only when it makes it now and every need is a
+  `read` on an asset the policy holds: the vault's own `approveTemplate`, `by` **the read policy** (`vault.approved`,
+  `template.profile_approved` with that `by`). All or nothing: one need outside the policy, or one write, sync or apply
+  need, and the whole template waits for a person on Settings → Vault, as a template a person saved does. The policy
+  never approves a template again: one a person revoked waits for a person.
+- **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
+  is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
+- **The answer.** 200 when the template is approved, its image the approved one, and every profile approved in Access:
+  its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
+  --template <name>`), and the skill each need's asset loads on that box. Else 202 `waiting: template <name> waits for a
+  person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
+  job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again).
+
+**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. Tools assembled per
+run (item 2): every requested template runs the one box image. The read-only negative suite (#715) before a new
+template's first use (item 4). A need's credential is asked of a person when a job on the box first loads the skill;
+the template does not name a vault secret the user already has. Templates made on request are not removed when no job
+uses them.
+
+**Residual risk, stated.** Any job at work may make a template, one per distinct set of needs; it holds no secret and,
+outside the read policy, gives nothing until a person approves it. Inside the policy, a new template's boxes may read the
+assets the policy names: the policy is the admin's statement that this is fine, and it is empty by default.
+
+Tests: `test/integration/template-requests.test.ts` (the real daemon, the real `hopper-skill`, OpenFGA as a double: read
+needs inside the policy approved with no person and allowed by Access; the same needs again, the same template; a write
+need waits, and the job's `--wait` ends when a person approves; no policy, a read waits; a person's change is never
+widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
+entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
+(`template read-policy`), `test/ui/vault-read-policy.test.ts`.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 
@@ -9917,8 +10023,7 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy (item 1); tools assembled per run (item 2); a token-scoped mutating API so an agent does
+**Not built (carried on issue #718).** Tools assembled per run (item 2); a token-scoped mutating API so an agent does
 all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
 first use (item 5), which waits on #715's suite.
 
@@ -10182,7 +10287,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view`, `pr create|view`, `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|ready`, `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -10201,6 +10306,11 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401
    renews the token once) — **200** `{ ok, op, repo, requestId, number, url, … }`, or **502** with what GitHub said.
+
+A job's bug report (`report.bug`, issue #694) takes steps 1, 2 (`reportRequest`) and 5 (3 per job and 10 per machine
+**in any day**), skips 3 and 4 — it is not an act of the hopper's connection — and is then Report a bug's own path with
+the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }`, **409** with
+the similar open reports, or the refusal's status.
 
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
 "Filed through hopper for job `<job id>` (request `<request id>`). It is not a job: it waits for a person to triage it."
@@ -11678,22 +11788,38 @@ masked in the title and body. Each outcome is one event on the person's log, nev
 by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context { jobId? }` answers
 `{ context, repo }` and changes nothing (404 for a job that is not the person's).
 
+**The duplicate search by signature.** A report on a job whose failure record has a **signature** (the failure
+assessor's, 12 hex digits) names it in the context (`- Signature: <hex>`). Before the title search, the open
+`user-report` issues whose body has that signature are searched (`in:body`); every one found is similar, first. Only
+while the context sent still names it: a signature the person removed is not searched for either.
+
+**Jobs report too** (`fileForJob`). A running job files a hopper bug with `sh "$HOPPER_GH" report bug --title T (--body
+TEXT | --body-file F) [--comment-on N] [--force]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
+second script: one script, one token, one place a job looks for anything GitHub. The proxy checks the job's token and
+the limits (3 per job, 10 per machine, in any day), then files it by the person's path, with the **job's own user's**
+connection, so the job never signs in to GitHub. No person reads a job's text before it is sent, so its title and body
+pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's, on the job
+itself; the body ends "Filed by a job (`<id>`) with Report a bug in a hopper."; `bug_report.filed` and `.failed` carry
+`fromJob: true` and `by: job <id>`. Similar open reports are answered **409** with the list and what to do next
+(`--comment-on N`, or `--force`): nothing is filed until the job chooses. The label is still `user-report`, so a job's
+report never starts a job either.
+
 **UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): a form
 with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
 to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
-*Add to #N* each and *File a new report*; after filing, the line names the issue and links it.
+*Add to #N* each and *File a new report*; after filing, the line names the issue and links it. Every hand-off card,
+failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form, with
+that job's context. A problem card has none: it is many jobs, and each of its failures has its own row.
 
 **Not built yet** (left for the next parts of issue #694):
-- *Report a bug* on every failure, hand-off and question card, with that job's context (the route takes `jobId` now).
-- **Jobs report too**: `hopper-report bug --title … --body …` in the job skill, through the same code path, proxied by the
-  hopper as `hopper-gh` is (issue #563), marked as the job's (`reportBody`'s `fromJob`), rate-limited per job and per day.
 - **Your reports** in Settings: each report with its state (open or closed), refreshed from GitHub.
 - **Fallback**: with the GitHub connection down or no access to the repository, the report kept and sent later, and the
   form says so.
 - `hopper report bug` in the CLI, JSON out, the same code path (issue #623).
-- The duplicate search by an error signature, beside the title.
 
-Tests: `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
+Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
+connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit; the signature search),
+`test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
 `test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).
