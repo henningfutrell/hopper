@@ -61,3 +61,9 @@ export interface SourceRef {
   kind: string;
   withText?: (item: SourceItem, text: ItemText) => SourceItem;
 }
+
+/** A source that runs each sync in one pass (issue #822, design.md "One read per sync pass"). */
+export interface RunsPasses {
+  /** Run one sync pass: the source may ask its service once for what `run` reads twice. Absent: run as is. */
+  pass?<T>(run: () => Promise<T>): Promise<T>;
+}

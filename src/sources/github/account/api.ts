@@ -6,12 +6,14 @@
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
-import { makeRequest } from '../app/http.ts';
+import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
 /** What GitHub said, as the port's error: a 401 is the token refused (revoked, or the app's access removed). */
 export function accountError(err: unknown, what: string): GitHubApiError {
   if (err instanceof GitHubApiError) return err;
+  const limited = rateLimitedError(err, what);
+  if (limited) return limited;
   const e = err as { status?: unknown; message?: unknown };
   const status = typeof e.status === 'number' ? e.status : undefined;
   const message = typeof e.message === 'string' ? e.message : String(err);
@@ -22,7 +24,7 @@ export function accountError(err: unknown, what: string): GitHubApiError {
 const refused = (err: unknown) => (err as { status?: unknown }).status === 401;
 
 export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
-  const req = makeRequest(o.apiUrl);
+  const req = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
   const call = async <T>(what: string, fn: (token: string) => Promise<T>): Promise<T> => {
     const token = await o.token();
     try {

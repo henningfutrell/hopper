@@ -9,7 +9,7 @@ import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
-import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
+import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
 export type AppStatus = { ok: true; slug: string; botLogin: string; htmlUrl: string } | { ok: false; reason: string };
@@ -31,7 +31,7 @@ interface InstalledRepo { full_name: string }
 
 /** `app`: the identity now (github-app options + the key's variable); `keyEnv` names that variable in messages. */
 export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
-  const req = makeRequest(o.baseUrl ?? 'https://api.github.com');
+  const req = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
   let loaded: Loaded | undefined;
   let authError: string | undefined;
 

@@ -5,6 +5,8 @@
 // calls wait for the reset; after a 403 or 429 for the rate, calls wait as long as GitHub said. A call counts against
 // its bucket from when it is let go until GitHub answers, so a burst cannot spend more than is left. A GET carries the
 // ETag of the answer kept for it, per credential, media type and URL (`If-None-Match`): a 304 costs no call and is answered from the cache.
+// A call made with `deferAfterMs` (the job sources', issue #822) that would wait longer is not made: it throws
+// GitHubRateLimited with the time it may go, so a sync pass ends and says when, instead of holding to the reset.
 import { createHash } from 'node:crypto';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import type { request as octokitRequest } from '@octokit/request';
@@ -17,9 +19,22 @@ type Request = typeof octokitRequest;
 type Options = ReturnType<Request['endpoint']['merge']>;
 type Response = Awaited<ReturnType<Request>>;
 
+/** A call the limiter did not make (issue #822): it would wait longer than its caller allows. It may go at `retryAt`. */
+export class GitHubRateLimited extends Error {
+  readonly retryAt: number;
+  constructor(retryAt: number) {
+    super(`GitHub rate-limited the hopper: next retry at ${new Date(retryAt).toISOString().slice(11, 16)} UTC`);
+    this.name = 'GitHubRateLimited';
+    this.retryAt = retryAt;
+  }
+}
+
+/** How a caller waits: `deferAfterMs`, a longer wait is not waited (GitHubRateLimited). Absent: every wait is waited. */
+export interface LimiterCall { deferAfterMs?: number }
+
 export interface GitHubLimiter {
   /** The `request.hook` of `@octokit/request`. */
-  hook(request: Request, options: Options): Promise<Response>;
+  hook(request: Request, options: Options, call?: LimiterCall): Promise<Response>;
   configure(settings: RateLimiterSettings): void;
   settings(): RateLimiterSettings;
   view(): RateLimiterView;
@@ -46,7 +61,8 @@ export function createGitHubLimiter(o: {
   const wait = async (ms: number) => { stats.waits++; stats.waitedMs += ms; await sleep(ms); };
 
   /** Waits until a call on `key` may go: the bucket it counts against, or undefined when it goes as the bucket's probe. */
-  async function admit(key: string): Promise<Bucket | undefined> {
+  async function admit(key: string, call: LimiterCall): Promise<Bucket | undefined> {
+    const defer = (t: number, ms: number) => { if (call.deferAfterMs !== undefined && ms > call.deferAfterMs) throw new GitHubRateLimited(t + ms); };
     for (;;) {
       const t = now();
       const b = buckets.get(key);
@@ -61,14 +77,17 @@ export function createGitHubLimiter(o: {
       // A call never goes before its slot; a slot at or past the reset waits for it, and a probe then learns the new window.
       const at = Math.max(t, known.nextAt);
       if (at > t && at >= known.resetAt) {
+        defer(t, known.resetAt - t);
         await wait(known.resetAt - t);
         continue;
       }
       const gap = waitBefore({ ...known, remaining: known.remaining - known.pending }, at, settings);
       if (gap > 0 && ((known.holdUntil ?? 0) > at || known.remaining - known.pending <= settings.reserve)) {
+        defer(t, at + gap - t);
         await wait(at + gap - t);
         continue;
       }
+      defer(t, at - t);
       known.pending++;
       if (gap > 0) known.nextAt = at + gap;
       if (at > t) await wait(at - t);
@@ -105,7 +124,7 @@ export function createGitHubLimiter(o: {
     while (cache.size > cacheSize) cache.delete(cache.keys().next().value!);
   }
 
-  async function hook(request: Request, options: Options): Promise<Response> {
+  async function hook(request: Request, options: Options, call: LimiterCall = {}): Promise<Response> {
     const parsed = request.endpoint.parse(options);
     const credential = createHash('sha256').update(String(parsed.headers.authorization ?? '')).digest('hex').slice(0, 16);
     const key = `${credential} ${resourceOf(parsed.url)}`;
@@ -115,7 +134,7 @@ export function createGitHubLimiter(o: {
     const cached = isGet ? cache.get(cacheKey) : undefined;
     const send = cached ? { ...options, headers: { ...options.headers, 'if-none-match': cached.etag } } : options;
 
-    const counted = await admit(key);
+    const counted = await admit(key, call);
     let done!: () => void;
     if (!counted) probes.set(key, new Promise<void>((r) => { done = r; }));
     try {

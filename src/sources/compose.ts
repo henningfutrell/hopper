@@ -18,6 +18,7 @@ import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
+import { passReads } from './github/pass-reads.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
@@ -69,14 +70,17 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   });
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
-  const api: GitHubApi = o.api ?? real!;
-  return createGitHubSource({
+  // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`.
+  const reads = passReads(o.api ?? real!);
+  const api = reads.api;
+  const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
     ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
     ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
+  return { ...source, pass: reads.pass };
 }
 
 /**
@@ -94,7 +98,9 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
+  // One read per sync pass (issue #822), across a rebuild of the source too.
+  const reads = passReads(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }));
+  const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {
     const login = accounts.account(provider);
@@ -131,6 +137,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     thread: gitHubThread(api),
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
+    pass: reads.pass,
     discover: () => current()?.discover() ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {

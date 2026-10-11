@@ -205,11 +205,14 @@ export interface GitHubApi {
 export class GitHubApiError extends Error {
   readonly permanent: boolean;
   readonly status?: number;
-  constructor(message: string, permanent: boolean, status?: number) {
+  /** Rate-limited (issue #822): when the call is tried again, ms since the epoch. */
+  readonly retryAt?: number;
+  constructor(message: string, permanent: boolean, status?: number, retryAt?: number) {
     super(message);
     this.name = 'GitHubApiError';
     this.permanent = permanent;
     if (status !== undefined) this.status = status;
+    if (retryAt !== undefined) this.retryAt = retryAt;
   }
 }
 
