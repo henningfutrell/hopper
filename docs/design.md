@@ -6452,19 +6452,29 @@ migration leaves a store the build before it still runs on (AGENTS.md "Persisted
 the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
 `dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
 migration 26 sets a hopper on `main` or `release` to `stable`, and `main` was moved once to the commit that
-brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
-at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
-them when the installed commit has no such file) — plain words for people who use the hopper,
+brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of What's new
+at the target that What's new at the installed commit lacks, newest first (`whatsNew`; all of
+them when the installed commit has none) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
+What's new at a commit is its **fragments** first, then `WHATS-NEW.md` (issue #824): a change adds its
+bullets in a new file `whats-new/<issue number>.md`, never in `WHATS-NEW.md`, so open pull requests do not
+conflict on one top line. Fragments read newest first by issue number (`fragmentsInOrder`). Before a
+promotion to beta, `node scripts/whats-new.ts assemble` moves them into the top of `WHATS-NEW.md` in that
+order and deletes them, as a pull request to `dev`; `scripts/promote.sh` refuses a commit that still has
+fragments, so `beta`, `stable` and the Pages link read one human file. A bullet keeps its text when it moves,
+so the move brings no update news. The pull request check runs `node scripts/whats-new.ts check HEAD^1`
+(`problems`): a line added to `WHATS-NEW.md` that no fragment of the base had, a released line changed or
+removed, a line twice, or a fragment named wrongly fails it.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
 not what changed for its users. **In this
-version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
-`install.sh` and the image copy the file), read once at start — shown whether or not an update
+version** (issue #165): the newest 5 bullets of the install's own What's new (`installedWhatsNew`;
+`install.sh` and the image copy `WHATS-NEW.md` and `whats-new/`), read once at start — shown whether or not an update
 exists, and when self-update is unavailable.
 **Version history** (issue #246): `GET /api/update/history`, Settings → Version history — the versions
 the installed commit is made of, newest first: each commit on the tracked branch's first-parent line
-that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
-those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
+that added What's new bullets (a merged pull request is one version), with its commit date and
+those bullets (`GitMirror.added`); a bullet the same commit removed from a fragment only moved, so an
+assembly is no version. Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
 checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
 always carries `build`: what install.json does say (issue #409), shown above the list with the version, every

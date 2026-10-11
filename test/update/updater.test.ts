@@ -119,6 +119,33 @@ describe('detecting an update', () => {
     for (const v of h.versions) expect(new Date(v.at).getTime()).not.toBeNaN();
   });
 
+  it('reads the fragments of whats-new/ too, newest first; the assembly that moves them into WHATS-NEW.md is no news and no version (issue #824)', async () => {
+    const w = world();
+    w.up.whatsNew(['Older news.']);
+    const c1 = w.up.commit('first');
+    w.up.fragment('12.md', ['Jobs show their machine.']);
+    const c2 = w.up.commit('machine on the job');
+    w.up.fragment('13.md', ['You can pause the queue.']);
+    const c3 = w.up.commit('pause');
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
+    expect((await u.check()).whatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.']);
+    w.up.whatsNew(['You can pause the queue.', 'Jobs show their machine.', 'Older news.']);
+    w.up.fragment('12.md');
+    w.up.fragment('13.md');
+    const assembled = w.up.commit('assemble what is new');
+    rmSync(join(w.root, 'app'), { recursive: true });
+    const { u: u2 } = updater(w, createInstall(w.root, w.up.dir, c3));
+    expect(u2.status().installedWhatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.', 'Older news.']);
+    expect(await u2.check()).toMatchObject({ state: 'available', target: { commit: assembled }, whatsNew: [] });
+    rmSync(join(w.root, 'app'), { recursive: true });
+    const h = await updater(w, createInstall(w.root, w.up.dir, assembled)).u.history();
+    expect(h.versions.map((v) => ({ commit: v.commit, changes: v.changes }))).toEqual([
+      { commit: c3, changes: ['You can pause the queue.'] },
+      { commit: c2, changes: ['Jobs show their machine.'] },
+      { commit: c1, changes: ['Older news.'] },
+    ]);
+  });
+
   it('has no version history without install.json, and says why', async () => {
     const w = world();
     const h = await updater(w, join(w.root, 'bare')).u.history();
