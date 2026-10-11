@@ -189,6 +189,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
     },
+    async closeAsCompleted(repo, n) {
+      enter('closeAsCompleted', [repo, n]);
+      Object.assign(find(repo, n), { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' });
+    },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);

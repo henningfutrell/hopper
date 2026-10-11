@@ -1790,7 +1790,10 @@ above; empty body → claimed, then failed with error "empty issue body"; priori
 hopper's own with yolo mode on (issue #637, "PR waiting" below) —;
 until then the issue stays open, labelled `hopper:done`. (Issue #38 had the hopper close a finished job's issue; once
 done meant merged, that close only ever met a closed issue.) A failed or cancelled job's issue stays open.
-The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). No claim, progress,
+The one write that is not a label: the user's **Run again** reopens the job's closed issue (issue #354, above). One more
+(issue #677, "Closing finishes the loop" under "No checks means ready"): after the hopper's own merge — yolo mode or Merge
+now — of a pull request that did not close its issue and is no part, the hopper closes the issue as completed, with one
+comment that links the pull request. No claim, progress,
 question, answered, failure, cancel or completion comment; no reactions, other issue edits, or PR
 comments. Jobs get no way to write to their issue (no token, no helper), and their prompt says
 nothing about commenting (owner decision, 2026-10-04: a job has no reason to talk on its issue): the
@@ -1930,17 +1933,18 @@ take off a `hopper:done` that a later job, or a person, set.
 `Parts` (any level), up to the next heading of that level or higher; a checklist in a code block, or anywhere else in the
 issue, is not parts (an acceptance checklist must not count as work). A part is done when its box is ticked, and each
 merged pull request of the issue's repo that says `Part of #N` counts as one more: the parts done are the larger of the
-two, never more than the parts. The hopper never ticks a box: it writes only labels to issues, so it counts. At each sync
+two, never more than the parts. The hopper never ticks a box: it never edits an issue's text, so it counts. At each sync
 the source reads the parts of each issue it offers (one `referencingPullRequests` per issue that declares parts; a read
 that fails counts the ticked boxes only) and gives them with the item (`SourceItem.parts`); the job keeps them in its
 source ref (`JobSourceRef.parts`), and its prompt says `parts: x of y done`, to ship the next part with `Part of #N` and to
 use `Closes #N` only for the last. When a part merges, following it reads the parts again, counting that merge even when
 GitHub does not list it yet, and keeps them in the job's source state (`parts`); when every part is done, the issue gets
-`hopper:done` in place of being offered again. It stays open: the hopper never closes one. The job card shows
+`hopper:done` in place of being offered again. It stays open: the hopper closes no issue for a part (issue #677). The job card shows
 `parts x/y`, as followed, else as offered. GitHub sub-issues and the parent ↔ child lineage of issues are the issue's
 next part.
 
-The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper still never closes one.
+The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
+own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").
 A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next
 sync. **A job that failed only for want of a merge** — its error `not complete: …`, from before a pull request was
 done — and still waiting on a person in Needs a person is judged again at each sync of its source: done or partly done
@@ -11654,8 +11658,25 @@ the Pull requests list and post the same route; `--repo <owner/repo>` picks one 
 Tests: `test/integration/pull-requests.test.ts` (Merge now with yolo off and checks pending; a refused merge; Close PR;
 the CLI), `test/ui/pull-requests-view.test.ts` (the buttons, the confirmation, none for a viewer).
 
+**Closing finishes the loop** (the third part of issue #677, `src/sources/github/follow.ts` `closeAfterMerge`). A merge
+by the hopper — yolo mode, or a person's Merge now — of a pull request that did not close its issue (no closing keyword:
+one that only mentions the issue, or one named for it only on its branch) left the issue open, and issue #721 took that
+merge for a part, so the issue was offered again. Now, when the hopper made the merge and the pull request is no part
+(its body does not say `Part of #N`), the hopper closes the issue as completed (`GitHubApi.closeAsCompleted`,
+`PATCH /issues/{n}` `state: closed`, `state_reason: completed`) and posts one comment that links the pull request
+(`closedAfterMergeComment`: neutral, the link only). The item then is done: `hopper:done`, `mergeChecked`. The issue is
+closed before the comment, so a sync after a failed comment finds it closed as completed and the item done. A part
+merged by the hopper stays a part: the issue stays open and its next part runs. A merge a person made on GitHub stays as
+issue #721 has it: the hopper did not merge it, so it does not close the issue. This is the seventh exception to "GitHub
+text is neutral" in `AGENTS.md`: the user's setting (yolo mode) or act (Merge now) merged it.
+
+Tests: `test/sources/github-follow.test.ts` (yolo merges a pull request that only mentions the issue: closed with one
+comment; Merge now on one named only on its branch; a closing pull request gets no extra close or comment; a part stays
+open; a person's merge on GitHub stays a part), `test/integration/pull-requests.test.ts` (the real daemon: Merge now of a
+pull request with no closing keyword closes the issue with the comment).
+
 **Not built yet** (carried in issue #677): spotting repositories with no checks and recommending a job that adds them
-(`hopper repo checks`); closing the linked issue after a merge when the pull request has no closing keyword.
+(`hopper repo checks`).
 
 ## Lane tuning (issue #688, 2026-10-10)
 

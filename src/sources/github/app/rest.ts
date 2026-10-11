@@ -83,6 +83,11 @@ export async function reopenIssue(req: Request, token: string, repo: string, num
   await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, state: 'open', headers: auth(token) });
 }
 
+/** Close issue `number` as completed (issue #677: after the hopper's own merge of a pull request that did not close it). */
+export async function closeIssue(req: Request, token: string, repo: string, number: number): Promise<void> {
+  await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, state: 'closed', state_reason: 'completed', headers: auth(token) });
+}
+
 /** Merge pull request `number` with a merge commit (issue #637, yolo mode): GitHub's refusal (405, 409) throws. */
 export async function mergePullRequest(req: Request, token: string, repo: string, number: number): Promise<void> {
   await req('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', { ...splitRepo(repo), pull_number: number, merge_method: 'merge', headers: auth(token) });

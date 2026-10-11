@@ -110,7 +110,15 @@ export interface GitHubApi {
   addAssignees(repo: string, number: number, logins: string[]): Promise<void>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */
   reopenIssue(repo: string, number: number): Promise<void>;
-  /** Post a comment on an issue: only a person's resolution of a hand-off (issue #551), the user's own act. */
+  /**
+   * Close an issue as completed (issue #677): only after the hopper's own merge — yolo mode or a person's Merge now — of a
+   * pull request that did not close it and ships no part.
+   */
+  closeAsCompleted(repo: string, number: number): Promise<void>;
+  /**
+   * Post a comment on an issue: only a person's resolution of a hand-off (issue #551), the user's own act, and the one
+   * that links the merged pull request when the hopper closes the issue after its merge (issue #677).
+   */
   postComment(repo: string, number: number, body: string): Promise<void>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;

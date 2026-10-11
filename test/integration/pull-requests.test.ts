@@ -239,6 +239,27 @@ describe('Merge now and Close PR on a card (issue #677)', () => {
     expect((await app.ui('/ui/api/pull-requests/close', { jobId: 'no-such-job' }, { token })).status).toBe(404);
   });
 
+  it('Merge now of a pull request with no closing keyword: the hopper closes the issue with a comment that links it (issue #677)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    const w = await waiting(gh, app, OTHER, { checks: 'pending' });
+    // The job's pull request, as the follow would name one that only mentions the issue.
+    const refs = gh.openReferencingPullRequest(OTHER, w.issue.number, { createdAt: now(), checks: 'pending' });
+    gh.closePullRequest(w.url);
+    const kept = app.user().store.jobs.get(w.job.id)!.sourceState;
+    app.user().store.jobs.update(w.job.id, { sourceState: { ...kept, source: { pullRequest: refs.url, follow: 'open' } } });
+
+    const r = await app.ui('/ui/api/pull-requests/merge', { jobId: w.job.id }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ outcome: 'merged', pullRequest: refs.url, part: false });
+    expect(gh.issue(OTHER, w.issue.number)).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    expect(gh.issue(OTHER, w.issue.number).labels).toContain('hopper:done');
+    expect(gh.commentsOn(OTHER, w.issue.number).map((c) => c.body).join('\n')).toContain(refs.url);
+    const [merged] = (await app.events('types=job.pull_request_merged')).filter((e) => e.jobId === w.job.id);
+    expect(merged!.data).toMatchObject({ pullRequest: refs.url, part: false, via: 'ui' });
+  });
+
   it('hopper pr merge <n> and hopper pr close <n> answer JSON on the same path; an unknown number is refused', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
