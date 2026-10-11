@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- An AWS minting credential can now name the session name the hopper uses when it takes on a role, or a start for that name. Use it when the role lets in only one session name.
 - A job on a sandbox box now gets no secret from the vault until you grant it. The Vault page shows each job that asks, with Grant. One grant also covers that job when you run it again, and Revoke takes it back.
 - A sandbox box you start with only some of a template's secrets, or for one operation, now gets only those: its jobs are refused anything else.
 - A sandbox box the hopper starts now checks, from inside the box, that it reaches the hopper before the box counts as started. If it does not, starting the box fails and says why, and nothing is left behind. The hopper checks each box again every few seconds, and Machines shows a box that lost the hopper.

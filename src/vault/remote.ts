@@ -84,9 +84,9 @@ export function remoteVault(o: {
     },
     // Every check and Access's decision run here, in the hopper (issue #580); only the mint itself crosses, to the vault
     // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
-    mint: (ask, machineKey) => o.local.mint(ask, machineKey, async (name, target, sessionName) => {
-      if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, sessionName);
-      const r = await call<{ minted: Minted } | { refused: string }>('mint', { credential: name, target, sessionName });
+    mint: (ask, machineKey) => o.local.mint(ask, machineKey, async (name, target, jobId) => {
+      if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, jobId);
+      const r = await call<{ minted: Minted } | { refused: string }>('mint', { credential: name, target, jobId });
       return 'problem' in r ? { refused: r.problem } : r.result;
     }),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),

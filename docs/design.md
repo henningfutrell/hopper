@@ -11136,11 +11136,20 @@ the page leaves it out of a template's secrets. Its value is JSON (`mintingCrede
 for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
 `token`, optional `certificateAuthorityData`.
 
+**The AWS session name** (issue #781, `awsSessionName`). STS records it in the assumed role's ARN
+(`arn:aws:sts::<account>:assumed-role/<role>/<session name>`), and a role's trust policy can allow only some names
+(`sts:RoleSessionName`). By default it is `hopper-<job id>`, cut to STS's 64 characters. An AWS minting credential may
+name `SessionName`, a fixed name for every mint from it, or `SessionNamePrefix` (at most 32 characters), put before the
+job id in place of `hopper-`; not both. Each is of the characters STS takes (letters, digits and `+ = , . @ _ -`); one
+that is not refuses the mint and says why. It lives in the minting credential, not the template: the trust policy
+allows the principal the credential is, and only the vault that opens the credential reads it. A fixed name makes
+the mints of every job look the same in CloudTrail; `vault.minted` still names the job.
+
 **What is minted** for an operation profile (`mintTarget`, pure):
 
 | form | asset | minted |
 |------|-------|--------|
-| `aws` | `aws-role/<account>/<role>` | STS `AssumeRole` on `arn:aws:iam::<account>:role/<role>`, 900 s (STS's floor), session `hopper-<job id>`; a `read` session carries the session policy `arn:aws:iam::aws:policy/ReadOnlyAccess`. From the minting credential for `aws-account/<account>`. |
+| `aws` | `aws-role/<account>/<role>` | STS `AssumeRole` on `arn:aws:iam::<account>:role/<role>`, 900 s (STS's floor), session `hopper-<job id>` (or the minting credential's own: below); a `read` session carries the session policy `arn:aws:iam::aws:policy/ReadOnlyAccess`. From the minting credential for `aws-account/<account>`. |
 | `kube` | `namespace/<cluster>/<ns>` | a TokenRequest for the service account `hopper-<operation>` in `<ns>`, 600 s (TokenRequest's floor). From the minting credential for `cluster/<cluster>`. |
 | `kube` | `cluster/<name>` | the same, in the namespace `hopper`. |
 
@@ -11172,7 +11181,7 @@ authenticated data.
    refusal there is said, without the minting credential.
 
 **With the vault in a container of its own** (issue #586). Steps 1 to 4 and Access run in the hopper; only step 5
-crosses: `POST /vault/mint` (`credential`, the target, the session name), and the vault container opens the minting
+crosses: `POST /vault/mint` (`credential`, the target, the job id the session is named for), and the vault container opens the minting
 credential and calls STS or the Kubernetes API itself, so it must reach them; the minted credential crosses back, the
 minting one never. One kept in a vault backend is minted in the hopper, which runs the backends.
 
@@ -11192,10 +11201,11 @@ lives out its 10 or 15 minutes; a revoke bites on the next mint.
 Tests: `test/integration/vault-mint.test.ts` (a real joined box, the real helper and the real minting adapters against
 an STS and a Kubernetes API faked on loopback, OpenFGA as a double: waits at the gate and mints nothing; after approval a
 token with its expiry, the audit naming the allowing decision; a write denied, nothing asked of the API; an AWS read
-session with the read-only policy, its renewal recorded; a revoke denies the next renewal; a minting credential never
+session with the read-only policy, named `hopper-<job id>`, its renewal recorded; a session named as its minting credential says, through the vault's own container, and a name STS does not take refused; a revoke denies the next renewal; a minting credential never
 given out nor in a template's scope; an undeclared profile and a wrong asset kind refused; the minting credentials in
 no event, log line or file of the box), `test/client/vault.test.ts` (the mint ask, its sealed answer, the minted
-output), `test/integration/skills.test.ts` (the minted link), `test/ui/vault.test.ts` (*Mints for*).
+output), `test/integration/skills.test.ts` (the minted link), `test/ui/vault.test.ts` (*Mints for*), `test/vault/aws-session-name.test.ts`
+(the session name, its prefix and their limits).
 
 ### The KMS: an optional key provider (issue #586, 2026-10-09)
 

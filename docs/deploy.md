@@ -428,7 +428,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 - **AWS.** Make an IAM user (or role) that may only `sts:AssumeRole` the roles templates may reach. In Settings →
   Vault, set a secret with *Mints for* `aws-account/<id>` and the value `{"AccessKeyId": "…", "SecretAccessKey": "…"}`
   (optional `Region`, and `Endpoint` for an STS other than AWS's). Each session lives 15 minutes; a `read` session
-  carries the `ReadOnlyAccess` session policy.
+  carries the `ReadOnlyAccess` session policy. The hopper names each session `hopper-<job id>`. When the role's trust
+  policy allows only one session name (a condition on `sts:RoleSessionName`), add `"SessionName": "<that name>"` to
+  the value; when it allows a prefix (`StringLike`, `ci-*`), add `"SessionNamePrefix": "ci-"`, and the hopper names
+  each session `ci-<job id>`. Then the IAM role needs no change.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

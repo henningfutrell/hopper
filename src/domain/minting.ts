@@ -21,8 +21,28 @@ export const AWS_READ_POLICY = 'arn:aws:iam::aws:policy/ReadOnlyAccess';
 /** Where a token for a whole cluster is minted: the service accounts `hopper-<operation>` live in this namespace. */
 export const KUBE_CLUSTER_NAMESPACE = 'hopper';
 
-/** A minting credential's value for AWS: a key pair STS takes, an optional region and endpoint (an STS other than AWS's). */
-export interface AwsMintingCredential { AccessKeyId: string; SecretAccessKey: string; SessionToken?: string; Region?: string; Endpoint?: string }
+/**
+ * A minting credential's value for AWS: a key pair STS takes, an optional region and endpoint (an STS other than AWS's),
+ * and (issue #781) the session name it assumes a role with: a fixed `SessionName`, or a `SessionNamePrefix` before the
+ * job id. Neither: `hopper-<job id>` (`awsSessionName`).
+ */
+export interface AwsMintingCredential {
+  AccessKeyId: string; SecretAccessKey: string; SessionToken?: string; Region?: string; Endpoint?: string; SessionName?: string; SessionNamePrefix?: string;
+}
+
+/** The characters STS takes in a role session name. */
+const SESSION_NAME_CHARS = /^[\w+=,.@-]+$/;
+/** The session name a mint for the job assumes the role with: STS takes at most 64 characters. */
+export const awsSessionName = (c: AwsMintingCredential, jobId: string): string => c.SessionName ?? `${c.SessionNamePrefix ?? 'hopper-'}${jobId}`.slice(0, 64);
+
+/** Why the credential's session name or prefix is not one STS takes, or nothing. */
+function sessionNameProblem(name: string | undefined, prefix: string | undefined): string | undefined {
+  const allowed = 'letters, digits and + = , . @ _ -';
+  if (name !== undefined && prefix !== undefined) return 'an aws minting credential names SessionName or SessionNamePrefix, not both';
+  if (name !== undefined && (name.length < 2 || name.length > 64 || !SESSION_NAME_CHARS.test(name))) return `SessionName must be 2 to 64 of ${allowed}`;
+  if (prefix !== undefined && (prefix.length > 32 || !SESSION_NAME_CHARS.test(prefix))) return `SessionNamePrefix must be 1 to 32 of ${allowed}`;
+  return undefined;
+}
 /** A minting credential's value for Kubernetes: the API server, a token allowed to create service account tokens, its CA. */
 export interface KubeMintingCredential { server: string; token: string; certificateAuthorityData?: string }
 
@@ -78,8 +98,10 @@ export function mintingCredentialOf(kind: MintKind, value: string): AwsMintingCr
   if (kind === 'aws') {
     const AccessKeyId = str('AccessKeyId');
     const SecretAccessKey = str('SecretAccessKey');
-    if (!AccessKeyId || !SecretAccessKey) return 'an aws minting credential holds JSON with AccessKeyId and SecretAccessKey (and SessionToken, Region, Endpoint when it has them)';
-    const extra = (['SessionToken', 'Region', 'Endpoint'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []));
+    if (!AccessKeyId || !SecretAccessKey) return 'an aws minting credential holds JSON with AccessKeyId and SecretAccessKey (and SessionToken, Region, Endpoint, SessionName or SessionNamePrefix when it has them)';
+    const problem = sessionNameProblem(str('SessionName'), str('SessionNamePrefix'));
+    if (problem) return problem;
+    const extra = (['SessionToken', 'Region', 'Endpoint', 'SessionName', 'SessionNamePrefix'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []));
     return { AccessKeyId, SecretAccessKey, ...Object.fromEntries(extra) };
   }
   const server = str('server');
