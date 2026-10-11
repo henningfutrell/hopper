@@ -85,6 +85,11 @@ export const repoChecksEvents = {
 // Issue lineage (issue #729, src/github-proxy/broker.ts): a job filed an issue through the hopper, a child of the job's own
 // issue — a follow-up, or a required child the hopper linked as a GitHub sub-issue (`subIssue`; `subIssueError`: GitHub refused the link).
 const issueRef = strict({ repo: z.string(), number: z.number().int() });
+/** Contribution (issue #429): an admin turned it on or off, and who. */
+export const contributionEvents = {
+  'contribution.changed': strict({ from: strict({ on: z.boolean() }), to: strict({ on: z.boolean() }), by: z.string() }),
+};
+
 export const issueLineageEvents = {
   'job.child_issue_filed': strict({
     requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }), required: z.boolean(),

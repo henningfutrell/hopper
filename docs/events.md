@@ -2642,7 +2642,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -2660,7 +2660,7 @@ Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub op
 
 ## `github_proxy.refused`
 
-Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own, or to its default or a release branch, a tag or a delete. Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
+Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete. Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
 
 | field | type | required |
 |---|---|---|
@@ -2698,7 +2698,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 | `own` | boolean | yes |
 | `forUser` | string | no |
 | `job` | string | no |
-| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.ready` \| string | yes |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.ready` \| `repo.view` \| `repo.fork` \| string | yes |
 | `repo` | string | yes |
 | `refs` | string[] | no |
 | `error` | string | yes |
@@ -4117,5 +4117,27 @@ Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an
   },
   "required": true,
   "subIssue": true
+}
+```
+
+## `contribution.changed`
+
+Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contribution on or off (issue #429): whether a job of a repository its user cannot push to may work through a fork — the hopper forks it into the user's account, the job pushes there and opens its pull request on the repository from the fork. `from` and `to` (`on`), and `by`, who. It applies to the next request a job makes.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false
+  },
+  "to": {
+    "on": true
+  },
+  "by": "owner"
 }
 ```

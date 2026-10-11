@@ -3,7 +3,7 @@
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
-import type { Job, MachineSnapshot, User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
@@ -52,6 +52,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
   const reports = (): ReportGitHub | { problem: string } => (!o.accounts.account('github')
     ? { problem: o.accounts.ended('github') ?? notMine }
     : createReportGitHub(mine()));
+  /** This user's Contribution (issue #429), read at each request: a change applies without a restart. */
+  const contribution = () => (o.store.settings.getContribution() ?? DEFAULT_CONTRIBUTION).on;
   const user: ProxyUser = {
     id: o.user.id,
     holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts),
@@ -83,6 +85,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       connection: {
         jobRepositories: () => o.accounts.jobRepositories('github'),
         api: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notConnected } : api()),
+        contribution,
+        login: () => o.accounts.account('github'),
       },
       reports,
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
@@ -94,14 +98,18 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       git: {
         user,
         jobRepositories: () => o.accounts.jobRepositories('github'),
-        git: () => (!o.accounts.account('github')
-          ? { problem: o.accounts.ended('github') ?? notMine }
-          : {
-            url: o.accounts.endpoints('github').url,
-            token: () => o.accounts.token('github'),
-            renew: (refused) => o.accounts.renew('github', refused),
-            defaultBranch: (repo) => api().defaultBranch(repo),
-          }),
+        contribution,
+        git: () => {
+          const login = o.accounts.account('github');
+          return login === undefined
+            ? { problem: o.accounts.ended('github') ?? notMine }
+            : {
+              url: o.accounts.endpoints('github').url, login,
+              token: () => o.accounts.token('github'),
+              renew: (refused) => o.accounts.renew('github', refused),
+              repo: (repo) => api().repo(repo),
+            };
+        },
       },
     },
   };

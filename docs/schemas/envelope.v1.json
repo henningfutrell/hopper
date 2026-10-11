@@ -204,6 +204,7 @@
         "repo_checks.job_queued",
         "repo_checks.dismissed",
         "job.child_issue_filed",
+        "contribution.changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

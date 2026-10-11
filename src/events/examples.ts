@@ -133,6 +133,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
   'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false },
+  'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high', holdHighPriority: false }, to: { enabled: true, threshold: 'medium', holdHighPriority: false }, by: 'admin' },
   'github_rate_limiter.settings_changed': { from: { slowBelowPercent: 25, reserve: 50, batchSize: 10 }, to: { slowBelowPercent: 40, reserve: 50, batchSize: 10 }, by: 'admin' },

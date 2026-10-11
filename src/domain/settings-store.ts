@@ -7,7 +7,7 @@ import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -86,6 +86,9 @@ export interface UserSettingsRepository {
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
+  /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
+  getContribution(): ContributionSettings | undefined;
+  setContribution(settings: ContributionSettings): void;
   /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
   getIntakeActors(): IntakeActorSettings | undefined;
   setIntakeActors(settings: IntakeActorSettings): void;

@@ -21,9 +21,11 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" issue view N    --repo OWNER/NAME
   sh "$HOPPER_GH" issue close N   --repo OWNER/NAME      (this job's own issue only, as completed)
-  sh "$HOPPER_GH" pr create      --repo OWNER/NAME --head BRANCH [--base BRANCH] --title TITLE (--body TEXT | --body-file FILE)
+  sh "$HOPPER_GH" pr create      --repo OWNER/NAME --head [LOGIN:]BRANCH [--base BRANCH] --title TITLE (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" pr view N       --repo OWNER/NAME
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
+  sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
+  sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
   sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
                                                          (report a bug in the hopper itself)
 
@@ -35,6 +37,12 @@ required child: the hopper links it as a sub-issue of this job's issue, which is
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
 A pull request: push the branch first (git push), on this job's own repository.
+Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):
+work through a fork. repo fork forks this job's repository into your user's account, or answers the fork it has, and
+says what to do next: clone the fork, read the repository's contributing rules (CONTRIBUTING.md, the pull request
+template, the code of conduct, a CLA) and follow them, push your branch to the fork, and open the pull request on this
+job's repository with --head LOGIN:BRANCH. When the repository takes no issues, file your issue on the fork. Only while
+a person turned Contribution on in the hopper's Settings; else it is refused, and says so.
 A bug report goes to the hopper's own issues (henningfutrell/hopper), filed with your user's GitHub connection and
 labelled user-report. Never file one with issue create. The hopper adds this job's context (version, install, state,
 last log lines) and masks tokens, keys, host names and IP addresses. Say what happened in the body; never put text from
@@ -50,7 +58,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'repo view'|'repo fork'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

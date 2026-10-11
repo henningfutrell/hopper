@@ -8,13 +8,15 @@
 // (`report.bug`, issue #694) is checked and limited the same way, then handed to `report`: Report a bug's own path, with
 // the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it. An issue a job with an issue
 // files is a child of that issue (issue #729, issue lineage): its text names the parent, a required one is linked as a
-// GitHub sub-issue of it, and the link is recorded on the job's timeline (`job.child_issue_filed`).
+// GitHub sub-issue of it, and the link is recorded on the job's timeline (`job.child_issue_filed`). The contribution flow
+// (issue #429): before the check, what it decides on is read from GitHub — whether a repository outside the job
+// repositories is the job's fork, and, for `repo.fork`, whether the user can push to the job's own repository.
 import { randomUUID } from 'node:crypto';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -34,6 +36,10 @@ export interface ProxyUser {
 export interface ProxyConnection {
   jobRepositories(): string[];
   api(): ProxyApi | { problem: string };
+  /** Its user's Contribution (issue #429), read at each request. */
+  contribution(): boolean;
+  /** Its user's GitHub login; undefined: not connected. */
+  login(): string | undefined;
 }
 
 export interface ProxyAnswer { status: number; body: Record<string, unknown> }
@@ -55,6 +61,8 @@ export interface GitHubProxyOptions {
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
+
+const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 /** A job's own repository: its source's, or for a fork its parent's (issue #548). */
 const repoOf = (job: Job): string | undefined => job.source?.repo ?? job.forkOf?.source?.repo;
@@ -105,9 +113,32 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const req = parsed.data;
       if (!hopper) return refuse(503, 'the hopper has no user yet, so no GitHub connection', req);
       const issue = job.source?.number;
-      const allowed = checkRequest(req, { jobId: job.id, own, ...(repoOf(job) ? { repo: repoOf(job)! } : {}), ...(issue !== undefined ? { issue } : {}) }, hopper.connection.jobRepositories());
+      const jobRepo = repoOf(job);
+      const connection = hopper.connection;
+      const contribution = own && connection.contribution();
+      const login = connection.login();
+      const api = connection.api();
+      // What the contribution flow decides on, read from GitHub only when it can matter (issue #429).
+      const facts: Pick<ProxyAsker, 'fork' | 'canPush'> = {};
+      const maybeFork = contribution && jobRepo !== undefined && login !== undefined && same(req.repo.split('/')[0]!, login)
+        && !connection.jobRepositories().some((r) => same(r, req.repo));
+      const forking = req.op === 'repo.fork' && contribution && jobRepo !== undefined && same(jobRepo, req.repo);
+      if ((maybeFork || forking) && !('problem' in api)) {
+        try {
+          const read = await api.repo(req.repo);
+          if (maybeFork && read.fork && [read.parent, read.source].some((p) => p !== undefined && same(p, jobRepo!))) facts.fork = req.repo;
+          if (forking) facts.canPush = read.canPush;
+        } catch (e) {
+          record('github_proxy.failed', { op: req.op, repo: req.repo, error: (e as Error).message });
+          return { status: 502, body: { error: (e as Error).message, requestId } };
+        }
+      }
+      const asker: ProxyAsker = {
+        jobId: job.id, own, contribution, ...(login ? { login } : {}), ...facts,
+        ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
+      };
+      const allowed = checkRequest(req, asker, connection.jobRepositories());
       if (!allowed.ok) return refuse(403, allowed.reason, req);
-      const api = hopper.connection.api();
       if ('problem' in api) return refuse(503, api.problem, req);
       const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
       if (over) return refuse(429, over, req);
@@ -118,13 +149,13 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         return r;
       };
       const masked = maskRequest(req);
-      const jobRepo = repoOf(job);
       const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
       const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId, parent)}` } : masked;
       try {
         const result = await api.perform(sent, parent?.required ? parent : undefined);
-        record('github_proxy.done', { op: req.op, repo: req.repo, number: result.number, url: result.url });
-        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}) });
+        const seen = req.op === 'repo.view' ? { contribution } : {};
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...seen } };
         const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,

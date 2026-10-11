@@ -1,11 +1,27 @@
 // The GitHub calls the hopper makes for a job (issue #563), with the hopper's own connection's token: one REST
 // call per operation, through the same `@octokit/request` binding as the sources (src/sources/github/app/http.ts).
-// `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again.
+// `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again. A repository's
+// read (`repo`) is what the contribution flow (issue #429) decides on: whether the user can push to it, whether it takes
+// issues, and what it is a fork of. A fork made for a repository that takes no issues gets its own issues turned on.
 import { makeRequest, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
-import type { ProxyRequest } from './policy.ts';
+import { contributionSteps, type ProxyRequest } from './policy.ts';
 
-/** What a done request answers the job: always where it is on GitHub. */
-export type ProxyResult = { number: number; url: string } & Record<string, unknown>;
+/** What a done request answers the job: always where it is on GitHub; its number when it is an issue or pull request. */
+export type ProxyResult = { number?: number; url: string } & Record<string, unknown>;
+
+/** A repository as the connection's user sees it on GitHub (issue #429). */
+export interface RepoFacts {
+  url: string;
+  defaultBranch: string;
+  /** The user may push to it. */
+  canPush: boolean;
+  /** It takes issues. */
+  hasIssues: boolean;
+  /** It is a fork: of `parent`, whose own root is `source`. */
+  fork: boolean;
+  parent?: string;
+  source?: string;
+}
 
 /** GitHub's own refusal or failure, with its status when it gave one. */
 export class ProxyGitHubError extends Error {
@@ -26,11 +42,12 @@ export interface ProxyApi {
    * filed issue is then linked as its sub-issue; a link GitHub refuses leaves the issue filed (`subIssue: false`, why).
    */
   perform(req: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult>;
-  /** The repository's default branch (issue #652: what a job's push never changes). */
-  defaultBranch(repo: string): Promise<string>;
+  /** The repository as the user sees it (issue #652: its default branch, which a job's push never changes; issue #429: the rest). */
+  repo(repo: string): Promise<RepoFacts>;
 }
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
+interface RestRepo { full_name: string; html_url: string; default_branch: string; has_issues?: boolean; fork?: boolean; owner?: { login?: string }; permissions?: { push?: boolean }; parent?: { full_name?: string }; source?: { full_name?: string } }
 interface RestPull { number: number; node_id?: string; title: string; state: string; body?: string | null; html_url: string; draft?: boolean; merged?: boolean; head: { ref: string }; base: { ref: string } }
 
 const labelsOf = (i: RestIssue) => (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name ?? ''));
@@ -46,10 +63,46 @@ async function linkSubIssue(req: Request, headers: Record<string, string>, paren
   }
 }
 
+const factsOf = (d: RestRepo): RepoFacts => ({
+  url: d.html_url, defaultBranch: d.default_branch, canPush: d.permissions?.push === true, hasIssues: d.has_issues !== false, fork: d.fork === true,
+  ...(d.parent?.full_name ? { parent: d.parent.full_name } : {}), ...(d.source?.full_name ? { source: d.source.full_name } : {}),
+});
+
+async function readRepo(req: Request, headers: Record<string, string>, repo: string): Promise<RepoFacts> {
+  return factsOf((await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers })).data as RestRepo);
+}
+
+/**
+ * Forks the repository into the user's account, or answers the fork the user has (GitHub makes one only once). A
+ * repository that takes no issues: the fork's issues are turned on, so the job files its issue there; a refusal says why.
+ */
+async function fork(req: Request, headers: Record<string, string>, repo: string): Promise<ProxyResult> {
+  const upstream = await readRepo(req, headers, repo);
+  const d = (await req('POST /repos/{owner}/{repo}/forks', { ...splitRepo(repo), default_branch_only: true, headers })).data as RestRepo;
+  const login = d.owner?.login ?? d.full_name.split('/')[0]!;
+  let issues: string | undefined = repo;
+  let issuesError: string | undefined;
+  if (!upstream.hasIssues) {
+    try {
+      await req('PATCH /repos/{owner}/{repo}', { ...splitRepo(d.full_name), has_issues: true, headers });
+      issues = d.full_name;
+    } catch (err) {
+      issues = undefined;
+      issuesError = messageOf(err, `turning on the issues of ${d.full_name}`);
+    }
+  }
+  return {
+    url: d.html_url, fork: d.full_name, defaultBranch: d.default_branch, ...(issues ? { issues } : {}), ...(issuesError ? { issuesError } : {}),
+    next: contributionSteps(repo, d.full_name, d.html_url, login, issues),
+  };
+}
+
 async function call(req: Request, token: string, r: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   switch (r.op) {
+    case 'repo.view': return { ...(await readRepo(req, headers, r.repo)) };
+    case 'repo.fork': return fork(req, headers, r.repo);
     case 'issue.create': {
       const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, headers })).data as RestIssue;
       return { number: d.number, url: d.html_url, ...(subIssueOf ? await linkSubIssue(req, headers, subIssueOf, d.id) : {}) };
@@ -125,8 +178,8 @@ export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
   const withToken = tokenCaller(o);
   return {
     perform: (r, subIssueOf) => withToken((token) => call(req, token, r, subIssueOf), (err) => errorOf(err, r)),
-    defaultBranch: (repo) => withToken(
-      async (token) => ((await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: { authorization: `token ${token}` } })).data as { default_branch: string }).default_branch,
+    repo: (repo) => withToken(
+      (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),
     ),
   };
