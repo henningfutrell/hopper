@@ -2,7 +2,8 @@
 // in (its version, the install type, the system, and the job when the report is about one), masked, for the person to
 // read and edit before sending. The daemon files it on the hopper's own repository as the person, through their own
 // GitHub connection. When open reports look similar it offers them first: add yours to one, or file a new one anyway.
-// After filing it shows the link. The user menu opens it (issue #666); the dialog lives outside the menu, so it stays open.
+// After filing it shows the link. When GitHub cannot take it now, the hopper keeps it and sends it later: the form says
+// so, and where to see it (Settings → Your reports). The user menu opens it (issue #666); the dialog lives outside the menu, so it stays open.
 // Every failure, hand-off and question card opens it on its job too (`ReportBugButton`).
 import { Bug } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -14,7 +15,8 @@ import { post } from '@/lib/api';
 import { draftProblem, emptyDraft, reportRequest, sentLine, type BugReportAnswer, type BugReportDraft, type SimilarReport } from '@/model/bug-report';
 import { useCanOperate } from '@/store/selectors';
 
-type Step = { at: 'form' } | { at: 'similar'; similar: SimilarReport[] } | { at: 'sent'; answer: Extract<BugReportAnswer, { kind: 'filed' | 'commented' }> };
+type Step = { at: 'form' } | { at: 'similar'; similar: SimilarReport[] } | { at: 'sent'; answer: Extract<BugReportAnswer, { kind: 'filed' | 'commented' }> }
+  | { at: 'kept'; problem: string };
 
 const LABEL = 'grid gap-1 text-sm font-medium';
 
@@ -36,7 +38,7 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
     setError(undefined);
     try {
       const answer = await post<BugReportAnswer>('/ui/api/bug-reports', reportRequest(draft, { ...(jobId ? { jobId } : {}), ...o }));
-      setStep(answer.kind === 'similar' ? { at: 'similar', similar: answer.similar } : { at: 'sent', answer });
+      setStep(answer.kind === 'similar' ? { at: 'similar', similar: answer.similar } : answer.kind === 'kept' ? { at: 'kept', problem: answer.problem } : { at: 'sent', answer });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -46,7 +48,15 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
   const problem = draftProblem(draft);
   let body: ReactNode;
   let footer: ReactNode;
-  if (step.at === 'sent') {
+  if (step.at === 'kept') {
+    body = (
+      <p data-slot="bug-report-kept" className="text-sm">
+        GitHub cannot take the report now: {step.problem}. The hopper keeps your report and sends it later.{' '}
+        <a className="underline" href="#settings/reports" onClick={onClose}>See it in Your reports</a>
+      </p>
+    );
+    footer = <Button onClick={onClose}>Done</Button>;
+  } else if (step.at === 'sent') {
     body = (
       <p data-slot="bug-report-sent" className="text-sm">
         {sentLine(step.answer)} <a className="underline" href={step.answer.url} target="_blank" rel="noreferrer">Open it on GitHub</a>

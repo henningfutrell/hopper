@@ -68,10 +68,11 @@ export const legacyLanePlan = strict({
 /** `idle` (issue #440): why the machine leaves lanes unused. */
 export const lanePlan = legacyLanePlan.extend({ idle: z.string().optional() });
 
-// Report a bug (issue #694): what was filed, never its text.
+// Report a bug (issue #694): what was filed, failed or kept to send later, never its text.
 export const bugReportEvents = {
-  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional(), id: z.string().optional(), later: z.literal(true).optional() }),
   'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  'bug_report.kept': strict({ repo: z.string(), id: z.string(), problem: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
 };
 
 // Repositories with no checks (issue #677): the Add PR checks job queued, the recommendation dismissed.

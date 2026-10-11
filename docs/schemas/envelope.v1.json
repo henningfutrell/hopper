@@ -189,6 +189,7 @@
         "lanes.dismissed",
         "bug_report.filed",
         "bug_report.failed",
+        "bug_report.kept",
         "repo_checks.job_queued",
         "repo_checks.dismissed",
         "jev.mode_changed",

@@ -25,6 +25,9 @@ async function render(after: unknown[], list: unknown[] = REPORTS) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const view = '../../ui/src/views/bug-reports.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+  const store = '../../ui/src/store/index.ts';
+  const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
+  useHopper.setState({ authed: true, user: { id: 'u1', name: 'ada', role: 'operator', realm: 'local', identity: 'ada' } });
   const { BugReports } = (await import(view)) as { BugReports: () => El };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(BugReports)); });
   for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });

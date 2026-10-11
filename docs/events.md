@@ -3724,7 +3724,7 @@ Version 1 (`docs/schemas/lanes.dismissed.v1.json`). An admin dismissed a machine
 
 ## `bug_report.filed`
 
-Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. Never its text.
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. `later`: a report kept while GitHub could not take it (`bug_report.kept`), sent now; `id` is its report. Never its text.
 
 | field | type | required |
 |---|---|---|
@@ -3735,6 +3735,8 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 | `jobId` | string | no |
 | `by` | string | yes |
 | `fromJob` | boolean | no |
+| `id` | string | no |
+| `later` | boolean | no |
 
 ```json
 {
@@ -3749,7 +3751,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 
 ## `bug_report.failed`
 
-Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): GitHub refused it for good. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
 
 | field | type | required |
 |---|---|---|
@@ -3763,6 +3765,28 @@ Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed
 {
   "repo": "henningfutrell/hopper",
   "error": "your GitHub is not connected: connect it in Sources → Connect GitHub",
+  "by": "octocat"
+}
+```
+
+## `bug_report.kept`
+
+Version 1 (`docs/schemas/bug_report.kept.v1.json`). A bug report was kept to send later (issue #694): no GitHub connection, or GitHub could not take it now (no answer, no access to the repository, a rate limit, its own failure). `problem` says why; `id` is the report in Your reports. The hopper sends it later (`bug_report.filed` with `later`). `jobId`, `by` and `fromJob` as in `bug_report.filed`. Never its text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `id` | string | yes |
+| `problem` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+| `fromJob` | boolean | no |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "id": "c2a7e9d1",
+  "problem": "your GitHub is not connected: connect it in Sources → Connect GitHub",
   "by": "octocat"
 }
 ```
