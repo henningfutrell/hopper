@@ -63,7 +63,7 @@ function seed(a: TestApp): { start: number } {
   const iso = (min: number) => new Date(start + min * MIN).toISOString();
   store.tx(() => {
     const done = store.jobs.create(pinned, 50, source(1));
-    store.jobs.update(done.id, { status: 'done' });
+    store.jobs.update(done.id, { status: 'finished' });
     store.events.append({ type: 'job.claimed', jobId: done.id, machineId: 'laptop', laneId: 'laptop:1', at: iso(20), data: { attempts: 1, effectivePriority: 50, reason: 'test' } });
     store.events.append({ type: 'job.finished', jobId: done.id, laneId: 'laptop:1', at: iso(50), data: { result: 'ok' } });
     const parked = store.jobs.create({ ...pinned, research: true }, 50, source(2));
