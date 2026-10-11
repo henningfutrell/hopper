@@ -3,15 +3,16 @@
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
-// pull requests of a repository (closer.ts).
+// pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
 import type { ItemEdit } from '../../../domain/item-snapshots.ts';
 import {
-  CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
-  referencingPullRequestsFrom, repoPullRequestsFrom,
+  CLOSING_PULL_REQUEST_QUERY, CROSS_REFERENCES_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
+  crossReferencesFrom, referencingPullRequestsFrom, repoPullRequestsFrom,
 } from '../closer.ts';
+import type { IssueCrossReferences } from '../../../domain/cross-references.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -112,6 +113,14 @@ export async function referencingPullRequests(req: Request, token: string, repo:
     query: REFERENCING_PULL_REQUESTS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
   });
   return referencingPullRequestsFrom(r.data, `pull requests mentioning ${repo}#${number}`);
+}
+
+export async function crossReferences(req: Request, token: string, repo: string, number: number): Promise<IssueCrossReferences> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', {
+    query: CROSS_REFERENCES_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
+  });
+  return crossReferencesFrom(r.data, `cross-references of ${repo}#${number}`);
 }
 
 export async function pullRequest(req: Request, token: string, repo: string, number: number): Promise<NumberedPullRequest | undefined> {

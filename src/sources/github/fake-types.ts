@@ -1,5 +1,6 @@
 // The in-memory GitHub's types (fake.ts): the helpers a test plays the other side with, apart for the fake's size.
 import type { ChecksState } from '../../domain/pull-requests.ts';
+import type { FakeMentionInput } from './fake-cross-references.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, OpenPullRequest, ClosingPullRequest } from './api.ts';
 
 export type Method = keyof GitHubApi;
@@ -29,6 +30,11 @@ export interface FakeGitHub extends GitHubApi {
   openReferencingPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
   /** A pull request (opened at createdAt) that names no issue in its text, only on its branch `headRef` (issue #637). */
   openUnlinkedPullRequest(repo: string, pr: PullRequestInput & { headRef: string }): OpenPullRequest;
+  /**
+   * A pull request (default; of `from`, default the issue's repository) or a commit that mentions the issue with `text`
+   * (issue #430). `closes`: GitHub links it as closing the issue — a commit that closes it closes it now. Its URL.
+   */
+  mentionIssue(repo: string, number: number, m: FakeMentionInput): string;
   /** Its head commit's checks now (issue #637); undefined: none. */
   setChecks(url: string, checks: ChecksState | undefined): void;
   /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */

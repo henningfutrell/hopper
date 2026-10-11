@@ -5,7 +5,7 @@
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
-import { closingPullRequest, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
+import { closingPullRequest, crossReferences, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { makeRequest } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -60,6 +60,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(req, t, repo, number)),
     openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(req, t, repo, number)),
     referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, (t) => referencingPullRequests(req, t, repo, number)),
+    crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, (t) => crossReferences(req, t, repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, (t) => pullRequest(req, t, repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),

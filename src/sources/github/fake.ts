@@ -2,7 +2,8 @@
 // stranger) on the other side: create issues, reply, open a pull request that closes one on merge or ships part of
 // one ("Part of #N", issue #579), merge or close a pull request, close an issue (by hand or by merging a pull request),
 // unlabel, assign and unassign, delete, set project items; set a pull request's checks, open one that names no issue but
-// in its branch (issue #637). The hopper's own merge (`merge`, yolo mode) merges as a person's does; a draft or one with
+// in its branch (issue #637); mention an issue from a pull request of any repository or a commit, closing it on GitHub or
+// not (issue #430). The hopper's own merge (`merge`, yolo mode) merges as a person's does; a draft or one with
 // merge conflicts is refused (405). An issue is assigned to the fake's own login unless
 // `assignees` says otherwise (issue #387: intake is by label and assignee).
 // Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
@@ -12,6 +13,7 @@ import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
+import { createFakeCrossReferences } from './fake-cross-references.ts';
 import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
@@ -70,6 +72,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     return p;
   };
   let pullNumber = 1000;
+  const xrefs = createFakeCrossReferences(issues, human, addPull);
   const projects = new Map<string, GitHubProjectItem[] | Error>();
   const failures = new Map<Method, Error[]>();
   const calls: { method: Method; args: unknown[] }[] = [];
@@ -193,6 +196,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       find(repo, n);
       return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, headRef: _h, base: _b, ...p }) => ({ ...p }));
     },
+    crossReferences: async (repo, n) => { enter('crossReferences', [repo, n]); find(repo, n); return xrefs.of(key(repo, n), pulls); },
     async pullRequest(repo, n) {
       enter('pullRequest', [repo, n]);
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
@@ -280,6 +284,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
     openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
     openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, 'A change.'),
+    mentionIssue: (repo, n, m) => { find(repo, n); return xrefs.mention(key(repo, n), repo, m); },
     setChecks(url, checks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },

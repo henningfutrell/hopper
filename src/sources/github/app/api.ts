@@ -8,7 +8,7 @@ import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
-import { closingPullRequest, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
+import { closingPullRequest, crossReferences, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
 import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -141,6 +141,8 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       openClosingPullRequests(req, await tokenFor(l, repo), repo, number)),
     referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, async (l) =>
       referencingPullRequests(req, await tokenFor(l, repo), repo, number)),
+    crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, async (l) =>
+      crossReferences(req, await tokenFor(l, repo), repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, async (l) =>
       pullRequest(req, await tokenFor(l, repo), repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
