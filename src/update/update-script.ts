@@ -123,7 +123,7 @@ check "${HEALTH}" || back "the hopper does not answer /api/health: see ${c} logs
 check "${OPENFGA}" || back "OpenFGA does not answer: see ${c} logs openfga openfga-migrate"
 
 say "done: the stack runs ${version} ($image), with every required service."
-say "backups: hopper-backup-$stamp.dump, $bak\${envbak:+, $envbak}"
+say "backups: hopper-backup-$stamp.dump, $bak\${envbak:+, $envbak}\${overbak:+, $overbak}"
 say "optional: remove the image it replaced: ${RUNTIME[o.tool]} image prune -f --filter label=org.opencontainers.image.title=hopper"
 `;
 }

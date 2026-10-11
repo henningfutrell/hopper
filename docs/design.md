@@ -6007,7 +6007,8 @@ new compose file's; appends each line
 whose name `.env` lacks, and sets `HOPPER_IMAGE` to the image; then runs `hopper update override` the same way, with the
 install's own `compose.override.yaml` in `HOPPER_UPDATE_OVERRIDE`, which answers that file with what `.env` cannot hold added —
 a service the new file lacks and the hopper never shipped, with the top-level volumes it names; a host path mounted into a
-service (a shipped file mounts only named volumes); a key of a service no shipped file ever set — its comments kept, nothing
+service (a shipped file mounts only named volumes); a key of a service no shipped file ever set; the install's own project
+`name` (another would start the stack on new, empty volumes) — its comments kept, nothing
 it has replaced, each move named; the script backs the old one up as `compose.override.yaml.bak-<commit>`, shows the diff and
 writes it (nothing moves: nothing written); writes the image's `compose.yaml` and shows the
 `diff -u`; then `compose pull` and `compose up -d --force-recreate` for the whole stack (never `--no-deps`); and checks

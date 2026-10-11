@@ -249,7 +249,8 @@ Without it, a new container on the same database is limited ("The master key" ab
     4. moves the install's own settings from the old `compose.yaml` to `.env` — the published port's address
        (`HOPPER_BIND`), the port, and `HOPPER_*` settings written into the file —; sets `HOPPER_IMAGE` to the image;
        and moves what `.env` cannot hold to `compose.override.yaml`: a service of the install's own with the volumes it
-       names, a host folder mounted into a service, and a key of a service the hopper never sets. It adds to an existing
+       names, a host folder mounted into a service, a key of a service the hopper never sets, and the project name when
+       the install gave its own (another one would start the stack on new, empty volumes). It adds to an existing
        `compose.override.yaml` (kept as `compose.override.yaml.bak-<commit>`), keeps its comments, replaces nothing it
        has, and shows the change. A service the hopper once shipped and no longer does is dropped, and said so;
     5. puts in the image's `compose.yaml`, stamped `# hopper version: <branch> <commit>`, and shows the change;

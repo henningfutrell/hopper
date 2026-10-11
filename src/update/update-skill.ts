@@ -43,7 +43,7 @@ Do them in order. Do not do the update another way.
 4. Moves the install's own settings from the old compose.yaml to \`.env\`: the bind address, the port, and \`HOPPER_*\`
    settings set in the file. It sets \`HOPPER_IMAGE\` to the image. What \`.env\` cannot hold moves to
    \`compose.override.yaml\` (a service of the install's own with its volumes, a host folder mounted into a service, a key
-   the hopper never sets); an existing one is kept as \`compose.override.yaml.bak-<commit>\`, and nothing it has is replaced.
+   the hopper never sets, the install's own project name); an existing one is kept as \`compose.override.yaml.bak-<commit>\`, and nothing it has is replaced.
 5. Puts in the compose.yaml the image ships with, and shows the change.
 6. Pulls the images of the whole stack, and recreates the whole stack.
 7. Checks that the hopper and OpenFGA answer.

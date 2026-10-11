@@ -2,7 +2,8 @@
 // each update, so the install's own settings live in .env — the published port's bind address (HOPPER_BIND) and port, and
 // the hopper's settings it set in place or with another default than the new file's (`hopper update carry`). What .env cannot
 // hold moves to compose.override.yaml, which compose reads beside it (`hopper update override`): a service of the install's
-// own with the volumes it names, a host folder mounted into a service, and a key of a service the hopper never sets. The
+// own with the volumes it names, a host folder mounted into a service, a key of a service the hopper never sets, and the
+// project name, when the install gave its own. The
 // update script runs both.
 import { isMap, parse, parseDocument, type Document } from 'yaml';
 
@@ -147,7 +148,7 @@ function namedVolumes(services: Record<string, unknown>[], declared: Record<stri
 export function carryOverride(oldText: string, newText: string, overrideText: string | undefined): CarriedOverride {
   const old = services(oldText);
   if (typeof old === 'string') return { override: undefined, notes: [`the old compose.yaml was not read (${old}): nothing moved to ${OVERRIDE}`] };
-  const nextDoc = parse(newText) as { services?: Record<string, Record<string, unknown>>; volumes?: Record<string, unknown> } | null;
+  const nextDoc = parse(newText) as { name?: unknown; services?: Record<string, Record<string, unknown>>; volumes?: Record<string, unknown> } | null;
   const next = nextDoc?.services ?? {};
   let doc: Document;
   try {
@@ -166,6 +167,9 @@ export function carryOverride(oldText: string, newText: string, overrideText: st
     notes.push(`${note} moved to ${OVERRIDE}`);
     moved = true;
   };
+  // The project name: another one would start the stack on new, empty volumes.
+  const oldName = (parse(oldText) as { name?: unknown } | null)?.name;
+  if (typeof oldName === 'string' && literal(oldName) && oldName !== nextDoc?.name) put(['name'], oldName, 'name', 'name');
   const movedServices: Record<string, unknown>[] = [];
   for (const [name, raw] of Object.entries(old)) {
     const service = (raw ?? {}) as Record<string, unknown>;
