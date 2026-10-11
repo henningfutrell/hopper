@@ -3,7 +3,7 @@
 // src/sandbox/flags.ts's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 /** Docker Engine 20.10 and later answer this version. */
 const API = '/v1.41';
@@ -18,8 +18,8 @@ const enc = encodeURIComponent;
 /** Docker names a container `/name`. */
 const bare = (name: string | undefined): string => (name ?? '').replace(/^\//, '');
 
-export function createDockerRuntime(socket: string): ContainerRuntime {
-  const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => socketCall(socket, method, API + path, body, timeoutMs);
+export function createDockerRuntime(socket: string, via: SocketCall = socketCall): ContainerRuntime {
+  const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('docker', what, a);
   const readImage = (image: string): Promise<Answer> => call('GET', `/images/${enc(image)}/json`);
 

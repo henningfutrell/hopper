@@ -1,0 +1,134 @@
+// Issue #708: a machine's client carries the hopper's container runtime calls to the machine's own Podman (or Docker)
+// — the remote runtime's far end (src/client/runtime.ts, `POST /runtime`). The real client on a link, the runtime an
+// API double on a unix socket (test/support/fake-runtime-api.ts, fake-libpod.ts).
+//
+// Feature: a client target runs the hopper's runtime calls against its own runtime
+//   Scenario: the client says which runtime it has: Podman first, Docker else, none with what to do
+//   Scenario: a runtime call is carried to the socket and its answer carried back
+//   Scenario: a create without the sandbox flags, or with a mount of the machine, is refused
+//   Scenario: a call on a container the hopper did not make is refused; a gone one answers 404
+//   Scenario: a call outside the runtime calls the hopper makes is refused
+import { afterEach, describe, expect, it } from 'vitest';
+import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
+import { libpodCreateBody, dockerCreateBody } from '../../src/sandbox/flags.ts';
+import { startTestClient, type TestClient } from '../support/client.ts';
+import { createFakeLibpod } from '../support/fake-libpod.ts';
+import { on, startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
+
+const TOKEN = 'a'.repeat(43);
+const API = '/v5.0.0/libpod';
+let c: TestClient | undefined;
+const apis: FakeRuntimeApi[] = [];
+afterEach(async () => {
+  await c?.stop();
+  c = undefined;
+  for (const a of apis.splice(0)) await a.close();
+});
+
+async function client(sockets: { podman?: string; docker?: string }): Promise<TestClient> {
+  c = await startTestClient({ token: () => TOKEN, herdrBin: '/bin/false', session: 'hopper', runtimeSockets: () => sockets });
+  return c;
+}
+async function api(handlers: Parameters<typeof startFakeRuntimeApi>[0] = []): Promise<FakeRuntimeApi> {
+  const a = await startFakeRuntimeApi(handlers);
+  apis.push(a);
+  return a;
+}
+
+const spec = {
+  name: 'hopper-sandbox-kube', image: 'example.org/kube-box:1', network: 'host', volume: 'hopper-sandbox-kube-home',
+  env: { HOPPER_CLIENT_NAME: 'hopper-sandbox-kube' }, labels: { 'io.hopper.box': 'i-1', 'io.hopper.user': 'admin' },
+  limits: { cpus: 1, memoryMb: 1024 }, user: 'agent',
+};
+
+describe('the remote runtime, on the machine', () => {
+  it('the client says which runtime it has: Podman first, Docker else, none with what to do', async () => {
+    const podman = await api();
+    const docker = await api();
+    let t = (await client({ podman: podman.socket, docker: docker.socket })).transport(TOKEN);
+    expect(await clientRuntimeWhich(t)).toEqual({ kind: 'podman' });
+    await c!.stop();
+    t = (await client({ podman: '/nonexistent/podman.sock', docker: docker.socket })).transport(TOKEN);
+    expect(await clientRuntimeWhich(t)).toEqual({ kind: 'docker' });
+    await c!.stop();
+    t = (await client({ podman: '/nonexistent/podman.sock' })).transport(TOKEN);
+    const none = await clientRuntimeWhich(t);
+    expect(none).toEqual({ problem: expect.stringContaining('no Podman or Docker socket') });
+    expect((none as { problem: string }).problem).toContain('systemctl --user enable --now podman.socket');
+  });
+
+  it('a runtime call is carried to the socket and its answer carried back', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    expect(await clientRuntimeCall(t, { method: 'GET', path: `${API}/info` })).toEqual({ status: 200, text: JSON.stringify({ host: { security: { rootless: true } } }) });
+    const made = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody(spec) });
+    expect(made.status).toBe(201);
+    expect(a.seen.at(-1)!.body).toEqual(libpodCreateBody(spec));
+    const id = (JSON.parse(made.text) as { Id: string }).Id;
+    expect((await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/start` })).status).toBe(204);
+    expect(libpod.containers.get(id)!.state).toBe('running');
+    const listed = await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/json?all=true&filters=${encodeURIComponent(JSON.stringify({ label: ['io.hopper.box=i-1'] }))}` });
+    expect(JSON.parse(listed.text)).toEqual([expect.objectContaining({ Id: id, Names: ['hopper-sandbox-kube'] })]);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/containers/${id}?force=true&timeout=10` })).status).toBe(204);
+    expect(libpod.containers.size).toBe(0);
+  });
+
+  it('a create without the sandbox flags, or with a mount of the machine, is refused', async () => {
+    const a = await api(createFakeLibpod().handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const good = libpodCreateBody(spec);
+    for (const [body, why] of [
+      [{ ...good, cap_drop: [] }, 'every capability dropped'],
+      [{ ...good, no_new_privileges: false }, 'no new privileges'],
+      [{ ...good, read_only_filesystem: false }, 'a read-only root'],
+      [{ ...good, privileged: true }, 'privileged'],
+      [{ ...good, mounts: [{ destination: '/host', type: 'bind', source: '/', options: [] }] }, 'only a tmpfs at /tmp'],
+      [{ ...good, volumes: [{ Name: 'someone-elses', Dest: '/home/agent' }] }, 'only its own home volume'],
+      [{ ...good, user: 'root' }, 'a non-root user'],
+      [{ ...good, name: 'web' }, 'hopper-sandbox-'],
+      [{ ...good, labels: {} }, 'io.hopper.box'],
+    ] as const) {
+      const r = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.text).message).toContain(why);
+    }
+    expect(a.seen.filter((s) => s.path.endsWith('/containers/create'))).toEqual([]);
+  });
+
+  it('a Docker create is checked the same way', async () => {
+    const a = await api([on('POST', '/v1.41/containers/create', { status: 201, body: { Id: 'd1' } })]);
+    const t = (await client({ docker: a.socket })).transport(TOKEN);
+    const good = dockerCreateBody(spec);
+    expect((await clientRuntimeCall(t, { method: 'POST', path: `/v1.41/containers/create?name=${spec.name}`, body: good })).status).toBe(201);
+    const bound = { ...good, HostConfig: { ...(good.HostConfig as object), Binds: ['/:/host'] } };
+    const r = await clientRuntimeCall(t, { method: 'POST', path: `/v1.41/containers/create?name=${spec.name}`, body: bound });
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.text).message).toContain('Binds');
+  });
+
+  it('a call on a container the hopper did not make is refused; a gone one answers 404', async () => {
+    const libpod = createFakeLibpod();
+    const theirs = libpod.put({ name: 'postgres', image: 'postgres', labels: {} });
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    for (const [method, path] of [['POST', `/containers/${theirs}/stop`], ['DELETE', `/containers/${theirs}?force=true`], ['GET', `/containers/${theirs}/json`], ['POST', `/containers/${theirs}/start`]] as const) {
+      const r = await clientRuntimeCall(t, { method, path: API + path });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.text).message).toContain('not a sandbox box the hopper made');
+    }
+    expect(libpod.containers.get(theirs)!.state).toBe('running');
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/containers/gone?force=true` })).status).toBe(404);
+    expect((await clientRuntimeCall(t, { method: 'DELETE', path: `${API}/volumes/pgdata?force=true` })).status).toBe(403);
+  });
+
+  it('a call outside the runtime calls the hopper makes is refused', async () => {
+    const a = await api(createFakeLibpod().handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    for (const [method, path] of [['POST', `${API}/containers/c1/exec`], ['GET', `${API}/secrets/json`], ['POST', `${API}/../v1.41/containers/create`], ['GET', '/v1.41/info']] as const) {
+      const r = await clientRuntimeCall(t, { method, path });
+      expect(r.status).toBe(403);
+    }
+    expect(a.seen).toEqual([]);
+  });
+});

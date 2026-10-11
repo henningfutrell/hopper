@@ -34,7 +34,7 @@ import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
-import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
+import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
 import { createSandboxes, hopperNetwork, usersTemplates, type Sandboxes } from './sandbox/service.ts';
@@ -268,13 +268,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     repo: instance.sandboxes, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
+    clients: sandboxClientsOf(runtimes),
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
-    // A user the instance no longer has keeps no box; one whose runtime cannot say now keeps all of them.
-    boxesOf: (userId) => {
-      if (!instance.users.get(userId)) return new Set();
-      const rt = runtimes.get(userId);
-      return rt ? sandboxBoxesOf(rt.host) : undefined;
-    },
+    boxesOf: sandboxBoxesFor(instance, runtimes),
     waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
     clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });

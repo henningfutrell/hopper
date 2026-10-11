@@ -12,10 +12,24 @@
 //     And its client joins, so its record is ready
 //     When its machine is removed
 //     Then no container and no record of it are left, and its home volume stays
+//   Scenario: a box on an attached machine starts in that machine's Podman, through its client (the remote runtime)
+//     Given a machine joined and dialled in, its client given the rootless Podman socket
+//     When an admin starts a box of an approved template on that machine
+//     Then the container carries the sandbox flags and its sandbox label, its client joins, and its record is ready
+//     When its machine is removed
+//     Then no container and no record of it are left
 import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { joinHopper } from '../../src/client/join.ts';
+import { startLinkedClient } from '../../src/client/main.ts';
+import type { Client } from '../../src/client/server.ts';
 import { createPodmanRuntime } from '../../src/sandbox/podman.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { testInstallDir } from '../support/client.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const SOCKET = process.env.HOPPER_TEST_PODMAN_SOCKET;
@@ -23,8 +37,11 @@ const IMAGE = process.env.HOPPER_TEST_PODMAN_IMAGE ?? 'ghcr.io/henningfutrell/ho
 const podman = (...args: string[]): string => execFileSync('podman', ['--url', `unix://${SOCKET}`, ...args], { encoding: 'utf8' }).trim();
 
 let t: TestApp | undefined;
+let studio: Client | undefined;
 const cleanups: (() => void)[] = [];
 afterEach(async () => {
+  await studio?.stop();
+  studio = undefined;
   await t?.stop();
   t = undefined;
   for (const c of cleanups.splice(0)) c();
@@ -91,5 +108,64 @@ describe.skipIf(!SOCKET)('the sandbox module, real rootless Podman', () => {
     expect(podman('ps', '-a', '--format', '{{.Names}}').split('\n')).not.toContain(name);
     expect(await boxes()).toEqual([]);
     expect(podman('volume', 'ls', '--format', '{{.Name}}').split('\n')).toContain(`${name}-home`);
+  }, 180_000);
+
+  it('starts a box on an attached machine in that machine\'s Podman, through its client', async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const saved = { ...process.env };
+    cleanups.push(() => { process.env = saved; });
+    // The machine's herdr answers, so it shows online.
+    const herdr = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
+    chmodSync(herdr, 0o755);
+    process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
+    process.env.FAKE_HERDR_RUNNING = '1';
+    t = await startTestApp({
+      dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
+      plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['test'] } },
+    });
+    const a = t;
+    const session = await a.login();
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-machine-'));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    await joinHopper({ line: `${a.url}#${(await a.ui<{ code: string }>('/ui/api/machines/join', {}, { token: session })).body.code}`, name: 'studio', dir });
+    studio = startLinkedClient({ dir, herdrBin: herdr, session: 'hopper', installDir: testInstallDir(), backoffMs: [50], runtimeSockets: () => ({ podman: SOCKET! }) });
+    await until('studio to dial in', async () => !!a.user().machineLink.client.named('studio')?.link());
+
+    const template = `r${a.app.instance.settings.instanceId().slice(0, 8)}`;
+    const name = `hopper-sandbox-${template}`;
+    cleanups.push(() => {
+      try { podman('rm', '-f', '-t', '0', name); } catch { /* gone */ }
+      try { podman('volume', 'rm', '-f', `${name}-home`); } catch { /* gone */ }
+    });
+    await a.ui('/ui/api/vault', { action: 'save-template', name: template, image: IMAGE, secrets: [], limits: { cpus: { default: 1, max: 2 }, memoryMb: { default: 1024, max: 2048 } } }, { token: session });
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: template }, { token: session });
+    const r = await a.ui<{ container: string; error?: string }>('/ui/api/machines/sandbox', { template, machine: 'studio' }, { token: session });
+    expect(r.body.error).toBeUndefined();
+    expect(r.body.container).toBe(name);
+
+    const inspect = JSON.parse(podman('container', 'inspect', name))[0] as {
+      Config: { Labels: Record<string, string>; User: string };
+      HostConfig: { SecurityOpt: string[]; ReadonlyRootfs: boolean; NetworkMode: string; Memory: number };
+    };
+    const record = a.app.instance.sandboxes.list()[0]!;
+    expect(record).toMatchObject({ machine: 'studio', runtime: 'remote', address: a.url });
+    expect(inspect.Config.Labels).toMatchObject({ 'io.hopper.box': a.app.instance.settings.instanceId(), 'io.hopper.user': 'admin', 'io.hopper.sandbox': record.id });
+    expect(inspect.Config.User).toBe('agent');
+    expect(inspect.HostConfig.ReadonlyRootfs).toBe(true);
+    expect(inspect.HostConfig.SecurityOpt).toContain('no-new-privileges');
+    expect(inspect.HostConfig.NetworkMode).toBe('host');
+    expect(inspect.HostConfig.Memory).toBe(1024 * 1024 * 1024);
+    expect(JSON.parse(podman('container', 'inspect', '--format', '{{json .EffectiveCaps}}', name)) ?? []).toEqual([]);
+
+    const boxes = async (): Promise<{ name: string; state: string }[]> => (await a.api('GET', '/api/sandboxes', undefined, { 'x-hopper-session': session })).body.boxes;
+    await until('the box to report back', async () => { await a.app.sandboxes.reconcile(); return (await boxes()).some((b) => b.name === name && b.state === 'ready'); });
+
+    const { version } = (await a.api('GET', '/api/machines/config')).body as { version: string };
+    expect((await a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name, version }, { token: session })).status).toBe(200);
+    await a.app.sandboxes.reconcile();
+    await a.app.sandboxes.reconcile();
+    expect(podman('ps', '-a', '--format', '{{.Names}}').split('\n')).not.toContain(name);
+    expect(await boxes()).toEqual([]);
   }, 180_000);
 });

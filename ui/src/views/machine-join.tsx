@@ -3,12 +3,13 @@
 // the machine joins itself, dials in, and shows in the Machines view, online. Attaching over ssh stays
 // behind a link, for a machine that cannot run the client. Phone width first: every control stacks.
 // A sandbox box the hopper can start itself (issue #603: it is given a rootless Podman socket) is started with one
-// click (POST /ui/api/machines/sandbox): no line to run. When it cannot, the form says why and shows the line.
+// click (POST /ui/api/machines/sandbox): no line to run. When it cannot, the form says why and shows the line. A box
+// may start on a client target online now instead (issue #708): in that machine's own Podman, through its client.
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { get, post } from '@/lib/api';
-import { BOX_AGENTS, boxPlace, boxSignInLine, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
+import { BOX_AGENTS, boxHosts, boxPlace, boxSignInLine, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
 import type { TemplateView, MachinesConfig, SandboxesView, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -43,6 +44,9 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   const [started, setStarted] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const machines = useHopper((s) => s.machines);
+  // Where the box starts: `local`, the computer the hopper runs on, or a client target (issue #708).
+  const [where, setWhere] = useState('local');
+  const hosts = boxHosts(machines);
   // The machines there were when the line was shown: the first new one online is the one that joined.
   const before = useRef<Set<string> | null>(null);
   const choice: JoinChoice = kind === 'computer' ? { kind } : { kind, agent, runtime, ...(template ? { template: { name: template.name, image: template.image } } : {}) };
@@ -72,7 +76,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
     setBusy(true);
     try {
       before.current = new Set(machines.map((m) => m.id));
-      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}) });
+      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}), ...(where !== 'local' ? { machine: where } : {}) });
       setStarted(r.container);
     } catch (e) {
       toast.error((e as Error).message);
@@ -80,7 +84,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
       setBusy(false);
     }
   };
-  const hopperStarts = kind === 'box' && launch?.available === true;
+  const hopperStarts = kind === 'box' && (where !== 'local' || launch?.available === true);
   const copy = (text: string) => navigator.clipboard?.writeText(text).then(() => toast.success('Copied'), () => toast.error('Clipboard blocked'));
 
   return (
@@ -107,12 +111,18 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
           {template && <span className="text-muted-foreground">{!template.approval || template.pending.image ? 'its boxes take no job and get nothing until a person approves the template in Settings → Vault' : `its boxes get ${template.gives.join(', ') || 'no vault secret'}`}</span>}
         </div>
       )}
-      {kind === 'box' && launch && !launch.available && (
+      {kind === 'box' && hosts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-muted-foreground">on</span>
+          {['local', ...hosts].map((h) => <Button key={h} type="button" size="sm" variant={where === h ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setWhere(h)}>{h === 'local' ? 'the hopper\'s computer' : h}</Button>)}
+        </div>
+      )}
+      {kind === 'box' && where === 'local' && launch && !launch.available && (
         <p className="text-xs text-muted-foreground">The hopper does not start sandbox boxes itself here: {launch.problem} Run the line instead.</p>
       )}
       {hopperStarts && !started && (
         <div className="grid gap-2 text-xs">
-          <span className="text-muted-foreground">The hopper starts the box in rootless Podman on the computer it runs on. Removing the machine stops the box and removes it, with its volume.</span>
+          <span className="text-muted-foreground">{where === 'local' ? 'The hopper starts the box in rootless Podman on the computer it runs on.' : `The hopper starts the box on ${where}, in that machine's own rootless Podman, through its client.`} Removing the machine stops the box and removes it; its home volume stays.</span>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" size="lg" disabled={busy} onClick={() => void start()}>{busy ? 'Starting the box…' : 'Start the box'}</Button>
             <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
@@ -123,7 +133,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
         <div className="grid gap-2 text-xs">
           <span className="font-medium text-foreground/90">Started {started}. It shows here, online, when it joins.</span>
           <span className="text-muted-foreground">
-            Then sign its agent in once, on the computer the hopper runs on: <code className="font-mono">{boxSignInLine(started, agent)}</code> — the sign-in stays in the box&apos;s home volume.
+            Then sign its agent in once, on {where === 'local' ? 'the computer the hopper runs on' : where}: <code className="font-mono">{boxSignInLine(started, agent)}</code> — the sign-in stays in the box&apos;s home volume.
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground">Waiting for it to join…</span>

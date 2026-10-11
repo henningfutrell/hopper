@@ -31,7 +31,7 @@ export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-
  * public half; its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through; and its door
  * (door.ts, issue #695), the loopback URL its jobs reach the hopper at.
  */
-export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
+export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded' | 'runtimeSockets'>): Client {
   const link = readLink(o.dir);
   const token = linkToken(readFileSync(linkKeyFile(o.dir), 'utf8'), link.hopperKey);
   const { dir, ...rest } = o;

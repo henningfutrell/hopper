@@ -4,7 +4,8 @@
 // found so twice in a row (a join's config write may lag one check). A user whose machines cannot be read now keeps all
 // their boxes. A container with the hopper's label and no record (a box from before the records, or a launch cut off)
 // is taken on as a record when a machine names it, else removed the same way. Removing keeps the home volume unless the
-// record says otherwise: it may hold an agent's sign-in.
+// record says otherwise: it may hold an agent's sign-in. One pass checks one runtime: the hopper's own, or one user's
+// client target's (the remote runtime), each against the records of the boxes on it.
 import type { CleanupProblem } from '../domain/machines.ts';
 import type { ContainerInfo, ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
@@ -12,6 +13,10 @@ import { BOX_LABEL, USER_LABEL } from './launch.ts';
 
 export interface ReconcileContext {
   runtime: ContainerRuntime;
+  /** The machine the runtime is on: `local`, or a client target's name. */
+  machine: string;
+  /** A client target's runtime holds one user's boxes: theirs only. Undefined: every user's (the hopper's own). */
+  userId?: string;
   repo: SandboxRepository;
   instanceId: string;
   now: Date;
@@ -25,13 +30,15 @@ export interface ReconcileContext {
   logger: { info(line: string): void; warn(line: string): void };
 }
 
-export type Problems = Map<string, CleanupProblem & { userId: string }>;
+export type Problems = Map<string, CleanupProblem & { userId: string; machine: string }>;
 
 /** One pass. `unclaimed`: the names found idle at the last pass; answers this pass's. */
 export async function reconcilePass(c: ReconcileContext, problems: Problems, unclaimed: Set<string>): Promise<Set<string>> {
-  const containers = new Map((await c.runtime.list({ [BOX_LABEL]: c.instanceId })).map((x) => [x.name, x]));
+  const ours = (r: { machine: string; userId: string }): boolean => r.machine === c.machine && (c.userId === undefined || r.userId === c.userId);
+  const labels = { [BOX_LABEL]: c.instanceId, ...(c.userId !== undefined ? { [USER_LABEL]: c.userId } : {}) };
+  const containers = new Map((await c.runtime.list(labels)).map((x) => [x.name, x]));
   const next = new Set<string>();
-  for (const name of problems.keys()) if (!containers.has(name)) problems.delete(name);
+  for (const [name, p] of problems) if (ours(p) && !containers.has(name)) problems.delete(name);
 
   const remove = async (name: string, id: string, userId: string, volume: string | undefined, why: string, recordId?: string): Promise<void> => {
     try {
@@ -44,7 +51,7 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       if (problems.get(name)?.reason !== reason) c.logger.warn(`hopper: cannot remove the sandbox box ${name}: ${reason}`);
-      problems.set(name, { container: name, reason, at: c.now.toISOString(), userId });
+      problems.set(name, { container: name, reason, at: c.now.toISOString(), userId, machine: c.machine });
       next.add(name);
     }
   };
@@ -55,7 +62,7 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
   };
 
   const recorded = new Set<string>();
-  for (const r of c.repo.list()) {
+  for (const r of c.repo.list().filter(ours)) {
     recorded.add(r.name);
     if (c.launching.has(r.id)) continue;
     const box = containers.get(r.name);
@@ -99,7 +106,7 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
 function adopted(c: ReconcileContext, box: ContainerInfo, userId: string): SandboxRecord {
   return {
     id: c.newId(), userId, name: box.name, agent: /:box-(.+)$/.exec(box.image)?.[1] ?? 'claude', image: box.image, params: { secrets: [], cpus: 0, memoryMb: 0 },
-    runtime: c.runtime.kind, machine: 'local', containerId: box.id, volume: `${box.name}-home`, keepHome: true, state: 'ready',
+    runtime: c.runtime.kind, machine: c.machine, containerId: box.id, volume: `${box.name}-home`, keepHome: true, state: 'ready',
     createdAt: c.now.toISOString(), address: c.joinUrl,
   };
 }
