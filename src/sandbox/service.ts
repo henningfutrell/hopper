@@ -82,7 +82,8 @@ export interface Sandboxes {
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
   check(): Promise<void>;
   start(): void;
-  stop(): void;
+  /** Ends the timer, then waits for a reconcile or check pass in flight: the hopper closes its database after this. */
+  stop(): Promise<void>;
 }
 
 /** The sandbox flags of the line Add machine shows: the boxes' own builder, with a box's default limits. */
@@ -161,9 +162,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       timer = setInterval(() => { void reconcile(); void check(); }, RECONCILE_MS);
       timer.unref();
     },
-    stop() {
+    async stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      await Promise.allSettled([running, checking]);
     },
   };
 }

@@ -90,7 +90,8 @@ export interface TestApp {
 /** A temp dir (the app's work dir) and `dbPath` in it: the key of the app's database (support/database.ts databaseUrlFor). */
 export function tempDbPath(): { dbPath: string; cleanup(): void } {
   const dir = mkdtempSync(join(tmpdir(), 'hopper-it-'));
-  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  // Retried: a process the app started (a fake herdr writes into this dir) can still be ending (ENOTEMPTY).
+  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }) };
 }
 
 /** The plugins config's `machines`: only the local machine, with this many lanes. */

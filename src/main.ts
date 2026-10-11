@@ -342,10 +342,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       stopped ??= (async () => {
         updater.stop();
         await access.stop();
-        sandboxes.stop();
+        const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
-        await server.close();
+        // A sandbox pass waiting on a machine's link ends once the link is closed; the database is closed after it.
+        await Promise.all([server.close(), passes]);
         await runtimes.stop();
         instance.close();
       })();
