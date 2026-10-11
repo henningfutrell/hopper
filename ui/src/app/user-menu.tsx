@@ -3,7 +3,8 @@
 // another browser (an admin's, on a local sign-in), and last, set apart, Sign out. Sign out needs a second tap,
 // so a stray tap on a phone signs nobody out; the menu closes on an outside tap or Escape, and asks again when
 // it opens again. Every target is at least 44 px. Report a bug (issue #694) opens the report form.
-import { Bug, LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
+// Help (issue #782) opens the help pages of this version in a new tab, for every role.
+import { Bug, CircleHelp, LogOut, MonitorSmartphone, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/status';
@@ -49,6 +50,9 @@ export function UserMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem className={ITEM} onSelect={(e) => { e.preventDefault(); setTheme(next); }}>
             {next === 'light' ? <Sun /> : <Moon />}{next === 'light' ? 'Light theme' : 'Dark theme'}
+          </DropdownMenuItem>
+          <DropdownMenuItem className={ITEM} asChild>
+            <a href="/help/" target="_blank" rel="noopener"><CircleHelp />Help</a>
           </DropdownMenuItem>
           {canAdmin && local && (
             <DropdownMenuItem className={ITEM} onSelect={device.open}><MonitorSmartphone />Log in another device</DropdownMenuItem>

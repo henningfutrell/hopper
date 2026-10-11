@@ -8,6 +8,7 @@ import { artifactLibRoutes } from '../artifacts/libs.ts';
 import { artifactRoutes, createArtifactEdge } from './artifacts.ts';
 import { jobArtifactRoutes } from './job-artifacts.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
+import { helpRoutes } from './help.ts';
 import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
@@ -112,6 +113,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
+  helpRoutes(app, o.version);
   jobRoutes(app, tenant);
   stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes });
   questionRoutes(app, tenant);

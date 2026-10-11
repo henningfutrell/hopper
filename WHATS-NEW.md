@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper now has help pages for each feature, for the version you run. Open Help in the user menu. Agents and jobs can read the same pages too.
 - The hopper now keeps every open pull request its jobs made up to date with its base until it is merged or closed: it rebases it each time the base moves, not only three times, also when its job failed or its issue was closed as completed. A pull request that only mentions an issue while it does the work of another one no longer closes that issue when it merges.
 - You can now test an AWS minting credential from the command line: the hopper takes on the role for a short read-only session and shows the role and session name AWS says it has, or why AWS said no.
 - A template in Settings → Vault now sets the CPUs, memory and time limit its boxes get, and the most a box may ask for. When you start a sandbox box in Add machine, you can now pick its CPUs, memory, time limit, which secrets and tools it gets, and one operation. The page says when a value is more than the template allows.

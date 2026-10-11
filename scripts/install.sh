@@ -68,16 +68,17 @@ npm run build:ui --prefix "$BUILD"
 [ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
 # The install: src/, scripts/, systemd/ (self-update installs changed units from here), ui/dist/,
-# package*.json, WHATS-NEW.md (the Updates panel's "this version"), production node_modules, install.json.
+# package*.json, WHATS-NEW.md (the Updates panel's "this version"), help/ (the help pages), production node_modules, install.json.
 assemble() {
   local target="$1"
-  step "copy src/, scripts/, systemd/, ui/dist/, package.json, package-lock.json, WHATS-NEW.md to $target (replacing old ones; node_modules kept for npm ci)"
+  step "copy src/, scripts/, systemd/, ui/dist/, help/, package.json, package-lock.json, WHATS-NEW.md to $target (replacing old ones; node_modules kept for npm ci)"
   mkdir -p "$target/ui"
-  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist"
+  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist" "$target/help"
   cp -r "$APP_DIR/src" "$target/src"
   cp -r "$BUILD/ui/dist" "$target/ui/dist"
   cp -r --preserve=mode "$APP_DIR/scripts" "$target/scripts"
   cp -r "$APP_DIR/systemd" "$target/systemd"
+  cp -r "$APP_DIR/help" "$target/help"
   cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$target/"
   cp "$APP_DIR/WHATS-NEW.md" "$target/"
 
