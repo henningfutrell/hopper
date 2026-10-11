@@ -60,7 +60,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
-| `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
+| `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
-| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
+| `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673), `report` (`cli-operator-report.ts`, issue #694) and `auto-park` (`cli-operator-auto-park.ts`) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
 | `src/cli-update.ts` | the operator CLI's `hopper update` (issue #697): the update script of a container install, its carry and override steps, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
 
 ## The decider
@@ -10983,7 +10983,8 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
 
 A job's bug report (`report.bug`, issue #694) takes steps 1, 2 (`reportRequest`) and 5 (3 per job and 10 per machine
 **in any day**), skips 3 and 4 — it is not an act of the hopper's connection — and is then Report a bug's own path with
-the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }`, **409** with
+the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }` (or `kind: kept`,
+`id`, `problem`: kept and sent later), **409** with
 the similar open reports, or the refusal's status.
 
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
@@ -12782,17 +12783,41 @@ to remove anything private. Send is off until there is a title and what happened
 failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form, with
 that job's context. A problem card has none: it is many jobs, and each of its failures has its own row.
 
-**Not built yet** (left for the next parts of issue #694):
-- **Your reports** in Settings: each report with its state (open or closed), refreshed from GitHub.
-- **Fallback**: with the GitHub connection down or no access to the repository, the report kept and sent later, and the
-  form says so.
-- `hopper report bug` in the CLI, JSON out, the same code path (issue #623).
+**Kept and sent later.** With no GitHub connection, or when GitHub cannot take the report now — no answer, 401 (the
+connection refused or ended), 403 or 404 (no access to the repository: the app is not installed there), 429, or a 5xx
+(`sendLater`) — the report is not refused: it is a **kept report**. Its row in the person's store (`bug_reports`, tenant
+migration 37, `src/store/bug-reports.ts`) holds the title, the body as it would have been filed, and a comment's target;
+the answer is `{ kind: kept, id, problem }` and `bug_report.kept` records it. GitHub refusing the report itself (a 422)
+still fails it (502, `bug_report.failed`): sending it again would fail the same way. The form says the hopper keeps it
+and sends it later, and links Your reports. A job's report is kept the same way (`hopper-gh report bug` prints `kind:
+kept`; its help says not to send it again). The duplicate search ran before it was kept, or was skipped: a kept report
+is sent as it was, a new issue or a comment on the report the person chose.
+
+**Your reports** (`src/bug-reports/later.ts`, `ui/src/views/bug-reports.tsx`). Every report filed or kept is a row:
+title, state (`waiting`, `open`, `closed`), kind (`issue`, or `comment` on the open report `number`), number and URL
+once on GitHub, who filed it (`by`, `jobId`, `fromJob`), the tries and the last check. The body is dropped once sent: the
+issue on GitHub is the record. The send pass (`createReportSender`, one per user, started and stopped with the user's
+runtime through `UserGitHubProxy.bugReports`) runs at start and every 10 minutes (`REPORT_SEND_MS`): it sends each
+kept report, oldest first, with the person's own connection — `bug_report.filed` with `later: true` and the report's
+`id` — or keeps the reason for the next try; then it reads the state of each filed report on GitHub (`GET
+/repos/{owner}/{repo}/issues/{n}`, closed ones too: an issue can be opened again). One pass at a time, so a report is
+never sent twice. `GET /api/bug-reports` (never the text) and `POST /ui/api/bug-reports/refresh` (operator: one pass
+now) serve Settings → Your reports, which lists them newest first with a Refresh button.
+
+**From the CLI** (`src/cli-operator-report.ts`, issue #623): `hopper report context [--job <id>]` prints the context,
+masked, to read first; `hopper report bug --title <t> (--happened <text> | --happened-file <f>) [--expected <text>]
+[--job <id>] [--context-file <f>] [--comment-on <n>] [--force]` files it by the UI's path — the hopper's context unless
+`--context-file` gives the person's own —; `hopper report list` and `hopper report refresh` are Your reports. Each is
+the UI's own call under a session minted for it; the answer is JSON.
 
 Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
 connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit; the signature search),
 `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
-with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
+with the label and no assignee, a similar report offered, a comment, filing anyway, kept with no connection, a refused
+draft), `test/integration/bug-reports-later.test.ts` (kept with no connection and sent once connected; kept while GitHub
+refuses access, a comment too; Your reports' states refreshed; a 422 not kept), `test/integration/bug-reports-cli.test.ts`
+(`hopper report context|bug|list|refresh`), `test/ui/bug-reports-view.test.ts` (Your reports),
 `test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).
 
 ## Work trees per repository (issue #691, 2026-10-10)

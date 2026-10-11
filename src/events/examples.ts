@@ -226,6 +226,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'lanes.undone': { machineId: 'laptop', from: 4, to: 2, by: 'admin' },
   'lanes.dismissed': { machineId: 'laptop', lanes: 4, configured: 2, reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more', by: 'admin' },
   'bug_report.filed': { repo: 'henningfutrell/hopper', kind: 'issue', number: 712, url: 'https://github.com/henningfutrell/hopper/issues/712', jobId: 'b3f1c2d4', by: 'octocat' },
+  'bug_report.kept': { repo: 'henningfutrell/hopper', id: 'c2a7e9d1', problem: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
   'bug_report.failed': { repo: 'henningfutrell/hopper', error: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
   'repo_checks.job_queued': { repo: 'owner/repo', number: 41, url: 'https://github.com/owner/repo/issues/41', existing: false, by: 'octocat' },
   'repo_checks.dismissed': { repo: 'owner/repo', dismissed: true, by: 'octocat' },

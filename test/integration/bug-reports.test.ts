@@ -17,7 +17,7 @@
 //     When the person sends a report
 //     Then nothing is filed, and the similar report is answered
 //     And the person can add a comment to it, or file a new one anyway
-//   Scenario: with no GitHub connection the report is refused with the reason
+//   Scenario: with no GitHub connection the report is kept, with the reason (sent later: bug-reports-later.test.ts)
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
@@ -104,13 +104,13 @@ describe('Report a bug', () => {
     expect(eventsOf(app, 'bug_report.filed').map((e) => e.data.kind).sort()).toEqual(['comment', 'issue']);
   });
 
-  it('refuses with the reason when the person has no GitHub connection', async () => {
+  it('keeps the report, with the reason, when the person has no GitHub connection', async () => {
     const { app, github, token } = await start({ connected: false });
-    const r = await app.ui<{ error: string }>('/ui/api/bug-reports', REPORT, { token });
-    expect(r.status).toBe(503);
-    expect(r.body.error).toMatch(/GitHub is not connected/);
+    const r = await app.ui<{ kind: string; problem: string }>('/ui/api/bug-reports', REPORT, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ kind: 'kept', problem: expect.stringMatching(/GitHub is not connected/) });
     expect(github.issues).toHaveLength(0);
-    expect(eventsOf(app, 'bug_report.failed').map((e) => e.data)).toEqual([{ repo: REPO, error: expect.stringMatching(/not connected/), by: expect.any(String) }]);
+    expect(eventsOf(app, 'bug_report.failed')).toHaveLength(0);
   });
 
   it('refuses a report with no title or no text', async () => {
