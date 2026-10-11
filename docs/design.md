@@ -13373,3 +13373,33 @@ clone in the scratch dir, the work tree untouched; one lane, two jobs of two rep
 its own; a later job fetches; a checkout of another repository there is refused; the reap keeps the checkout; the
 job's own repository in any case as before), `test/herdr/executor-job-worktree.test.ts` (the executor's side over
 the fake herdr: the checkout saved and named in the prompt; the job's own repository unchanged).
+
+## Pointed jobs (issue #425, 2026-10-11)
+
+Part 1 of the pointed-job architecture (tracking issue #424). A **pointed job** is a record that points at work in any
+GitHub repository, owned or not: `repo` (`owner/name`), a `pointer` (an issue or a pull request: `kind`, `number`, `url`),
+the `directive` (what to do there), the `lane` that works it while it runs, a `status`, the `source` that made it, and
+`createdAt`/`updatedAt`. A record only: nothing runs a pointed job yet. The tracking service above the lanes (issue #426)
+and the watches (issue #427) build on it.
+
+**Status and transitions** (`src/domain/pointed-jobs.ts`, pure). `queued` → `running` | `abandoned`; `running` →
+`awaiting_review` | `queued` | `abandoned`; `awaiting_review` → `merged` | `running` | `abandoned`. `merged` and
+`abandoned` are ends. A move outside `TRANSITIONS` is refused (409) and records nothing; each allowed move is one
+`pointed_job.status_changed { id, from, to, lane?, by }`, in the same transaction as the write. The lane is kept while it
+runs and dropped when it leaves running.
+
+**Store.** Tenant migration 42: a `pointed_jobs` table (`id`, `status`, `created_at`, the body as JSON), as `bug_reports`.
+A table only, so the build before runs on the migrated store.
+
+**Existing jobs: an adapter, not a copy.** A job whose item names a repository, a number and a URL reads as a pointed job
+on that issue (`pointedJobOf`, `jobId` set), its status from the job: its followed pull request first — merged →
+`merged`, closed → `abandoned`, open, tended or reworked → `awaiting_review` —, else its job status: queued, held or
+parked → `queued`; claimed, running, waiting on an answer or on its own wait, operator-led → `running`; finished →
+`merged` (it ended done); failed, cancelled or rejected → `abandoned`. Its status follows its job, so the pointed job API
+never moves it (409). A copy into `pointed_jobs` would drift from the job it copies; the adapter cannot, and the jobs
+table is left as it was. A job of no repository (a manual item, a plain API job) is no pointed job.
+
+**API** (`src/http/ui/pointed-jobs.ts`). `GET /api/pointed-jobs` (both kinds, newest first), `GET /api/pointed-jobs/:id`;
+`POST /ui/api/pointed-jobs` (`pointed_job.created`, `source: api`) and `POST /ui/api/pointed-jobs/:id/transition`, operator,
+through the UI session or an API token. Neither starts a job, so neither is a box action.
+

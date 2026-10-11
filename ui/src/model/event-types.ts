@@ -45,6 +45,7 @@ const ALL: Record<EventType, true> = {
   'lanes.recommended': true, 'lanes.tuning_changed': true, 'lanes.applied': true, 'lanes.undone': true, 'lanes.dismissed': true,
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true,
+  'pointed_job.created': true, 'pointed_job.status_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

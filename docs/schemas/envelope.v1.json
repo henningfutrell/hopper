@@ -197,6 +197,8 @@
         "repo_checks.job_queued",
         "repo_checks.dismissed",
         "job.child_issue_filed",
+        "pointed_job.created",
+        "pointed_job.status_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

@@ -35,6 +35,7 @@ export const EVENT_TYPES = [
   'lanes.recommended', 'lanes.tuning_changed', 'lanes.applied', 'lanes.undone', 'lanes.dismissed',
   'bug_report.filed', 'bug_report.failed', 'bug_report.kept',
   'repo_checks.job_queued', 'repo_checks.dismissed', 'job.child_issue_filed',
+  'pointed_job.created', 'pointed_job.status_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -78,4 +79,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'lanes.recommended': 1, 'lanes.tuning_changed': 1, 'lanes.applied': 1, 'lanes.undone': 1, 'lanes.dismissed': 1,
   'bug_report.filed': 1, 'bug_report.failed': 1, 'bug_report.kept': 1,
   'repo_checks.job_queued': 1, 'repo_checks.dismissed': 1, 'job.child_issue_filed': 1,
+  'pointed_job.created': 1, 'pointed_job.status_changed': 1,
 };
