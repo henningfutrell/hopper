@@ -1,12 +1,13 @@
 // Auto-answer (issue #632, design.md "Question pipeline"): whether a level's answer goes into the job with no person.
 // It does when auto-answer is on and the level's confidence meets the threshold, and nothing holds it for a person: a
-// risk rule, the consequential guard (src/minor-decisions/guard.ts) or a high-priority job.
+// risk rule, the consequential guard (src/minor-decisions/guard.ts), or a high-priority job when the user holds those
+// (issue #679). Every hold is recorded, not only the first (issue #679).
 // A hold below the threshold at a lower level climbs to the next level; every other hold goes to a person. The
 // settings, the agreement stats and a person's correction of an auto-answer are here too.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
   AUTO_ANSWER_WINDOW_DAYS, CONFIDENCES, DEFAULT_AUTO_ANSWER_SETTINGS, jobPriorityTag, meetsThreshold, TERMINAL_STATUSES,
-  type AutoAnswerSettings, type AutoAnswerView, type Confidence, type EscalationReason, type Question,
+  type AnswerHold, type AutoAnswerSettings, type AutoAnswerView, type Confidence, type EscalationReason, type Question,
 } from '../domain/types.ts';
 import { consequentialOf } from '../minor-decisions/guard.ts';
 import { emitQuestionEvent } from './events.ts';
@@ -19,39 +20,60 @@ const HUMAN = 'human';
 export interface Hold {
   to: 'human' | 'next';
   why: string;
-  /** A risk rule or the consequential guard holds it (issue #650): its job never parks by itself. */
+  /** A risk rule or the consequential guard holds it (issue #650): its job never parks by itself. The strongest: risk. */
   kept?: 'risk' | 'guard';
-  /** What a person is told (issue #679): why it came to them, and the guards that matched. */
+  /** What a person is told (issue #679): the strongest hold's reason, the guards that matched, and every hold. */
   reason: EscalationReason;
   guards?: string[];
+  holds: AnswerHold[];
 }
 
-export const autoAnswerSettings = (store: Pick<UserStore, 'settings'>): AutoAnswerSettings => store.settings.getAutoAnswer() ?? DEFAULT_AUTO_ANSWER_SETTINGS;
+export const autoAnswerSettings = (store: Pick<UserStore, 'settings'>): Required<AutoAnswerSettings> => ({ ...DEFAULT_AUTO_ANSWER_SETTINGS, ...store.settings.getAutoAnswer() });
 
 /**
  * Inside the tx recording a level's answer to `q`: the risk rules that match the question and the answer to be typed, and
- * why the answer does not go into the job — a risk rule hit first — or no hold.
+ * why the answer does not go into the job — every hold, strongest first — or no hold.
  */
 export function answerHold(o: {
   store: UserStore; q: Question; answer: string; level: string; top: boolean; confidence: Confidence | undefined; gated?: (machineId: string) => boolean;
 }): { riskRules: string[]; hold?: Hold } {
   const riskRules = riskRulesOf(`${o.q.text}\n${o.answer}`);
-  if (riskRules.length > 0) return { riskRules, hold: { to: 'human', why: `risk rules: ${riskRules.join(', ')}`, kept: 'risk', reason: 'guard', guards: riskRules } };
-  const hold = autoAnswerHold(o);
-  return hold ? { riskRules, hold } : { riskRules };
+  const found = holdsOf(o, riskRules);
+  if (found.length === 0) return { riskRules };
+  const holds = found.map((f) => f.hold);
+  const guards = holds.flatMap((h) => h.guards ?? []);
+  const kept = holds.find((h) => h.by)?.by;
+  return {
+    riskRules,
+    hold: {
+      to: holds.some((h) => h.reason !== 'low_confidence') || o.top ? 'human' : 'next', why: found.map((f) => f.why).join('; '), reason: holds[0]!.reason,
+      holds, ...(guards.length > 0 ? { guards } : {}), ...(kept ? { kept } : {}),
+    },
+  };
 }
 
-function autoAnswerHold(o: Parameters<typeof answerHold>[0]): Hold | undefined {
+/** Every hold on the answer, strongest first, each with the text the trail and the events show. */
+function holdsOf(o: Parameters<typeof answerHold>[0], riskRules: string[]): { hold: AnswerHold; why: string }[] {
   const { store, q } = o;
+  const found: { hold: AnswerHold; why: string }[] = [];
+  if (riskRules.length > 0) found.push({ hold: { reason: 'guard', by: 'risk', guards: riskRules }, why: `risk rules: ${riskRules.join(', ')}` });
   const job = store.jobs.get(q.jobId);
   const machine = job?.resumeOn ?? job?.spec.machineId ?? q.raisedBy?.machineId;
-  const consequential = consequentialOf([q.text, o.answer], machine !== undefined && o.gated?.(machine) ? { gatedMachine: machine } : {});
-  if (consequential.length > 0) return { to: 'human', why: `consequential: ${consequential.join(', ')}; a person answers`, kept: 'guard', reason: 'guard', guards: consequential };
-  if (jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high) return { to: 'human', why: 'high priority: a person answers', reason: 'high_priority' };
+  // The guard names the risk rules too: those are held already.
+  const consequential = consequentialOf([q.text, o.answer], machine !== undefined && o.gated?.(machine) ? { gatedMachine: machine } : {}).filter((g) => !riskRules.includes(g));
+  if (consequential.length > 0) found.push({ hold: { reason: 'guard', by: 'guard', guards: consequential }, why: `consequential: ${consequential.join(', ')}; a person answers` });
   const settings = autoAnswerSettings(store);
-  if (!settings.enabled) return { to: 'human', why: `auto-answer is off: ${o.level}'s answer is a recommendation`, reason: 'auto_answer_off' };
-  if (meetsThreshold(o.confidence, settings.threshold)) return undefined;
-  return { to: o.top ? 'human' : 'next', reason: 'low_confidence', why: `${o.level}: ${o.confidence ?? 'no'} confidence, below the auto-answer threshold (${settings.threshold})` };
+  if (settings.holdHighPriority && jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high) {
+    found.push({ hold: { reason: 'high_priority' }, why: 'high priority: a person answers' });
+  }
+  if (!settings.enabled) found.push({ hold: { reason: 'auto_answer_off' }, why: `auto-answer is off: ${o.level}'s answer is a recommendation` });
+  else if (!meetsThreshold(o.confidence, settings.threshold)) {
+    found.push({
+      hold: { reason: 'low_confidence', ...(o.confidence ? { confidence: o.confidence } : {}), threshold: settings.threshold },
+      why: `${o.level}: ${o.confidence ?? 'no'} confidence, below the auto-answer threshold (${settings.threshold})`,
+    });
+  }
+  return found;
 }
 
 export type CorrectResult = { ok: true; question: Question } | { ok: false; reason: 'not_found' | 'not_auto' | 'job_ended' };
@@ -110,8 +132,10 @@ export function editAutoAnswer(store: Pick<UserStore, 'settings' | 'events' | 't
   if (patch.threshold !== undefined && !(CONFIDENCES as readonly string[]).includes(patch.threshold)) return { ok: false, error: `threshold is one of ${CONFIDENCES.join(', ')}` };
   store.tx(() => {
     const was = autoAnswerSettings(store);
-    const next: AutoAnswerSettings = { enabled: patch.enabled ?? was.enabled, threshold: patch.threshold ?? was.threshold };
-    if (was.enabled === next.enabled && was.threshold === next.threshold) return;
+    const next: Required<AutoAnswerSettings> = {
+      enabled: patch.enabled ?? was.enabled, threshold: patch.threshold ?? was.threshold, holdHighPriority: patch.holdHighPriority ?? was.holdHighPriority,
+    };
+    if (was.enabled === next.enabled && was.threshold === next.threshold && was.holdHighPriority === next.holdHighPriority) return;
     store.settings.setAutoAnswer(next);
     store.events.append({ type: 'auto_answer.settings_changed', data: { from: was, to: next, by } });
   });

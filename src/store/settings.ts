@@ -189,7 +189,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       return text === undefined ? undefined : JSON.parse(text) as AutoAnswerSettings;
     },
     setAutoAnswer(settings) {
-      write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold }));
+      // `holdHighPriority` (issue #679): absent in a record from before it, read as off; the build before ignores it.
+      write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold, ...(settings.holdHighPriority === undefined ? {} : { holdHighPriority: settings.holdHighPriority }) }));
     },
     getAutoPark() {
       const text = read('autoPark');

@@ -1,5 +1,5 @@
-// Auto-answer (issue #632, design.md "Question pipeline"): its settings (admin) — on or off, and the least confidence a
-// level's answer needs to go into the job — and a person's correction of an auto-answer (operator), which the job gets
+// Auto-answer (issue #632, design.md "Question pipeline"): its settings (admin) — on or off, the least confidence a
+// level's answer needs to go into the job, and whether a high-priority job's question goes to a person (issue #679) — and a person's correction of an auto-answer (operator), which the job gets
 // ahead of its next answer. The settings and the agreement stats are read at GET /api/question-gates.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -15,11 +15,12 @@ import { identityName } from './sessions.ts';
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
 const idParams = z.object({ id: z.string() });
-/** Either setting; one left out keeps its value. */
+/** Any setting; one left out keeps its value. `holdHighPriority` (issue #679): a high-priority job's question goes to a person. */
 export const autoAnswerBody = z.strictObject({
   enabled: z.boolean().optional(),
   threshold: z.enum(CONFIDENCES).optional(),
-}).refine((b) => b.enabled !== undefined || b.threshold !== undefined, { message: 'name enabled or threshold' });
+  holdHighPriority: z.boolean().optional(),
+}).refine((b) => b.enabled !== undefined || b.threshold !== undefined || b.holdHighPriority !== undefined, { message: 'name enabled, threshold or holdHighPriority' });
 
 export function registerAutoAnswerRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts; clock: Clock }): void {
   const by = (req: FastifyRequest, what: string): string => {

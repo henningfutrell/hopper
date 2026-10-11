@@ -129,12 +129,13 @@ const CONFIDENCE_CHOICES: Confidence[] = ['low', 'medium', 'high'];
 
 /**
  * Auto-answer (issue #632): whether a level's answer goes into the job with no person, the least confidence it needs, and
- * the agreement stats the threshold is tuned on. The hard limits stay whatever is set here.
+ * the agreement stats the threshold is tuned on, and whether high-priority jobs' questions come to the person (issue #679,
+ * off by default). The hard limits stay whatever is set here.
  */
 function AutoAnswer({ view, onSaved }: { view: AutoAnswerView; onSaved: (v: AutoAnswerView) => void }) {
   const authed = useCanAdmin();
   const [busy, setBusy] = useState(false);
-  const save = async (patch: Partial<Pick<AutoAnswerView, 'enabled' | 'threshold'>>) => {
+  const save = async (patch: Partial<Pick<AutoAnswerView, 'enabled' | 'threshold' | 'holdHighPriority'>>) => {
     setBusy(true);
     try {
       onSaved(await post<AutoAnswerView>('/ui/api/auto-answer', patch));
@@ -154,12 +155,15 @@ function AutoAnswer({ view, onSaved }: { view: AutoAnswerView; onSaved: (v: Auto
         <select id="auto-answer-threshold" className={SELECT} value={view.threshold} disabled={!authed || busy || !view.enabled} onChange={(e) => void save({ threshold: e.target.value as Confidence })}>
           {CONFIDENCE_CHOICES.map((c) => <option key={c} value={c}>{c} or higher</option>)}
         </select>
+        <label data-slot="hold-high-priority" className="flex min-h-8 items-center gap-2">
+          <Switch checked={view.holdHighPriority} disabled={!authed || busy} onCheckedChange={(holdHighPriority) => void save({ holdHighPriority })} />Hold high-priority questions for me
+        </label>
       </div>
       <div className="text-muted-foreground">
         {view.enabled
           ? 'A level that does not escalate, at or above this confidence, answers the job with no person. A lower level below it sends the question up; the top level below it sends it to you.'
           : 'Off: a level\'s answer is a recommendation, and you answer every question.'}
-        {' '}Risk rules, consequential actions and high-priority jobs always come to you.
+        {' '}Risk rules and consequential actions always come to you{view.holdHighPriority ? ', and so do high-priority jobs' : ''}.
       </div>
       <div className="num text-muted-foreground">{agreementLine(view.stats)}</div>
     </div>
