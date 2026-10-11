@@ -149,9 +149,13 @@ A box of such a template cannot change infrastructure, in two layers:
 - **Terraform.** `terraform` in the box is a wrapper that runs only `init`, `plan`, `show`, `validate`, `output`, `providers`, `providers schema`, `version`, `state list`, `state show`, `workspace list` and `workspace show`. It refuses all other commands, such as `apply`, `destroy`, `import` and `state rm`. `plan` takes no state lock. The real binary is in `$HOPPER_TOOLS`. When something calls it directly, AWS refuses the write.
 - **Providers.** Terraform installs providers only from the box's image, which holds the AWS provider. It downloads none. A workspace that needs another provider, or another version of the AWS provider, cannot run `init` in the box.
 
-The check proves these layers: it tries each terraform write through the wrapper, `apply` and `destroy` past it, and the install of a provider the image does not hold.
+The check proves these layers: it tries each terraform write through the wrapper, `apply`, `destroy` and a state push past it, and the install of a provider the image does not hold.
+
+The network is not one of these layers yet. A box of such a template can reach any host on the internet. A later change limits it to AWS, the clusters and the hopper.
 
 To read a Terraform workspace, ask for read on the workspace and read on the AWS role that its provider and its state are read with, for example `read/terraform-workspace/shop-prod read/aws-role/<account>/hopper-read`. The workspace gets that role's read session. Ask for exactly one AWS role: when there is none, or more than one, the check fails and says why. The read session reads the state, but cannot write it or take its lock.
+
+To prove that, the check needs the workspace's **state backend**: the S3 bucket that holds its state, the bucket's region, and the key prefix of its states. Set it on the workspace's profile: in Settings → Vault, click **Edit** on the template and fill in **State backend**, or run `hopper template save <name> --image <image> --backend shop-prod=<bucket>/<key prefix>@<region>`. The check then pushes a state of its own, past the wrapper, to `<key prefix>/hopper-read-only-check/terraform.tfstate` in that bucket, and AWS must refuse it. It never writes the workspace's own state. If AWS lets the push through, the check deletes that key again and fails. Until a workspace has a state backend, the check shows that probe as **not run** and does not pass: the state write is not proven to be refused.
 
 ## What the hopper does for you
 
@@ -164,6 +168,7 @@ To read a Terraform workspace, ask for read on the workspace and read on the AWS
 
 - **The start check fails** with `the hopper does not answer at <address>`: the rest is curl's own words from inside the box. `Could not resolve host`: the name is not known on that network. `Failed to connect`: nothing listens there. `403` or `421`: the hopper refused the box; check `HOPPER_LAN_PEERS` and `HOPPER_LAN_NAMES`.
 - **No "Start the box" button**: the hopper has no rootless runtime socket. The deploy guide has the steps; or run the line.
+- **The read-only check of a Terraform workspace needs its state backend.** Without it, `terraform.state-push-direct` is *not run* and the check fails. Set the backend on the workspace's profile (see above).
 - **The read-only check of a Terraform workspace needs one AWS role.** A workspace uses the read session of the template's one `aws-role` read need. A template with no such need, or with more than one, fails the check and says why.
 - **Not built.** A box with tools on another machine (the image build is not carried there). The read-only check on another machine's runtime. Other agents than `claude` in a box.
 - **One job at a time.** Jobs on one box share its user. A box of a template with secrets is best run with one lane.

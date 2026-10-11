@@ -3817,7 +3817,7 @@ hopper supports both. A container is never taken to be the only shape a job has.
 
 | Part | Stands | Carried by |
 |------|--------|------------|
-| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315 |
+| Container sandbox for agent jobs | built as the **sandbox box**: a person runs the Add machine line, the box joins as a client target and an instance of a template, and its jobs get only what that template is approved for ("Joining a machine", "Templates"). Not built: the hopper does not start or stop a box itself ("Joining a machine", option B), and the box's egress is open | #308; mechanisms compared in #315; a read-only box's egress allowlist: #849 |
 | Work tree never the home root | enforced at job start: a work tree that is the machine's home, above it, or `/` fails the job; the default is the jobs directory `~/hopper-jobs` ("Work tree" → "Never the home") | #314 |
 | Operator-led claim and its timeline designation | built: claimed in the UI (status `operator_led`, event `job.claimed_by_operator`), its own `operator-led` row on the lane timeline ("Operator-led work") | #318 |
 | Operator-led progress | protocol settled and seen end to end (the pickup record), not read by the daemon | #319 ("Pickups on agent boxes") |
@@ -9174,7 +9174,7 @@ credential: an `error`, and the check fails closed.
 
 **What stays #715's.** The terraform wrapper, a read-only state backend, `terraform destroy` and `state rm` against the
 workspace's real state, a credential for an `aws-account`, an Argo CD app or a Terraform workspace, and the check on a
-schedule. A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
+schedule. (Built since, as "A read-only infra box" parts 1 to 6; egress moved to #849.) A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
 `hopper-read-only-check`.
 
 **Not built.** The check on an attached machine's runtime (it runs on the hopper's own); the check
@@ -9359,16 +9359,64 @@ Tests: `test/sandbox/check-script.test.ts` (refused under a read-only credential
 under a writable one; the fake terraform deletes what a state holds only with no refresh),
 `test/integration/read-only-check-terraform.test.ts` (the probe with the workspace's read session, refused).
 
-**What stays of #715 (part 6 on).** `state rm` past the wrapper against the workspace's real state: with local state it
-is a file write that no IAM policy sees, and a probe on the real backend needs the workspace's backend configuration,
-which the hopper does not hold. Egress limited to the AWS, Kubernetes and GitHub endpoints (the check box and boxes run
-on the hopper's network today). Both need a decision: a backend for the template's workspace need, and an egress
-allowlist (#315's open question).
+**Part 6: a state write past the wrapper, refused by the account (2026-10-11).** Issue #715 asks for `state rm` to be
+refused by the wrapper and, with the wrapper bypassed, by IAM. With the probe stack's local state, a state write past the
+wrapper is a file write that no IAM policy sees: the account is asked only when the state is in its backend. The hopper
+did not know a workspace's backend.
+
+- **The backend is on the need** (`OperationProfile.backend`, `StateBackend`, `src/domain/state-backend.ts`): the S3
+  bucket, its region, and the key prefix the workspace's states are under. A person sets it on the template's
+  `terraform-workspace` profile — Settings → Vault (the template's form, **State backend**), `save-template`'s
+  `profiles[].backend`, or `hopper template save --backend <workspace>=<bucket>[/<key prefix>]@<region>`. It is no part
+  of what is approved: Access tuples, `sameProfile` and a job's request (`sameNeeds`) read the operation and the asset
+  only, so a backend set on a template the read policy approved leaves it approved. A save is a new version, so the check
+  runs again. `profileProblem` refuses a backend on another kind and a bucket, region or key prefix it cannot use (400).
+  The template keeps it as it keeps its profiles: no migration (a template's profiles are its JSON).
+- **The probe** (`terraform.state-push-direct`, `src/sandbox/probes.ts`). Past the wrapper, `init` with an S3 backend
+  configured only by `-backend-config`: the bucket, the region, and the key `stateProbeKey(backend)` —
+  `<key prefix>/hopper-read-only-check/terraform.tfstate`, the check's own key. Then `state push -lock=false` of a state
+  of its own (no resources, lineage `hopper-read-only-check`). `init` only reads (`ListObjectsV2`, `HeadObject`); the push
+  is the one write, `s3:PutObject`, and the deny policy's `*:Put*` must refuse it. The probe never names the workspace's
+  own state key. Under the key prefix, not at the bucket's top: a role or bucket policy that allows writes under the prefix
+  where the workspace's states are is the case to find, and a key elsewhere would miss it. Its `denial` is a refused
+  `PutObject` only, so a read that `init` is refused (a role that cannot read the bucket) is an `error`, not a pass.
+- **Allowed, it is undone and fails.** The push exits 0; the cleanup deletes that key (`aws s3api delete-object`, with
+  the probe's credential), and the probe fails. Nothing else is in that key.
+- **No backend: not run, not passed** (`ProbeRun.notRun`, outcome `not-run`). The catalog gives a probe that needs the
+  backend (`Probe.backend`) its variables (`HOPPER_STATE_BUCKET`, `HOPPER_STATE_REGION`, `HOPPER_STATE_KEY`), or, for a
+  need with none, the reason it is not run. The script writes no step for it; `readResults` keeps it with `passed: false`
+  and `not run: no backend configured. …`. So the check fails: a state write past the wrapper is unproven, and an
+  unproven write is not a pass. The check report says **NOT RUN** on its row; Settings → Vault shows each workspace's
+  backend, or that it has none, in the template's facts.
+
+Considered and not built: `state rm` against the workspace's real state (with a writable credential it removes a resource
+from that state: the check would break what it guards); a backend taken from the repository's configuration (the hopper
+does not read a workspace's repository, "Discovery"); a job naming the backend in its request (a person sets it: a job's
+request names needs only, and a backend changes no need). DynamoDB locking is not probed: the wrapper adds `-lock=false`,
+and the deny policy's `PutItem` deny is checked in `test/vault/read-session-policy.test.ts`.
+
+Checked by hand: the probe's script under Terraform 1.16.5 (the read-only box-tools image), its S3 and STS endpoints a
+local fake. `init` asked only `GET ?list-type=2` and `HEAD` of the probe key; the push sent one `PUT` of the probe key.
+A 403 `AccessDenied` answer ended `Failed to persist state: failed to upload state: operation error S3: PutObject, …
+api error AccessDenied: …`, exit 1, which the probe reads as refused; a 200 answer ended exit 0.
+
+Tests: `test/sandbox/check-script.test.ts` (refused under a read-only credential, with the wrapper and with none; allowed,
+failed and cleaned up under a writable one; the only backend key named is the probe key; no key prefix: the bucket's
+top; no backend: not run, not passed, nothing pushed), `test/integration/read-only-check-terraform.test.ts` (the real
+daemon: a job's template fails its check with the probe not run; a person sets the backend, nothing waits for approval,
+and the next check passes with the push refused; a backend it cannot use is refused at save),
+`test/integration/operator-cli-vault.test.ts` (`--backend`, kept by a later save), `test/ui/vault-state-backend.test.ts`,
+`test/sandbox/check-report.test.ts` (NOT RUN).
+
+**What stays of #715.** Nothing. Egress limited to the AWS, Kubernetes and GitHub endpoints moved out of #715 to its
+own issue (#849, after #315's open question): read-only boxes and the check box on an internal Podman network with an
+allowlisting HTTPS proxy. Until it is built, **the egress of a read-only box and of its check box is open**: they run on
+the hopper's network and reach any host.
 
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and
 download a provider: the mirror stops the downloads terraform makes through the wrapper and by default, not every
-download a box can make, until egress is limited. `*:Create*` and its kind match by the action's name: a write whose name
+download a box can make, until egress is limited (#849). `*:Create*` and its kind match by the action's name: a write whose name
 starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and is refused only
 when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
 a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked against

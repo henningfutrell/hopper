@@ -516,6 +516,17 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   The box installs providers only from its image (issue #715, part 3): the AWS provider, at the version pinned in
   `src/sandbox/tools.ts`, and no other. A workspace that needs another provider, or pins another AWS provider version in
   its `.terraform.lock.hcl` or its version constraint, cannot `init` there.
+
+  **The workspace's state backend** (issue #715, part 6). Set it on the workspace's profile: Settings → Vault, **Edit**
+  the template, **State backend** (bucket, region, key prefix); or
+  `hopper template save <name> --image <image> --backend <workspace>=<bucket>[/<key prefix>]@<region>`. The read-only check
+  then runs `terraform.state-push-direct`: past the wrapper, `init` with that S3 backend at the key
+  `<key prefix>/hopper-read-only-check/terraform.tfstate` and `state push` of a state of its own, which `s3:PutObject` must
+  refuse. It never names the workspace's own state key. `init` only reads the bucket (`ListBucket`, `HeadObject`). If the
+  push goes through, the check deletes that key (`aws s3api delete-object`, with the `aws` tool a workspace need adds) and
+  fails. With no backend, the probe is *not run* and the check fails: a state write is not proven refused. No new IAM
+  resource is needed: the read role, the deny policy and the bucket are the ones above. A bucket policy that lets the
+  role write under the key prefix fails the check, as it should.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
