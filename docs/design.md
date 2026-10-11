@@ -4659,8 +4659,8 @@ deleted the home volume.
   sent (`ui/src/model/sandbox-launch.ts`, pure, with the server's words); the server checks again and stays the
   authority. Since the UI bundles nothing of `src/`, the page keeps its own copy of the rules; `test/ui/sandbox-launch.test.ts`
   runs the same drafts through the page and through `resolveParams` and fails when they disagree.
-- **Not built yet:** a box with tools (issue #716) on a client
-  target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
+- **Tools on a client target (part 7, 2026-10-11).** A box with tools (issue #716) on a client target runs the tools
+  image built in that machine's runtime — "Tools on a client target" below.
 - **The line's limits (part 6, 2026-10-11).** The line Add machine shows for a box the hopper does not start gets its
   `run` flags with its join code: `POST /ui/api/machines/join` with `box: { cpus?, memoryMb? }` answers `flags`, built
   by `runFlags` from `lineFlags` (`launch.ts`), which resolves the CPUs and memory against the template as a launch
@@ -4668,6 +4668,39 @@ deleted the home volume.
   before a code is made. A computer's line sends no `box` and gets no flags. `GET /api/sandboxes` no longer carries a
   `line`. The page asks only the CPUs and memory there (`LaunchParamsInput` `limitsOnly`): a box the hopper does not
   start has no record, so a time limit, a subset of secrets, a profile or tools would bind it to nothing.
+
+### Tools on a client target (issue #708 part 7, 2026-10-11)
+
+Before it, the remote runtime refused a build: the client carried only JSON calls, and a build's context is a tar. So a
+box with tools (issue #716) started only beside the hopper.
+
+- **The hopper's end** (`remote.ts`). A build is the Podman or Docker adapter's own (`build`: look the tag up, build
+  it only when it is not there). Its context, the tar of one Containerfile (`containerfileTar`), goes as `tar`, in
+  base64, beside `method` and `path` (`RuntimeRelayCall`); every other call keeps its JSON `body`. Then the launch
+  reads the built image's user and creates the box from it, on that machine, as beside the hopper.
+- **The client's end** (`src/client/runtime.ts`). `POST <prefix>/build` is a call of the adapters now. The client
+  runs it only when: the tag is a tools image, `localhost/hopper-box-tools:<16 hex>`; the options are exactly the
+  adapter's (Podman `dockerfile=Containerfile&layers=true&rm=true`, Docker `dockerfile=Containerfile&rm=1`), so no
+  host network, volume, remote context or other option; and the context is a tar of one regular file named
+  `Containerfile`, at most 64 KiB, with no link, no path prefix and only zeros after it. Anything else is 403 in the
+  runtime's shape. A tar on any other call is refused. The longest call it carries is 30 minutes (a build), from 15.
+- **Built once per machine.** The tag is the same hash as beside the hopper (the Containerfile and the base image's
+  id on that machine), so the same tools on the same base build once there. The image stays in that machine's storage.
+- **An older client** answers the build 403 (`no call of the hopper's podman runtime`): the launch fails 502 with that,
+  and removes what it made. The hopper loads its own release on the machine once no job runs on it.
+- **Residual risk, stated.** The client does not check the Containerfile's steps: a build runs them in the machine's
+  rootless runtime, with its network, as the user the client runs as. A compromise of the hopper's process can already
+  run any job on that machine through herdr, so this adds no reach. The box made from the image still passes the
+  client's create checks (the sandbox flags, a non-root user). Not built: the read-only check (issue #716, item 4)
+  on a client target — `wait` and `logs` are not carried.
+
+**Verification (part 7).** `test/client/runtime.test.ts`: a build carried to Podman and to Docker as the tar of its
+Containerfile; refused for a tag that is not a tools image, a `networkmode` or `volume` option, another `dockerfile`,
+no tar, a JSON body, a tar of two files, a file of another name, and bytes that are no tar — and the runtime sees none
+of them. `test/adapters/remote-runtime.test.ts`: the build through a real client, then the image's user; a second
+build asks no build. `test/integration/sandbox-remote.test.ts`: a box with `kubectl` launched on a client target runs
+the tools image built in that machine's Podman, the hopper's own runtime builds nothing, and a second box builds
+nothing again.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 

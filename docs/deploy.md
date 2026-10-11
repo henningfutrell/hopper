@@ -708,7 +708,10 @@ pick the machine, then **Start the box**. The box is on that machine's network a
 the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
 sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
 away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
-again. A box with tools cannot start on another machine yet: the tools image is built only beside the hopper.
+again. A box with tools on a machine runs a tools image the hopper builds in that machine's runtime, through its
+client, once per base image and set of tools; the client builds only a tools image, from the hopper's one
+Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
+runs on it.
 
 ## Vault backends (optional)
 

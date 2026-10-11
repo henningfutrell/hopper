@@ -3,7 +3,7 @@
 // or Docker adapter's own, sent down the machine's link (`POST /runtime`, src/client/runtime.ts) in place of a local
 // socket, so a box on a machine is created with the same sandbox flags as one beside the hopper. The client checks
 // each call again before it runs it. A machine not dialled in, or with no runtime, is a problem, never a box started.
-// A build (a tools image, issue #716) is not carried: its body is a tar, and the client runs only JSON calls.
+// A build (a tools image, issue #716) carries its context, a tar, in base64; the box then runs the image built there.
 import type { ContainerRuntime, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
 import { createPodmanRuntime } from './podman.ts';
@@ -12,7 +12,11 @@ import type { SocketCall } from './socket-http.ts';
 const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function createRemoteRuntime(machine: string, relay: RuntimeRelay): ContainerRuntime {
-  const via: SocketCall = (_socket, method, path, body, timeoutMs) => relay.call({ method, path, ...(body !== undefined ? { body } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+  const via: SocketCall = (_socket, method, path, body, timeoutMs) => relay.call({
+    method, path,
+    ...(Buffer.isBuffer(body) ? { tar: body.toString('base64') } : body !== undefined ? { body } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
   let inner: { kind: 'podman' | 'docker'; runtime: ContainerRuntime } | undefined;
 
   /** The machine's runtime, as its client names it now; throws with what is wrong. */
@@ -34,7 +38,7 @@ export function createRemoteRuntime(machine: string, relay: RuntimeRelay): Conta
       }
     },
     pull: async (image) => (await known()).pull(image),
-    build: async () => { throw new Error(`${machine}: a box with tools starts only beside the hopper for now: the tools image is not built on a client target`); },
+    build: async (tag, containerfile) => (await known()).build(tag, containerfile),
     createVolume: async (name, labels) => (await known()).createVolume(name, labels),
     removeVolume: async (name) => (await known()).removeVolume(name),
     create: async (spec) => (await known()).create(spec),

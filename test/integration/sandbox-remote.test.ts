@@ -9,6 +9,7 @@
 //     hangs up is not dialled in at once (its link closes on the hopper's end too)
 //   Scenario: the box on the machine is ready once it joins, and goes when its time limit passes
 //   Scenario: while the machine is away its boxes are kept; once it dials in again they are checked
+//   Scenario: a box with tools on the machine runs the tools image built there; the hopper's own runtime builds nothing
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +19,7 @@ import { startLinkedClient } from '../../src/client/main.ts';
 import { joinHopper } from '../../src/client/join.ts';
 import type { Client } from '../../src/client/server.ts';
 import { BOX_LABEL, SANDBOX_LABEL, USER_LABEL } from '../../src/sandbox/service.ts';
+import { TOOLS_IMAGE } from '../../src/sandbox/tools.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { testInstallDir } from '../support/client.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
@@ -53,7 +55,7 @@ const dir = (): string => {
   return d;
 };
 
-interface Box { name: string; state: string; runtime: string; machine: string; address: string; expiresAt?: string }
+interface Box { name: string; state: string; runtime: string; machine: string; address: string; image: string; expiresAt?: string }
 interface Setup { a: TestApp; session: string; local: FakeContainerRuntime; libpod: FakeLibpod; studio: string; startStudio(): void }
 
 /** A hopper, and a machine `studio` joined and dialled in, its client carrying runtime calls to its own Podman. */
@@ -151,5 +153,20 @@ describe('sandbox boxes on an attached machine', () => {
     await a.app.sandboxes.reconcile(later);
     expect(onStudio(libpod, 'hopper-sandbox-claude')).toBeUndefined();
     expect((await view(a, session)).boxes).toEqual([]);
+  });
+
+  it('a box with tools on the machine runs the tools image built there; the hopper\'s own runtime builds nothing', async () => {
+    const { a, session, local, libpod } = await boot();
+    const r = await launch(a, session, { machine: 'studio', params: { tools: ['kubectl'] } });
+    expect(r.status).toBe(200);
+    const box = onStudio(libpod, 'hopper-sandbox-claude')!;
+    expect(box.image.startsWith(`${TOOLS_IMAGE}:`)).toBe(true);
+    expect(libpod.builds.get(box.image)).toContain('io.hopper.tools="kubectl"');
+    expect(local.builds).toBe(0);
+    expect((await view(a, session)).boxes).toEqual([expect.objectContaining({ name: 'hopper-sandbox-claude', machine: 'studio', image: box.image })]);
+
+    expect((await launch(a, session, { machine: 'studio', params: { tools: ['kubectl'] } })).status).toBe(200);
+    expect(onStudio(libpod, 'hopper-sandbox-claude-2')!.image).toBe(box.image);
+    expect(libpod.builds.size).toBe(1);
   });
 });

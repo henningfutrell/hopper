@@ -104,8 +104,11 @@ export interface ContainerRuntime {
   list(labels?: Record<string, string>): Promise<ContainerInfo[]>;
 }
 
-/** One call of a runtime's API, as the remote runtime carries it to a machine's client (issue #708). */
-export interface RuntimeRelayCall { method: string; path: string; body?: unknown; timeoutMs?: number }
+/**
+ * One call of a runtime's API, as the remote runtime carries it to a machine's client (issue #708): a JSON `body`, or
+ * `tar`, a build's context in base64 (a tools image, issue #716).
+ */
+export interface RuntimeRelayCall { method: string; path: string; body?: unknown; tar?: string; timeoutMs?: number }
 /** The runtime's own answer: its status and its body. */
 export interface RuntimeAnswer { status: number; text: string }
 

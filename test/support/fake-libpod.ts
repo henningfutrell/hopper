@@ -16,6 +16,8 @@ export interface FakeLibpod {
   containers: Map<string, LibpodContainer>;
   volumes: Set<string>;
   images: Set<string>;
+  /** Each image built (issue #708, a tools image on a machine): its tag, and the Containerfile its context carried. */
+  builds: Map<string, string>;
   /** Put a container there as someone else made it. */
   put(c: Omit<LibpodContainer, 'id' | 'body' | 'state'>): string;
 }
@@ -25,6 +27,7 @@ export function createFakeLibpod(): FakeLibpod {
   const containers = new Map<string, LibpodContainer>();
   const volumes = new Set<string>();
   const images = new Set<string>();
+  const builds = new Map<string, string>();
   const byRef = (ref: string): LibpodContainer | undefined => containers.get(ref) ?? [...containers.values()].find((c) => c.name === ref);
   const path = (r: SeenRequest, re: RegExp): RegExpExecArray | null => (r.path.startsWith(API) ? re.exec(r.path.slice(API.length)) : null);
   const listed = (c: LibpodContainer) => ({ Id: c.id, Names: [c.name], Image: c.image, Labels: c.labels, State: c.state });
@@ -39,6 +42,14 @@ export function createFakeLibpod(): FakeLibpod {
     if (r.method === 'GET' && (m = path(r, /^\/images\/(.+)\/exists$/))) return { status: images.has(decodeURIComponent(m[1]!)) ? 204 : 404 };
     if (r.method === 'POST' && path(r, /^\/images\/pull$/)) { images.add(r.query.get('reference') ?? ''); return { status: 200, text: '{"id":"img"}\n' }; }
     if (r.method === 'GET' && (m = path(r, /^\/images\/(.+)\/json$/))) return images.has(decodeURIComponent(m[1]!)) ? { status: 200, body: { Config: { User: 'agent' } } } : { status: 404, body: { message: 'no such image' } };
+    if (r.method === 'POST' && path(r, /^\/build$/)) {
+      // The context is a tar of one Containerfile: a 512-byte header (its size in octal at 124), then the file.
+      const tar = String(r.body);
+      const tag = r.query.get('t') ?? '';
+      builds.set(tag, tar.slice(512, 512 + parseInt(tar.slice(124, 135), 8)));
+      images.add(tag);
+      return { status: 200, text: `{"stream":"Successfully tagged ${tag}\\n"}\n` };
+    }
     if (r.method === 'POST' && path(r, /^\/volumes\/create$/)) {
       const name = (r.body as { Name: string }).Name;
       if (volumes.has(name)) return { status: 409, body: { message: 'volume exists' } };
@@ -69,7 +80,7 @@ export function createFakeLibpod(): FakeLibpod {
     return undefined;
   };
   return {
-    handlers: [handler], containers, volumes, images,
+    handlers: [handler], containers, volumes, images, builds,
     put(c) {
       const id = `c${++n}`;
       containers.set(id, { ...c, id, state: 'running', body: {} });

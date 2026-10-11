@@ -4,11 +4,13 @@
 //
 // Feature: the hopper drives a client target's own runtime through its client
 //   Scenario: a box's whole life runs through the client: the same calls, the same sandbox flags
+//   Scenario: a tools image is built on the machine through its client, once
 //   Scenario: a machine with no runtime, or one not dialled in, is a problem, not an error
 import { afterEach, describe, expect, it } from 'vitest';
 import { runtimeRelay } from '../../src/executors/client.ts';
 import { libpodCreateBody } from '../../src/sandbox/flags.ts';
 import { createRemoteRuntime } from '../../src/sandbox/remote.ts';
+import { toolsImage } from '../../src/sandbox/tools.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { createFakeLibpod } from '../support/fake-libpod.ts';
 import { startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
@@ -53,10 +55,20 @@ describe('the remote container runtime', () => {
     expect(await rt.inspect(id)).toBeUndefined();
     await rt.removeVolume(spec.volume);
     expect(libpod.volumes.size).toBe(0);
-    // A tools image (issue #716) is not built on a machine yet: it says so, and asks the client nothing.
-    const seen = api.seen.length;
-    await expect(rt.build('hopper-tools:x', 'FROM x')).rejects.toThrow('studio: a box with tools starts only beside the hopper for now');
-    expect(api.seen.length).toBe(seen);
+  });
+
+  it('a tools image is built on the machine through its client, once', async () => {
+    const libpod = createFakeLibpod();
+    api = await startFakeRuntimeApi(libpod.handlers);
+    c = await startTestClient({ token: () => TOKEN, herdrBin: '/bin/false', session: 'hopper', runtimeSockets: () => ({ podman: api!.socket }) });
+    const rt = createRemoteRuntime('studio', runtimeRelay(c.transport(TOKEN, 'studio')));
+    const built = toolsImage({ image: spec.image, id: 'sha256:base' }, ['kubectl']);
+    await rt.build(built.tag, built.containerfile);
+    expect(libpod.builds.get(built.tag)).toBe(built.containerfile);
+    expect(await rt.pull(built.tag)).toEqual({ user: 'agent' });
+    const builds = api.seen.filter((s) => s.path.endsWith('/build')).length;
+    await rt.build(built.tag, built.containerfile);
+    expect(api.seen.filter((s) => s.path.endsWith('/build')).length).toBe(builds);
   });
 
   it('a machine with no runtime, or one not dialled in, is a problem, not an error', async () => {

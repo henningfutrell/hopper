@@ -9,9 +9,12 @@
 //   Scenario: a call on a container the hopper did not make is refused; a gone one answers 404
 //   Scenario: a call outside the runtime calls the hopper makes is refused
 //   Scenario: a box's start check is carried: the create with its health check, and the check run on the hopper's box only
+//   Scenario: a tools image's build is carried as a tar of its one Containerfile
+//   Scenario: a build of anything but a tools image, with other build options, or of another context, is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
 import { libpodCreateBody, dockerCreateBody } from '../../src/sandbox/flags.ts';
+import { containerfileTar } from '../../src/sandbox/socket-http.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { createFakeLibpod } from '../support/fake-libpod.ts';
 import { on, startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
@@ -151,4 +154,49 @@ describe('the remote runtime, on the machine', () => {
     expect(r.status).toBe(403);
     expect(JSON.parse(r.text).message).toContain('StartupHealthConfig');
   });
+
+  it('a tools image\'s build is carried as a tar of its one Containerfile', async () => {
+    const libpod = createFakeLibpod();
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const r = await clientRuntimeCall(t, { method: 'POST', path: `${API}/build?t=${encodeURIComponent(TAG)}&dockerfile=Containerfile&layers=true&rm=true`, tar: tar(FILE), timeoutMs: 30 * 60_000 });
+    expect(r.status).toBe(200);
+    expect(libpod.builds.get(TAG)).toBe(FILE);
+
+    const d = await api([on('POST', '/v1.41/build', { status: 200, text: '{"stream":"done"}\n' })]);
+    await c!.stop();
+    const td = (await client({ docker: d.socket })).transport(TOKEN);
+    expect((await clientRuntimeCall(td, { method: 'POST', path: `/v1.41/build?t=${encodeURIComponent(TAG)}&dockerfile=Containerfile&rm=1`, tar: tar(FILE) })).status).toBe(200);
+    expect(String(d.seen[0]!.body)).toContain(FILE);
+  });
+
+  it('a build of anything but a tools image, with other build options, or of another context, is refused', async () => {
+    const a = await api(createFakeLibpod().handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const at = (q: string): string => `${API}/build?${q}`;
+    const good = `t=${encodeURIComponent(TAG)}&dockerfile=Containerfile&layers=true&rm=true`;
+    const two = Buffer.concat([containerfileTar(FILE).subarray(0, 1024), containerfileTar('FROM y\n')]);
+    const named = containerfileTar(FILE);
+    named.write('etc/passwd\0\0\0\0', 0, 'ascii');
+    for (const [path, call, why] of [
+      [at(`t=${encodeURIComponent('example.org/kube-box:1')}&dockerfile=Containerfile&layers=true&rm=true`), { tar: tar(FILE) }, 'tools image'],
+      [at(`${good}&networkmode=host`), { tar: tar(FILE) }, 'networkmode'],
+      [at(`${good}&volume=${encodeURIComponent('/:/host')}`), { tar: tar(FILE) }, 'volume'],
+      [at(good.replace('dockerfile=Containerfile', 'dockerfile=Other')), { tar: tar(FILE) }, 'dockerfile'],
+      [at(good), {}, 'a tar of its Containerfile'],
+      [at(good), { body: { remote: 'https://example.org/context.tar' } }, 'a tar of its Containerfile'],
+      [at(good), { tar: two.toString('base64') }, 'one file'],
+      [at(good), { tar: named.toString('base64') }, 'one file'],
+      [at(good), { tar: 'not a tar' }, 'one file'],
+    ] as const) {
+      const r = await clientRuntimeCall(t, { method: 'POST', path, ...call });
+      expect(r.status, why).toBe(403);
+      expect(JSON.parse(r.text).message).toContain(why);
+    }
+    expect(a.seen).toEqual([]);
+  });
 });
+
+const TAG = 'localhost/hopper-box-tools:0123456789abcdef';
+const FILE = 'FROM example.org/kube-box:1\nLABEL io.hopper.tools="kubectl"\n';
+const tar = (containerfile: string): string => containerfileTar(containerfile).toString('base64');
