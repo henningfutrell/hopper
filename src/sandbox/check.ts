@@ -9,6 +9,8 @@
 // Issue #715: a passed check runs again once a day (`CHECK_EVERY_MS`), since an account or a cluster can change under a
 // template. While it runs the template keeps the check that passed; a check that fails replaces it and blocks the template.
 // Issue #715, part 2: a terraform workspace's probes run with the AWS read session of the template's aws-role read need.
+// Issue #708: a check runs beside the hopper when it is given a runtime, else on a client target of the template's user,
+// dialled in with a runtime there (`CheckPassContext.place`). With neither, the template waits for its check.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
@@ -45,6 +47,17 @@ export interface CheckContext {
   probes: ProbeCatalog;
   clock: { now(): Date };
   logger: { info(line: string): void; warn(line: string): void };
+}
+
+/** Where a check runs: the machine, its runtime, and the network a check box joins there. */
+export interface CheckPlace { machine: string; runtime: ContainerRuntime; network: string }
+
+/** What the check pass needs: a check's context but its runtime, which `place` gives for each check. */
+export interface CheckPassContext extends Omit<CheckContext, 'runtime' | 'network'> {
+  /** The runtime beside the hopper, swept at each pass; undefined: none is given. */
+  local?: ContainerRuntime;
+  /** Where a check of the user's template runs now; undefined: nowhere, and the template waits. */
+  place(userId: string): Promise<CheckPlace | undefined>;
 }
 
 /**
@@ -135,26 +148,40 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   }
 }
 
-/** The check pass: removes check boxes no run holds, then checks each template that is due, one after the other. */
-export function createCheckPass(c: CheckContext, templates: CheckTemplates): () => Promise<void> {
+/**
+ * The check pass: removes check boxes no run holds, then checks each template that is due, one after the other. A
+ * client target's check boxes no run holds are removed before the first check of a pass there.
+ */
+export function createCheckPass(c: CheckPassContext, templates: CheckTemplates): () => Promise<void> {
   const holds = new Set<string>();
   let n = 0;
-  return async () => {
-    for (const box of await c.runtime.list({ [CHECK_LABEL]: c.instanceId })) {
+  const sweep = async (runtime: ContainerRuntime): Promise<void> => {
+    for (const box of await runtime.list({ [CHECK_LABEL]: c.instanceId })) {
       if (holds.has(box.name)) continue;
-      await c.runtime.remove(box.id).catch(() => {});
-      await c.runtime.removeVolume(`${box.name}-home`).catch(() => {});
+      await runtime.remove(box.id).catch(() => {});
+      await runtime.removeVolume(`${box.name}-home`).catch(() => {});
     }
+  };
+  return async () => {
+    if (c.local) await sweep(c.local);
+    const swept = new Set<string>();
     for (const { userId, template: t } of templates.templates()) {
       if (!dueForCheck(t, c.clock.now())) continue;
+      const at = await c.place(userId);
+      if (!at) continue;
+      const key = `${userId}\0${at.machine}`;
+      if (at.runtime !== c.local && !swept.has(key)) {
+        swept.add(key);
+        await sweep(at.runtime).catch(() => {});
+      }
       const name = `hopper-check-${t.name}-${Date.now().toString(36)}${(n++).toString(36)}`;
       holds.add(name);
       try {
         // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
         if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
-        const check = await runCheck(c, userId, t, name);
+        const check = await runCheck({ ...c, runtime: at.runtime, network: at.network }, userId, t, name);
         await templates.record(userId, t.name, check);
-        c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}`);
+        c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}${at.runtime === c.local ? '' : ` on ${at.machine}`}`);
       } finally {
         holds.delete(name);
       }

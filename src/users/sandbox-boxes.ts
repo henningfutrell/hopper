@@ -23,9 +23,15 @@ export const sandboxBoxesFor = (instance: { users: { get(id: string): unknown } 
     return rt ? sandboxBoxesOf(rt.host) : undefined;
   };
 
-/** A user's client target by name (issue #708): its runtime calls go through its client; a box there dials the hopper where the machine did. */
-export const sandboxClientsOf = (runtimes: { get(id: string): { machineLink: Pick<UserMachineLink, 'client'> } | undefined }): ClientTargets => (userId, machine) => {
-  const link = runtimes.get(userId)?.machineLink.client;
-  const t = link?.named(machine);
-  return t && link && { relay: runtimeRelay(t), dialled: () => link.dialled(machine) };
-};
+/**
+ * A user's client target by name (issue #708): its runtime calls go through its client; a box there dials the hopper
+ * where the machine did. And the names of those dialled in now, where a read-only check can run.
+ */
+export const sandboxClientsOf = (runtimes: { get(id: string): { machineLink: Pick<UserMachineLink, 'client'> } | undefined }): ClientTargets => Object.assign(
+  (userId: string, machine: string) => {
+    const link = runtimes.get(userId)?.machineLink.client;
+    const t = link?.named(machine);
+    return t && link && { relay: runtimeRelay(t), dialled: () => link.dialled(machine) };
+  },
+  { dialledIn: (userId: string) => runtimes.get(userId)?.machineLink.client.dialledIn() ?? [] },
+);

@@ -66,8 +66,8 @@ export interface UserMachineLink {
   join(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
   /** The client token of the client target holding this machine key; undefined when none does. */
   tokenFor(key: string): string | undefined;
-  /** The client target named `machine`, reached down its link, and where it dialled in (issue #708: a box on it). */
-  client: Pick<UserLink, 'named' | 'dialled'>;
+  /** The client target named `machine`, reached down its link, where it dialled in, and which are (issue #708: a box on it). */
+  client: Pick<UserLink, 'named' | 'dialled' | 'dialledIn'>;
 }
 
 /** What the instance gives each user runtime. */

@@ -8,6 +8,8 @@
 // and checks them: a container it creates carries the sandbox flags and mounts nothing of this machine; it starts,
 // stops, inspects, start-checks and removes only containers the hopper labelled as its boxes, and volumes named as their homes;
 // it builds only a tools image, with the adapters' own build options, from a context of one Containerfile.
+// A check box (the read-only check, issue #716) is made the same way, under its own label and name; it alone runs a
+// script in place of its entrypoint, and it alone is waited on and has its output read.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
 // builder on purpose: this end imports nothing of hopper, and it holds the line even if the hopper's end is wrong.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -27,8 +29,11 @@ export function defaultRuntimeSockets(env: NodeJS.ProcessEnv = process.env, uid 
 const PREFIX: Record<RuntimeKind, string> = { podman: '/v5.0.0/libpod', docker: '/v1.41' };
 /** A build fetches every tool it adds (issue #716): the longest call the adapters make. */
 const MAX_TIMEOUT_MS = 30 * 60_000;
-const NAME = /^hopper-sandbox-[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const NAME = /^hopper-(sandbox|check)-[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const NAMES = { box: /^hopper-sandbox-[A-Za-z0-9][A-Za-z0-9_.-]*$/, check: /^hopper-check-[A-Za-z0-9][A-Za-z0-9_.-]*$/ };
 const BOX_LABEL = 'io.hopper.box';
+/** The label of a check box (src/sandbox/check.ts `CHECK_LABEL`): a one-shot box of the read-only check. */
+const CHECK_LABEL = 'io.hopper.check';
 const HOME = '/home/agent';
 /** The tag of a tools image (src/sandbox/tools.ts `TOOLS_IMAGE`): the one image a build may make here. */
 const TOOLS_TAG = /^localhost\/hopper-box-tools:[0-9a-f]{16}$/;
@@ -46,9 +51,10 @@ export function runtimeHere(sockets: RuntimeSockets): { kind: RuntimeKind; socke
   return undefined;
 }
 
-interface Answer { status: number; text: string }
+/** `base64`: the answer's bytes as they came, for a check box's output (binary frames). */
+interface Answer { status: number; text: string; base64?: string }
 
-function call(socket: string, method: string, path: string, body: unknown, timeoutMs: number): Promise<Answer> {
+function call(socket: string, method: string, path: string, body: unknown, timeoutMs: number, raw = false): Promise<Answer> {
   return new Promise((resolve, reject) => {
     // A Buffer is a build's context, sent as the tar it is; anything else as JSON.
     const payload = body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body);
@@ -57,10 +63,12 @@ function call(socket: string, method: string, path: string, body: unknown, timeo
       socketPath: socket, method, path, timeout: timeoutMs,
       headers: { host: 'localhost', ...(payload === undefined ? {} : { 'content-type': type, 'content-length': Buffer.byteLength(payload) }) },
     }, (res) => {
-      let text = '';
-      res.setEncoding('utf8');
-      res.on('data', (d: string) => { text += d; });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+      const chunks: Buffer[] = [];
+      res.on('data', (d: Buffer) => { chunks.push(d); });
+      res.on('end', () => {
+        const bytes = Buffer.concat(chunks);
+        resolve({ status: res.statusCode ?? 0, text: bytes.toString('utf8'), ...(raw ? { base64: bytes.toString('base64') } : {}) });
+      });
       res.on('error', reject);
     });
     req.on('timeout', () => req.destroy(new Error(`no answer from the runtime within ${Math.round(timeoutMs / 1000)} s`)));
@@ -77,9 +85,20 @@ const onlyKeys = (o: Record<string, unknown>, allowed: string[], what: string): 
   return extra.length ? `${what} may not set ${extra.join(', ')}` : undefined;
 };
 const sameList = (v: unknown, want: string[]): boolean => Array.isArray(v) && v.length === want.length && v.every((x, i) => x === want[i]);
+type BoxKind = 'box' | 'check';
+const kindOf = (labels: unknown): BoxKind | undefined =>
+  !isObject(labels) ? undefined : typeof labels[BOX_LABEL] === 'string' ? 'box' : typeof labels[CHECK_LABEL] === 'string' ? 'check' : undefined;
+const named = (kind: BoxKind, name: unknown): string | undefined =>
+  typeof name === 'string' && NAMES[kind].test(name) ? undefined : kind === 'box' ? 'a sandbox box is named hopper-sandbox-<name>' : 'a check box is named hopper-check-<name>';
+/** A check box runs its script once, as `sh -c`, on a terminal; a sandbox box runs its image's own entrypoint. */
+function scriptProblem(kind: BoxKind, entrypoint: unknown, cmd: unknown, tty: unknown, restart: unknown): string | undefined {
+  if (kind === 'box') return entrypoint === undefined && cmd === undefined && tty === undefined ? undefined : "a sandbox box runs its image's own entrypoint";
+  const once = sameList(entrypoint, ['/bin/sh']) && Array.isArray(cmd) && cmd.length === 2 && cmd[0] === '-c' && typeof cmd[1] === 'string' && tty === true && restart === 'no';
+  return once ? undefined : 'a check box runs its script once, as sh -c';
+}
 
-const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'healthconfig'];
-const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig', 'Healthcheck'];
+const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'healthconfig', 'entrypoint', 'command', 'terminal'];
+const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig', 'Healthcheck', 'Entrypoint', 'Cmd', 'Tty'];
 /** The start check (issue #708): a command run in the box, as the box's user, under its flags; only these fields. */
 const CHECK_KEYS = ['Test', 'Interval', 'Timeout', 'Retries'];
 const checkProblem = (c: unknown): string | undefined => (c === undefined ? undefined : !isObject(c) || !Array.isArray(c.Test) ? "a sandbox box's start check is a Test command" : onlyKeys(c, CHECK_KEYS, "a sandbox box's start check"));
@@ -89,8 +108,10 @@ const DOCKER_HOST_KEYS = ['CapDrop', 'SecurityOpt', 'ReadonlyRootfs', 'Tmpfs', '
 function podmanCreateProblem(b: Record<string, unknown>): string | undefined {
   const extra = onlyKeys(b, PODMAN_KEYS, 'a sandbox box') ?? checkProblem(b.healthconfig);
   if (extra) return extra;
-  if (typeof b.name !== 'string' || !NAME.test(b.name)) return 'a sandbox box is named hopper-sandbox-<name>';
-  if (!isObject(b.labels) || typeof b.labels[BOX_LABEL] !== 'string') return `a sandbox box carries the ${BOX_LABEL} label`;
+  const kind = kindOf(b.labels);
+  if (!kind) return `a sandbox box carries the ${BOX_LABEL} label`;
+  const problem = named(kind, b.name) ?? scriptProblem(kind, b.entrypoint, b.command, b.terminal, b.restart_policy);
+  if (problem) return problem;
   if (!sameList(b.cap_drop, ['ALL'])) return 'a sandbox box runs with every capability dropped';
   if (b.no_new_privileges !== true) return 'a sandbox box runs with no new privileges';
   if (b.read_only_filesystem !== true) return 'a sandbox box runs on a read-only root';
@@ -106,8 +127,10 @@ function dockerCreateProblem(b: Record<string, unknown>, name: string | null): s
   if (!isObject(h)) return 'a sandbox box has its HostConfig';
   const extra = onlyKeys(b, DOCKER_KEYS, 'a sandbox box') ?? onlyKeys(h, DOCKER_HOST_KEYS, "a sandbox box's HostConfig") ?? checkProblem(b.Healthcheck);
   if (extra) return extra;
-  if (!name || !NAME.test(name)) return 'a sandbox box is named hopper-sandbox-<name>';
-  if (!isObject(b.Labels) || typeof b.Labels[BOX_LABEL] !== 'string') return `a sandbox box carries the ${BOX_LABEL} label`;
+  const kind = kindOf(b.Labels);
+  if (!kind) return `a sandbox box carries the ${BOX_LABEL} label`;
+  const problem = named(kind, name) ?? scriptProblem(kind, b.Entrypoint, b.Cmd, b.Tty, isObject(h.RestartPolicy) ? h.RestartPolicy.Name : undefined);
+  if (problem) return problem;
   if (!sameList(h.CapDrop, ['ALL'])) return 'a sandbox box runs with every capability dropped';
   if (!sameList(h.SecurityOpt, ['no-new-privileges'])) return 'a sandbox box runs with no new privileges';
   if (h.ReadonlyRootfs !== true) return 'a sandbox box runs on a read-only root';
@@ -142,7 +165,8 @@ function buildProblem(kind: RuntimeKind, q: URLSearchParams, c: RuntimeCall): st
   return undefined;
 }
 
-type Check = { container: string } | { volume: string } | { create: true } | { build: true } | 'open';
+/** `container`, with `checkOnly`: a call only a check box takes — its end awaited, its output read. */
+type Check = { container: string; checkOnly?: true } | { volume: string } | { create: true } | { build: true } | 'open';
 
 /** What a call is, as the adapters make it: undefined, it is no call of theirs. */
 function routeOf(kind: RuntimeKind, method: string, route: string): Check | undefined {
@@ -159,6 +183,7 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (a === 'volumes' && n === 2 && (method === 'DELETE' || (kind === 'docker' && method === 'GET'))) return { volume: b! };
   if (a === 'containers' && n === 2 && method === 'DELETE') return { container: b! };
   if (a === 'containers' && n === 3 && ((method === 'GET' && (c === 'json' || (kind === 'podman' && c === 'healthcheck'))) || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
+  if (a === 'containers' && n === 3 && ((method === 'POST' && c === 'wait') || (method === 'GET' && c === 'logs'))) return { container: b!, checkOnly: true };
   return undefined;
 }
 
@@ -205,7 +230,10 @@ export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { 
     if (seen.status < 200 || seen.status >= 300) return seen;
     let labels: unknown;
     try { labels = (JSON.parse(seen.text) as { Config?: { Labels?: unknown } }).Config?.Labels; } catch { /* no labels */ }
-    if (!isObject(labels) || typeof labels[BOX_LABEL] !== 'string') return refused(`${check.container} is not a sandbox box the hopper made`);
+    const kind = kindOf(labels);
+    if (!kind) return refused(`${check.container} is not a sandbox box the hopper made`);
+    if (check.checkOnly && kind !== 'check') return refused(`${check.container} is not a check box: only a check box is waited on and has its output read`);
+    if (check.checkOnly) return call(here.socket, c.method, c.path, c.body, timeout, true);
   }
   return call(here.socket, c.method, c.path, c.body, timeout);
 }

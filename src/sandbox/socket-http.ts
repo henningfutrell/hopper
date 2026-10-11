@@ -3,7 +3,8 @@
 // clients (dockerode) speak only the Docker API, which has no rootless answer for Podman's volumes.
 import { request } from 'node:http';
 
-export interface Answer { status: number; text: string }
+/** `bytes`: the body as it came, when the call carries them (a container's logs, issue #716). */
+export interface Answer { status: number; text: string; bytes?: Buffer }
 
 /** How long one call may take; a pull may take longer, so it passes its own. */
 export const CALL_MS = 30_000;
@@ -13,7 +14,7 @@ export type SocketCall = (socket: string, method: string, path: string, body?: u
 
 export async function socketCall(socket: string, method: string, path: string, body?: unknown, timeoutMs = CALL_MS): Promise<Answer> {
   const a = await socketBytes(socket, method, path, body, timeoutMs);
-  return { status: a.status, text: a.bytes.toString('utf8') };
+  return { status: a.status, text: a.bytes.toString('utf8'), bytes: a.bytes };
 }
 
 /** One call, its answer as the bytes it came as: a container's logs (issue #716) carry binary frame headers. */

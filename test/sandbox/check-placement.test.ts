@@ -86,10 +86,13 @@ function setup() {
   };
   const recorded: ReadOnlyCheck[] = [];
   const logged: string[] = [];
+  const at: { place: CheckPlace | undefined } = { place: undefined };
   const s = {
-    studio, recorded, logged, place: undefined as CheckPlace | undefined, template: () => template,
+    studio, recorded, logged, template: () => template,
+    get place() { return at.place; },
+    set place(p: CheckPlace | undefined) { at.place = p; },
     pass: createCheckPass({
-      place: async () => s.place, instanceId: 'i', probes: HOPPER_PROBES, clock: { now: () => new Date('2030-01-01T00:01:00Z') },
+      place: async () => at.place, instanceId: 'i', probes: HOPPER_PROBES, clock: { now: () => new Date('2030-01-01T00:01:00Z') },
       logger: { info: (l) => { logged.push(l); }, warn: () => {} },
       credentials: { credential: async () => ({ minted: { kind: 'kube', token: 't', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://k' } }) },
     }, {

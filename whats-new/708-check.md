@@ -1,0 +1,1 @@
+- A hopper with no container runtime of its own now runs the read-only check of a template on one of your machines that joined with Add machine and has Podman or Docker. Before, such a template waited for its check for good.

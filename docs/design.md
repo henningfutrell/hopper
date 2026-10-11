@@ -4661,6 +4661,8 @@ deleted the home volume.
   runs the same drafts through the page and through `resolveParams` and fails when they disagree.
 - **Tools on a client target (part 7, 2026-10-11).** A box with tools (issue #716) on a client target runs the tools
   image built in that machine's runtime — "Tools on a client target" below.
+- **The read-only check on a client target (part 8, 2026-10-11).** A hopper given no runtime runs the read-only check
+  (issue #716) on a client target of the template's user — "The read-only check on a client target" below.
 - **The line's limits (part 6, 2026-10-11).** The line Add machine shows for a box the hopper does not start gets its
   `run` flags with its join code: `POST /ui/api/machines/join` with `box: { cpus?, memoryMb? }` answers `flags`, built
   by `runFlags` from `lineFlags` (`launch.ts`), which resolves the CPUs and memory against the template as a launch
@@ -4691,8 +4693,8 @@ box with tools (issue #716) started only beside the hopper.
 - **Residual risk, stated.** The client does not check the Containerfile's steps: a build runs them in the machine's
   rootless runtime, with its network, as the user the client runs as. A compromise of the hopper's process can already
   run any job on that machine through herdr, so this adds no reach. The box made from the image still passes the
-  client's create checks (the sandbox flags, a non-root user). Not built: the read-only check (issue #716, item 4)
-  on a client target — `wait` and `logs` are not carried.
+  client's create checks (the sandbox flags, a non-root user). The read-only check (issue #716, item 4) on a client
+  target followed in part 8.
 
 **Verification (part 7).** `test/client/runtime.test.ts`: a build carried to Podman and to Docker as the tar of its
 Containerfile; refused for a tag that is not a tools image, a `networkmode` or `volume` option, another `dockerfile`,
@@ -4701,6 +4703,46 @@ of them. `test/adapters/remote-runtime.test.ts`: the build through a real client
 build asks no build. `test/integration/sandbox-remote.test.ts`: a box with `kubectl` launched on a client target runs
 the tools image built in that machine's Podman, the hopper's own runtime builds nothing, and a second box builds
 nothing again.
+
+### The read-only check on a client target (issue #708 part 8, 2026-10-11)
+
+Before it, the check pass ran only on the runtime beside the hopper, and the remote runtime refused `wait` and `logs`.
+A hopper given no runtime socket (no `compose.sandboxes.yaml`) never checked a template: a read-only template waited
+for its check for good, though its user's machines had Podman.
+
+- **Where it runs** (`Placements.forCheck`, `src/sandbox/runtime.ts`). Beside the hopper when it is given a runtime,
+  as before. Else on the first of the user's client targets that is dialled in (`UserLink.dialledIn`) and has a
+  runtime there, on that machine's host network, as a box there. Else nowhere: the template waits, no check is
+  recorded, and the next pass looks again. The check pass (`createCheckPass`, `CheckPassContext.place`) asks for each
+  template that is due; the log line names the machine. A client target's check boxes that no run holds are removed
+  before the first check of a pass there; the runtime beside the hopper is swept at each pass, as before.
+- **The hopper's end** (`remote.ts`). `wait` and `logs` are the adapters' own, carried like every other call. A
+  container's logs are binary frames (libpod frames them even on a terminal), and a frame's length is no UTF-8 text:
+  the client answers them as `base64` beside `text` (`RuntimeAnswer`), and the adapters read `Answer.bytes`. Beside
+  the hopper, `socketCall` gives the bytes too, so the Podman and Docker adapters read logs through their one `call`.
+- **The client's end** (`src/client/runtime.ts`). A container is the hopper's when it carries the box label or the
+  check label (`io.hopper.check`). A check box is named `hopper-check-<name>`, a sandbox box `hopper-sandbox-<name>`;
+  each mounts only a home volume of either name. Only a check box runs a script: `/bin/sh -c <script>` on a terminal,
+  never restarted (Podman `entrypoint`, `command`, `terminal`, `restart_policy: no`; Docker `Entrypoint`, `Cmd`,
+  `Tty`, `RestartPolicy.Name: no`). A sandbox box with any of these, or a check box without that shape, is refused.
+  `POST /containers/{id}/wait` and `GET /containers/{id}/logs` run only on a check box; on a sandbox box they are 403.
+  Every other create check (the sandbox flags, a non-root user, no mount of the machine) is the same for both.
+- **An older client** refuses the check box's create with 403. The check fails with that reason and removes what it
+  made; a person runs it again once the machine has the new client.
+- **Residual risk, stated.** The check box's minted read credentials (issue #797) are in its create body, so they go
+  down the machine's link and are in that machine's runtime until the box is removed. They are read credentials, they
+  expire, and the same machine already takes a running job's credentials (`/credential`). The client lets the hopper
+  read only a check box's output, never a sandbox box's.
+
+**Verification (part 8).** `test/client/runtime.test.ts`: a check box carried with its script, waited on, and its
+logs answered as the bytes sent (a frame over 127 bytes); refused: a script on a sandbox box, a check box with no
+script, another shell, more arguments or a restart policy, a check box named as a sandbox box, and a wait or a logs
+read of a sandbox box or of a container the hopper did not make. `test/adapters/remote-runtime.test.ts`: a check box's
+life through a real client, its framed output with non-ASCII text read whole. `test/sandbox/check-placement.test.ts`:
+the placement (beside the hopper, else the first client target dialled in with a runtime, else none), a check run on a
+client target with its leftover check box removed first, and a template that waits with nowhere to run.
+`test/adapters/podman-check.test.ts` (real rootless Podman): the check run through a real client on that Podman passed,
+its output read through the client, and nothing of it left.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 

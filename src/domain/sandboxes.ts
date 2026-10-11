@@ -109,8 +109,8 @@ export interface ContainerRuntime {
  * `tar`, a build's context in base64 (a tools image, issue #716).
  */
 export interface RuntimeRelayCall { method: string; path: string; body?: unknown; tar?: string; timeoutMs?: number }
-/** The runtime's own answer: its status and its body. */
-export interface RuntimeAnswer { status: number; text: string }
+/** The runtime's own answer: its status and its body; `base64`, its bytes as they came (a check box's output, issue #708). */
+export interface RuntimeAnswer { status: number; text: string; base64?: string }
 
 /** How the remote runtime reaches a client target's own runtime: its client says which it has, and runs each call. */
 export interface RuntimeRelay {

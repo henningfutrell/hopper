@@ -99,8 +99,8 @@ describe.skipIf(!SOCKET)('the read-only check, real rootless Podman (issue #716)
     const check = await runCheck({ ...context(probeCatalog(probes)), runtime }, 'admin', template(['kubectl']), name);
     expect(check.problem).toBeUndefined();
     expect(check.state).toBe('passed');
-    expect(check.probes[1]!.output.startsWith('1\n2\n3\n')).toBe(true);
-    expect(check.probes[1]!.output.endsWith('2000\n1000')).toBe(true);
+    // The output kept is its tail (PROBE_OUTPUT_MAX): many frames, read whole through the client.
+    expect(check.probes[1]!.output).toMatch(/\n1998\n1999\n2000\n1000$/);
     left(name);
   }, 600_000);
 });

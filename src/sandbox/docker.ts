@@ -4,7 +4,7 @@
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 /** Docker Engine 20.10 and later answer this version. */
 const API = '/v1.41';
@@ -98,9 +98,9 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async logs(id) {
-      const a = await socketBytes(socket, 'GET', API + `/containers/${enc(id)}/logs?stdout=1&stderr=1`);
-      if (a.status < 200 || a.status >= 300) throw refusal(`read what the box ${id} wrote`, { status: a.status, text: a.bytes.toString('utf8') });
-      return logText(a.bytes);
+      const a = await call('GET', `/containers/${enc(id)}/logs?stdout=1&stderr=1`);
+      if (!ok(a)) throw refusal(`read what the box ${id} wrote`, a);
+      return logText(a.bytes ?? Buffer.from(a.text, 'utf8'));
     },
 
     async inspect(id) {

@@ -523,6 +523,11 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
   to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
   Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
+- **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
+  (`compose.sandboxes.yaml`). With none, it runs on a machine of the template's user that joined with Add machine, is
+  dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
+  the check box there. With neither, the template waits for its check. A client older than this release refuses the
+  check box, and the check fails with that reason; run it again once the machine has the new client.
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
