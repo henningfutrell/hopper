@@ -43,7 +43,7 @@ export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $numbe
 
 export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: [OPEN], first: 100, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url createdAt isDraft state mergeable headRefName ${HEAD_COMMIT} } }
+    pullRequests(states: [OPEN], first: 100, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url createdAt isDraft state mergeable headRefName body ${HEAD_COMMIT} } }
   }
 }`;
 
@@ -52,6 +52,7 @@ interface Referenced {
   url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string;
   commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } } | null)[] };
   headRefName?: string;
+  body?: string;
 }
 interface Numbered extends Referenced { __typename?: string; mergedAt?: string | null; baseRefName?: string }
 interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
@@ -132,5 +133,5 @@ export function referencingPullRequestsFrom(body: unknown, what: string): Refere
 export function repoPullRequestsFrom(body: unknown, what: string): BranchPullRequest[] {
   const nodes = response(body, what).data?.repository?.pullRequests?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt && n.headRefName
-    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, ...headOf(n) }] : []);
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '', ...headOf(n) }] : []);
 }

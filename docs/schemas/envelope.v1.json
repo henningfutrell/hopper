@@ -156,6 +156,7 @@
         "job.pull_request_closed",
         "job.finish_briefed",
         "job.pull_request_tended",
+        "job.pull_request_followed",
         "skill.listed",
         "skill.loaded",
         "skill.refused",
