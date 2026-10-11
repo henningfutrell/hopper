@@ -2,7 +2,8 @@
 // level answers the question or escalates it to the next level up; above the top level is the
 // owner. An answer is typed into the job unless a risk rule matches, which sends the question to
 // the owner whatever level answered, or auto-answer holds it (issue #632, ./auto-answer.ts): the consequential
-// guard, a high-priority job, auto-answer off, or a confidence below the threshold. A person may correct an auto-answer. First of all, a question whose answer the facts fix (issue #629) is answered
+// guard, a high-priority job when the user holds those, auto-answer off, or a confidence below the threshold — each one
+// recorded (issue #679). A person may correct an auto-answer. First of all, a question whose answer the facts fix (issue #629) is answered
 // without a model: an allowed permission dialog, or a person's answer reused; the risk rules still run. Then, before the levels, a question that lists its options is a decider call
 // (issue #550): Jev picks first, and its pick is the answer only when its decision point is active and it is sure. The levels are looked up per question (a live role), and every
 // reply is validated here: a level that breaks its contract, fails or times out escalates, it never
@@ -147,7 +148,8 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     const data = escalationData(updated, HUMAN, reason);
     emit(updated, 'question.escalated', data);
     const { target: _target, ...toHumanData } = data;
-    emit(updated, 'question.escalated_to_human', toHumanData);
+    // Every hold on the answer (issue #679), by name.
+    emit(updated, 'question.escalated_to_human', { ...toHumanData, ...(to.holds ? { holds: to.holds } : {}) });
     queueMicrotask(() => armHuman(q.id));
   }
 
@@ -222,7 +224,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
       // every level above: no model approves what the rules guard. Then auto-answer (issue #632) may hold it for a person,
       // or, below the threshold, for the next level.
       const { riskRules, hold } = answerHold({ store, q, answer, level: level.name, top: number >= of, confidence, gated: o.minorDecisions?.gated });
-      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, ...(hold ? {} : { outcome: 'accepted' as const }) });
+      store.questions.addAttempt(id, { ...base, ...replyFields, riskRules, ...(hold ? { holds: hold.holds } : { outcome: 'accepted' as const }) });
       if (hold) return hold.to === 'next' ? { why: hold.why, reason: hold.reason } : void toHuman(q, hold.why, hold);
       const updated = store.questions.update(id, { status: 'answered', answer, answeredBy: level.name });
       emit(updated, 'question.answered', { by: level.name, answer, auto: true, ...(confidence ? { confidence } : {}) });

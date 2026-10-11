@@ -120,8 +120,8 @@ export function answerFixed(d: FixedAnswerDeps, id: string): boolean {
     const hits = riskRules(`${q.text}\n${fixed.answer}`);
     const attempt: QuestionAttempt = { tier: FIXED, role: 'fixed', startedAt: at, finishedAt: at, answer: fixed.answer, reason: fixed.reason, riskRules: hits, outcome: 'escalated' };
     if (hits.length > 0) {
-      store.questions.addAttempt(id, attempt);
-      d.toHuman(q, `risk rules: ${hits.join(', ')}`, { reason: 'guard', guards: hits, kept: 'risk' });
+      store.questions.addAttempt(id, { ...attempt, holds: [{ reason: 'guard', by: 'risk', guards: hits }] });
+      d.toHuman(q, `risk rules: ${hits.join(', ')}`, { reason: 'guard', guards: hits, kept: 'risk', holds: [{ reason: 'guard', by: 'risk', guards: hits }] });
       return true;
     }
     store.questions.addAttempt(id, { ...attempt, outcome: 'accepted' });

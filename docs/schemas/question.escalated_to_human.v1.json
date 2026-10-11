@@ -54,6 +54,56 @@
     },
     "high": {
       "type": "boolean"
+    },
+    "holds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "guard",
+              "high_priority",
+              "auto_answer_off",
+              "low_confidence"
+            ]
+          },
+          "by": {
+            "type": "string",
+            "enum": [
+              "risk",
+              "guard"
+            ]
+          },
+          "guards": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "threshold": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

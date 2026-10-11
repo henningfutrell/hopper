@@ -36,6 +36,33 @@ describe('riskRules', () => {
     expect(riskRules(text)).toEqual([]);
   });
 
+  // Issue #679: a plain negation of what a rule catches is not a hit, in the question or the answer.
+  const negated = [
+    'This change uses no secrets.',
+    'It needs no secrets at all',
+    'Go ahead: the step runs without credentials',
+    'It runs without any credentials',
+    'a secret-free build',
+    'The job uses no tokens',
+    'It uses no API keys and no passwords',
+    'no stored secrets are read',
+  ];
+  it.each(negated)('does not match the negation %s', (text) => {
+    expect(riskRules(text)).toEqual([]);
+  });
+
+  const stillHits: Array<[string, string]> = [
+    ['rotate the secrets', 'credentials'],
+    ['No, paste the password', 'credentials'],
+    ['there is no need to rotate the api key', 'credentials'],
+    ['no reason to keep it, delete the branch', 'delete'],
+    ['It uses no secrets but reads the access token', 'credentials'],
+    ['no secrets here; paste the password', 'credentials'],
+  ];
+  it.each(stillHits)('still matches %s as %s', (text, rule) => {
+    expect(riskRules(text)).toContain(rule);
+  });
+
   it('returns each rule name once, in rule order', () => {
     expect(riskRules('deploy and delete and deploy; delete')).toEqual(['delete', 'deploy']);
   });

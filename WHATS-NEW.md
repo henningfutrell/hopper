@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A question that comes to you now lists every reason it was held, not only the first: for example a safety rule, a high-priority job and a not-sure-enough answer together. A sure answer on a high-priority job now goes to the job on its own; to keep those for yourself, turn on "Hold high-priority questions for me" in Settings → Question gates. Safety rules no longer stop an answer for plain negations such as "uses no secrets".
 - An assistant with an API token can now ask the hopper for the sandbox template some work needs, the same way a job asks. The hopper makes it, and approves it by itself only when the work only reads what your read policy allows. You can also ask from the command line.
 - A running job's bar now shows how many of its tasks are done, for example 2/5, and moves on when a task is done. It no longer fills with time. Before the job has made its task list, the bar only shows that the job works.
 - When several pull requests of a repository need a rebase at once, the hopper now rebases and merges them one at a time, so each merge no longer breaks the others again. On Settings → Decider, Jev can now also pick which pull request goes next, and which new issue enters the queue first.

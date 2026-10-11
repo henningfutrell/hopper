@@ -393,7 +393,7 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 
 ## `question.escalated`
 
-Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`).
 
 | field | type | required |
 |---|---|---|
@@ -428,7 +428,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.escalated_to_human`
 
-Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer: the Grok Bot routine webhook listens to it and to no `question.escalated` (issue #481). `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer: the Grok Bot routine webhook listens to it and to no `question.escalated` (issue #481). `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`).
 
 | field | type | required |
 |---|---|---|
@@ -444,6 +444,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `raisedBy` | object | no |
 | `priority` | number | no |
 | `high` | boolean | no |
+| `holds` | object[] | no |
 
 ```json
 {
@@ -460,7 +461,21 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
     "laneId": "desk/lane-1"
   },
   "priority": 75,
-  "high": true
+  "high": true,
+  "holds": [
+    {
+      "reason": "guard",
+      "by": "risk",
+      "guards": [
+        "credentials"
+      ]
+    },
+    {
+      "reason": "low_confidence",
+      "confidence": "medium",
+      "threshold": "high"
+    }
+  ]
 }
 ```
 
@@ -1191,7 +1206,7 @@ Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origin
 
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
 
 | field | type | required |
 |---|---|---|
@@ -1298,7 +1313,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 
 ## `job.assessed`
 
-Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`).
 
 | field | type | required |
 |---|---|---|
@@ -1411,7 +1426,7 @@ Version 1 (`docs/schemas/failure.released.v1.json`). A person released a problem
 
 ## `handoff.opened`
 
-Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person resolves it (issue #551) or its item runs again — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person resolves it (issue #551) or its item runs again — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`).
 
 | field | type | required |
 |---|---|---|
@@ -2416,7 +2431,7 @@ Version 1 (`docs/schemas/question.corrected.v1.json`). A person corrected an esc
 
 ## `auto_answer.settings_changed`
 
-Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), and the least confidence it needs (`threshold`: `low`, `medium` or `high`), `from` and `to`.
+Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), the least confidence it needs (`threshold`: `low`, `medium` or `high`), and whether a high-priority job's question goes to a person (`holdHighPriority`, issue #679; absent before it), `from` and `to`.
 
 | field | type | required |
 |---|---|---|
@@ -2428,11 +2443,13 @@ Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin change
 {
   "from": {
     "enabled": true,
-    "threshold": "high"
+    "threshold": "high",
+    "holdHighPriority": false
   },
   "to": {
     "enabled": true,
-    "threshold": "medium"
+    "threshold": "medium",
+    "holdHighPriority": false
   },
   "by": "admin"
 }

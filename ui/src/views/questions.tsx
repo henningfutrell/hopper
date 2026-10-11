@@ -32,7 +32,7 @@ import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
 import { unseenByOwner } from '@/model/questions';
-import { REASON_LABELS, reasonCounts, reasonSentence, recommendationLine, stageName, trailReason } from '@/model/escalation';
+import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
@@ -193,7 +193,7 @@ export function Questions() {
   const counts = useMemo(() => reasonCounts(questions), [questions]);
   // A filter whose last question left shows all again.
   const active = reason && counts.some((c) => c.reason === reason) ? reason : undefined;
-  const ordered = useMemo(() => questionOrder(active ? questions.filter((q) => q.escalation?.reason === active) : questions), [questions, active]);
+  const ordered = useMemo(() => questionOrder(active ? questions.filter((q) => reasonsOf(q.escalation).includes(active)) : questions), [questions, active]);
   const list = useRef<HTMLDivElement>(null);
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.

@@ -1,6 +1,7 @@
 // Auto-answer (issue #632, design.md "Question pipeline"): a level's answer goes into the job with no person when
 // auto-answer is on, the level does not escalate and its confidence meets the threshold. The hard limits stay: the
-// risk rules, the consequential guard and a high-priority job send the question to a person, whatever the level says.
+// risk rules and the consequential guard send the question to a person, whatever the level says; a high-priority job
+// does only when the user turns that hold on (issue #679).
 // A person may correct an auto-answer: the question records what it replaced, and the job gets the correction.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANSWERED, UP, rig, settle } from './support.ts';
@@ -94,14 +95,75 @@ describe('hard limits: a person answers, whatever the level says', () => {
     expect(r.eventsOf('question.escalated_to_human')[0]!.data.reason).toMatch(/consequential: permissions/);
   });
 
-  it('a high-priority job', async () => {
+});
+
+describe('a high-priority job (issue #679): only risk and guard cases hold a sure answer', () => {
+  it('by default a sure answer on a high-priority job goes into the job, no person', async () => {
     const r = rig({ levels: { fable: () => ANSWERED } });
+    const q = r.question();
+    r.mem.setJob(q.jobId, { priority: 90 });
+    r.svc.handle(q.id);
+    await settle();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'fable' });
+  });
+
+  it('with "hold high-priority questions for me" on, a person answers', async () => {
+    const r = rig({ levels: { fable: () => ANSWERED } });
+    r.mem.store.settings.setAutoAnswer({ enabled: true, threshold: 'high', holdHighPriority: true });
     const q = r.question();
     r.mem.setJob(q.jobId, { priority: 90 });
     r.svc.handle(q.id);
     await settle();
     atHuman(r, q.id);
     expect(r.eventsOf('question.escalated_to_human')[0]!.data.reason).toMatch(/high priority/);
+  });
+});
+
+describe('every hold is recorded (issue #679), not only the first', () => {
+  it('a risk rule, low confidence and a held high-priority job: all three on the attempt and the event; keptBy the strongest', async () => {
+    const r = rig({ levels: { fable: () => ({ ...ANSWERED, answer: 'Go ahead, rotate the api key', confidence: 'medium' }) } });
+    r.mem.store.settings.setAutoAnswer({ enabled: true, threshold: 'high', holdHighPriority: true });
+    const q = r.question('May I chmod the build directory?');
+    r.mem.setJob(q.jobId, { priority: 90 });
+    r.svc.handle(q.id);
+    await settle();
+    const got = atHuman(r, q.id);
+    const holds = [
+      { reason: 'guard', by: 'risk', guards: ['credentials'] },
+      { reason: 'guard', by: 'guard', guards: ['permissions'] },
+      { reason: 'high_priority' },
+      { reason: 'low_confidence', confidence: 'medium', threshold: 'high' },
+    ];
+    expect(got.attempts[0]).toMatchObject({ riskRules: ['credentials'], holds, outcome: 'escalated' });
+    expect(got.keptBy).toBe('risk');
+    const event = r.eventsOf('question.escalated_to_human')[0]!.data;
+    expect(event.holds).toEqual(holds);
+    expect(event.reason).toMatch(/risk rules: credentials.*consequential: permissions.*high priority.*medium confidence/);
+  });
+
+  it('auto-answer off: no threshold hold beside it', async () => {
+    const r = rig({ levels: { fable: () => ({ ...ANSWERED, confidence: 'low' }) } });
+    r.mem.store.settings.setAutoAnswer({ enabled: false, threshold: 'high' });
+    const q = r.question();
+    r.svc.handle(q.id);
+    await settle();
+    expect(atHuman(r, q.id).attempts[0]!.holds).toEqual([{ reason: 'auto_answer_off' }]);
+  });
+
+  it('a lower level below the threshold climbs, its hold on its attempt', async () => {
+    const r = rig({ levels: { jr: () => ({ ...ANSWERED, confidence: 'low' }), fable: () => ANSWERED } });
+    const q = r.question();
+    r.svc.handle(q.id);
+    await settle();
+    expect(r.mem.store.questions.get(q.id)!.attempts[0]!.holds).toEqual([{ reason: 'low_confidence', confidence: 'low', threshold: 'high' }]);
+  });
+
+  it('"no secrets" in the question is not held by the credentials rule', async () => {
+    const r = rig({ levels: { fable: () => ({ ...ANSWERED, answer: 'Go ahead: it uses no secrets' }) } });
+    const q = r.question('This CI step uses no secrets. May I add it?');
+    r.svc.handle(q.id);
+    await settle();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'answered', answeredBy: 'fable' });
   });
 });
 

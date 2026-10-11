@@ -36,6 +36,8 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   confidence?: Confidence;
   /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
   riskRules?: string[];
+  /** Everything that held the level's answer back from the job (issue #679), strongest first; absent: nothing held it. */
+  holds?: AnswerHold[];
   reason?: string;
   error?: string;
   /** accepted: its answer was typed into the job. escalated: the question went up a level, or to the human. */
@@ -52,14 +54,33 @@ export const ESCALATION_REASONS = ['guard', 'low_confidence', 'no_answer', 'fron
  */
 export type EscalationReason = (typeof ESCALATION_REASONS)[number];
 
+/**
+ * One thing that held a level's answer back from the job (issue #679): every one is recorded, not only the first.
+ * `guard`: risk rules (`by: 'risk'`) or the consequential guard (`by: 'guard'`), the names that matched in `guards`;
+ * `high_priority`: its job is high priority and the user holds those; `auto_answer_off`; `low_confidence`: the level's
+ * `confidence` (absent: it gave none) below the `threshold`.
+ */
+export interface AnswerHold {
+  reason: 'guard' | 'high_priority' | 'auto_answer_off' | 'low_confidence';
+  by?: 'risk' | 'guard';
+  guards?: string[];
+  confidence?: Confidence;
+  threshold?: Confidence;
+}
+
+/** A hold as a person is told it: each guard with what it catches. */
+export type EscalationHold = Omit<AnswerHold, 'guards'> & { guards?: GuardHit[] };
+
 /** A guard that held the answer back: a risk rule's or the consequential guard's name, and what it catches. */
 export interface GuardHit { name: string; describe: string }
 
 /** Why a question reached the human stage and what the levels recommended (issue #679); set when it gets there. */
 export interface Escalation {
   reason: EscalationReason;
-  /** `guard` only: the guards that matched. */
+  /** The guards that matched, across every guard hold. */
   guards?: GuardHit[];
+  /** Every hold on the answer that sent it here (issue #679), strongest first; `reason` is the first one's. Absent: no level's answer was held. */
+  holds?: EscalationHold[];
   /** The last answer a level, Jev or the fixed answers gave on the trail: who, what, and how sure. */
   recommendation?: { by: string; answer: string; confidence?: Confidence };
 }

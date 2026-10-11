@@ -1145,7 +1145,10 @@ the answer a level gave; run before it is typed): `\b(delete|deleting|remove (al
 `\b(credentials?|secrets?|passwords?|api[ _-]?keys?|private key|ssh key|access token)\b` ·
 `\b(send (an? |the )?(email|message|sms|dm)|post to (slack|twitter|x)|tweet|notify (the )?(customer|client|team))\b`.
 Each rule has a name (`delete`, `deploy`, `force-push`, `spend`, `credentials`,
-`send-message`); matches are recorded in `riskRules`.
+`send-message`); matches are recorded in `riskRules`. A plain negation is not a hit (issue #679): a match right after
+`no`, `without`, `zero` or `not any`, with at most two words between and none of the words that turn the negation away
+from it (`to`, `need`, `reason`, `but`, `except`, …), or right before `-free` — "uses no secrets", "without any
+credentials", "secret-free". "There is no need to rotate the api key" still hits.
 
 **Rules file** `HOPPER_RULES_FILE` (default `~/.config/hopper/rules.md`), read on
 every ask; missing → empty rules, noted in the prompt and the attempt reason. Editable from the
@@ -2714,12 +2717,17 @@ fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `ro
 2. Risk rules run on the question and the answer to be typed; a hit sends the question to the
    owner, past every level above — no model approves what the rules guard.
 3. **Auto-answer** (issue #632, `src/questions/auto-answer.ts`) decides whether the answer goes into
-   the job with no person. In order: the consequential guard (`src/minor-decisions/guard.ts`:
-   permissions, a machine the blast-radius gate keeps) and a high-priority job send the question to a
-   person; with auto-answer off, the answer is only a recommendation and a person answers; a
-   `confidence` (`low`, `medium`, `high`) below the threshold sends the question to the next level, or
-   from the top level to a person. No confidence meets no threshold. The settings are the user's
-   (`autoAnswer`, default on at `high`), read at every question, changed at `POST /ui/api/auto-answer`
+   the job with no person. The holds, strongest first: the risk rules (step 2); the consequential guard
+   (`src/minor-decisions/guard.ts`: permissions, a machine the blast-radius gate keeps); a high-priority
+   job, only with **hold high-priority questions** on (`holdHighPriority`, issue #679, default off: only
+   risk and guard cases hold a confident answer); auto-answer off, where the answer is only a
+   recommendation; a `confidence` (`low`, `medium`, `high`) below the threshold. No confidence meets no
+   threshold. Every hold is checked and recorded (issue #679), not only the first: `holds` on the attempt
+   and in `question.escalated_to_human`, each `{ reason, by?, guards?, confidence?, threshold? }`; `keptBy`
+   is the strongest (risk, then guard). Below the threshold only, at a lower level, the question climbs to
+   the next level; any other hold, or the top level, sends it to a person. The settings are the user's
+   (`autoAnswer`, default on at `high`, high-priority questions not held; a record from before issue #679
+   reads as not held), read at every question, changed at `POST /ui/api/auto-answer`
    (`auto_answer.settings_changed`) and shown in Settings → Question gates.
 4. Accepted → the answer is typed into the pane; `answeredBy` names the level, and `question.answered`
    carries `auto: true` and the confidence. Past the top level, or with no levels → the human.
@@ -2728,10 +2736,13 @@ fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `ro
 stage, it keeps `escalation`: `reason` — `guard` (a risk rule or the consequential guard held an answer back on
 purpose; `guards` names each, with what it catches), `low_confidence` (the top level was below the threshold),
 `no_answer` (no level gave an answer: it failed, gave none, or there are no levels), `frontier_escalated` (the top
-level sent it up), `high_priority`, `auto_answer_off`, or `fork` (it waits for a fork's result) — and
+level sent it up), `high_priority`, `auto_answer_off`, or `fork` (it waits for a fork's result) — the strongest
+hold's, when a hold sent it; `holds`, every hold on that answer, strongest first, each guard with what it catches; and
 `recommendation`, the last answer on the trail (who, what, how sure). The question card says it in one sentence at
-the top, with what the level recommends; Use answer names the level (`Use Fable's answer`). The Questions list
-filters by reason, with counts; `GET /api/questions?reason=` and `hopper question list [--reason]` do the same. A
+the top, every hold listed ("Sent to you because risk rule credentials holds it, its job is high priority and Fable
+was not confident enough (medium confidence, needs high)."), with what the level recommends; Use answer names the
+level (`Use Fable's answer`). The Questions list filters by reason, with counts, a question under each of its reasons;
+`GET /api/questions?reason=` and `hopper question list [--reason]` match the strongest reason or any hold. A
 question sent to a person before this has no `escalation`; the card says the reason was not recorded. Attempt
 reasons no longer end in "(no rules yet)"; the rules view says when there are none.
 

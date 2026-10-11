@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 const decisionPoint = z.enum(DECISION_POINTS);
@@ -101,7 +101,8 @@ const divergence = strict({
 const phase = z.enum(JOB_PHASES);
 const reviewKind = z.enum(REVIEW_KINDS);
 const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()) });
-const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES) });
+// `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
+const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
@@ -159,10 +160,11 @@ export const EVENT_SCHEMAS = {
     raisedBy, ...priority,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
+  // `holds` (additive, issue #679): every hold on the level's answer that sent it, strongest first.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority,
+    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority, holds: z.array(answerHold).optional(),
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).

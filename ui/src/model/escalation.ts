@@ -1,6 +1,6 @@
-// Why a question came to a person (issue #679): one plain sentence for the top of its card, what the levels recommend,
-// and the reasons the Questions list filters by.
-import type { Escalation, EscalationReason, Question } from './wire.ts';
+// Why a question came to a person (issue #679): one plain sentence for the top of its card — every hold on the answer —,
+// what the levels recommend, and the reasons the Questions list filters by.
+import type { Escalation, EscalationHold, EscalationReason, Question } from './wire.ts';
 
 /** Each reason as the filter names it. */
 export const REASON_LABELS: Record<EscalationReason, string> = {
@@ -11,9 +11,33 @@ export const REASON_LABELS: Record<EscalationReason, string> = {
 /** A level, Jev or the fixed answers, as a person reads its name: `fable` → `Fable`. */
 export const stageName = (tier: string): string => tier.charAt(0).toUpperCase() + tier.slice(1);
 
-/** Why the question came to a person, in one sentence. Absent: sent before the reason was recorded. */
+/** One hold as part of the sentence: `risk rule credentials holds it`, `Fable was not confident enough (medium confidence, needs high)`. */
+function holdPhrase(h: EscalationHold, by: string | undefined): string {
+  const names = (h.guards ?? []).map((g) => g.name);
+  const plural = names.length === 1 ? '' : 's';
+  switch (h.reason) {
+    case 'guard': return `${h.by === 'risk' ? `risk rule${plural}` : `guard${plural}`} ${names.join(', ')} ${names.length === 1 ? 'holds' : 'hold'} it`;
+    case 'high_priority': return 'its job is high priority';
+    case 'auto_answer_off': return 'auto-answer is off';
+    case 'low_confidence': return `${by ?? 'the level'} was not confident enough (${h.confidence ?? 'no'} confidence, needs ${h.threshold ?? 'more'})`;
+  }
+}
+
+/** `a`, `a and b`, `a, b and c`. */
+const andList = (xs: string[]): string => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+
+/** Every hold, in one sentence; a guard says the answer was held back on purpose. */
+function holdsSentence(e: Escalation, holds: EscalationHold[], by: string | undefined): string {
+  const said = `Sent to you because ${andList(holds.map((h) => holdPhrase(h, by)))}.`;
+  if (!holds.some((h) => h.reason === 'guard')) return said;
+  const confidence = e.recommendation?.confidence;
+  return `${said} ${by ? `${by}'s ${confidence ? `${confidence}-confidence ` : ''}answer is` : 'Any answer is'} held back on purpose; a person decides.`;
+}
+
+/** Why the question came to a person, in one sentence: every hold, when it has them. Absent: sent before the reason was recorded. */
 export function reasonSentence(e: Escalation | undefined): string {
   const by = e?.recommendation ? stageName(e.recommendation.by) : undefined;
+  if (e?.holds && e.holds.length > 0) return holdsSentence(e, e.holds, by);
   switch (e?.reason) {
     case 'guard': {
       const guards = (e.guards ?? []).map((g) => `${g.name} (${g.describe})`).join(', ');
@@ -46,10 +70,15 @@ export function recommendationLine(e: Escalation | undefined): string | undefine
   return `${stageName(r.by)} says: ${text}${r.confidence ? ` (${r.confidence} confidence)` : ''}`;
 }
 
-/** The reasons present among the questions at the human stage, in label order, with how many each has. */
+/** Every reason the question came to a person for: the strongest, and each hold's (issue #679). */
+export function reasonsOf(e: Escalation | undefined): EscalationReason[] {
+  return e ? [...new Set([e.reason, ...(e.holds ?? []).map((h) => h.reason)])] : [];
+}
+
+/** The reasons present among the questions at the human stage, in label order, with how many have each; a question counts under each of its reasons. */
 export function reasonCounts(qs: readonly Question[]): { reason: EscalationReason; count: number }[] {
   const counts = new Map<EscalationReason, number>();
-  for (const q of qs) if (q.tier === 'human' && q.escalation) counts.set(q.escalation.reason, (counts.get(q.escalation.reason) ?? 0) + 1);
+  for (const q of qs) if (q.tier === 'human') for (const r of reasonsOf(q.escalation)) counts.set(r, (counts.get(r) ?? 0) + 1);
   return (Object.keys(REASON_LABELS) as EscalationReason[]).filter((r) => counts.has(r)).map((reason) => ({ reason, count: counts.get(reason)! }));
 }
 

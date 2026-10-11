@@ -44,6 +44,10 @@ describe('the escalation reason (issue #679)', () => {
 
     const one = (await a.api<Question>('GET', `/api/questions/${g.id}`)).body;
     expect(one.escalation).toMatchObject({ reason: 'guard', guards: [{ name: 'delete', describe: expect.any(String) }], recommendation: { by: 'opus', answer: 'fake opus answer' } });
+    // Every hold on the question and in the event (issue #679).
+    expect(one.escalation!.holds).toEqual([{ reason: 'guard', by: 'risk', guards: [{ name: 'delete', describe: expect.any(String) }] }]);
+    const toHuman = (await a.events('types=question.escalated_to_human')).find((e) => (e.data as { questionId?: string }).questionId === g.id || e.jobId === guarded.id);
+    expect(toHuman?.data).toMatchObject({ holds: [{ reason: 'guard', by: 'risk', guards: ['delete'] }] });
     expect(u.escalation).toMatchObject({ reason: 'frontier_escalated', recommendation: { by: 'fable' } });
 
     expect(await ids(a, '/api/questions?reason=guard')).toEqual([g.id]);
