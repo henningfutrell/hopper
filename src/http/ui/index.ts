@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { ACCESS_UNAVAILABLE, CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -18,12 +18,13 @@ import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
-import { SESSION_HEADER, mutationRefusal } from './guard.ts';
+import { mutationRefusal, sessionIn } from './guard.ts';
+import { registerApiTokenRoutes } from './api-tokens.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { registerMachineJoinRoutes } from './machine-join.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
-import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
+import { apiTokenIdOf, identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
@@ -170,10 +171,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
   const userName = (s: UiSession): string => o.instance.users.get(s.userId)?.name ?? s.userId;
-  const sessionOf = (req: FastifyRequest): UiSession | undefined => {
-    const header = req.headers[SESSION_HEADER];
-    return sessions.find(typeof header === 'string' ? header : undefined);
-  };
+  const sessionOf = (req: FastifyRequest): UiSession | undefined => sessionIn(req.headers, sessions);
 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
@@ -194,10 +192,20 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     instanceAdmin: o.instanceAdmin,
   });
 
-  // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
+  /** Why Access refuses the request's API token the role it needs (issue #718), or undefined: allowed, or no API token. */
+  const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
+    const s = sessionOf(req)!;
+    if (s.kind !== 'api') return undefined;
+    const d = await o.access.decideApiToken({ userId: s.userId, tokenId: apiTokenIdOf(s.token), role: needs });
+    if (d.allowed) return undefined;
+    if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
+    return refuse(req, reply, `the API token may not do this: ${d.reason}`);
+  };
+  // Each mutation names the least role that may make it (design.md "Sign-in" Roles); an API token's use is Access's too.
   const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, needs);
     if (r) return refuse(req, reply, r.why, r.needs, r.session);
+    return tokenRefusal(req, reply, needs);
   } });
   const operator = allow('operator');
   const admin = allow('admin');
@@ -206,6 +214,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, 'admin');
     if (r) return refuse(req, reply, r.why, r.needs, r.session);
     if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
+    return tokenRefusal(req, reply, 'admin');
   } };
 
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
@@ -302,6 +311,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
+  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
@@ -387,7 +397,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
-    sessions.drop(String(req.headers[SESSION_HEADER]), 'logout');
+    sessions.drop(sessionOf(req)!.token, 'logout');
     return { ok: true };
   });
 }

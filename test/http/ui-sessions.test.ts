@@ -278,3 +278,47 @@ describe('a request whose session is unknown says why (#647)', () => {
     expect(unknown).toEqual(['expired: expired-idle']);
   });
 });
+
+// Issue #718: an API token is a session of kind `api`, with its own fixed end, a role no reconcile raises, and no gateway
+// token in its requests to check again.
+describe('an API token', () => {
+  it('ends at its own end, is listed without its token, and is revoked by its id', () => {
+    setUp();
+    const s = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'grok-bot' } });
+    expect(s.token).toMatch(/^hopper_at_[0-9a-f]{64}$/);
+    expect(s.kind).toBe('api');
+    const [listed] = sessions.apiTokens('u1');
+    expect(listed).toMatchObject({ label: 'grok-bot', role: 'operator', expiresAt: new Date(start + 15 * 60_000).toISOString() });
+    expect(JSON.stringify(sessions.apiTokens('u1'))).not.toContain(s.token);
+    expect(sessions.apiTokens('u2')).toEqual([]);
+    at(16 * 60_000);
+    expect(sessions.find(s.token)).toBeUndefined();
+    expect(sessions.apiTokens('u1')).toEqual([]);
+
+    const t2 = sessions.create({ role: 'admin', identity: ada, userId: 'u1', lastsMs: 60 * 60_000, api: { label: 'ci' } });
+    const id = sessions.apiTokens('u1')[0]!.id;
+    expect(sessions.revokeApiToken('u2', id)).toBe(false);
+    expect(sessions.revokeApiToken('u1', id)).toBe(true);
+    expect(sessions.find(t2.token)).toBeUndefined();
+  });
+
+  it('keeps the role it was minted with at most: a reconcile lowers it, never raises it', () => {
+    setUp();
+    const s = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: HOUR, api: { label: 'grok-bot' } });
+    sessions.reconcile(() => 'admin');
+    expect(sessions.find(s.token)?.role).toBe('operator');
+    sessions.reconcile(() => 'viewer');
+    expect(sessions.find(s.token)?.role).toBe('viewer');
+    sessions.reconcile(() => null);
+    expect(sessions.find(s.token)).toBeUndefined();
+  });
+
+  it('minted from a gateway sign-in, it renews by its own use: no gateway token is checked again', async () => {
+    setUp({ idleHours: 1 });
+    const s = sessions.create({ role: 'admin', identity: edgeAda, userId: 'u1', lastsMs: HOUR, api: { label: 'grok-bot' } });
+    at(10 * 60_000);
+    await sessions.renew(s.token, { authorization: `Bearer ${s.token}` });
+    expect(sessions.find(s.token)?.userId).toBe('u1');
+    expect(ended).toEqual([]);
+  });
+});

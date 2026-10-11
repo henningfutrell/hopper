@@ -7,21 +7,30 @@
 // in `Authorization` (the API door, issue #255), which the tenancy hook checks next (src/http/tenants.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
-import { SESSION_HEADER } from './ui/guard.ts';
-import type { UiSessions } from './ui/sessions.ts';
+import { SESSION_HEADER, sessionIn, sessionTokenIn } from './ui/guard.ts';
+import type { UiSession, UiSessions } from './ui/sessions.ts';
 
 const STREAM = '/api/events/stream';
 
-/** The request's UI session token: the header, or for the event stream its `session` query parameter. */
-export function sessionToken(req: FastifyRequest): string | undefined {
-  const header = req.headers[SESSION_HEADER];
-  if (typeof header === 'string') return header;
-  if (req.url.split('?')[0] !== STREAM) return undefined;
+/** The event stream's `session` query parameter (EventSource sends no headers), or undefined. */
+function streamToken(req: FastifyRequest): string | undefined {
+  if (req.headers[SESSION_HEADER] !== undefined || req.url.split('?')[0] !== STREAM) return undefined;
   const q = (req.query as Record<string, unknown> | undefined)?.session;
   return typeof q === 'string' ? q : undefined;
 }
 
-/** A read of /api/ carrying `Authorization`: the API door (issue #255), checked by the tenancy hook. */
+/** The request's session token: the header, an API token in `Authorization` (issue #718), or for the event stream its `session` query parameter. */
+export const sessionToken = (req: FastifyRequest): string | undefined => sessionTokenIn(req.headers) ?? streamToken(req);
+
+/** The request's live session: a UI session (its header, or the event stream's parameter) or an API token (`Authorization`). */
+export function requestSession(req: FastifyRequest, sessions: UiSessions): UiSession | undefined {
+  const q = streamToken(req);
+  if (q === undefined) return sessionIn(req.headers, sessions);
+  const s = sessions.find(q);
+  return s?.kind === 'ui' ? s : undefined;
+}
+
+/** A read of /api/ carrying `Authorization`: the API door (issue #255) or an API token (issue #718), checked by the tenancy hook. */
 export const atApiDoor = (req: FastifyRequest): boolean => req.url.startsWith('/api/') && typeof req.headers.authorization === 'string';
 
 export function installHostGuard(app: FastifyInstance, o: { port: () => number; lan: Lan; sessions: UiSessions }): void {
@@ -34,7 +43,7 @@ export function installHostGuard(app: FastifyInstance, o: { port: () => number; 
     }
     // Every request of a session renews it (issue #439); one that has ended is gone before anything reads it.
     await o.sessions.renew(sessionToken(req), req.headers);
-    if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !o.sessions.find(sessionToken(req))) {
+    if (r.reach !== 'local' && req.url.startsWith('/api/') && !atApiDoor(req) && !requestSession(req, o.sessions)) {
       return reply.code(401).send({ error: r.reach === 'lan' ? 'log in to read across the LAN: sign in, or open a device link from a logged-in browser' : 'sign in to read' });
     }
   });

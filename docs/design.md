@@ -5680,7 +5680,8 @@ API too, as the same identity: one pipeline, two doors. What that settles, taken
   GitHub account); 403: accepted, but the sign-in config grants no role; 502: the issuer or GitHub could
   not be asked. A token given and refused is refused on loopback too, where one user's hopper otherwise
   reads without a credential.
-- **Reads only.** The token is no UI session: every `POST /ui/api/*` still needs one (AGENTS.md). The
+- **Reads only.** The token is no UI session: every `POST /ui/api/*` still needs one (AGENTS.md), or, since issue #718,
+  an API token the sign-in is exchanged for at `POST /ui/auth/api-token` ("API tokens"). The
   role still counts: the instance reads (`/api/users`, `/api/instance`, `/api/realms`) read it from the
   request (`roleOfRequest`), so a viewer's token is refused there as a viewer's session is.
 - **Coherence, tested** (`test/integration/api-bearer.test.ts`): the same token reads as the user its UI
@@ -8373,7 +8374,8 @@ A script or assistant acting for the user read everything through `GET /api/*`, 
 needed a UI session, so it either scripted a human sign-in or wrote rows behind the daemon's back. The
 issue offered two ways: a scoped API token that may mutate, or CLI commands. The CLI is taken. A
 mutating token would be a second door beside the UI session, against the rule that every mutation is
-`POST /ui/api/*` behind one (AGENTS.md); the API door stays reads only ("The API door"). The CLI already
+`POST /ui/api/*` behind one (AGENTS.md); the API door stays reads only ("The API door"). Superseded in
+part by issue #718 (owner decision): an **API token** is a session at that same door ("API tokens"). The CLI already
 holds the database's credentials, the daemon's own trust, so acting from it widens nothing.
 
 - **Commands** (`src/cli-operator.ts`): `hopper job accept|reject|rerun <id>` (`reject --reason <text>`),
@@ -8396,7 +8398,7 @@ holds the database's credentials, the daemon's own trust, so acting from it wide
 **Residual risk, stated.** Whoever can run the CLI with the database's credentials can act as any user; that
 was already true of `config set` and of the database itself.
 
-**Not built.** A mutating API token (see above); cancel, approve, operator-led and dismiss of a locked entry
+**Not built.** Cancel, approve, operator-led and dismiss of a locked entry
 from the CLI — no caller yet.
 
 ## Failures from the operator CLI (issue #623, 2026-10-10)
@@ -8460,9 +8462,8 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** The read-only negative suite (#715) run before a new template's first use; and a
-token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
-token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
+**Not built (carried on issue #718).** The read-only negative suite (#715) run before a new template's first use. The
+token-scoped API for agents is built, after the owner's decision: "API tokens" (issue #718). Shared secrets (issue #718, item 3) are
 built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
 policy, is built ("Templates on request"); so is `template read-policy`. Tools assembled per run are built, with
 `template save --tool` and `sandbox launch --tool` ("Tools assembled per run").
@@ -10142,15 +10143,86 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** A token-scoped mutating API so an agent does all of this over the API without a
-UI session (item 4); and the read-only negative suite run before a new template's
-first use (item 5), which waits on #715's suite.
+**Not built (carried on issue #718).** The read-only negative suite run before a new template's first use (item 5),
+which waits on #715's suite. The token-scoped API (item 4) is built: "API tokens".
 
 Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
 for every user, sealed in the instance's vault, refused to an admin of their own user only; given to a job only once the
 template naming it is approved; refused when the readers leave the job's user out, and after removal; the CLI's
 `--shared`), `test/authz/shared-secrets.test.ts` (every user reads with no readers named, only the named ones else, only
 an admin changes; a model without the type denies and names the gap), `test/ui/vault-shared.test.ts`.
+
+## API tokens (issue #718, part 2, 2026-10-11)
+
+Owner decision on the issue (item 4), which replaces the narrower one before it: **everything an admin can do is available
+over the API**, guarded by tokens. A user acts through the API with a short-lived token scoped to what they may do, and
+OpenFGA decides; no action is UI-only. An agent acting for a user (Grok Bot) is one caller of this same API. Jobs keep no
+write door of their own: a job asks the hopper (no `/job/vault` or `/job/sandbox` routes under a job's proxy token).
+This supersedes "a mutating API token is a second door" (issue #374, "Operator actions from the CLI"): the door is the
+same one, `POST /ui/api/*`; the token is one more kind of session at it.
+
+- **What it is.** An **API token** is a UI session row (`ui_sessions`, instance migration 35: `kind` `api`, `label`) —
+  so its identity, user, role, hashed storage, ends and reconcile are the session's. Its token is `hopper_at_` and 64 hex
+  digits; only its SHA-256 is kept. It lives `minutes` (default 15, at most 60), a fixed end; the sign-in config's idle
+  timeout applies too. Its id, as listed and revoked, is the start of the hash.
+- **How it is sent.** `Authorization: Bearer hopper_at_…`, on every `GET /api/*` and `POST /ui/api/*`. An API token is
+  accepted only there and a UI session only in `x-hopper-session` (`sessionIn`, `src/http/ui/guard.ts`): neither stands in
+  for the other. A mutation with an API token needs no Origin and no `Sec-Fetch-Site`: those defend the UI session, a
+  credential a page can make the browser send; no browser sends `Authorization` by itself, and a cross-site page may set it
+  only through a CORS preflight the hopper never allows. The JSON body is still required. The `hopper_at_` prefix keeps
+  the API door from taking one for a GitHub token and asking GitHub about it: one that names no live session is 401
+  (`the API token is unknown, revoked or expired`), on loopback too.
+- **What it may do.** What a UI session of its user with its role may do: the route's least role (`allow`, the
+  `instance` guard) as for any session, then Access (`decideApiToken`): `user:<id>` must have, on `api_token:<user>/<id>`
+  (the user told as its `owner` at each ask), the relation of the role the request needs — a read `can_view`, an
+  operator's route `can_operate`, an admin's `can_administer`. The default gives each to the owner; a user narrows what
+  their tokens may do by editing the model in Settings → Access. OpenFGA out of reach: 503, never a 401 or 403. The
+  relations are checked apart (`apiTokenGaps`): a model edited before them denies every API token, naming the gap, and
+  still decides mints; a model the hopper wrote is replaced by this build's default. A UI session is not asked of Access.
+- **Its role.** At most its minter's: the mint takes `role` (default the minter's) and refuses one above. A reconcile
+  (start, a sign-in change) lowers it with its identity's role, never raises it, and ends it when its realm is gone or
+  grants no role: turning a realm off closes every door at once.
+- **Who mints one.**
+  - A person, from their UI session: `POST /ui/api/api-tokens` `{ action: 'mint', label, role?, minutes? }` (least role
+    viewer), answered once with the token, `cache-control: no-store`; Settings → **API tokens** (mint, the token shown
+    once, the list, Revoke). `GET /api/api-tokens` lists the user's live tokens, never a token; `{ action: 'revoke', id }`
+    ends one, as does `POST /ui/api/logout` with the token itself.
+  - The operator CLI: `hopper token mint --label <who> [--role] [--minutes]`, `hopper token list`, `hopper token revoke
+    <id>`, through the same route under the CLI's own session (issue #374). Its identity is the CLI's (realm `cli`), so the
+    token ends at the next start or sign-in change, as the CLI's session does.
+  - An agent with no UI session, by exchange: `POST /ui/auth/api-token` with `Authorization: Bearer` a sign-in the API
+    door accepts (a gateway realm's JWT; a GitHub token of a user's connected account), checked as the door checks it
+    (`createApiDoor`, `src/http/tenants.ts`): the token is minted for the user that identity is linked to, as that
+    identity, its role at most the one the sign-in config grants. The door signs nobody new in (401). This is how an agent
+    authenticates as the user it acts for and keeps acting unattended: a new short-lived token per need, from a credential
+    the user's identity provider issues, never a long-lived hopper secret.
+  - Never another API token (403): an API token cannot outlive the sign-in behind it by chaining.
+  Every mint asks Access for the role it gives, and drops the token again when refused (403; 503 out of reach). Each
+  mint is a log line (id, label, user, role, minutes), never the token.
+- **Who acted.** A person's action records `via` `api` (`ActingPerson`, issue #623) beside `ui` and `cli`, with the
+  minter's identity as the person.
+- **Parity, kept.** Every mutation is a `POST /ui/api/*` route behind `allow` or `instance` (AGENTS.md), so a new UI
+  action is an API action the day it lands. `test/integration/api-tokens.test.ts` walks every `POST /ui/api/*` path the
+  API reference names (which must match the routes, or the daemon does not start) with a viewer's token: each refusal is
+  the role's, never the session's or the Origin's.
+- **Not given to a token.** A login's device code (`GET /api/logins`): answered only to a UI session, as before.
+
+**Residual risk, stated.** Whoever holds a token acts as its user, with its role, until it ends, it is revoked, or Access
+says no: an hour at most. A token handed to an agent is a bearer credential like any other; the label and the log line say
+whose. A GitHub token on the exchange is any token of the account (as on the API door): GitHub says whose it is, not
+which app it is for. The build before this one reads `Authorization` only as the API door, so on a downgrade it would ask
+GitHub about an API token sent to it (a token it then refuses); the token is useless there and ends within the hour.
+
+**Not built (carried on issue #718).** A template made on request from what a job needs (item 1, built by the job for
+issue #716); tools assembled per run (item 2); the read-only negative suite run before a new template's first use (item 5),
+which waits on #715. Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
+editing `api_token`'s relations; a per-token scope list waits for a caller that needs one.
+
+Tests: `test/integration/api-tokens.test.ts` (a person mints, an agent sets a secret, saves and approves a template and
+launches a box with the token alone; every route takes a token; the role cap, the hour, no chained mint; revoke; an unknown
+token never reaches GitHub; Access denying `can_administer`; no OpenFGA, no mint; the gateway exchange; the CLI),
+`test/http/ui-sessions.test.ts` (the token's own end, its list and revoke, a reconcile never raises its role, renewal
+without a gateway check), `test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 

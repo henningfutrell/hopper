@@ -227,8 +227,8 @@ export type HandoffResolutionAction = typeof HANDOFF_RESOLUTIONS[number];
  * sync of the job's source, with the last error; `failed`: the source refused it for good (`writeBackError`); `none`:
  * the job has no source to tell, or its source takes no resolution.
  */
-/** The ways a person acts on failures (issue #623): the UI, or the operator CLI (`hopper problem|handoff|failure`). */
-export const ACTION_VIAS = ['ui', 'cli'] as const;
+/** The ways a person acts on failures (issue #623): the UI, the operator CLI (`hopper problem|handoff|failure`), or an API token (issue #718). */
+export const ACTION_VIAS = ['ui', 'cli', 'api'] as const;
 export type ActionVia = typeof ACTION_VIAS[number];
 /** Who acted on a problem, a hand-off or a failure (issue #623): the person the session signed in, and the way. Kept in the events. */
 export interface ActingPerson { person: string; via: ActionVia }

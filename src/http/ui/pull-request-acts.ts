@@ -28,7 +28,7 @@ export function registerPullRequestActRoutes(app: FastifyInstance, o: { operator
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to merge or close a pull request');
     const { jobId } = parseWith(pullRequestActBody, req.body);
-    const r = await o.tenant(req).registry.pullRequestAct(jobId, act, actingOf(s.identity));
+    const r = await o.tenant(req).registry.pullRequestAct(jobId, act, actingOf(s));
     if (!r.ok) throw new HttpError(STATUS[r.reason], r.message);
     return { outcome: r.outcome, pullRequest: r.pullRequest, part: r.part };
   });

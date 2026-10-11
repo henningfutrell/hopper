@@ -15,17 +15,24 @@
 import { createHash } from 'node:crypto';
 import type { SignIn } from '../../auth/index.ts';
 import type { Clock, UiSessionRepository, UiSessionRow } from '../../domain/ports.ts';
-import type { ActingPerson, Identity, SessionEndReason, SessionLengths, SessionUser, UiRole } from '../../domain/types.ts';
+import { API_TOKEN_PREFIX, lowerRole, type ActingPerson, type ApiTokenView, type Identity, type SessionEndReason, type SessionKind, type SessionLengths, type SessionUser, type UiRole } from '../../domain/types.ts';
 import { randomSecret } from './secret.ts';
 
-export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string }
+export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string; kind: SessionKind; label?: string }
 
 /** A session that ended, and why. */
 export interface EndedSession { userId: string; identity: Identity; reason: SessionEndReason }
 
 export interface UiSessions {
-  /** A new session; `lastsMs` gives it a fixed end of its own, whatever the session lengths (the operator CLI's). */
-  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number }): UiSession;
+  /**
+   * A new session; `lastsMs` gives it a fixed end of its own, whatever the session lengths (the operator CLI's, an API
+   * token's). `api`: an API token (issue #718), with its label; its token starts with API_TOKEN_PREFIX.
+   */
+  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number; api?: { label: string } }): UiSession;
+  /** The user's live API tokens, oldest first; never a token. */
+  apiTokens(userId: string): ApiTokenView[];
+  /** End the user's API token with this id; false: the user has none such. */
+  revokeApiToken(userId: string, id: string): boolean;
   /** The live session for this token, or undefined (unknown or ended). One that has expired ends here. */
   find(token: string | undefined): UiSession | undefined;
   /** A request of this session's, with its headers: renews it — for a gateway realm's, once its token checks out again. */
@@ -34,7 +41,7 @@ export interface UiSessions {
   /**
    * Apply the sign-in config as it is now to every stored session (at start, and after every change from
    * Settings → Sign-in): `roleOf` null ends it (its realm is gone or off, or no rule grants it a role
-   * any more); another role replaces the stored one.
+   * any more); another role replaces the stored one — for an API token only a lower one: it keeps the role it was minted with at most.
    */
   reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
   /** The identities of the stored sessions, as their realms gave them at sign-in. */
@@ -55,8 +62,14 @@ export const identityName = (who: Identity): string => who.name ?? who.username 
 /** The realm of a session the operator CLI mints for one call (issue #374): no sign-in config names it. */
 export const CLI_REALM = 'cli';
 
-/** Who acts through a session, and the way (issue #623): the operator CLI's session, or the UI's. */
-export const actingOf = (who: Identity): ActingPerson => ({ person: identityName(who), via: who.realm === CLI_REALM ? 'cli' : 'ui' });
+/** Who acts through a session, and the way (issue #623): an API token's (issue #718), the operator CLI's session, or the UI's. */
+export const actingOf = (s: { identity: Identity; kind?: SessionKind }): ActingPerson =>
+  ({ person: identityName(s.identity), via: s.kind === 'api' ? 'api' : s.identity.realm === CLI_REALM ? 'cli' : 'ui' });
+
+/** An API token's id, as it is listed and revoked: the start of the token's hash. */
+export const apiTokenId = (tokenHash: string): string => tokenHash.slice(0, 16);
+/** The id of the API token `token`. */
+export const apiTokenIdOf = (token: string): string => apiTokenId(hashOf(token));
 
 /** Who a session acts for: its user (id, name), its role, who signed in, whether they are a super admin (issue #242), and whether the session is the instance admin's (issue #240). */
 export const sessionUser = (s: UiSession, userName: string, superAdmin: boolean, instanceAdmin: boolean): SessionUser => ({
@@ -123,18 +136,32 @@ export function createUiSessions(o: {
   };
   const view = (token: string, r: UiSessionRow): UiSession => ({
     token, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), role: r.role, identity: r.identity, userId: r.userId,
+    kind: r.kind ?? 'ui', ...(r.label === undefined ? {} : { label: r.label }),
   });
+  const liveApiTokens = (userId: string): UiSessionRow[] =>
+    o.repo.all().filter((r) => r.kind === 'api' && r.userId === userId).map(live).filter((r): r is UiSessionRow => r !== undefined);
 
   return {
-    create({ role, identity, userId, lastsMs }) {
+    create({ role, identity, userId, lastsMs, api }) {
       const at = o.clock.now().toISOString();
-      const token = randomSecret();
+      const token = api ? `${API_TOKEN_PREFIX}${randomSecret()}` : randomSecret();
       const row: UiSessionRow = {
         tokenHash: hashOf(token), startedAt: at, lastSeenAt: at, checkedAt: at, role, identity, userId,
         ...(lastsMs === undefined ? {} : { endsAt: new Date(now() + lastsMs).toISOString() }),
+        ...(api ? { kind: 'api' as const, label: api.label } : {}),
       };
       o.repo.create(row, new Date(absoluteEnd(row, lengths())).toISOString());
       return view(token, row);
+    },
+    apiTokens(userId) {
+      return liveApiTokens(userId).map((r) => ({
+        id: apiTokenId(r.tokenHash), label: r.label ?? '', role: r.role, startedAt: r.startedAt, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), lastUsedAt: r.lastSeenAt,
+      }));
+    },
+    revokeApiToken(userId, id) {
+      const r = liveApiTokens(userId).find((x) => apiTokenId(x.tokenHash) === id);
+      if (r) end(r, 'logout');
+      return r !== undefined;
     },
     find(token) {
       sweep();
@@ -155,7 +182,8 @@ export function createUiSessions(o: {
       if (!r) { unknownToken(hash, whyGone(endedWhy.get(hash)!)); return; }
       if (now() - Date.parse(r.lastSeenAt) < renewEvery()) return;
       const at = o.clock.now().toISOString();
-      if (!isGateway(r.identity.realm)) { o.repo.touch(r.tokenHash, at); return; }
+      // An API token renews by its own use: the gateway's token is not in its requests to check again.
+      if (r.kind === 'api' || !isGateway(r.identity.realm)) { o.repo.touch(r.tokenHash, at); return; }
       const check = await o.signIn.checkGateway(headers);
       if (check.ok && check.who.realm === r.identity.realm && check.who.subject === r.identity.subject) { o.repo.touch(r.tokenHash, at, at); return; }
       // Out of reach: the session stands, unrenewed, until the grace period after the last good check.
@@ -173,7 +201,8 @@ export function createUiSessions(o: {
       let dropped = 0;
       let changed = 0;
       for (const r of o.repo.all()) {
-        const role = roleOf(r.identity);
+        const granted = roleOf(r.identity);
+        const role = granted === null || r.kind !== 'api' ? granted : lowerRole(granted, r.role);
         if (role === null) { end(r, 'realm-changed'); dropped++; } else if (role !== r.role) { o.repo.setRole(r.tokenHash, role); changed++; }
       }
       return { dropped, changed };

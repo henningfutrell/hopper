@@ -35,7 +35,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/jobs/:id/rework', o.operator, async (req) => {
     const { notes } = parseWith(reworkBody, req.body ?? {});
     const s = signedInOf(req);
-    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s.identity) : undefined);
+    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s) : undefined);
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
@@ -46,7 +46,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);
   });
   app.post('/ui/api/jobs/:id/keep-original', o.operator, async (req) =>
-    o.tenant(req).engine.keepOriginalText(parseWith(idParams, req.params).id, actingOf(signedIn(req).identity)));
+    o.tenant(req).engine.keepOriginalText(parseWith(idParams, req.params).id, actingOf(signedIn(req))));
   app.post('/ui/api/jobs/:id/accept-new-text', o.operator, async (req) => {
     const s = signedIn(req);
     const t = o.tenant(req);
@@ -56,7 +56,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     // The item is the hopper's user's whose jobs these are: Access decides whether the person signed in may accept for them.
     const d = await o.access.decideTextAcceptance(s.userId, { ownerId: s.userId, key: job.source.key });
     if (!d.allowed) throw new HttpError(403, `accepting the new text is refused: ${d.reason}`);
-    return t.engine.acceptNewText(job.id, actingOf(s.identity));
+    return t.engine.acceptNewText(job.id, actingOf(s));
   });
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', o.operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));

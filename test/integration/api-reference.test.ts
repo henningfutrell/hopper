@@ -81,7 +81,7 @@ describe('GET /docs/openapi.json', () => {
     expect(doc.paths['/api/jobs/{id}']?.get?.parameters).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'id', in: 'path' })]));
     expect(doc.paths['/api/jobs']?.get?.parameters?.map((p) => p.name)).toEqual(expect.arrayContaining(['status', 'limit']));
     const answer = doc.paths['/ui/api/questions/{id}/answer']?.post;
-    expect(answer?.security).toEqual([{ uiSession: [] }]);
+    expect(answer?.security).toEqual([{ uiSession: [] }, { apiToken: [] }]);
     expect(answer?.requestBody?.content['application/json']?.schema).toMatchObject({ type: 'object', required: ['answer'] });
     const update = doc.paths['/ui/api/update']?.post?.requestBody?.content['application/json']?.schema as { oneOf?: unknown[]; anyOf?: unknown[] };
     expect((update.oneOf ?? update.anyOf)?.length).toBe(3);

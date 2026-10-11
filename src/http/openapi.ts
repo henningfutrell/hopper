@@ -40,6 +40,7 @@ import { PULL_REQUEST_ACT_OPERATIONS } from './ui/pull-request-acts.ts';
 import { tldrBody } from './ui/tldr.ts';
 import { deliveriesQuery } from './webhooks.ts';
 import { ACCESS_EDIT_OPERATIONS } from './ui/access.ts';
+import { API_TOKEN_OPERATIONS } from './ui/api-tokens.ts';
 import { SHARED_SECRET_OPERATIONS } from './ui/vault-shared.ts';
 import { usageHistoryQuery } from './usage-history.ts';
 import { TAGS, type Operation, type Tag } from './openapi-operation.ts';
@@ -155,7 +156,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/blast-radius/discover', tag: 'Machines and usage', summary: 'Discover a machine now', description: 'Runs the discovery on `machineId`, or on every online machine, through its own connection, and answers when it is done. Discovery only reads: identities, configuration, IAM policy simulation, `kubectl auth can-i`.', role: 'operator', body: discoverBody, returns: '`BlastRadiusView`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/gate-pass', tag: 'Jobs', summary: 'Let a job held at the blast-radius gate through', description: 'The job may then run on a gated machine (`gatePass`, `job.gate_passed`). 409: the job is not held at the gate.', role: 'admin', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/usage/limits', tag: 'Machines and usage', summary: 'Set the usage limits', description: 'The soft limit, past which a machine\'s lane cap scales down, and the hard limit, at which it starts nothing: fractions from 0 to 1, soft below hard. Stored for the user: they win over `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT` from now on, and the next Decision uses them.', role: 'admin', body: usageLimitsBody, returns: '`{ limits: UsageLimits }`' },
-  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS, ...SHARED_SECRET_OPERATIONS, ...BUG_REPORT_OPERATIONS, ...PULL_REQUEST_ACT_OPERATIONS,
+  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS, ...SHARED_SECRET_OPERATIONS, ...API_TOKEN_OPERATIONS, ...BUG_REPORT_OPERATIONS, ...PULL_REQUEST_ACT_OPERATIONS,
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
   { method: 'post', path: '/ui/api/plugin-store', tag: 'Plugins and routing', summary: 'Set the plugin store; install, update or remove a plugin from it', description: 'Only the instance admin (issue #240). Read the plugin store again, set the plugin store (the default plugin store, none, or a git repository; issue #445) and read it, install a plugin its catalogue lists into the plugin dir (again: an update to the store\'s head), or remove a store install that the plugins config does not name.', role: 'admin', body: pluginStoreBody, returns: 'the new `PluginStoreReport`', errors: [404, 409] },
@@ -221,9 +222,11 @@ const DESCRIPTION = `The hopper daemon's HTTP API.
 
 **Users.** Every user's work is their own. A read or a change acts for the session's user. A loopback read without a session reads the one user's work while the hopper has one user; with more, it reads no user's work (401). An admin runs the instance — the users, the plugin store, self-update and sign-in — and reads the users' work only as totals (\`GET /api/instance\`).
 
-**Reading.** Every \`GET /api/*\` route reads. From loopback (\`127.0.0.1\` or \`localhost\` with the port) it needs nothing. From a LAN name or the public URL it needs a UI session: the token in the \`${SESSION_HEADER}\` header.
+**Reading.** Every \`GET /api/*\` route reads. From loopback (\`127.0.0.1\` or \`localhost\` with the port) it needs nothing. From a LAN name or the public URL it needs a UI session: the token in the \`${SESSION_HEADER}\` header, or an API token.
 
-**Changing.** The only changes are \`POST /ui/api/*\`. Each needs a UI session (\`${SESSION_HEADER}\`) whose role allows it, the exact Origin of a UI page, and a JSON body; else 403. No route creates a job: jobs come from job sources.
+**Changing.** The only changes are \`POST /ui/api/*\`. Each needs a UI session (\`${SESSION_HEADER}\`, with the exact Origin of a UI page) or an API token, whose role allows it, and a JSON body; else 403. No route creates a job: jobs come from job sources.
+
+**API tokens.** Everything the UI does, an agent does over this API with an API token: \`Authorization: Bearer hopper_at_…\`, short-lived (an hour at most), acting as its user with a role no higher than its minter's; Access (OpenFGA) decides each use. A person mints one (\`POST /ui/api/api-tokens\`, Settings → API tokens, or \`hopper token mint\`); an agent with no UI session exchanges a sign-in for one (\`POST /ui/auth/api-token\`).
 
 **A session.** Sign in from the UI. The UI keeps the token in this origin's localStorage under \`jh_session\`; paste it under Authentication here to try the routes that need it.
 
@@ -275,7 +278,7 @@ function operation(op: Operation): Record<string, unknown> {
     parameters: parameters(op),
     ...(op.body ? { requestBody: { required: true, content: { [op.form ? 'application/x-www-form-urlencoded' : 'application/json']: { schema: schemaOf(op.body) } } } } : {}),
     // A read needs nothing on loopback and a session or a token beyond it (the API door); a mutation always needs a session.
-    security: op.role ? [{ uiSession: [] }] : op.path.startsWith('/api/') ? [{}, { uiSession: [] }, { apiToken: [] }] : [],
+    security: op.role ? [{ uiSession: [] }, { apiToken: [] }] : op.path.startsWith('/api/') ? [{}, { uiSession: [] }, { apiToken: [] }, { signInToken: [] }] : op.path === '/ui/auth/api-token' ? [{ signInToken: [] }] : [],
     responses: responses(op),
   };
 }
@@ -292,7 +295,8 @@ export function openApiDocument(version: string): Record<string, unknown> {
     components: {
       securitySchemes: {
         uiSession: { type: 'apiKey', in: 'header', name: SESSION_HEADER, description: 'A UI session token (localStorage `jh_session` in a signed-in UI).' },
-        apiToken: { type: 'http', scheme: 'bearer', description: 'Reads only (the API door): a gateway realm\'s JWT, or a GitHub token of an account that is a user\'s connected GitHub account. It reads as the user that identity signed in as in the UI; it signs nobody in.' },
+        apiToken: { type: 'http', scheme: 'bearer', description: 'An API token (`hopper_at_…`, issue #718): every `GET /api/*` and `POST /ui/api/*` route, as its user, with its role; Access decides each use. No Origin needed.' },
+        signInToken: { type: 'http', scheme: 'bearer', description: 'Reads, and the exchange for an API token (the API door): a gateway realm\'s JWT, or a GitHub token of an account that is a user\'s connected GitHub account. It reads as the user that identity signed in as in the UI; it signs nobody in.' },
       },
       schemas: { Error: { type: 'object', properties: { error: { type: 'string' } }, required: ['error'] }, Event: schemaOf(ENVELOPE_SCHEMA) },
     },

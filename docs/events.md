@@ -740,7 +740,7 @@ Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the fa
 |---|---|---|
 | `by` | `user` \| `assessor` \| `tending` | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -758,7 +758,7 @@ Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finishe
 | `notes` | string | yes |
 | `nextJobId` | string | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -1289,7 +1289,7 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
 | `by` | `user` \| `check` | yes |
 | `released` | integer | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 | `note` | string | no |
 
 ```json
@@ -1311,7 +1311,7 @@ Version 1 (`docs/schemas/failure.released.v1.json`). A person released a problem
 | `title` | string | yes |
 | `released` | integer | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {
@@ -1362,7 +1362,7 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
 | `nextJobId` | string | no |
 | `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -2900,7 +2900,7 @@ Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pul
 | `part` | boolean | yes |
 | `byHopper` | boolean | no |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -2918,7 +2918,7 @@ Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pul
 | `pullRequest` | string | yes |
 | `part` | boolean | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -3339,7 +3339,7 @@ Version 1 (`docs/schemas/item.original_kept.v1.json`). A person kept the origina
 | `snapshotHash` | string | yes |
 | `liveHash` | string | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {
@@ -3362,7 +3362,7 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
 | `toHash` | string | yes |
 | `editors` | string[] | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {

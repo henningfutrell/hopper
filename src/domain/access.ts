@@ -174,6 +174,12 @@ export interface SharedSecretAsk {
   readers?: readonly string[];
 }
 
+/**
+ * An ask about a use of an API token (issue #718): whether the user's token `tokenId` may act with `role` — read
+ * (`viewer`), act as an operator, or as an admin — for the request at hand. The token's owner is told at each ask.
+ */
+export interface ApiTokenAsk { userId: string; tokenId: string; role: 'viewer' | 'operator' | 'admin' }
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;

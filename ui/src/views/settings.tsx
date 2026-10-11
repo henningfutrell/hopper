@@ -1,14 +1,15 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
 // risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the TL;DR (issue #569), the job rules (issue #172), yolo mode (issue #579), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
-// sign-in (issue #185), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
+// sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one.
-import { CirclePause, FolderOpen, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
+import { CirclePause, FolderOpen, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
 import { Access } from '@/views/access';
+import { ApiTokens } from '@/views/api-tokens';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AutoPark } from '@/views/auto-park';
 import { JobRules } from '@/views/job-rules';
@@ -26,7 +27,7 @@ import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { YoloMode } from '@/views/yolo-mode';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'tldr', 'job-rules', 'yolo-mode', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'tldr', 'job-rules', 'yolo-mode', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -45,6 +46,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   vault: { label: 'Vault', icon: LockKeyhole, view: Vault },
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
+  'api-tokens': { label: 'API tokens', icon: Ticket, view: ApiTokens },
   access: { label: 'Access', icon: KeySquare, view: Access },
   permissions: { label: 'Permission matrix', icon: Grid3x3, view: PermissionMatrix },
 };

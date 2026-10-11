@@ -53,7 +53,7 @@ function answer<T>(r: FailureAction<T>): T {
 function actingIn(req: FastifyRequest) {
   const s = signedInOf(req);
   if (!s) throw new HttpError(401, 'sign in to act on failures');
-  return actingOf(s.identity);
+  return actingOf(s);
 }
 
 export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

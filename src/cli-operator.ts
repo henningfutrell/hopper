@@ -6,6 +6,7 @@
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only.
+// API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -19,12 +20,12 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
-import { MASTER_KEY_USAGE, masterKeyCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall } from './cli-operator-pr.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -72,6 +73,7 @@ ${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
 ${LANES_USAGE}
 ${VAULT_USAGE}
+${TOKEN_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 
@@ -94,12 +96,9 @@ function jobCall(args: string[]): Call {
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
-  if (verb === 'rework') {
-    if (values.notes === undefined || values.reason !== undefined) throw usage('job rework <id> --notes <text>');
-    const notes = values.notes;
-    return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
-  }
-  if (values.notes !== undefined) throw usage('job rework <id> --notes <text>');
+  const notes = values.notes;
+  if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
+  if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
@@ -269,6 +268,7 @@ function proposalCall(args: string[]): Call {
 function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
+  if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'template') return templateCall(args);
   if (command === 'sandbox') return sandboxCall(args);

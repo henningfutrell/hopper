@@ -1,9 +1,10 @@
 // The keys from the command line. The TypeSafe API key (issue #657): read from stdin, never an argument. The master key's
 // status (issue #685, design.md "The master key"): where the running daemon's key came from, its fingerprint, and whether a
 // previous key is set; never the key. Its rotation (issue #659, "Rotating the master key"): the one answer that carries a
-// key — the new one, once, to stdout, never to the log.
+// key — the new one, once, to stdout, never to the log. API tokens (issue #718, design.md "API tokens"): mint one for an
+// agent, list them, revoke one; the token is printed once, by the mint.
 import { parseArgs } from 'node:util';
-import type { MasterKeyRotated, MasterKeyView } from './domain/types.ts';
+import { UI_ROLES, type MasterKeyRotated, type MasterKeyView, type UiRole } from './domain/types.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
 export const MASTER_KEY_USAGE = `  hopper master-key status                           the master key: where it came from (source), its fingerprint, and whether
@@ -50,4 +51,28 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
   const value = stdin().trim();
   if (!value) throw new OperatorRefusal('no key on stdin: pipe it in, e.g. hopper typesafe-key set < key-file');
   return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
+}
+
+export const TOKEN_USAGE = `  hopper token mint --label <who uses it> [--role viewer|operator|admin] [--minutes <1-60>]
+                                                     mint an API token for an agent: printed once; it ends at the next restart or
+                                                     sign-in change, as the CLI's own session does
+  hopper token list                                  the user's live API tokens: id, label, role, when each ends; never a token
+  hopper token revoke <id>                           end one`;
+
+const TOKEN_MINT = 'token mint --label <who uses it> [--role viewer|operator|admin] [--minutes <1-60>]';
+
+/** `hopper token mint|list|revoke`: `POST /ui/api/api-tokens` and `GET /api/api-tokens`, under a session of the role minted (admin by default). */
+export function tokenCall(args: string[]): Call {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { label: { type: 'string' }, role: { type: 'string' }, minutes: { type: 'string' } } });
+  const [verb, ...rest] = positionals;
+  const flags = Object.keys(values).length > 0;
+  if (verb === 'list' && rest.length === 0 && !flags) return { role: 'viewer', path: '/api/api-tokens' };
+  if (verb === 'revoke' && rest.length === 1 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'revoke', id: rest[0] }) };
+  if (verb !== 'mint' || rest.length > 0) throw usage(`${TOKEN_MINT} | hopper token list | hopper token revoke <id>`);
+  if (!values.label?.trim()) throw usage(TOKEN_MINT);
+  if (values.role !== undefined && !(UI_ROLES as readonly string[]).includes(values.role)) throw new OperatorRefusal(`--role ${values.role}: one of ${UI_ROLES.join(', ')}`);
+  const minutes = values.minutes === undefined ? undefined : Number(values.minutes);
+  if (minutes !== undefined && !Number.isInteger(minutes)) throw new OperatorRefusal(`--minutes ${values.minutes}: a whole number of minutes`);
+  const role = (values.role ?? 'admin') as UiRole;
+  return { role, path: '/ui/api/api-tokens', body: async () => ({ action: 'mint', label: values.label, role, ...(minutes === undefined ? {} : { minutes }) }) };
 }
