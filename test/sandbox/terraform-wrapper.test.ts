@@ -8,6 +8,8 @@
 //   Scenario: plan takes no state lock, and init keeps the lock file as it is
 //   Scenario: each command that writes is refused in words the read-only check knows, and the real binary is not run
 //   Scenario: init that would change the lock file or move state is refused
+//   Scenario: every command runs with the image's provider mirror config, whatever the caller set; providers lock and
+//     providers mirror, which download providers, are refused
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,15 +21,17 @@ import { TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
-interface Ran { code: number; stderr: string; real: string[] }
+interface Ran { code: number; stderr: string; real: string[]; config: string[] }
 
 function setup(): { dir: string; run(args: string[], o?: { cwd?: string; env?: Record<string, string> }): Promise<Ran> } {
   const dir = mkdtempSync(join(tmpdir(), 'tf-wrapper-'));
   dirs.push(dir);
   const log = join(dir, 'real.log');
+  const config = join(dir, 'config.log');
   writeFileSync(log, '');
+  writeFileSync(config, '');
   mkdirSync(join(dir, 'bin'));
-  writeFileSync(join(dir, 'bin', 'terraform'), `#!/bin/sh\nprintf '%s|' "$@" >> ${JSON.stringify(log)}\nprintf '%s\\n' "\${TF_CLI_ARGS-unset}" >> ${JSON.stringify(log)}\n`);
+  writeFileSync(join(dir, 'bin', 'terraform'), `#!/bin/sh\nprintf '%s|' "$@" >> ${JSON.stringify(log)}\nprintf '%s\\n' "\${TF_CLI_ARGS-unset}" >> ${JSON.stringify(log)}\nprintf '%s\\n' "\${TF_CLI_CONFIG_FILE-unset}" >> ${JSON.stringify(config)}\n`);
   chmodSync(join(dir, 'bin', 'terraform'), 0o755);
   writeFileSync(join(dir, 'terraform'), TERRAFORM_WRAPPER);
   chmodSync(join(dir, 'terraform'), 0o755);
@@ -35,7 +39,8 @@ function setup(): { dir: string; run(args: string[], o?: { cwd?: string; env?: R
     dir,
     run: (args, o = {}) => new Promise((resolve) => {
       execFile(join(dir, 'terraform'), args, { cwd: o.cwd ?? dir, env: { PATH: '/usr/bin:/bin', HOPPER_TOOLS: join(dir, 'bin'), ...o.env }, encoding: 'utf8' }, (err, _stdout, stderr) => {
-        resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stderr, real: readFileSync(log, 'utf8').split('\n').filter((x) => x !== '') });
+        const lines = (f: string): string[] => readFileSync(f, 'utf8').split('\n').filter((x) => x !== '');
+        resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stderr, real: lines(log), config: lines(config) });
       });
     }),
   };
@@ -44,7 +49,7 @@ function setup(): { dir: string; run(args: string[], o?: { cwd?: string; env?: R
 describe('the read-only terraform wrapper (issue #715)', () => {
   it('the commands that read go to the real binary as they were given', async () => {
     const w = setup();
-    const reads = [['version'], ['-version'], ['show', '-json'], ['validate'], ['output', '-json'], ['providers'], ['state', 'list'], ['state', 'show', 'aws_ssm_parameter.x'], ['workspace', 'list'], ['workspace', 'show'], ['-chdir=stack', 'validate']];
+    const reads = [['version'], ['-version'], ['show', '-json'], ['validate'], ['output', '-json'], ['providers'], ['providers', 'schema', '-json'], ['state', 'list'], ['state', 'show', 'aws_ssm_parameter.x'], ['workspace', 'list'], ['workspace', 'show'], ['-chdir=stack', 'validate']];
     for (const args of reads) {
       const r = await w.run(args);
       expect(r.code, args.join(' ')).toBe(0);
@@ -103,5 +108,22 @@ describe('the read-only terraform wrapper (issue #715)', () => {
       expect(r.stderr).toMatch(DENIAL);
     }
     expect((await w.run(['version'])).real).toEqual(['version|unset']);
+  });
+
+  it('every command runs with the image\'s provider mirror config, whatever the caller set; providers lock and mirror are refused', async () => {
+    const w = setup();
+    // The config sits beside the tools' bin directory: /opt/hopper-tools/terraform.rc in a read-only image.
+    const rc = join(w.dir, 'terraform.rc');
+    expect((await w.run(['init', '-input=false'])).code).toBe(0);
+    expect((await w.run(['plan'], { env: { TF_CLI_CONFIG_FILE: '/elsewhere/download.rc' } })).code).toBe(0);
+    expect((await w.run(['providers'])).config).toEqual([rc, rc, rc]);
+    // Each one asks the registry for providers, past the mirror: an arbitrary download.
+    for (const args of [['providers', 'lock'], ['providers', 'lock', '-platform=linux_arm64'], ['providers', 'mirror', '/tmp/m']]) {
+      const r = await w.run(args);
+      expect(r.code, args.join(' ')).not.toBe(0);
+      expect(r.stderr, args.join(' ')).toMatch(DENIAL);
+    }
+    expect((await w.run(['providers', 'lock'])).stderr).toContain('terraform providers lock: refused by the read-only wrapper');
+    expect((await w.run(['version'])).real).toEqual(['init|-input=false|unset', 'plan|-lock=false|unset', 'providers|unset', 'version|unset']);
   });
 });

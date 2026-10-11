@@ -38,8 +38,10 @@ describe('the read-only check script (issue #716)', () => {
     const { results, fake } = await run('writable', EVERY_KIND);
     const writes = results.filter((r) => r.expect === 'denied');
     expect(writes.length).toBeGreaterThan(0);
-    // Every write that reaches the account goes through. Only the terraform wrapper (issue #715) still refuses its own.
-    expect(writes.filter((r) => r.passed).every((r) => r.id.startsWith('terraform.') && r.id !== 'terraform.apply-direct' && r.output.includes('refused by the read-only wrapper'))).toBe(true);
+    // Every write that reaches the account goes through. Only the terraform wrapper (issue #715) still refuses its own,
+    // and the provider mirror still has no provider it does not hold: neither asks the account.
+    const ownRefusal = (r: { id: string; output: string }): boolean => r.output.includes('refused by the read-only wrapper') || (r.id === 'terraform.provider-download' && r.output.includes('not found in any of the search locations'));
+    expect(writes.filter((r) => r.passed).every((r) => r.id.startsWith('terraform.') && r.id !== 'terraform.apply-direct' && ownRefusal(r))).toBe(true);
     expect(results.find((r) => r.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     // A dry run that would work, and a delete of nothing, fail in their own words: an error, not a refusal.
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false });
@@ -55,6 +57,7 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.map((r) => r.id)).toEqual([
       'terraform.plan', 'terraform.apply', 'terraform.apply-direct', 'terraform.destroy', 'terraform.import', 'terraform.state-rm',
       'terraform.state-mv', 'terraform.state-push', 'terraform.taint', 'terraform.force-unlock', 'terraform.workspace-new', 'terraform.workspace-delete',
+      'terraform.provider-download',
     ]);
     expect(results.every((r) => r.passed)).toBe(true);
     // The wrapper refused apply on PATH; only the real binary, called past it, reached the account and was refused there.
@@ -64,6 +67,9 @@ describe('the read-only check script (issue #716)', () => {
     // The wrapper's refusals never ran the real binary.
     expect(fake.calls().filter((c) => /^terraform (destroy|import|state|taint|force-unlock|workspace)/.test(c))).toEqual([]);
     expect(results.find((r) => r.id === 'terraform.state-rm')).toMatchObject({ outcome: 'denied', expect: 'denied' });
+    // A provider the image's mirror does not hold is not downloaded: init finds it nowhere (issue #715).
+    expect(results.find((r) => r.id === 'terraform.provider-download')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'terraform.provider-download')!.output).toContain('hashicorp/null was not found in any of the search locations');
   });
 
   it('with no wrapper on PATH, the wrapper\'s probes fail: that layer is missing (issue #715)', async () => {
@@ -74,6 +80,8 @@ describe('the read-only check script (issue #716)', () => {
     const results = readResults(runs, r.output);
     expect(results.find((x) => x.id === 'terraform.destroy')).toMatchObject({ outcome: 'allowed', passed: false });
     expect(results.find((x) => x.id === 'terraform.state-rm')).toMatchObject({ outcome: 'allowed', passed: false });
+    // With no mirror config, init downloads any provider from the registry.
+    expect(results.find((x) => x.id === 'terraform.provider-download')).toMatchObject({ outcome: 'allowed', passed: false });
     // The account still refuses apply: the IAM layer holds alone.
     expect(results.find((x) => x.id === 'terraform.apply')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((x) => x.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'denied', passed: true });
