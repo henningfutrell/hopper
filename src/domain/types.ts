@@ -353,8 +353,6 @@ export interface DecisionInputs {
   policy: DeciderPolicy;
 }
 
-export type { DeciderPolicy } from './decider-policy.ts';
-
 export interface LanePlan {
   machineId: MachineId;
   current: number; // lanes open now (idle + busy + draining)
@@ -494,7 +492,7 @@ export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, Usage
 export * from './usage-history.ts';
 export * from './machine-history.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue } from './cleanup.ts';
+export type { CleanupDue, DeciderPolicy };
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 
