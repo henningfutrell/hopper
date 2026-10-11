@@ -1899,7 +1899,7 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 |------------------|------|
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
 | merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
-| merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's, puts `hopper:done` on it |
+| merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's — the part that makes every declared part done ("Declared parts" below) —, puts `hopper:done` on it, with `parts` in its source state |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
 
 **The merge re-check** (issue #721). Before it, a merged part on a branch named for its issue was recorded as the whole
@@ -1909,6 +1909,20 @@ of its item whose merge is so recorded and not checked yet (`rechecksMerge`: `fo
 `checked`, no event). Not: it was a part — `hopper:done` comes off, `part: true`, `job.pull_request_merged` with
 `part: true` — and the next sync offers the issue again. An older job of the item is never asked: its merge must not
 take off a `hopper:done` that a later job, or a person, set.
+
+**Declared parts** (issue #729, `src/sources/github/parts.ts`). An issue declares its parts as a checklist under a heading
+`Parts` (any level), up to the next heading of that level or higher; a checklist in a code block, or anywhere else in the
+issue, is not parts (an acceptance checklist must not count as work). A part is done when its box is ticked, and each
+merged pull request of the issue's repo that says `Part of #N` counts as one more: the parts done are the larger of the
+two, never more than the parts. The hopper never ticks a box: it writes only labels to issues, so it counts. At each sync
+the source reads the parts of each issue it offers (one `referencingPullRequests` per issue that declares parts; a read
+that fails counts the ticked boxes only) and gives them with the item (`SourceItem.parts`); the job keeps them in its
+source ref (`JobSourceRef.parts`), and its prompt says `parts: x of y done`, to ship the next part with `Part of #N` and to
+use `Closes #N` only for the last. When a part merges, following it reads the parts again, counting that merge even when
+GitHub does not list it yet, and keeps them in the job's source state (`parts`); when every part is done, the issue gets
+`hopper:done` in place of being offered again. It stays open: the hopper never closes one. The job card shows
+`parts x/y`, as followed, else as offered. GitHub sub-issues and the parent ↔ child lineage of issues are the issue's
+next part.
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper still never closes one.
 A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next

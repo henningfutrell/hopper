@@ -1,6 +1,7 @@
 // A source item — what a job source offers, which becomes at most one job — and the source as the host takes it
 // (design.md "Job sources"). Apart from ports.ts for its size; re-exported there.
 import type { ItemComment, ItemEdit, ItemText } from './item-snapshots.ts';
+import type { Parts } from './types.ts';
 
 /** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
 export interface SourceItem {
@@ -27,6 +28,8 @@ export interface SourceItem {
   /** Its GitHub repository (`owner/name`) when it has one: a job's is fetched or cloned in its work tree (issue #361). */
   repo?: string;
   number?: number;
+  /** Its declared parts and how many are done (issue #729); absent: it declares none. */
+  parts?: Parts;
   /** Executor for the job (from source config), and an optional model. */
   executor: string;
   model?: string;

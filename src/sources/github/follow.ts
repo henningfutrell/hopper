@@ -10,7 +10,8 @@
 // report could not name is looked for again each sync, and named once found (issue #677). A merge marks the item done
 // only when it closes the issue (issue #721): the issue is closed as completed, or the merged pull request's body closes it
 // with a closing keyword. Any other merge — a part, a mention, a pull request named for the issue only on its branch — is a
-// part: the issue is offered again. A merge recorded as the whole item before that rule is checked once by the same rule
+// part: the issue is offered again — unless it makes every part the issue declares done (issue #729, parts.ts): then the
+// issue is done, `hopper:done`. A merge recorded as the whole item before that rule is checked once by the same rule
 // (`mergeChecked`), and one that did not close the issue loses `hopper:done`. A throw is asked again on a later sync.
 // A person's Merge now or Close PR (issue #677) takes the same path: merged whatever yolo mode and its checks say — GitHub
 // still refuses a draft, merge conflicts or a required check —, or closed without a merge; a refusal throws to the person.
@@ -21,6 +22,7 @@ import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi } from './api.ts';
 import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
+import { allPartsDone, partsOf } from './parts.ts';
 import { ensureLabels, type ReportContext } from './report.ts';
 
 interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
@@ -145,13 +147,15 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     // A merge that did not close the issue is a part (issue #721), whatever the report took it for.
     const whole = now.state === 'merged' && !part && await closedByMerge(ctx.api, repo, number, now.url);
     const shipsPart = part || (now.state === 'merged' && !whole);
+    // A merged part that makes every declared part done (issue #729): the issue is done.
+    const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, repo, number, (await ctx.api.getIssue(repo, number)).body, now.url) : undefined;
     await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE]);
-    const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart ? undefined : LABEL_DONE;
+    const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
     if (add) {
       await ensureLabels(ctx, repo);
       await ctx.api.addLabels(repo, number, [add]);
     }
-    const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}) };
+    const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}), ...(parts ? { parts } : {}) };
     return { outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper ? { byHopper } : {}), state: after };
   } catch (err) {
     if (err instanceof SourceError) throw err;

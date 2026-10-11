@@ -26,6 +26,7 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     ...(item.number !== undefined ? { number: item.number } : {}),
     ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
     labels: [...item.labels],
+    ...(item.parts ? { parts: { ...item.parts } } : {}),
   };
 }
 

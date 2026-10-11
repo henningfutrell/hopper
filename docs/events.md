@@ -2827,7 +2827,7 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
 
 ## `job.pull_request_merged`
 
-Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. A part that makes every part the item declares done marks the item done (issue #729). `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
 
 | field | type | required |
 |---|---|---|
