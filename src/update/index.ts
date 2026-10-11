@@ -7,3 +7,4 @@ export { createRestarter, RESTART_EXIT_CODE, restartMode, type RestartMode } fro
 export { renameBoot } from './rename.ts';
 export { createStackDrift, driftLine, startStackDrift } from './drift.ts';
 export { createStackProbe } from './stack-probe.ts';
+export { createReleaseCheck } from './release-check.ts';

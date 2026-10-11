@@ -8,8 +8,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import type { Clock, InstanceEvents, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
-import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type VersionHistory } from '../domain/types.ts';
+import type { Clock, InstanceEvents, InstanceSettingsRepository, ReleaseCheck, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
+import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror } from './git.ts';
 import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
@@ -47,15 +47,17 @@ export interface UpdaterOptions {
   checkMs: number;
   /** How often to look again while waiting on restart blockers. */
   waitMs?: number;
+  /** Whether a newer head may be updated to (issue #652): the merge of a pull request whose checks passed; else it is held. */
+  release: ReleaseCheck;
   /** Default: a bare mirror under `<dataDir>/update/repo.git`. */
   mirror?: GitMirror;
 }
 
 interface Checked {
-  state: 'unavailable' | 'current' | 'available' | 'error';
+  state: 'unavailable' | 'current' | 'available' | 'held' | 'error';
   reason?: string;
   installed?: InstallInfo;
-  target?: { commit: string; ref: string };
+  target?: UpdateTarget;
   whatsNew: string[];
   /** Commits in the target and not installed: the log line and `update.available`, never the UI. */
   commits?: number;
@@ -107,6 +109,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   let applyError: string | undefined;
   let checking: Promise<UpdateStatus> | undefined;
   let stopped = false;
+  /** The held target and reason last logged: logged once, not at each check. */
+  let heldWarned: string | undefined;
   const timers: NodeJS.Timeout[] = [];
 
   const settings = (): UpdateSettings => {
@@ -151,9 +155,12 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     // already contains it — a move to a more stable channel goes back to it (issue #282).
     const switching = isUpdateChannel(info.branch) && info.branch !== channel;
     if (target.commit === info.commit || (!switching && (await mirror.contains(info.commit, target.commit)))) return { ...base, state: 'current', target };
+    // Only the merge of a pull request whose checks passed is offered (issue #652): nothing else is announced or applied.
+    const verdict = await o.release.verify(info.repo, target.commit);
+    if (!verdict.passed) return { ...base, state: 'held', target, reason: verdict.reason };
     const notes = async (commit: string) => bullets((await mirror.read(commit, WHATS_NEW_FILE)) ?? '');
     const whatsNew = newSince(await notes(info.commit), await notes(target.commit));
-    return { ...base, state: 'available', target, whatsNew, commits: await mirror.count(info.commit, target.commit) };
+    return { ...base, state: 'available', target: { ...target, pullRequest: verdict.pullRequest }, whatsNew, commits: await mirror.count(info.commit, target.commit) };
   }
 
   async function runCheck(): Promise<UpdateStatus> {
@@ -167,12 +174,16 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     } catch (e) {
       checked = { ...checked, state: 'error', reason: messageOf(e), installed: read.info, checkedAt: now() };
     }
-    if (checked.state === 'error') o.logger.warn(`hopper: update check failed: ${checked.reason}`);
-    applyError = undefined;
     const { target, installed } = checked;
+    if (checked.state === 'error') o.logger.warn(`hopper: update check failed: ${checked.reason}`);
+    if (checked.state === 'held' && target && heldWarned !== `${target.commit} ${checked.reason}`) {
+      heldWarned = `${target.commit} ${checked.reason}`;
+      o.logger.warn(`hopper: update held: ${target.ref} ${short(target.commit)} is not offered: ${checked.reason}`);
+    }
+    applyError = undefined;
     if (checked.state === 'available' && target && installed) {
       if (lastAnnounced() !== target.commit) {
-        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0 });
+        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0, ...(target.pullRequest ? { pullRequest: target.pullRequest.number } : {}) });
         o.logger.info(`hopper: update available: ${target.ref} ${short(target.commit)} (${checked.commits ?? 0} commit(s) not installed)`);
       }
       if (settings().autoUpdate) apply();

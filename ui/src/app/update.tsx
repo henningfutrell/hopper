@@ -1,4 +1,4 @@
-// Self-update (issue #44): the notice when an update is available, applying or failed — with
+// Self-update (issue #44): the notice when an update is available, held (issue #652: not a merged pull request with passing checks), applying or failed — with
 // what's new in plain words (issue #104) — and the panel behind the header's version (version, installed commit, what that
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
@@ -19,7 +19,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { CHANNELS, CONTAINER_TOOLS, channelBadge, headline, imageUpdate, showNotice } from '@/model/update';
+import { CHANNELS, CONTAINER_TOOLS, channelBadge, headline, imageUpdate, showNotice, targetLine } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { accessDown } from '@/model/access-status';
@@ -28,7 +28,7 @@ import { updateAct, useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
 const short = (sha: string | undefined) => sha?.slice(0, 7) ?? '…';
-const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
+const TONE: Record<UpdateStatus['state'], Tone> = { available: 'busy', held: 'warn', applying: 'warn', error: 'bad', current: 'ok', unavailable: 'muted' };
 
 /** How many notes a list shows before its Show all (issue #493). */
 const FIRST = 5;
@@ -123,6 +123,19 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
 /** What opens below the notice's line: one at a time. */
 type Panel = 'news' | 'steps';
 
+/** The commit the notice is about, and the pull request whose checks passed, linked (issue #652). */
+function TargetLine({ s }: { s: UpdateStatus }) {
+  const line = targetLine(s);
+  if (!line) return null;
+  const pr = s.target?.pullRequest;
+  const commit = line.split(' · ')[0];
+  return (
+    <span data-slot="update-target" className="font-mono text-xs text-muted-foreground">
+      {commit}{pr && <> · <a className="underline underline-offset-2" href={pr.url} target="_blank" rel="noreferrer">pull request #{pr.number}</a>, checks passed</>}
+    </span>
+  );
+}
+
 function PanelToggle({ panel, open, onOpen, children }: { panel: Panel; open: Panel | null; onOpen: (p: Panel | null) => void; children: string }) {
   return (
     <Button variant="ghost" size="xs" aria-expanded={open === panel} onClick={() => onOpen(open === panel ? null : panel)}>
@@ -144,6 +157,7 @@ export function UpdateNotice() {
       <div className="flex flex-wrap items-center gap-2">
         <Dot tone={tone} pulse={s.state === 'applying'} />
         <span className={cn('min-w-0 flex-1 truncate font-medium', TEXT[tone])} title={headline(s)}>{headline(s)}</span>
+        <TargetLine s={s} />
         {s.whatsNew.length > 0 && <PanelToggle panel="news" open={open} onOpen={setOpen}>What's new</PanelToggle>}
         {image && <PanelToggle panel="steps" open={open} onOpen={setOpen}>How to update</PanelToggle>}
         <ApplyButton s={s} />

@@ -68,7 +68,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
+| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
@@ -12363,6 +12363,45 @@ Tests: `test/repo-checks/setup.test.ts` (each point from what GitHub shows, the 
 and the security settings only to an admin: set up, not set up with each problem, a ruleset read without admin, a
 protected branch read without admin is unread, GitHub down, `hopper repo checks`), `test/ui/repo-setup-view.test.ts` (the
 section, the line, the problems, the unread note; no section with no job repository or no answer).
+
+## Updates only to a merged pull request with passing checks (issue #652, 2026-10-11)
+
+Requirement 9 of issue #652. A branch protection (part 4) keeps a direct push off `dev`, `beta` and `stable` only when it
+is set up, and an admin can bypass it. So the updater checks the commit itself before it offers it.
+
+**The release check** (`src/update/release-check.ts`, the `ReleaseCheck` port). When the channel's head is newer than the
+install, the updater asks whether it is the merge of a pull request whose checks passed, before it says anything:
+
+1. `GET /repos/{r}/commits/{sha}/pulls`: a pull request with `merged_at` whose `merge_commit_sha` is the head. None: the
+   head is a direct push, or a pull request's own commit, and it is **held**.
+2. `GET /repos/{r}/commits/{head of that pull request}/check-runs`: every check run completed, each `success`, `neutral`
+   or `skipped`, at least one `success`. No check runs: held ("no checks is not passing", as for yolo mode). A check that
+   failed or has not finished: held, with its name.
+
+Asked of `https://api.github.com` with no token: the update repository is public, and the updater runs for the instance,
+not for one user's connection. An update repository not on github.com, or GitHub not answering, holds the update: it is
+not offered when it cannot be checked. A settled answer (passed, or not the merge of a pull request) is kept for the
+commit; another is asked again after five minutes, so the check stays under GitHub's 60 unauthenticated requests an hour.
+
+**Held** (`UpdateState` `held`). The status carries the target and `reason`; no `update.available`, no auto-update, and
+`apply` answers 409 "no update available". The daemon logs `hopper: update held: …` once per target and reason. The update
+notice shows "Update held: <reason>" with the commit, and nothing to apply or run. A passing target carries
+`target.pullRequest` (`{ number, url }`); `update.available` records its number (`pullRequest`, an additive field). The
+notice names the commit and links the pull request: `stable 1a2b3c4 · pull request #775, checks passed`.
+
+**An image.** The notice's commands pull the channel's tag, which the image workflow builds from the branch head the
+updater checked. A tag moved by a newer push after the check is not checked again by the commands: the next check holds
+or offers that newer commit, and the notice changes with it.
+
+**Persisted state.** None: the verdicts are kept in memory.
+
+Tests: `test/update/release-check.test.ts` (GitHub a fake on loopback: passed, a direct push, no checks, failed, still
+running, not on GitHub, GitHub down, what is asked again and when), `test/update/updater.test.ts` (offered with its pull
+request; held: no announcement, no apply, auto-update on; nothing asked at the head), `test/integration/update.test.ts`
+(the daemon: held over `GET /api/update`, apply 409), `test/ui/update.test.ts` and `test/ui/update-notice.test.ts` (the
+words, the commit line and the link).
+
+**Left of issue #652:** the vault helper only by a per-job grant (requirement 5), and the issue's open points.
 
 ## Report a bug (issue #694, 2026-10-10)
 

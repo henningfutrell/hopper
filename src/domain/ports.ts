@@ -5,7 +5,7 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
   ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
@@ -700,6 +700,14 @@ export interface StackProbe {
   resolves(service: string): Promise<boolean>;
   /** The commit the vault in its own container says it runs; null when it is not reached or does not say. */
   vaultCommit(): Promise<string | null>;
+}
+
+/** Whether a commit may be updated to (issue #652): the merge of a pull request whose checks passed, or why not. */
+export type ReleaseVerdict = { passed: true; pullRequest: UpdatePullRequest } | { passed: false; reason: string };
+
+/** The release check: asks where the update repository lives whether `commit` is a merged pull request with passing checks. */
+export interface ReleaseCheck {
+  verify(repo: string, commit: string): Promise<ReleaseVerdict>;
 }
 
 /** The daemon's self-update: GET /api/update, POST /ui/api/update. */

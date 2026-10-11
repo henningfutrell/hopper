@@ -551,7 +551,7 @@ Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in 
 
 ## `update.available`
 
-Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).
+Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead). `pullRequest` (issue #652): the number of the pull request the target is the merge of, whose checks passed; only such a target is announced, a held one never.
 
 | field | type | required |
 |---|---|---|
@@ -559,13 +559,15 @@ Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer targe
 | `to` | string | yes |
 | `ref` | string | yes |
 | `changes` | integer | yes |
+| `pullRequest` | integer | no |
 
 ```json
 {
   "from": "a1b2c3d",
   "to": "e4f5a6b",
   "ref": "stable",
-  "changes": 3
+  "changes": 3,
+  "pullRequest": 775
 }
 ```
 

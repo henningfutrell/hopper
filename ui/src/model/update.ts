@@ -93,6 +93,8 @@ export function headline(s: UpdateStatus): string {
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';
     }
+    // Not the merge of a pull request whose checks passed (issue #652): not offered, and why.
+    case 'held': return `Update held: ${s.reason ?? 'unknown'}`;
     case 'applying': return `Updating: ${s.apply?.detail ?? 'starting'}`;
     case 'error': return `Update problem: ${s.reason ?? 'unknown'}`;
     case 'unavailable': return `Self-update unavailable: ${s.reason ?? 'unknown'}`;
@@ -100,7 +102,17 @@ export function headline(s: UpdateStatus): string {
   }
 }
 
-export const showNotice = (s: UpdateStatus | null): boolean => s !== null && (s.state === 'available' || s.state === 'applying' || s.state === 'error');
+export const showNotice = (s: UpdateStatus | null): boolean => s !== null && (s.state === 'available' || s.state === 'held' || s.state === 'applying' || s.state === 'error');
+
+/**
+ * The commit the notice is about (issue #652): the channel and the short commit, and for an offered update the pull
+ * request it is the merge of, whose checks passed. None with no update or held one.
+ */
+export function targetLine(s: UpdateStatus): string | undefined {
+  if ((s.state !== 'available' && s.state !== 'held') || !s.target) return undefined;
+  const commit = `${s.target.ref} ${s.target.commit.slice(0, 7)}`;
+  return s.target.pullRequest ? `${commit} · pull request #${s.target.pullRequest.number}, checks passed` : commit;
+}
 
 export const reloadNeeded = (loadedCommit: string | undefined, s: UpdateStatus): boolean =>
   loadedCommit !== undefined && s.installed !== undefined && s.installed.commit !== loadedCommit;
