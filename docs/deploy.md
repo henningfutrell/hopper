@@ -79,11 +79,17 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   banner name the missing key by its fingerprint. Nothing is deleted. Nothing that needs a secret works: no
   secret is stored or opened, and no new GitHub token is kept. Do not connect GitHub again: give the key and
   restart.
-- **Moving from the old token key.** An install from before kept its key in the compose secrets volume
-  (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, the hopper reads
-  that key, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
+- **Moving from the old token key.** An install from before kept its key in the compose `secrets` volume
+  (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, a host install reads
+  `HOPPER_TOKEN_KEY`, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
   `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
-  `HOPPER_TOKEN_KEY` line, or the `token_key` file. The compose file makes no `token_key` any more.
+  `HOPPER_TOKEN_KEY` line. The compose file no longer mounts the `secrets` volume or reads its `token_key`: save the key
+  from the UI and put it in `.env` **before** you update (the update script refuses until then). A compose install
+  that updated without it starts limited, and nothing is lost: the key is still in the old volume. Read it once,
+  put it in `.env` as `HOPPER_MASTER_KEY`, and recreate the hopper:
+  `podman run --rm -v hopper_secrets:/s:ro docker.io/library/alpine:3 cat /s/token_key`. Once the hopper starts with
+  the key, remove the old volume: `podman volume rm hopper_secrets` (with the stack stopped, or after
+  `podman compose up -d --remove-orphans`).
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -97,6 +103,25 @@ anyone who can read that journal or a copy of it has the key. Search for the lin
 If either count is not 0, rotate the key now (below). Deleting the log lines is not enough: rotate.
 
 ### Rotating the master key
+
+**With one command** (issue #659): the hopper's admin rotates the key from Settings → Vault → Master key → **Rotate the
+master key**, or from the operator CLI: `hopper master-key rotate` (in compose:
+`podman compose exec hopper hopper master-key rotate`). The hopper makes a new key and seals every secret it keeps
+again under it, in one transaction: if anything fails, nothing changes. The running hopper goes on under the new key,
+with no restart. The new key is shown once — in the UI banner, or in the command's answer (`key`) —, never in the log.
+
+1. Save the new key in your password manager now.
+2. Put it in place of the old one at launch, before the next start: in compose, `HOPPER_MASTER_KEY=<the new key>` in
+   `.env`; on a host install, in `~/.config/hopper/daemon.env`. A start with the old key is refused: `the master key
+   does not match this database: it was rotated …`. Nothing changes then: give the new key.
+3. Click **I saved it** in the banner. Delete the old key from your password manager and from every place it was
+   written.
+
+The answer also says how many secrets were sealed again (`resealed`), and how many the old key sealed that do not open
+(`unreadable`, left as they were; they did not open before either). With the vault in a container of its own
+(`HOPPER_VAULT_URL`), the command is refused: that container keeps the key it started with. Rotate at launch instead:
+
+**At launch** (the vault in a container of its own, or a key you made yourself):
 
 1. Make a new key: `openssl rand -hex 32`. Save it in your password manager.
 2. Give it as `HOPPER_MASTER_KEY`, and the old one as `HOPPER_MASTER_KEY_PREVIOUS` (one per line). In
@@ -172,11 +197,14 @@ Without it, a new container on the same database is limited ("The master key" ab
 
 | service | |
 |---|---|
-| `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. It holds no master key. |
-| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. It sets the password again at each start, so a lost `secrets` volume makes a new password and the database keeps working. |
-| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
+| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. Before it starts, it makes a random database password and the database URL from it, and OpenFGA's and the vault container's preshared keys, in `runtime-secrets`, and sets the password again once it takes connections. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
+| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `runtime-secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
 | `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
 | `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
+
+No secret is in a persistent volume (issue #659). `runtime-secrets` is in memory (tmpfs): the services share it while
+any of them runs, it is gone after a full stop, and `postgres` makes its files again at the next start. The master key
+is only in `.env`.
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
@@ -227,8 +255,9 @@ Without it, a new container on the same database is limited ("The master key" ab
     selected channel is `dev`: switch the image tag". **Switch channels** by running the update below with the
     channel's image (it sets `HOPPER_IMAGE`); pick the same channel in Settings → Version.
   - **Before you update, check that `.env` holds `HOPPER_MASTER_KEY`.** The new container gets the key only from
-    there. An install from before keeps it in the secrets volume's `token_key`: the hopper reads that one until
-    `HOPPER_MASTER_KEY` is set, and shows it once to be saved ("The master key" above).
+    there. An install from before keeps it in the old `secrets` volume's `token_key`, which the new compose file does
+    not read: save the key the UI shows, and put it in `.env` first ("The master key" above). The update script
+    refuses until then.
   - **Update with the compose file the new image ships with, the whole stack** (issue #697). Every image carries
     the `compose.yaml` of its commit. In the folder that holds `compose.yaml`, make the update script from the image of
     the channel, read it, then run it:
@@ -430,7 +459,7 @@ The hopper's vault runs in its own container, from the hopper's image (`node src
 key and the secret values, in the hopper's Postgres. Templates and their approvals, and secrets kept in a vault backend,
 stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at `HOPPER_VAULT_URL` with the
 preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
-(`vault_key` in the `secrets` volume). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
+(`vault_key` in `runtime-secrets`). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
 recreates `postgres` once.
 
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").

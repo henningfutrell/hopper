@@ -60,7 +60,7 @@ if ! has_env HOPPER_MASTER_KEY; then
       fail "HOPPER_MASTER_KEY is not in .env, and the running hopper made its master key at this start: a recreate loses it. Open the UI, save the master key it shows, add HOPPER_MASTER_KEY=<the 64 hex digits> to .env (docs/deploy.md \\"The master key\\"), then run this again. Nothing changed."
     fi
   else
-    say "note: the master key's status was not read (the hopper is stopped, or its image is older): if the UI showed a master key, stop now (Ctrl-C) and add HOPPER_MASTER_KEY to .env"
+    say "note: the master key's status was not read (the hopper is stopped, or its image is older): if the UI showed a master key, stop now (Ctrl-C) and add HOPPER_MASTER_KEY to .env. The new compose.yaml no longer reads the old secrets volume's token_key (docs/deploy.md \\"The master key\\")"
   fi
 fi
 
