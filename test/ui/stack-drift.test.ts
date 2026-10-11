@@ -6,7 +6,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { StackDrift } from '../../src/domain/types.ts';
-import { driftFix, driftNamesOpenFga } from '../../ui/src/model/drift.ts';
+import { asDrift, driftFix, driftNamesOpenFga } from '../../ui/src/model/drift.ts';
 
 let root: Root | undefined;
 afterEach(async () => { await act(async () => root?.unmount()); root = undefined; });
@@ -40,6 +40,12 @@ describe('a stack drifted from the compose file of this version (#697)', () => {
     expect(driftNamesOpenFga(DRIFTED)).toBe(true);
     expect(driftNamesOpenFga({ ...DRIFTED, gaps: DRIFTED.gaps.slice(1) })).toBe(false);
     expect(driftNamesOpenFga(null)).toBe(false);
+  });
+
+  it('asDrift: only a body with gaps is a drift (a daemon from before answers no such route)', () => {
+    expect(asDrift(DRIFTED)).toBe(DRIFTED);
+    expect(asDrift({})).toBeNull();
+    expect(asDrift(null)).toBeNull();
   });
 
   it('no gap, not checked, or not read: no banner', async () => {

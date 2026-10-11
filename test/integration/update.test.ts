@@ -117,7 +117,7 @@ describe('self-update over HTTP', () => {
     writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices:\n  hopper:\n    environment:\n      HOPPER_OPENFGA_URL: x\n  openfga:\n    image: o\n');
     const asked: string[] = [];
     const stackProbe = { resolves: async (name: string) => { asked.push(name); return false; }, vaultCommit: async () => null };
-    const app = await startTestApp({ dbPath: w.dbPath, seams: { stackProbe, update: { appDir, builder: copyBuilder(), restart: async () => {} } } });
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => {}, stackProbe } } });
     apps.push(app);
     const d = await app.api<StackDrift>('GET', '/api/update/drift');
     expect(d.status).toBe(200);

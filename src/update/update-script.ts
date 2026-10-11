@@ -73,7 +73,9 @@ bak="compose.yaml.bak-\${old:-$stamp}"
 cp compose.yaml "$bak"
 envbak=".env.bak-\${bak#compose.yaml.bak-}"
 if [ -f .env ]; then cp -p .env "$envbak"; else : > .env; envbak=; fi
-back() { fail "$1. To go back: cp $bak compose.yaml\${envbak:+ && cp $envbak .env} && ${c} up -d --force-recreate (the database backup is hopper-backup-$stamp.dump)"; }
+overbak=
+overnew=
+back() { fail "$1. To go back: cp $bak compose.yaml\${envbak:+ && cp $envbak .env}\${overbak:+ && cp $overbak compose.override.yaml}\${overnew:+ && rm compose.override.yaml} && ${c} up -d --force-recreate (the database backup is hopper-backup-$stamp.dump)"; }
 
 say "3/7 pull $image"
 if ! runtime pull "$image"; then
@@ -81,7 +83,7 @@ if ! runtime pull "$image"; then
   say "note: $image was not pulled; this computer's own copy is used (an image built here)"
 fi
 
-say "4/7 move the install's own settings from compose.yaml to .env"
+say "4/7 move the install's own settings from compose.yaml to .env and compose.override.yaml"
 carried=$(runtime run --rm -i --network none "$image" hopper update carry < compose.yaml) || fail "the old compose.yaml was not read. Nothing changed but the backups."
 [ ! -s .env ] || [ -z "$(tail -c1 .env)" ] || echo >> .env
 printf '%s\\n' "$carried" | while IFS= read -r line; do
@@ -93,6 +95,17 @@ done
 cat .env.next > .env
 rm -f .env.next
 say "HOPPER_IMAGE=$image in .env"
+if [ -f compose.override.yaml ]; then HOPPER_UPDATE_OVERRIDE=$(cat compose.override.yaml); export HOPPER_UPDATE_OVERRIDE; fi
+override=$(runtime run --rm -i --network none -e HOPPER_UPDATE_OVERRIDE "$image" hopper update override < compose.yaml) \\
+  || fail "the old compose.yaml or compose.override.yaml was not read. Nothing changed but the backups and .env."
+unset HOPPER_UPDATE_OVERRIDE
+if [ -n "$override" ]; then
+  if [ -f compose.override.yaml ]; then overbak="compose.override.yaml.bak-\${bak#compose.yaml.bak-}"; cp -p compose.override.yaml "$overbak"; else overnew=1; fi
+  printf '%s\\n' "$override" > compose.override.yaml.next
+  diff -u "\${overbak:-/dev/null}" compose.override.yaml.next || true
+  mv compose.override.yaml.next compose.override.yaml
+  say "compose.override.yaml written\${overbak:+; the old one is $overbak}"
+fi
 
 say "5/7 put in the compose.yaml of ${version}; the old one is $bak"
 cat > compose.yaml <<'${EOF}'
