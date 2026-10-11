@@ -9101,8 +9101,9 @@ workspace's real state, a credential for an `aws-account`, an Argo CD app or a T
 schedule. A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
 `hopper-read-only-check`.
 
-**Not built.** The check on an attached machine's runtime (it runs on the hopper's own); the check on a schedule; the check
-of a template with secrets a person gave (#583): a secret given later does not make the check stale.
+**Not built.** The check on an attached machine's runtime (it runs on the hopper's own); the check
+of a template with secrets a person gave (#583): a secret given later does not make the check stale. (The check on a
+schedule, the terraform wrapper and its probes are built since: "A read-only infra box", issue #715.)
 
 **Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
 not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
@@ -9125,6 +9126,72 @@ and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and 
 `HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
 removed with its volume; with a token minted for a cluster no server answers at, the hopper's own cluster probes were
 all `error`, kubectl asked the server its kubeconfig names, and the check failed.
+
+## A read-only infra box (issue #715, part 1, 2026-10-11)
+
+Issue #715 asks for a box for diagnostics that **cannot** change infrastructure, in layers, and a negative suite that
+proves each write fails. "The read-only check" (issue #716, item 4) and its read credentials (issue #797) built the suite,
+the gate and the minting. This part adds the layers the suite was waiting for, and runs the suite again on a schedule.
+A template that a job (or an API token) asks for with read needs only is that box: there is no fixed `infra-read`
+template, since the needs decide the assets and the read policy decides the approval ("Templates on request").
+
+- **The deny policy** (`awsReadDenyPolicy`, `src/domain/minting.ts`). Every read session the vault mints from STS — for a
+  job, a check box, or a mint test — carries an inline session policy beside the managed `ReadOnlyAccess`: explicit
+  denies of `*:Create*`, `*:Delete*`, `*:Put*`, `*:Update*`, `*:Modify*`, IAM's other writes (`iam:Attach*`,
+  `iam:PassRole`, `iam:Tag*`, …), and `sts:AssumeRole` (and its SAML and web-identity forms) on any role but its own.
+  Only denies: a session policy's allow could add to what `ReadOnlyAccess` gives. An explicit deny wins over every allow,
+  so a role whose own policy can write still gives a read session none of it. `AssumeRole` sends it as `Policy`; with the
+  vault in a container of its own it crosses in the mint target (`policy`, at most 2048 characters, STS's limit). A write
+  session carries neither policy.
+- **The read-only wrapper** (`TERRAFORM_WRAPPER`, `src/sandbox/terraform-wrapper.ts`). A read-only template's image
+  (`toolsImage(…, { readOnly: true })`, from `Template.readOnly`, for a box and for its check box) puts a `terraform`
+  first on `PATH`, in `/opt/hopper-tools/read-only`, in front of the real binary in `/opt/hopper-tools/bin`
+  (`$HOPPER_TOOLS`). An allow-list: `init`, `plan`, `show`, `validate`, `output`, `providers`, `version`, `state list` and
+  `show`, `workspace list` and `show`, with any `-chdir`; every other command is refused before the real binary runs,
+  with `terraform <command>: refused by the read-only wrapper` and exit 1 — `apply`, `destroy`, `import`, `refresh`,
+  `taint`, `force-unlock`, `state rm`/`mv`/`push`, `workspace new`/`delete`/`select`, and any command terraform adds later.
+  `plan` takes no state lock (`-lock=false` is added; `-lock=true` is refused), as a lock is a write to the lock table.
+  `init -upgrade`, `-migrate-state` and `-force-copy` are refused; with a `.terraform.lock.hcl` present, `init` gets
+  `-lockfile=readonly`. `TF_CLI_ARGS*` are cleared, so no flag slips past it. It is written into the image in base64 by
+  one `RUN` of the fetch stage: the Containerfile needs no build context and no heredoc. The image's tag hashes the
+  Containerfile, so a read-only image is a different image from the plain one.
+- **Its probes** (`src/sandbox/probes.ts`). For a `terraform-workspace` need, beside `plan`, `apply` on `PATH` and `apply`
+  past the wrapper: `destroy`, `import`, `state rm`, `state mv`, `state push`, `taint`, `force-unlock`, `workspace new` and
+  `workspace delete`, each on `PATH`, each must be refused. `apply` past the wrapper (`$HOPPER_TOOLS/terraform`) shows the
+  account refuses on its own: the IAM layer holds with the wrapper bypassed. A box with no wrapper fails those probes:
+  that layer is missing.
+- **The check on a schedule** (`CHECK_EVERY_MS`, `dueForCheck(t, now)`, `src/sandbox/check.ts`). A passed check runs again
+  when it is a day old: an account or a cluster can change under a template (a role gets a write policy, a binding
+  widens). While it runs, the template keeps the check that passed, so its boxes and jobs go on. A pass replaces it with
+  the new time; a failure replaces it, and the template takes no box and no job until a person runs it again, as for any
+  failed check. A failed check is not run again by the schedule.
+
+**What stays of #715 (part 2 on).** A credential for a `terraform-workspace` need: its check fails today, saying it gets
+no credential, because the hopper does not know which AWS account and role a workspace's provider and state live in.
+That needs a mapping (a workspace to an `aws-role`), a read-only state backend policy (S3 `GetObject`/`ListBucket` only,
+no lock table writes), and `destroy` and `state rm` past the wrapper against the workspace's real state. A pre-baked or
+read-only provider cache. Egress limited to the AWS, Kubernetes and GitHub endpoints (the check box and boxes run on the
+hopper's network today). The suite's result as a job artifact: it is on the template and in `template.checked` today.
+
+**Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
+design, and the deny policy is what refuses then. `*:Create*` and its kind match by the action's name: a write whose name
+starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and is refused only
+when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
+a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked against
+STS's documented policy grammar and in tests against a fake STS, not against AWS itself: `hopper vault mint-test`
+mints one with it, so a person sees STS take it.
+
+Tests: `test/vault/read-session-policy.test.ts` (the policy: denies only, each write, every other role, within 2048
+characters; none on a write session), `test/integration/vault-mint.test.ts` (the policy reaches STS as `Policy`, through the
+hopper and through the vault's own container), `test/sandbox/terraform-wrapper.test.ts` (the real wrapper under `sh`
+with a fake real binary: each read passes as given, `plan` without a lock, `init` with a lock file, each write and each
+`init` flag refused in the check's words, the real binary never run), `test/sandbox/tools.test.ts` (a read-only image has
+the wrapper first on `PATH`; a plain one, or one with no terraform, has none), `test/sandbox/check-script.test.ts` (the
+wrapper's probes with the wrapper on `PATH`: refused there, `apply` past it refused by the account; with no wrapper they
+fail), `test/sandbox/check-schedule.test.ts` (a day later the check runs again with the template open; a pass replaces
+the old one; a failure blocks it). Checked by hand: the Containerfile of a read-only `terraform` image built with rootless
+Podman; in it, `terraform` is the wrapper, `apply`, `state rm` and `destroy` are refused, `init` and `plan` of a small
+stack run with the real Terraform 1.16.5, and the real binary in `$HOPPER_TOOLS` runs past it.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 

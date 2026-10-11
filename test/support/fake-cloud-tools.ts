@@ -4,11 +4,14 @@
 // with them as its tools and the box's environment, as the container runtime double's one-shot containers do.
 // `credentials` (issue #797): aws then answers only with that minted session in its environment, and kubectl and helm only
 // with a kubeconfig that holds that token — else each fails as the real tool does with no credential.
+// Issue #715: the read-only terraform wrapper is first on PATH, as in a read-only template's image, with the fake
+// terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out.
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
+import { TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 
 export type CloudMode = 'read-only' | 'writable';
 
@@ -53,8 +56,14 @@ export interface FakeCloudTools {
   cleanup(): void;
 }
 
-export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?: FakeCredentials): FakeCloudTools {
+export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?: FakeCredentials, o: { wrapper?: boolean } = {}): FakeCloudTools {
   const dir = mkdtempSync(join(tmpdir(), 'fake-cloud-'));
+  const wrapper = o.wrapper ?? true;
+  if (wrapper) {
+    mkdirSync(join(dir, 'read-only'));
+    writeFileSync(join(dir, 'read-only', 'terraform'), TERRAFORM_WRAPPER);
+    chmodSync(join(dir, 'read-only', 'terraform'), 0o755);
+  }
   const log = join(dir, 'calls.log');
   writeFileSync(log, '');
   const setMode = (m: CloudMode): void => writeFileSync(join(dir, 'mode'), m);
@@ -71,7 +80,8 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?
     runScript: (spec) => new Promise((resolve) => {
       const home = mkdtempSync(join(dir, 'box-'));
       // The tools first, then node's and the system's: the check needs sh, coreutils and base64 as a box has them.
-      const env = { ...spec.env, PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home };
+      const tools = wrapper ? `${join(dir, 'read-only')}:${dir}` : dir;
+      const env = { ...spec.env, PATH: `${tools}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home };
       execFile('sh', ['-c', spec.script ?? ''], { env, encoding: 'utf8' }, (err, stdout, stderr) => {
         resolve({ exit: err ? Number((err as { code?: number }).code ?? 1) : 0, output: stdout + stderr });
       });

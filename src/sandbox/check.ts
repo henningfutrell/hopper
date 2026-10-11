@@ -6,6 +6,8 @@
 // mid-check). Issue #797: before the box starts, the vault mints the read credential each read need takes, under Access
 // (`CheckTemplates.credential`); the box gets them in its environment, so its reads work and a write is refused by the
 // account or the cluster. A need it gets none for fails the check with the reason, and no box runs.
+// Issue #715: a passed check runs again once a day (`CHECK_EVERY_MS`), since an account or a cluster can change under a
+// template. While it runs the template keeps the check that passed; a check that fails replaces it and blocks the template.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
@@ -20,6 +22,8 @@ import { DEFAULT_LIMITS } from './params.ts';
 export const CHECK_LABEL = 'io.hopper.check';
 /** How long a whole check may run. */
 export const CHECK_MS = 30 * 60_000;
+/** How often a passed check runs again (issue #715). */
+export const CHECK_EVERY_MS = 24 * 60 * 60_000;
 const LIMITS: ResourceLimits = { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default };
 
 /** The templates the check pass reads, of every user, and where it keeps a check. */
@@ -44,11 +48,14 @@ export interface CheckContext {
 
 /**
  * Whether the template gets a check now: it needs one, its image is approved, and its version has none — or one still
- * `running`, which a pass finds only when a hopper stopped mid-check: passes run one after the other.
+ * `running`, which a pass finds only when a hopper stopped mid-check: passes run one after the other —, or one that
+ * passed `CHECK_EVERY_MS` ago or more (issue #715). A failed check waits for a person.
  */
-export function dueForCheck(t: Template): boolean {
-  const state = currentCheck(t)?.state;
-  return t.readOnly === true && imageApproved(t) && state !== 'passed' && state !== 'failed';
+export function dueForCheck(t: Template, now: Date): boolean {
+  if (t.readOnly !== true || !imageApproved(t)) return false;
+  const c = currentCheck(t);
+  if (c?.state === 'passed') return now.getTime() - Date.parse(c.at) >= CHECK_EVERY_MS;
+  return c?.state !== 'failed';
 }
 
 /** A minted credential as the check box takes it: the AWS CLI's variables, or a kubeconfig of the cluster with the token. */
@@ -99,7 +106,7 @@ export async function runCheck(c: CheckContext, userId: string, t: Template, nam
   const volume = `${name}-home`;
   let id = '';
   try {
-    const { image, user } = await boxImage(c.runtime, t.image, t.tools);
+    const { image, user } = await boxImage(c.runtime, t.image, t.tools, t.readOnly);
     await c.runtime.createVolume(volume, labels);
     id = await c.runtime.create({ name, image, network: c.network, volume, labels, user, env: checkEnv(given.credentials), limits: LIMITS, script: checkScript(runs, given.credentials) });
     await c.runtime.start(id);
@@ -127,11 +134,12 @@ export function createCheckPass(c: CheckContext, templates: CheckTemplates): () 
       await c.runtime.removeVolume(`${box.name}-home`).catch(() => {});
     }
     for (const { userId, template: t } of templates.templates()) {
-      if (!dueForCheck(t)) continue;
+      if (!dueForCheck(t, c.clock.now())) continue;
       const name = `hopper-check-${t.name}-${Date.now().toString(36)}${(n++).toString(36)}`;
       holds.add(name);
       try {
-        await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
+        // A scheduled check (issue #715) leaves the passed one in place while it runs: the template's boxes go on.
+        if (currentCheck(t)?.state !== 'passed') await templates.record(userId, t.name, { version: t.savedAt, state: 'running', at: c.clock.now().toISOString(), probes: [] });
         const check = await runCheck(c, userId, t, name);
         await templates.record(userId, t.name, check);
         c.logger.info(`hopper: the read-only check of template ${t.name} ${check.state}`);

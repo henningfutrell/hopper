@@ -139,6 +139,15 @@ A template that a job asked for with read needs only must pass the **read-only c
 
 The template shows the result in its **Read-only check** row. A failed check does not run again by itself: click **Run the check again**, or run `hopper template check <name>`.
 
+A passed check runs again once a day, because an account or a cluster can change. The template stays usable while it runs. If it fails, no new box of the template starts and its boxes take no new job, until a person runs it again and it passes.
+
+A box of such a template cannot change infrastructure, in two layers:
+
+- **AWS.** Each read session the hopper makes has AWS's `ReadOnlyAccess` policy and a policy that denies every create, delete, put, update and modify action, IAM changes, and the use of another role. A role that can write still gives the session no write.
+- **Terraform.** `terraform` in the box is a wrapper that runs only `init`, `plan`, `show`, `validate`, `output`, `providers`, `version`, `state list`, `state show`, `workspace list` and `workspace show`. It refuses all other commands, such as `apply`, `destroy`, `import` and `state rm`. `plan` takes no state lock. The real binary is in `$HOPPER_TOOLS`. When something calls it directly, AWS refuses the write.
+
+The check proves both layers: it tries each terraform write through the wrapper, and `apply` past it.
+
 ## What the hopper does for you
 
 - It checks every box every 10 seconds. It runs the start check again. A box that cannot reach the hopper shows on **Machines** under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and its jobs wait.
@@ -150,7 +159,7 @@ The template shows the result in its **Read-only check** row. A failed check doe
 
 - **The start check fails** with `the hopper does not answer at <address>`: the rest is curl's own words from inside the box. `Could not resolve host`: the name is not known on that network. `Failed to connect`: nothing listens there. `403` or `421`: the hopper refused the box; check `HOPPER_LAN_PEERS` and `HOPPER_LAN_NAMES`.
 - **No "Start the box" button**: the hopper has no rootless runtime socket. The deploy guide has the steps; or run the line.
-- **The read-only check fails against a real account or cluster.** The check box gets no vault secret and no minted credential yet. So its probes cannot read, and the check fails closed.
+- **The read-only check of a Terraform workspace fails.** The hopper does not yet make a credential for a Terraform workspace, so the check of a template that reads one fails and says so. Reads of an AWS role, a cluster or a namespace get their credentials.
 - **Not built.** A box with tools on another machine (the image build is not carried there). The read-only check on another machine's runtime. Other agents than `claude` in a box.
 - **One job at a time.** Jobs on one box share its user. A box of a template with secrets is best run with one lane.
 

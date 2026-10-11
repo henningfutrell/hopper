@@ -54,6 +54,7 @@ export function createCredentialMinter(): CredentialMinter {
         const out = await sts.send(new AssumeRoleCommand({
           RoleArn: r.roleArn, RoleSessionName: r.sessionName, DurationSeconds: r.durationSeconds,
           ...(r.policyArns.length ? { PolicyArns: r.policyArns.map((arn) => ({ arn })) } : {}),
+          ...(r.policy ? { Policy: r.policy } : {}),
         }));
         const c = out.Credentials;
         if (!c?.AccessKeyId || !c.SecretAccessKey || !c.SessionToken || !c.Expiration) throw new Error('STS answered no credentials');

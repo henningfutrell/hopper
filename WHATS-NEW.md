@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A sandbox that only reads can no longer change your infrastructure. Its AWS sessions now deny every write, even when the role allows it. Its Terraform only runs commands that read, such as plan and show. The check that proves this now also tries each Terraform write, and runs again once a day; if it fails, the template stops until you run it again.
 - The update check now asks GitHub with your GitHub connection, so it is no longer refused for GitHub's small limit for unknown callers. When GitHub's limit is reached, the update notice says when the hopper asks again, instead of showing GitHub's error.
 - The hopper now spaces its GitHub calls before it reaches GitHub's rate limit, instead of being refused, and asks again only for what changed. Settings → GitHub rate limit shows how many calls are left and lets the hopper's admin change when it slows down.
 - A job from a GitHub issue that is blocked on a question for you can now ask it on the issue. The job parks, the question goes on the issue under your account, and the first reply from you or a maintainer of the repository answers it: the job then resumes by itself. In Settings → Issue thread, choose for your own repositories and for other repositories whether the hopper posts at once, holds the question for your review, or does not post.

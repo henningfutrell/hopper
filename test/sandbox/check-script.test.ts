@@ -38,20 +38,45 @@ describe('the read-only check script (issue #716)', () => {
     const { results, fake } = await run('writable', EVERY_KIND);
     const writes = results.filter((r) => r.expect === 'denied');
     expect(writes.length).toBeGreaterThan(0);
-    expect(writes.filter((r) => r.passed)).toEqual([]);
+    // Every write that reaches the account goes through. Only the terraform wrapper (issue #715) still refuses its own.
+    expect(writes.filter((r) => r.passed).every((r) => r.id.startsWith('terraform.') && r.id !== 'terraform.apply-direct' && r.output.includes('refused by the read-only wrapper'))).toBe(true);
+    expect(results.find((r) => r.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     // A dry run that would work, and a delete of nothing, fail in their own words: an error, not a refusal.
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false });
     expect(results.find((r) => r.id === 'kube.delete-pod')).toMatchObject({ outcome: 'error', passed: false });
     expect(results.find((r) => r.id === 'aws.iam-create-user')).toMatchObject({ outcome: 'allowed', passed: false });
     expect(fake.calls()).toEqual(expect.arrayContaining(['aws iam delete-user --user-name hopper-read-only-check', 'aws ssm delete-parameter --name /hopper/read-only-check']));
-    expect(fake.calls().filter((c) => c.startsWith('terraform destroy')).length).toBe(2);
+    // Only apply past the wrapper went through, and only it is undone.
+    expect(fake.calls().filter((c) => c.startsWith('terraform destroy')).length).toBe(1);
   });
 
   it('terraform is probed on PATH and as the real binary, past any wrapper', async () => {
     const { results, fake } = await run('read-only', [read('terraform-workspace', 'shop-prod')]);
-    expect(results.map((r) => r.id)).toEqual(['terraform.plan', 'terraform.apply', 'terraform.apply-direct']);
+    expect(results.map((r) => r.id)).toEqual([
+      'terraform.plan', 'terraform.apply', 'terraform.apply-direct', 'terraform.destroy', 'terraform.import', 'terraform.state-rm',
+      'terraform.state-mv', 'terraform.state-push', 'terraform.taint', 'terraform.force-unlock', 'terraform.workspace-new', 'terraform.workspace-delete',
+    ]);
     expect(results.every((r) => r.passed)).toBe(true);
-    expect(fake.calls().filter((c) => c.startsWith('terraform apply')).length).toBe(2);
+    // The wrapper refused apply on PATH; only the real binary, called past it, reached the account and was refused there.
+    expect(fake.calls().filter((c) => c.startsWith('terraform apply')).length).toBe(1);
+    expect(results.find((r) => r.id === 'terraform.apply')!.output).toContain('refused by the read-only wrapper');
+    expect(results.find((r) => r.id === 'terraform.apply-direct')!.output).toContain('AccessDenied');
+    // The wrapper's refusals never ran the real binary.
+    expect(fake.calls().filter((c) => /^terraform (destroy|import|state|taint|force-unlock|workspace)/.test(c))).toEqual([]);
+    expect(results.find((r) => r.id === 'terraform.state-rm')).toMatchObject({ outcome: 'denied', expect: 'denied' });
+  });
+
+  it('with no wrapper on PATH, the wrapper\'s probes fail: that layer is missing (issue #715)', async () => {
+    const fake = createFakeCloudTools('read-only', undefined, { wrapper: false });
+    tools.push(fake);
+    const runs = HOPPER_PROBES.runsFor([read('terraform-workspace', 'shop-prod')]);
+    const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
+    const results = readResults(runs, r.output);
+    expect(results.find((x) => x.id === 'terraform.destroy')).toMatchObject({ outcome: 'allowed', passed: false });
+    expect(results.find((x) => x.id === 'terraform.state-rm')).toMatchObject({ outcome: 'allowed', passed: false });
+    // The account still refuses apply: the IAM layer holds alone.
+    expect(results.find((x) => x.id === 'terraform.apply')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((x) => x.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'denied', passed: true });
   });
 
   it('a probe with no line did not run; a failure that is not a refusal is an error', () => {

@@ -33,6 +33,7 @@ import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
 import { HELPER_FILE } from '../../src/client/vault.ts';
+import { mintTarget } from '../../src/domain/minting.ts';
 import type { AccessView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -230,6 +231,9 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(asked.get('RoleSessionName')).toBe(`hopper-${job}`);
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
+    // Issue #715: and the inline policy of explicit denies, so the role's own policy cannot widen the session.
+    expect(asked.get('Policy')).toBe((mintTarget('aws', { operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/diag` } }) as { policy: string }).policy);
+    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', NotResource: `arn:aws:iam::${ACCOUNT}:role/diag` })]) });
     expect(sts.seen[0]!.authorization).toContain('Credential=AKIAMINTING/');
 
     expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
@@ -301,6 +305,8 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(asked.get('RoleSessionName')).toBe('p2zapwin');
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
+    // Issue #715: the inline deny policy crosses from the hopper to the vault's container and on to STS.
+    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', Action: expect.arrayContaining(['*:Create*']) })]) });
 
     const bad = { ...value, SessionName: 'not a session name' };
     expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session })).status).toBe(200);
