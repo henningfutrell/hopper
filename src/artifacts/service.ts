@@ -42,7 +42,8 @@ export type ShareRequest = { user: { id: string; name: string } } | { link: true
 export type ShareMade = { share: ArtifactShare; token?: string } | { owner: true };
 
 export interface UserArtifacts {
-  put(job: Job, r: PutRequest): PutDone | Refusal;
+  /** `by`: who made it, when not the job itself (the read-only check's report, issue #715); default `job <id>`. */
+  put(job: Job, r: PutRequest, by?: string): PutDone | Refusal;
   get(id: string): Artifact | undefined;
   content(id: string): Buffer | undefined;
   /** Every revision, newest first (issue #675). */
@@ -105,7 +106,7 @@ export function createUserArtifacts(o: {
 
   const reviser = createReviser({ store: o.store, now, missing, overLimits });
   const a: UserArtifacts = {
-    put(job, r) {
+    put(job, r, made) {
       const name = artifactName(r.name);
       const type = artifactType(name, r.type);
       if (type === undefined) return { no: `the hopper does not know the type ${r.type}: give html, svg, png, jpeg, gif, webp, pdf, csv, markdown, json, text or file, or leave it out`, status: 400 };
@@ -123,7 +124,7 @@ export function createUserArtifacts(o: {
       const alike = before || r.separate ? undefined : lookAlike({ name, title }, repo.list());
       const warning = [visualWarning(kind, content), summary === undefined ? NO_SUMMARY_WARNING : undefined, alike ? lookAlikeWarning(alike) : undefined]
         .filter((w) => w !== undefined).join('; ') || undefined;
-      const by = `job ${job.id}`;
+      const by = made ?? `job ${job.id}`;
       const sha256 = createHash('sha256').update(content).digest('hex');
       const at = now();
       // A new revision of an artifact (issue #675): the id, its URL and its shares stay; the latest so far is kept.

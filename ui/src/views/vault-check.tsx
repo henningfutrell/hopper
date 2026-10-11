@@ -1,5 +1,6 @@
 // A template's read-only check on Settings → Vault (issue #716, design.md "The read-only check"): for a template a job
-// asked for with read needs only, whether the check of its current version passed (beside who approved it), and a button to run it again.
+// asked for with read needs only, whether the check of its current version passed (beside who approved it), a link to its
+// report (issue #715: an artifact of the job that asked for the template), and a button to run it again.
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { checkText } from '@/model/vault';
@@ -10,7 +11,7 @@ import type { Send } from './vault';
 export function GateRows({ t }: { t: TemplateView }) {
   const check = checkText(t);
   return <>
-    {check && <><dt className="text-muted-foreground">Read-only check</dt><dd className={`break-words ${check.waits ? 'text-warn' : ''}`}>{check.text}</dd></>}
+    {check && <><dt className="text-muted-foreground">Read-only check</dt><dd className={`break-words ${check.waits ? 'text-warn' : ''}`}>{check.text}{check.report && <> · <a className="underline" href={check.report}>Report</a></>}</dd></>}
     {t.approval && <><dt className="text-muted-foreground">Approved by</dt><dd className="break-words">{t.approval.by} · {new Date(t.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
   </>;
 }

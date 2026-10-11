@@ -2922,7 +2922,7 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 
 ## `template.checked`
 
-Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A template a job asked for with read needs only takes no box and no job until the check of its current version passed.
+Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A template a job asked for with read needs only takes no box and no job until the check of its current version passed. `artifact` (issue #715): the artifact that holds its report, of the job that asked for the template; absent when no job did.
 
 | field | type | required |
 |---|---|---|
@@ -2930,6 +2930,7 @@ Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a te
 | `state` | `passed` \| `failed` | yes |
 | `failed` | string[] | yes |
 | `problem` | string | no |
+| `artifact` | string | no |
 
 ```json
 {
@@ -2937,7 +2938,8 @@ Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a te
   "state": "failed",
   "failed": [
     "aws.iam-create-user on 123456789012 (allowed)"
-  ]
+  ],
+  "artifact": "0b6f7c1e-5d2a-4c8e-9f31-7a2d4e6b8c90"
 }
 ```
 

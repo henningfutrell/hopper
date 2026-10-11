@@ -234,6 +234,11 @@ export interface Template {
    * check of its current version passed. Kept through every save. Absent: no check.
    */
   readOnly?: true;
+  /**
+   * The job that asked for it (issue #715): the read-only check's report is an artifact of that job. Kept through every
+   * save. Absent: a person or an API caller asked for it, or it was saved before.
+   */
+  askedBy?: string;
   /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
   check?: ReadOnlyCheck;
   savedBy: string;

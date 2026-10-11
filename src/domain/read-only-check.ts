@@ -71,6 +71,8 @@ export interface ReadOnlyCheck {
   probes: ProbeResult[];
   /** Why it failed with no probe result, or as well: the box did not start, it ran out of time. */
   problem?: string;
+  /** The artifact that holds its report (issue #715): one per template, of the job that asked for it. Absent: none kept. */
+  artifact?: string;
 }
 
 /** Whether a template must pass a read-only check: one a job asked for with read needs only. */

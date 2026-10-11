@@ -58,7 +58,7 @@ type Result = { ok: true } | { ok: false; code: string; error: string };
 /** One user's side: their templates, the vault's own save and approve, their read policy, the image a box runs. */
 export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
-  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
   image: string;
@@ -84,8 +84,8 @@ function loads(needs: readonly OperationProfile[]): string {
   }).join('\n');
 }
 
-/** A job's request, `by` the job (`job <id>`). */
-export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string): Promise<TemplateAnswer> {
+/** A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report goes there). */
+export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string): Promise<TemplateAnswer> {
   const needs = needsOf(said);
   if (typeof needs === 'string') return { status: 400, reason: needs };
   const name = requestedName(needs);
@@ -95,7 +95,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   }
   if (!was) {
     const readOnly = needs.every((p) => p.operation === 'read');
-    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly }, by);
+    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // The policy approves only a template it makes now, and only when every need is a read it holds.
     const outside = needs.filter((p) => p.operation !== 'read' || !inReadPolicy(u.policy(), p.asset));

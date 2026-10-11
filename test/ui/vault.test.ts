@@ -147,4 +147,9 @@ describe('a template\'s read-only check on the page (issue #716)', () => {
     expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'failed', probes: [probe('kube.get', true, 'allowed'), probe('kube.create-namespace', false, 'allowed')], problem: 'it ran out of time' } }))
       .toEqual({ text: 'failed: kube.create-namespace on lab (allowed); it ran out of time', waits: true });
   });
+  it('links the report of the current version\'s check (issue #715)', () => {
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'passed', probes: [probe('kube.get', true, 'allowed')], artifact: 'a-1' } }))
+      .toEqual({ text: 'passed: 1 probes, every write refused, every read worked', waits: false, report: '#artifacts/a-1' });
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: 'older', state: 'passed', probes: [], artifact: 'a-1' } })?.report).toBeUndefined();
+  });
 });
