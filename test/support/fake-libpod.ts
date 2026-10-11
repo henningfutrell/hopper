@@ -5,7 +5,11 @@ import type { Handler, SeenRequest } from './fake-runtime-api.ts';
 
 const API = '/v5.0.0/libpod';
 
-export interface LibpodContainer { id: string; name: string; image: string; labels: Record<string, string>; state: string; body: Record<string, unknown> }
+export interface LibpodContainer {
+  id: string; name: string; image: string; labels: Record<string, string>; state: string; body: Record<string, unknown>;
+  /** Its start check's next run (issue #708), when its create carried one: passes unless a test says otherwise. */
+  check?: { passed: boolean; output: string };
+}
 
 export interface FakeLibpod {
   handlers: Handler[];
@@ -46,14 +50,18 @@ export function createFakeLibpod(): FakeLibpod {
       const body = r.body as Record<string, unknown> & { name: string; image: string; labels: Record<string, string> };
       if (byRef(body.name)) return { status: 500, body: { message: `the container name "${body.name}" is already in use` } };
       const id = `c${++n}`;
-      containers.set(id, { id, name: body.name, image: body.image, labels: body.labels, state: 'created', body });
+      containers.set(id, { id, name: body.name, image: body.image, labels: body.labels, state: 'created', body, ...(body.healthconfig ? { check: { passed: true, output: '' } } : {}) });
       return { status: 201, body: { Id: id } };
     }
     if (r.method === 'GET' && path(r, /^\/containers\/json$/)) return { status: 200, body: [...containers.values()].filter((c) => matches(c, r.query)).map(listed) };
-    if ((m = path(r, /^\/containers\/([^/]+)(\/json|\/start|\/stop)?$/))) {
+    if ((m = path(r, /^\/containers\/([^/]+)(\/json|\/start|\/stop|\/healthcheck)?$/))) {
       const c = byRef(decodeURIComponent(m[1]!));
       if (!c) return { status: 404, body: { message: 'no such container' } };
-      if (r.method === 'GET' && m[2] === '/json') return { status: 200, body: { Id: c.id, Name: c.name, ImageName: c.image, Config: { Labels: c.labels }, State: { Status: c.state } } };
+      const health = c.check && { Status: c.check.passed ? 'healthy' : 'unhealthy', Log: [{ ExitCode: c.check.passed ? 0 : 1, Output: c.check.output }] };
+      if (r.method === 'GET' && m[2] === '/json') {
+        return { status: 200, body: { Id: c.id, Name: c.name, ImageName: c.image, Config: { Labels: c.labels, ...(c.body.healthconfig ? { Healthcheck: c.body.healthconfig } : {}) }, State: { Status: c.state, ...(health ? { Health: health } : {}) } } };
+      }
+      if (r.method === 'GET' && m[2] === '/healthcheck') return health ? { status: 200, body: { Status: health.Status, FailingStreak: 0, Log: null } } : { status: 409, body: { message: `container ${c.id} has no defined healthcheck` } };
       if (r.method === 'POST' && m[2] === '/start') { c.state = 'running'; return { status: 204 }; }
       if (r.method === 'POST' && m[2] === '/stop') { c.state = 'exited'; return { status: 204 }; }
       if (r.method === 'DELETE' && m[2] === undefined) { containers.delete(c.id); return { status: 204 }; }

@@ -29,6 +29,13 @@ export interface FakeContainerRuntime extends ContainerRuntime {
   runScript?: (spec: ContainerSpec) => Promise<{ exit: number; output: string }>;
   /** Every one-shot container it ran, by name: its spec, kept after it is removed. */
   ran: Map<string, ContainerSpec>;
+  /**
+   * Set: every box's start check fails with this output. Unset: the check fetches the hopper at the box's `check` URL, as
+   * the box's own check would (issue #708).
+   */
+  unreachable?: string;
+  /** How many start checks it ran. */
+  checks: number;
   /** Put a container there as someone else (or the hopper before a restart) made it. */
   put(spec: ContainerSpec): string;
 }
@@ -38,7 +45,7 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
   const byId = (id: string): FakeContainer | undefined => [...e.boxes.values()].find((c) => c.id === id || c.spec.name === id);
   const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, image: c.spec.image, labels: { ...c.spec.labels }, state: c.state });
   const e: FakeContainerRuntime = {
-    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0, ran: new Map(),
+    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0, ran: new Map(), checks: 0,
     put(spec) {
       const id = `ctr${++n}`;
       e.boxes.set(spec.name, { id, spec: structuredClone(spec), state: 'running' });
@@ -76,6 +83,16 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
     },
     async logs(id) { return (await byId(id)?.ran)?.output ?? ''; },
     async inspect(id) { const c = byId(id); return c ? info(c) : undefined; },
+    async startCheck(id) {
+      const c = byId(id);
+      if (!c) return { passed: false, output: 'the box is gone' };
+      if (c.spec.check === undefined) return undefined;
+      e.checks++;
+      if (c.state !== 'running') return { passed: false, output: `the box is ${c.state}, not running` };
+      if (e.unreachable !== undefined) return { passed: false, output: e.unreachable };
+      const r = await fetch(`${c.spec.check}/client/install`).catch((err: unknown) => err as Error);
+      return r instanceof Error ? { passed: false, output: r.message } : { passed: r.ok, output: r.ok ? '' : `the hopper answered ${r.status}` };
+    },
     async stop(id) { const c = byId(id); if (c) c.state = 'exited'; },
     async remove(id) {
       if (e.removeFails) throw new Error(e.removeFails);

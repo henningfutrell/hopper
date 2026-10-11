@@ -2,6 +2,7 @@
 // image has none). Rootless Docker only, as Podman: a rootful daemon is root on the computer. The create body is
 // src/sandbox/flags.ts's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
@@ -12,7 +13,6 @@ const PULL_MS = 15 * 60_000;
 const BUILD_MS = 30 * 60_000;
 
 interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Record<string, string> | null; State?: string }
-interface Inspected { Id?: string; Name?: string; Config?: { Image?: string; Labels?: Record<string, string> | null }; State?: { Status?: string } }
 
 const enc = encodeURIComponent;
 /** Docker names a container `/name`. */
@@ -22,6 +22,12 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('docker', what, a);
   const readImage = (image: string): Promise<Answer> => call('GET', `/images/${enc(image)}/json`);
+  const read = async (id: string): Promise<Inspected | undefined> => {
+    const a = await call('GET', `/containers/${enc(id)}/json`);
+    if (a.status === 404) return undefined;
+    if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
+    return JSON.parse(a.text) as Inspected;
+  };
 
   return {
     kind: 'docker',
@@ -98,12 +104,12 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async inspect(id) {
-      const a = await call('GET', `/containers/${enc(id)}/json`);
-      if (a.status === 404) return undefined;
-      if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
-      const c = JSON.parse(a.text) as Inspected;
-      return { id: c.Id ?? id, name: bare(c.Name), image: c.Config?.Image ?? '', labels: c.Config?.Labels ?? {}, state: c.State?.Status ?? '' };
+      const c = await read(id);
+      return c && infoOf(c, id);
     },
+
+    // Docker runs it on its own interval (flags.ts): the last run.
+    startCheck: async (id) => startCheckOf(await read(id)),
 
     async stop(id) {
       const a = await call('POST', `/containers/${enc(id)}/stop?t=${STOP_S}`, undefined, CALL_MS + STOP_S * 1000);

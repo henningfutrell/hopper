@@ -8,6 +8,7 @@
 //   Scenario: a create without the sandbox flags, or with a mount of the machine, is refused
 //   Scenario: a call on a container the hopper did not make is refused; a gone one answers 404
 //   Scenario: a call outside the runtime calls the hopper makes is refused
+//   Scenario: a box's start check is carried: the create with its health check, and the check run on the hopper's box only
 import { afterEach, describe, expect, it } from 'vitest';
 import { clientRuntimeCall, clientRuntimeWhich } from '../../src/executors/client.ts';
 import { libpodCreateBody, dockerCreateBody } from '../../src/sandbox/flags.ts';
@@ -130,5 +131,24 @@ describe('the remote runtime, on the machine', () => {
       expect(r.status).toBe(403);
     }
     expect(a.seen).toEqual([]);
+  });
+
+  it('a box\'s start check is carried: the create with its health check, and the check run on the hopper\'s box only', async () => {
+    const libpod = createFakeLibpod();
+    const theirs = libpod.put({ name: 'postgres', image: 'postgres', labels: {} });
+    const a = await api(libpod.handlers);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    const made = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: libpodCreateBody({ ...spec, check: 'http://hopper:4790' }) });
+    expect(made.status).toBe(201);
+    const id = (JSON.parse(made.text) as { Id: string }).Id;
+    await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${id}/start` });
+    const ran = await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/${id}/healthcheck` });
+    expect(ran.status).toBe(200);
+    expect(JSON.parse(ran.text)).toMatchObject({ Status: 'healthy' });
+    expect((await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/${theirs}/healthcheck` })).status).toBe(403);
+    const odd = { ...libpodCreateBody({ ...spec, check: 'http://hopper:4790' }), healthconfig: { Test: ['CMD', 'true'], StartupHealthConfig: {} } };
+    const r = await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/create`, body: odd });
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.text).message).toContain('StartupHealthConfig');
   });
 });

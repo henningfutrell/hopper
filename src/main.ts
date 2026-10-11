@@ -37,7 +37,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { createSandboxes, hopperNetwork, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperAddress, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -85,6 +85,8 @@ export interface AppSeams extends UserSeams {
   authorizationServer?: AuthorizationServer;
   /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. */
   containerRuntime?: ContainerRuntime;
+  /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. */
+  startCheckMs?: number;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -106,7 +108,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, startCheckMs: _check, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -270,6 +272,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     repo: instance.sandboxes, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
+    address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
+    ...(seams.startCheckMs !== undefined ? { startCheckMs: seams.startCheckMs } : {}),
     clients: sandboxClientsOf(runtimes),
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
     boxesOf: sandboxBoxesFor(instance, runtimes),

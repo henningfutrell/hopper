@@ -5,7 +5,7 @@
 // record's id as a label, so a create whose answer was lost (a machine's link that dropped mid-call) finds the box it
 // made instead of leaving it behind: create is idempotent by the sandbox id.
 import { checkWait } from '../domain/read-only-check.ts';
-import type { BoxTool, ContainerRuntime, LaunchParams, SandboxRecord } from '../domain/sandboxes.ts';
+import type { BoxTool, ContainerRuntime, LaunchParams, SandboxRecord, StartCheck } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { isRootUser } from './flags.ts';
@@ -47,6 +47,25 @@ export interface LaunchContext {
   mint(container: string, template: string | undefined): string;
   /** Launches in flight, by record id: the reconcile pass leaves them. */
   launching: Set<string>;
+  /** How long the launch waits for the box's start check to pass. */
+  startCheckMs: number;
+}
+
+/** The record's note of a start check, at `at`. */
+export const checkNote = (r: StartCheck, at: Date): NonNullable<SandboxRecord['check']> => ({ passed: r.passed, at: at.toISOString(), ...(r.output ? { output: r.output } : {}) });
+
+/**
+ * Runs the box's start check until it passes (issue #708): the box reports that it reaches the hopper at its address
+ * before the launch answers. Throws with what the check wrote when it has not passed in `startCheckMs`.
+ */
+async function startChecked(c: LaunchContext, record: SandboxRecord): Promise<StartCheck | undefined> {
+  const end = Date.now() + c.startCheckMs;
+  for (;;) {
+    const r = await c.runtime.startCheck(record.containerId);
+    if (!r || r.passed) return r;
+    if (Date.now() >= end) throw new Error(`from inside the box ${record.name}, the hopper does not answer at ${record.address}: ${r.output}`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 }
 
 /** The image a box runs, and its user: `base`, with `tools` added when it names any (issue #716), built once per base and set of tools. */
@@ -92,7 +111,7 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
     const code = c.mint(name, t?.name);
     madeVolume = await c.runtime.createVolume(record.volume, labels);
     const spec = {
-      name, image, network: c.network, volume: record.volume, labels, user,
+      name, image, network: c.network, volume: record.volume, labels, user, check: c.joinUrl,
       env: { HOPPER_CLIENT_NAME: name, HOPPER_JOIN: `${c.joinUrl}#${code}` },
       limits: { cpus: params.cpus, memoryMb: params.memoryMb },
     };
@@ -103,6 +122,8 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
     });
     c.repo.update(record);
     await c.runtime.start(record.containerId);
+    const check = await startChecked(c, record);
+    if (check) c.repo.update(Object.assign(record, { check: checkNote(check, c.now) }));
     return record;
   } catch (e) {
     // Only by the id it made: a create that failed (a name taken meanwhile) made nothing, and the name may be another's.

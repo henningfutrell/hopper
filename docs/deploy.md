@@ -517,16 +517,26 @@ What the hopper then does:
 
 | When | The hopper |
 |---|---|
-| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (a template's defaults, or 4 CPUs and 8 GiB for a box of no template), its home the volume `<name>-home`, and a join code minted for it. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
+| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (a template's defaults, or 4 CPUs and 8 GiB for a box of no template), its home the volume `<name>-home`, and a join code minted for it. Then it runs the box's start check: from inside the box, the box fetches the hopper at its address. Until that passes (at most 30 seconds), the launch does not answer; if it does not pass, the launch fails with what the check wrote and removes the box. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
 | A box has tools (a template's, or `--tool` on a launch) | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
 | A person removes that machine | stops the container and removes it within about 20 seconds, and its record. Its home volume stays, so a box of that name later keeps its sign-in, unless the template's limits say `keepHome: false`. `/tmp` in the box is a tmpfs: it goes with the container. |
 | A box's time limit passes (a template's `ttlMinutes`, or the launch's) | stops the container and removes it, and its record. The home volume stays, as above. A box of no template has no time limit unless the launch names one. |
 | The hopper starts | reads its sandbox records and the boxes it started (label `io.hopper.box` = its instance id). A box of its own with no record that a machine names (one started before the records) is taken on as a record; one that no machine names and no live join code waits for is removed, its home volume kept. A box another hopper started is left alone. |
 | It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
+| Every 10 seconds | runs each box's start check again, in the box. A box that cannot reach the hopper is shown on Machines, under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and the hopper logs it once. It is ready again when its check passes. |
 
 The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
-`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). A box reaches the
-hopper as `http://<first HOPPER_LAN_NAMES name>:<port>` on that network, or `http://127.0.0.1:<port>` on the host.
+`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). On the host network,
+a box reaches the hopper at `http://127.0.0.1:<port>`. Else the hopper reads its own container's names on that network
+and takes the first that is also in `HOPPER_LAN_NAMES`: on the compose network that is `hopper`, which compose.yaml
+sets. When the hopper's container is not on that network, or none of its names there is in `HOPPER_LAN_NAMES`, Add
+machine says so and what to do, and starts nothing. A hopper on the host with another network uses its first
+`HOPPER_LAN_NAMES` name, and the start check says whether a box there reaches it.
+
+When a launch fails with `the hopper does not answer at <address>`, the rest of the line is curl's own words from
+inside the box: `Could not resolve host` (the name is not known on that network), `Failed to connect` (nothing
+listens there), or `returned error: 403` / `421` (the hopper refused the box: its address is not in
+`HOPPER_LAN_PEERS`, or the name is not in `HOPPER_LAN_NAMES`).
 
 **Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
 The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
@@ -554,7 +564,7 @@ the distro running: WSL stops an idle distro, and its containers with it.
 
 Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
 pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address
-the machine's client dialled in on. The machine's client checks each call again: it creates only a container with the
+the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
 sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
 away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
 again.

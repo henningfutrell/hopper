@@ -6,6 +6,7 @@
 //
 // Feature: the hopper owns the life of its sandbox boxes
 //   Scenario: adding a sandbox box starts its container and records it; it is ready once it joins
+//   (its start check, run in the box: test/integration/sandbox-start-check.test.ts)
 //   Scenario: a box of a template runs the template's image, only once that image is approved
 //   Scenario: a launch fills in the template's defaults, takes parameters within its max, and records them
 //   Scenario: parameters outside what the template allows are refused, and nothing starts
@@ -52,7 +53,7 @@ async function boot(runtime: FakeContainerRuntime | undefined, dbPath?: string):
     cleanups.push(db.cleanup);
     path = db.dbPath;
   }
-  t = await startTestApp({ dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: runtime ? { containerRuntime: runtime } : {} });
+  t = await startTestApp({ dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY }, ...(dbPath ? { plugins: false } : { plugins: PLUGINS }), seams: runtime ? { containerRuntime: runtime, startCheckMs: 1000 } : {} });
   return { a: t, session: await t.login(), dbPath: path };
 }
 
@@ -60,7 +61,7 @@ type Machine = { name: string; options: Record<string, unknown> };
 interface Box {
   name: string; state: string; agent: string; template?: { name: string; version: string }; image: string; runtime: string;
   params: { secrets: string[]; cpus: number; memoryMb: number; ttlMinutes?: number; profile?: string };
-  createdAt: string; expiresAt?: string; address: string;
+  createdAt: string; expiresAt?: string; address: string; check?: { passed: boolean; at: string; output?: string };
 }
 interface View { launch: { available: boolean; problem?: string; runtime?: string }; line: string; boxes: Box[]; problems: { container: string; reason: string; at: string }[] }
 const machines = async (a: TestApp): Promise<{ version: string; machines: Machine[] }> => (await a.api('GET', '/api/machines/config')).body;
@@ -106,11 +107,15 @@ describe('sandbox boxes the hopper starts', () => {
       limits: { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default },
       labels: { [BOX_LABEL]: a.app.instance.settings.instanceId(), [USER_LABEL]: 'admin' },
       env: { HOPPER_CLIENT_NAME: 'hopper-sandbox-claude' },
+      // Its start check fetches the hopper where the box dials it (issue #708): it passed before the launch answered.
+      check: a.url,
     });
     expect((await view(a, session)).boxes).toEqual([expect.objectContaining({
       name: 'hopper-sandbox-claude', state: 'starting', agent: 'claude', image: BOX_IMAGE, runtime: 'podman', address: a.url,
       params: { secrets: [], cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default },
+      check: { passed: true, at: expect.any(String) },
     })]);
+    expect(runtime.checks).toBeGreaterThan(0);
     expect((await view(a, session)).boxes[0]!.expiresAt).toBeUndefined();
 
     await boxJoins(a, runtime, 'hopper-sandbox-claude');

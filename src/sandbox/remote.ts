@@ -42,6 +42,7 @@ export function createRemoteRuntime(machine: string, relay: RuntimeRelay): Conta
     wait: async () => { throw new Error(`${machine}: the read-only check runs only beside the hopper for now`); },
     logs: async () => { throw new Error(`${machine}: the read-only check runs only beside the hopper for now`); },
     inspect: async (id) => (await known()).inspect(id),
+    startCheck: async (id) => (await known()).startCheck(id),
     stop: async (id) => (await known()).stop(id),
     remove: async (id) => (await known()).remove(id),
     list: async (labels) => (await known()).list(labels),

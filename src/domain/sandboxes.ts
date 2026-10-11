@@ -13,7 +13,15 @@ export interface ContainerInfo {
   labels: Record<string, string>;
   /** The runtime's own word: `created`, `running`, `exited`, … */
   state: string;
+  /** Inspect only: the names it answers to on each network it is on (issue #708, the hopper's address for a box). */
+  networks?: Record<string, string[]>;
 }
+
+/**
+ * The start check (issue #708): run in the box, by the runtime, as its health check — `bash --noprofile --norc`, so no
+ * rc file swallows it (#518) —, it fetches the hopper at the address the box was given. `output`: what it wrote.
+ */
+export interface StartCheck { passed: boolean; output: string }
 
 /** The resources one box may use: CPUs (fractions allowed) and memory, in MiB. */
 export interface ResourceLimits { cpus: number; memoryMb: number }
@@ -33,6 +41,8 @@ export interface ContainerSpec {
   limits: ResourceLimits;
   /** The user it runs as: the image's own, never root (the launch refuses an image that runs as root). */
   user: string;
+  /** The hopper's URL the box's start check fetches (issue #708); absent: the box has none (a one-shot container). */
+  check?: string;
   /**
    * A one-shot container (issue #716, the read-only check): it runs `sh -c <script>` in place of the image's entrypoint,
    * on a terminal, and is not restarted when it ends. Absent: a box, which runs its image's entrypoint and is restarted.
@@ -81,6 +91,11 @@ export interface ContainerRuntime {
   logs(id: string): Promise<string>;
   /** The container by id or name; undefined: no such container. */
   inspect(id: string): Promise<ContainerInfo | undefined>;
+  /**
+   * Run the box's start check now, in the box (issue #708), and answer how it went. Undefined: the box has no start
+   * check (made before it). A box that does not run fails it. Docker runs it on its own interval: the last run.
+   */
+  startCheck(id: string): Promise<StartCheck | undefined>;
   /** Stop it (a grace period, then killed); one already stopped or gone is no error. */
   stop(id: string): Promise<void>;
   /** Remove it, stopped or not; one already gone is no error. Its volumes stay. */
@@ -153,8 +168,11 @@ export interface ResolvedParams {
   tools?: BoxTool[];
 }
 
-/** A sandbox record's state: `starting` until its client joins and a machine names it, then `ready`. */
-export type SandboxState = 'starting' | 'ready';
+/**
+ * A sandbox record's state: `starting` until its start check passed and a machine names it, then `ready`;
+ * `unreachable` while its start check fails — from inside it, the hopper does not answer at its address (issue #708).
+ */
+export type SandboxState = 'starting' | 'ready' | 'unreachable';
 
 /** The sandbox record (issue #708): one row of the instance's `sandboxes` table per box the hopper launched. */
 export interface SandboxRecord {
@@ -179,6 +197,8 @@ export interface SandboxRecord {
   createdAt: string;
   /** Absent: no time limit. */
   expiresAt?: string;
-  /** The URL the box dials the hopper at: written at launch, proven when it joins (state `ready`). */
+  /** The URL the box dials the hopper at: written at launch, proven by its start check before the launch answers. */
   address: string;
+  /** Its last start check: at launch, then at each reconcile pass. Absent: a box with none (taken on from before). */
+  check?: { passed: boolean; at: string; output?: string };
 }

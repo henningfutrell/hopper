@@ -2,6 +2,7 @@
 // The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
@@ -11,13 +12,18 @@ const PULL_MS = 15 * 60_000;
 const BUILD_MS = 30 * 60_000;
 
 interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Record<string, string> | null; State?: string }
-interface Inspected { Id?: string; Name?: string; ImageName?: string; Config?: { Image?: string; Labels?: Record<string, string> | null }; State?: { Status?: string } }
 
 const enc = encodeURIComponent;
 
 export function createPodmanRuntime(socket: string, via: SocketCall = socketCall): ContainerRuntime {
   const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
+  const read = async (id: string): Promise<Inspected | undefined> => {
+    const a = await call('GET', `/containers/${enc(id)}/json`);
+    if (a.status === 404) return undefined;
+    if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
+    return JSON.parse(a.text) as Inspected;
+  };
 
   return {
     kind: 'podman',
@@ -94,11 +100,18 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
     },
 
     async inspect(id) {
-      const a = await call('GET', `/containers/${enc(id)}/json`);
-      if (a.status === 404) return undefined;
-      if (!ok(a)) throw refusal(`inspect the box ${id}`, a);
-      const c = JSON.parse(a.text) as Inspected;
-      return { id: c.Id ?? id, name: (c.Name ?? '').replace(/^\//, ''), image: c.ImageName ?? c.Config?.Image ?? '', labels: c.Config?.Labels ?? {}, state: c.State?.Status ?? '' };
+      const c = await read(id);
+      return c && infoOf(c, id);
+    },
+
+    async startCheck(id) {
+      const c = await read(id);
+      const before = startCheckOf(c);
+      if (!before || c?.State?.Status !== 'running') return before;
+      // Run in the box now (no timer runs it: flags.ts sets no interval); the run's output is in the inspect answer.
+      const ran = await call('GET', `/containers/${enc(id)}/healthcheck`);
+      if (!ok(ran)) throw refusal(`run the start check of the box ${id}`, ran);
+      return startCheckOf(await read(id));
     },
 
     async stop(id) {

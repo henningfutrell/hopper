@@ -5,7 +5,7 @@
 //   {method, path, body?, timeoutMs?}    → {status, text}: the runtime's own answer
 // The hopper builds every call (src/sandbox/podman.ts, docker.ts); this end runs only the calls those adapters make,
 // and checks them: a container it creates carries the sandbox flags and mounts nothing of this machine; it starts,
-// stops, inspects and removes only containers the hopper labelled as its boxes, and volumes named as their homes.
+// stops, inspects, start-checks and removes only containers the hopper labelled as its boxes, and volumes named as their homes.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
 // builder on purpose: this end imports nothing of hopper, and it holds the line even if the hopper's end is wrong.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -68,13 +68,16 @@ const onlyKeys = (o: Record<string, unknown>, allowed: string[], what: string): 
 };
 const sameList = (v: unknown, want: string[]): boolean => Array.isArray(v) && v.length === want.length && v.every((x, i) => x === want[i]);
 
-const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks'];
-const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig'];
+const PODMAN_KEYS = ['name', 'image', 'labels', 'env', 'user', 'cap_drop', 'no_new_privileges', 'read_only_filesystem', 'read_only_tmpfs', 'mounts', 'volumes', 'resource_limits', 'restart_policy', 'netns', 'networks', 'healthconfig'];
+const DOCKER_KEYS = ['Image', 'Labels', 'User', 'Env', 'HostConfig', 'Healthcheck'];
+/** The start check (issue #708): a command run in the box, as the box's user, under its flags; only these fields. */
+const CHECK_KEYS = ['Test', 'Interval', 'Timeout', 'Retries'];
+const checkProblem = (c: unknown): string | undefined => (c === undefined ? undefined : !isObject(c) || !Array.isArray(c.Test) ? "a sandbox box's start check is a Test command" : onlyKeys(c, CHECK_KEYS, "a sandbox box's start check"));
 const DOCKER_HOST_KEYS = ['CapDrop', 'SecurityOpt', 'ReadonlyRootfs', 'Tmpfs', 'Mounts', 'NanoCpus', 'Memory', 'RestartPolicy', 'NetworkMode'];
 
 /** Why a libpod create body is not a sandbox box's; undefined: it is. */
 function podmanCreateProblem(b: Record<string, unknown>): string | undefined {
-  const extra = onlyKeys(b, PODMAN_KEYS, 'a sandbox box');
+  const extra = onlyKeys(b, PODMAN_KEYS, 'a sandbox box') ?? checkProblem(b.healthconfig);
   if (extra) return extra;
   if (typeof b.name !== 'string' || !NAME.test(b.name)) return 'a sandbox box is named hopper-sandbox-<name>';
   if (!isObject(b.labels) || typeof b.labels[BOX_LABEL] !== 'string') return `a sandbox box carries the ${BOX_LABEL} label`;
@@ -91,7 +94,7 @@ function podmanCreateProblem(b: Record<string, unknown>): string | undefined {
 function dockerCreateProblem(b: Record<string, unknown>, name: string | null): string | undefined {
   const h = b.HostConfig;
   if (!isObject(h)) return 'a sandbox box has its HostConfig';
-  const extra = onlyKeys(b, DOCKER_KEYS, 'a sandbox box') ?? onlyKeys(h, DOCKER_HOST_KEYS, "a sandbox box's HostConfig");
+  const extra = onlyKeys(b, DOCKER_KEYS, 'a sandbox box') ?? onlyKeys(h, DOCKER_HOST_KEYS, "a sandbox box's HostConfig") ?? checkProblem(b.Healthcheck);
   if (extra) return extra;
   if (!name || !NAME.test(name)) return 'a sandbox box is named hopper-sandbox-<name>';
   if (!isObject(b.Labels) || typeof b.Labels[BOX_LABEL] !== 'string') return `a sandbox box carries the ${BOX_LABEL} label`;
@@ -119,7 +122,7 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (method === 'POST' && route === (kind === 'podman' ? '/images/pull' : '/images/create')) return 'open';
   if (a === 'volumes' && n === 2 && (method === 'DELETE' || (kind === 'docker' && method === 'GET'))) return { volume: b! };
   if (a === 'containers' && n === 2 && method === 'DELETE') return { container: b! };
-  if (a === 'containers' && n === 3 && ((method === 'GET' && c === 'json') || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
+  if (a === 'containers' && n === 3 && ((method === 'GET' && (c === 'json' || (kind === 'podman' && c === 'healthcheck'))) || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
   return undefined;
 }
 
