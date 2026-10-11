@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Your Grok Bot routine is now told when a job finishes or fails, so it no longer needs to check on its own.
+- The hopper's API can now be reached from anywhere through an optional ngrok tunnel, with no open port on your machine. Only the API goes through it, never the pages you sign in on. While the tunnel is up, your Grok Bot routine is told where to reach the hopper, and told again every few minutes.
 - Your TypeSafe API key (for Jev) and your webhook signing secrets can now stay in your own secret manager (HashiCorp Vault, 1Password or Bitwarden). On the Vault page, choose Keep in a vault backend. The hopper reads the secret there when it starts and every 5 minutes, and keeps no copy on disk.
 - The hopper now has help pages for each feature, for the version you run. Open Help in the user menu. Agents and jobs can read the same pages too.
 - The hopper now keeps every open pull request its jobs made up to date with its base until it is merged or closed: it rebases it each time the base moves, not only three times, also when its job failed or its issue was closed as completed. A pull request that only mentions an issue while it does the work of another one no longer closes that issue when it merges.

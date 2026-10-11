@@ -60,7 +60,7 @@ describe('the tunnel watch', () => {
   });
 
   it('goes down when the agent errs or has no endpoint, and up again when it is back; each change logged once', async () => {
-    let answer = tunnels('https://h.example');
+    let answer: { status: number; body: unknown } = tunnels('https://h.example');
     const a = await agent(() => answer);
     const log = logger();
     watch = watchTunnel({ api: a.api, publicUrl: 'https://h.example', logger: log, everyMs: 20 });

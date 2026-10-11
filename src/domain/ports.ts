@@ -263,6 +263,8 @@ export interface NotifierEvents {
   artifactUrl?(id: string): string;
   /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
   tldr?(q: Question): string | undefined;
+  /** Where the hopper is reached from outside now (issue #795): HOPPER_PUBLIC_URL while its tunnel is up. Absent or undefined: not reached. */
+  reach?(): string | undefined;
 }
 
 /**
