@@ -24,6 +24,7 @@ import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
 import { masterKeyRotation } from './users/master-key-rotation.ts';
+import { createRateLimiterControl } from './github-limiter/settings.ts';
 import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
 import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
@@ -284,12 +285,12 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
-    await runtimes.ensure(user);
-    return user;
+    return runtimes.ensure(user).then(() => user);
   };
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
+    // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),

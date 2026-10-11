@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper now spaces its GitHub calls before it reaches GitHub's rate limit, instead of being refused, and asks again only for what changed. Settings → GitHub rate limit shows how many calls are left and lets the hopper's admin change when it slows down.
 - Click a bar or a question on the lane timeline, or a job's line in Live activity or Events, to open that job's own page: its state, lane, times, error and what happened to it.
 - Issues on the backburner no longer look gone: the Not taken menu entry and the Queue show how many there are, and each one shows its issue number, how long it has been on the backburner and who put it there.
 - An API token can no longer start jobs, answer questions, merge, update or change a machine unless you mint it as a box token in Settings → API tokens. An agent that gets its token with its own sign-in can still read, hold and cancel, but never gets a box token that way.
