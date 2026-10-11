@@ -42,7 +42,6 @@ The **Pull requests** view lists these pull requests, grouped by job repository.
 | Card says | Meaning |
 |---|---|
 | `waiting for a person to merge` | Yolo mode is off for this repository. |
-| `waiting for a person to merge: its issue was not of a trusted origin` | Yolo mode is on, but the job's issue was neither trusted nor approved. |
 | `waiting for checks` | Checks run now. |
 | `waiting for checks to start` | No checks yet, inside the grace window. |
 | `conflicts with <base>` | The pull request has merge conflicts. |
@@ -138,7 +137,8 @@ With yolo mode on, the hopper merges a waiting pull request when all of these ar
 - It is not a draft.
 - It has no merge conflicts.
 - Its checks passed. Or it has no checks, and no check started within two minutes after its last push.
-- Its job's issue was of a trusted origin, or a person approved its request card. See [Intake](intake.md).
+
+The origin of the job's issue does not change this. The hopper checked the issue before the job ran. See [Intake](intake.md).
 
 A job never merges. The job holds no GitHub token. The hopper makes the merge.
 
@@ -150,7 +150,6 @@ When the hopper merges a pull request (yolo mode or **Merge now**) that did not 
 
 | Symptom | Cause and fix |
 |---|---|
-| A card stays `waiting for a person to merge` with yolo mode on | Its issue was not of a trusted origin. Review and select **Merge now**. |
 | `merge refused` | GitHub refused: often a required check or a branch rule. Read the reason on the card. |
 | A card says `pull request not found yet` | The hopper looks for it again at each sync: one that closes the issue, then one that mentions it, then one on a branch named for the issue. |
 | A job failed with `not complete:` | It ended done with no ready pull request. Open the job to read what the hopper looked at. |

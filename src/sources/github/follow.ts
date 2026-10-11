@@ -4,7 +4,7 @@
 // `hopper:partly-done` only comes off, so the issue is offered again and its next part runs. Closed without a merge:
 // flagged, → `hopper:pr-closed`, which keeps the issue out until a person removes it. Still open (PR waiting, issue #637):
 // what is seen of it — a draft, merge conflicts, its checks — is kept for the Pull requests list; and with yolo mode on for
-// its repository and its job's item of a trusted origin or an approved request (issue #652), the hopper merges it once it is ready: not a draft, no merge conflicts, and its checks passed — or it
+// its repository, whatever its job's origin (issue #805; issue #652 merged only a job with one), the hopper merges it once it is ready: not a draft, no merge conflicts, and its checks passed — or it
 // has none, and none started within a grace window after its last push (issue #677; issue #652 had it wait for ever). A
 // refused merge is kept on it (`mergeError`) and asked again next sync: it never fails the job. A pull request the
 // report could not name is looked for again each sync, and named once found (issue #677). A merge marks the item done
@@ -89,8 +89,8 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
   };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
-  // Yolo mode merges only a job whose item was of a trusted origin or an approved request (issue #652).
-  if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || job.source?.origin === undefined || !readyToMerge(seen, now)) return { seen };
+  // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
+  if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
   try {
     await ctx.api.merge(repo, numberOf(url));
     return { ended: 'merged' };

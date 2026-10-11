@@ -233,7 +233,7 @@ export interface JobSourceRef {
   parts?: Parts;
   /**
    * Where the item came from (issue #652): a trusted origin, or a request card a person approved. Absent: neither — a job
-   * of a source that does not judge origins, or one taken before origins were judged. Yolo mode merges only jobs with one.
+   * of a source that does not judge origins, or one taken before origins were judged. Yolo mode does not read it (issue #805).
    */
   origin?: JobOrigin;
 }

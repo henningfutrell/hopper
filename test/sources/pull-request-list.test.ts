@@ -49,8 +49,8 @@ describe('why a pull request waits (issue #677)', () => {
     expect(waits(seen({ checks: 'none' })).waits).toBe('ready');
   });
 
-  it('yolo on, a job whose item was neither of a trusted origin nor approved: only a person merges it (issue #652)', () => {
-    expect(waits(seen(), { untrusted: true }).waits).toBe('untrusted origin');
+  it('yolo on, a job with no origin (neither a trusted origin nor approved): ready, the hopper merges it (issue #805)', () => {
+    expect(waits(seen(), { untrusted: true }).waits).toBe('ready');
     expect(waits(seen(), { untrusted: true, yolo: false }).waits).toBe('yolo off');
   });
 
