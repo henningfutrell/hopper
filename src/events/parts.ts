@@ -79,3 +79,11 @@ export const repoChecksEvents = {
   'repo_checks.job_queued': strict({ repo: z.string(), number: z.number().int(), url: z.string(), existing: z.boolean(), by: z.string() }),
   'repo_checks.dismissed': strict({ repo: z.string(), dismissed: z.boolean(), by: z.string() }),
 };
+
+// Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
+// the vault, a person took the grant back. Never a value.
+export const vaultGrantEvents = {
+  'vault.grant_asked': strict({ job: z.string(), key: z.string(), machine: z.string(), template: z.string(), name: z.string() }),
+  'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string() }),
+  'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string() }),
+};

@@ -14,6 +14,7 @@ import { createLaneRepository } from './lanes.ts';
 import { createFailureRepository, createProblemRepository } from './failures.ts';
 import { createHandoffRepository } from './handoffs.ts';
 import { createItemSnapshotRepository } from './item-snapshots.ts';
+import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -65,6 +66,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),
     itemSnapshots: createItemSnapshotRepository(ctx),
+    vaultGrants: createVaultGrantRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

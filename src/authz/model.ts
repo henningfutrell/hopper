@@ -108,6 +108,14 @@ type intake
   relations
     define trusted_actor: [github_login]
     define can_start_jobs: trusted_actor
+
+# A job's vault grant (issue #652): whether the jobs of one item may use the vault's helper — a vault secret or a minted
+# credential — within their box's template. The hopper tells, at each check, the user whose jobs they are as its owner. A
+# job asks for a grant; only who may grant gives it, a person signed in, never a job.
+type vault_grant
+  relations
+    define owner: [user]
+    define can_grant: owner
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -143,6 +151,10 @@ const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
   ...OPERATIONS.map((op) => ['asset', `grants_${op}`, 'operation_profile'] as [string, string, string]),
 ];
 const ASKED: readonly [type: string, relation: string][] = OPERATIONS.map((op) => ['asset', `can_${op}`]);
+
+/** What the hopper tells and asks for vault grants (issue #652): apart, so a model edited before them still decides mints. */
+const VAULT_GRANT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['vault_grant', 'owner', 'user']];
+const VAULT_GRANT_ASKED: readonly [type: string, relation: string][] = [['vault_grant', 'can_grant']];
 
 /** What the hopper writes and asks for artifacts (issue #624): apart, so a model edited before them still decides mints. */
 const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
@@ -189,6 +201,11 @@ export function itemGaps(model: ModelJson): string[] {
 /** What the model lacks for intake (issue #652); empty: trusted actors are decided. A gap here makes every issue a request card, never denies a mint. */
 export function intakeGaps(model: ModelJson): string[] {
   return gapsIn(model, INTAKE_WRITTEN, INTAKE_ASKED);
+}
+
+/** What the model lacks for vault grants (issue #652); empty: grants are decided. A gap here denies every grant, never a mint. */
+export function vaultGrantGaps(model: ModelJson): string[] {
+  return gapsIn(model, VAULT_GRANT_WRITTEN, VAULT_GRANT_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

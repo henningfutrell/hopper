@@ -68,8 +68,8 @@ async function boot(server: FakeAuthorizationServer = createFakeAuthorizationSer
   return { a: t, session, dir };
 }
 
-async function running(a: TestApp, over: Record<string, unknown> = {}): Promise<Job> {
-  const job = await a.pull({ op: 'sleep', ms: 60000 }, over);
+async function running(a: TestApp, over: Record<string, unknown> = {}, ms = 60000): Promise<Job> {
+  const job = await a.pull({ op: 'sleep', ms }, over);
   return a.waitForStatus(job.id, 'running', 10000);
 }
 
@@ -109,15 +109,16 @@ describe('the vault only by a per-job grant', () => {
 
   it('Run again keeps the grant: the next job of the same item gets the value with no new grant', async () => {
     const { a, session, dir } = await boot();
-    const first = await running(a);
+    const first = await running(a, {}, 2500);
     expect((await a.ui(`/ui/api/jobs/${first.id}/grant-vault`, {}, { token: session })).status).toBe(200);
-    await a.ui(`/ui/api/jobs/${first.id}/cancel`, {}, { token: session });
-    await a.waitForStatus(first.id, 'cancelled');
+    await a.waitForStatus(first.id, 'finished', 10000);
+    await waitFor(async () => (await a.job(first.id)).sourceState?.sync?.finalReported === true, { what: 'the end reported' });
     const again = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token: session });
     expect(again.status).toBe(200);
     expect(again.body.id).not.toBe(first.id);
     await a.waitForStatus(again.body.id, 'running', 10000);
     expect(await helper(dir, ['get', 'KUBE_TOKEN'], box.tokenFileOf(a, again.body.id))).toMatchObject({ code: 0, stdout: VALUE });
+    expect((await a.events()).filter((e) => e.type === 'vault.grant_asked')).toEqual([]);
   });
 
   it('revoked, the job is refused again; a mint asks the same grant', async () => {

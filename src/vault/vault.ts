@@ -32,6 +32,10 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   decline(id: string, reason: string, by: string): VaultResult;
   /** The shared secrets (issue #718): the hopper's admin sets and removes them. Absent: this hopper keeps none. */
   shared?: Pick<SharedSecrets, 'set' | 'remove'>;
+  /** A person grants a job's item the vault (issue #652, src/vault/grants.ts), after Access: its jobs then get what their box's template gives. */
+  grant?(jobId: string, by: string): VaultResult;
+  /** A person takes a job's item's vault grant back (issue #652): its jobs get nothing from the vault again. */
+  revokeGrant?(jobId: string, by: string): VaultResult;
 }
 
 /**

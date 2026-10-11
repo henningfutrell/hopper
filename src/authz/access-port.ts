@@ -22,6 +22,11 @@ export interface Access extends TemplateApprovals {
    * trusted actors told at the check. Not recorded. Denied, marked `unavailable`, when OpenFGA cannot be asked.
    */
   decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
+  /**
+   * Whether the user may grant the jobs of an item the vault (issue #652): OpenFGA's `vault_grant#can_grant`, the item's
+   * owner told at the check. Not recorded: the grant's own event is. Denied, marked `unavailable`, when OpenFGA cannot be asked.
+   */
+  decideVaultGrant(userId: string, grant: { ownerId: string; key: string }): Promise<AccessAnswer>;
   /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */

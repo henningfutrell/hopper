@@ -12773,10 +12773,52 @@ its job stays held until a person approves the card or cancels the job. Approvin
 no second job: the next sync gives the job its origin. A running job keeps running; only queued and held jobs wait. A
 job whose source is gone stays held: cancel it. The build before ignores the flag and runs such a job.
 
-**Not in this part** (left to the next parts of #652): the vault helper only by a per-job grant, the repository setup
-check in Sources, updating only to an image of a merged and checked commit, and the issue's open points.
+**Not in this part** (later parts of #652): the repository setup check in Sources ("Repository setup"), updating only to
+a merged and checked commit ("Updates only to a merged pull request with passing checks"), and the vault helper only by
+a per-job grant ("Vault grants").
 
 **Residual risk.** Events GitHub cannot be asked for count as done by nobody known: the issue is a request card. An
 `assigned` event through the hopper's app is the user's while the user's log says this hopper assigned the item, even
 when a later bot assigned it again. A person with write access to the repository who removes the hopper's note from a
 job-filed issue makes it read as the author's.
+
+## Vault grants (issue #652, 2026-10-11)
+
+Owner requirement (the 2026-10-10 intake security review, path F, requirement 5): "A job does not get the host's SSH
+agent, the host's keys or the vault helper unless the user grants them to that job." Part 1 (#667) took the ssh agent
+away. Before this part the vault gave a job on a box every secret its template's approved scope held: the template's
+approval was a grant for every job any box of it ran. Owner decision on the issue (option 1): **a grant per job, asked
+when it is needed**; the template's scope stays the upper bound; the grant is kept for the job across Run again; and no
+`HOPPER_SECRET` on a machine that is not a box.
+
+**No helper off a box.** A job gets `HOPPER_SECRET` only on a machine whose client serves the vault **and** that joined
+as a box of a template (`MachineSnapshot.template`, `src/users/github-proxy.ts`). The vault gives nothing to any other
+machine (`boxAsk`), so the path there was an invitation to ask, never an answer.
+
+**The grant** (`src/vault/grants.ts`, `withVaultGrants`, outermost over the user's vault wherever it runs — in the hopper or
+in its container — and over the shared secrets). A box's ask for a vault secret (`POST /client/vault`, a name) or a mint
+(`kind operation asset`) passes the delivery checks first (`boxAsk`: the machine's link, the job's proxy token, the job at
+work there, a box of a template the vault holds). A refusal there is the vault's own, with its reason. Then the job's
+**item** must have a **vault grant**: a person's grant, kept for the job's source key (a job of no source: its id), in
+the table `vault_grants` (tenant migration 40; the build before runs on it, and gives every box job the vault as it did).
+Run again, Rework and Retry make jobs of the same item, so one grant covers them. With no grant the ask is refused
+(`vault.refused` or `vault.mint_refused`, reason `job <id> has no vault grant: …`), and the hopper asks a person: a
+**grant ask**, kept in the hopper's memory (dropped when the job is no longer at work or its item is granted),
+`vault.grant_asked` once per job. A granted job's ask then goes on to the vault, which decides as before: the template's
+approved scope, a launch's scope (issue #708), Access for a mint and for a shared secret. The grant widens nothing.
+
+**Granting** (Settings → Vault, panel **Vault grants**: each grant ask as a card — the job, its box and template, what it
+asked for, the item — with **Grant**; each grant with who granted it and **Revoke**). `POST /ui/api/jobs/:id/grant-vault`
+and `POST /ui/api/jobs/:id/revoke-vault`, operator: a person's act through the UI session — a job's routes reach no
+`/ui/api/`, and its proxy token is no API token, so a job asks and never grants. **Access** decides first: OpenFGA
+`vault_grant#can_grant` for the person signed in, the user whose jobs these are told as the grant's `owner`
+(`vaultGrantObject`, the key hashed as an item's). 403 when denied; 503 when OpenFGA cannot be asked, and nothing is
+granted. A model edited before this has `vault_grant` gaps apart (`vaultGrantGaps`): every grant is denied, mints are
+not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by }`; `vault.grant_revoked { job, key, by }`
+(409 when there is none). Both answer the vault's view: `GET /api/vault` carries `grantAsks` and `grants`.
+
+**Residual risk.** The grant is per item, not per secret: a granted item's jobs get the whole of their template's approved
+scope, as every box job did before. A person who grants a job of a request card's approved text grants that text's work.
+A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
+out ("Git through the hopper", residual risk).
+

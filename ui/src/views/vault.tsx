@@ -26,7 +26,7 @@ import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptTex
 import type { Asset, AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
-import { AskedFor } from './vault-requests';
+import { AskedFor, VaultGrants } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
@@ -305,7 +305,7 @@ export function Vault() {
   const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
-      <AskedFor requests={requests} can={can} busy={busy} send={send} />
+      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>

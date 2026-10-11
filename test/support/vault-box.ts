@@ -11,6 +11,7 @@ import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
 import { HELPER_FILE } from '../../src/client/vault.ts';
+import { grantKeyOf } from '../../src/domain/vault-grants.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import type { TestApp } from './app.ts';
 import { testInstallDir } from './client.ts';
@@ -52,10 +53,21 @@ export function boxes() {
   };
 }
 
-/** A job that runs a while, on the one machine there is. */
+/**
+ * A person's vault grant for the job's item (issue #652), kept as the Grant route keeps it: the vault tests that are not
+ * about grants start from a granted job. test/integration/vault-grant.test.ts drives the grant itself, through Access.
+ */
+export async function grantVault(a: TestApp, jobId: string, userId?: string): Promise<void> {
+  const store = a.user(userId).store;
+  const job = store.jobs.get(jobId)!;
+  store.vaultGrants.put({ key: grantKeyOf(job), job: job.id, by: 'test', at: new Date().toISOString() });
+}
+
+/** A job that runs a while, on the one machine there is, granted the vault. */
 export async function runningJob(a: TestApp, machine: string): Promise<string> {
   const job = await a.pull({ op: 'sleep', ms: 60000 });
   expect((await a.waitForStatus(job.id, 'running', 10000)).laneId).toBe(`${machine}/lane-1`);
+  await grantVault(a, job.id);
   return job.id;
 }
 

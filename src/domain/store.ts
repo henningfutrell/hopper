@@ -7,6 +7,7 @@ import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
+import type { VaultGrant } from './vault-grants.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -162,6 +163,15 @@ export interface FailureRepository {
 }
 
 /** The hand-offs (issue #516): failed jobs waiting on a person. */
+/** The vault grants (issue #652), one row per item key: a person's grant of the vault to that item's jobs. */
+export interface VaultGrantRepository {
+  get(key: string): VaultGrant | undefined;
+  list(): VaultGrant[];
+  put(grant: VaultGrant): VaultGrant;
+  /** Whether there was one to remove. */
+  remove(key: string): boolean;
+}
+
 /** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
 export interface ItemSnapshotRepository {
   get(key: string): ItemSnapshot | undefined;
@@ -472,6 +482,7 @@ export interface UserStore {
   problems: ProblemRepository;
   handoffs: HandoffRepository;
   itemSnapshots: ItemSnapshotRepository;
+  vaultGrants: VaultGrantRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
