@@ -24,6 +24,9 @@ export function partsOf(job: Job): PartsShown | undefined {
 /** What a finished job's title says after done (issue #579): partly done, or where its pull request is now. */
 export interface AfterDone { label: string; tone: 'ok' | 'warn'; url: string | undefined; title: string }
 
+/** Its issue closed as not planned upstream while its pull request waited (issue #428). */
+const ABANDONED = (url: string | undefined): AfterDone => ({ label: 'abandoned', tone: 'warn', url, title: 'its issue was closed as not planned; its pull request is not merged' });
+
 export function afterDone(job: Job): AfterDone | undefined {
   if (job.status !== 'finished') return undefined;
   const s = (job.sourceState?.source ?? {}) as { pullRequest?: unknown; follow?: unknown; part?: unknown };
@@ -31,10 +34,12 @@ export function afterDone(job: Job): AfterDone | undefined {
   if (job.partlyDone) {
     return s.follow === 'merged' ? { label: 'part merged', tone: 'ok', url, title: 'its part was merged; the next part runs' }
       : s.follow === 'closed' ? { label: 'PR closed', tone: 'warn', url, title: 'its pull request was closed without a merge' }
-        : { label: 'partly done', tone: 'ok', url, title: 'it shipped part of its issue; the rest runs once this pull request merges' };
+        : s.follow === 'abandoned' ? ABANDONED(url)
+          : { label: 'partly done', tone: 'ok', url, title: 'it shipped part of its issue; the rest runs once this pull request merges' };
   }
   if (s.follow === 'open') return { label: 'PR ready', tone: 'ok', url, title: 'its pull request waits for review' };
   if (s.follow === 'merged') return { label: 'merged', tone: 'ok', url, title: 'its pull request was merged' };
   if (s.follow === 'closed') return { label: 'PR closed', tone: 'warn', url, title: 'its pull request was closed without a merge' };
+  if (s.follow === 'abandoned') return ABANDONED(url);
   return undefined;
 }

@@ -128,6 +128,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.fork_resolved': { forkId: 'j2', kind: 'research', questionId: 'q1', decision: 'accept', delivered: true, question: 'open' },
   'job.pull_request_merged': { pullRequest: 'https://github.com/owner/repo/pull/12', part: false },
   'job.pull_request_closed': { pullRequest: 'https://github.com/owner/repo/pull/13', part: true },
+  'job.pull_request_abandoned': { pullRequest: 'https://github.com/owner/repo/pull/13', part: false },
   'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
   'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false },

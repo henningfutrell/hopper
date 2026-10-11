@@ -90,9 +90,10 @@ export const readyToMerge = (seen: PullRequestSeen, now: number): boolean =>
 export interface FollowUp {
   /**
    * Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. Checked: a
-   * merge recorded before issue #721 closed the item after all; only the state changes (`state.mergeChecked`).
+   * merge recorded before issue #721 closed the item after all; only the state changes (`state.mergeChecked`). Abandoned
+   * (issue #428): the item was closed as not planned while the pull request waited; it is followed no more, never merged.
    */
-  outcome: 'open' | 'merged' | 'closed' | 'checked';
+  outcome: 'open' | 'merged' | 'closed' | 'checked' | 'abandoned';
   pullRequest: string;
   /** Merged by the hopper itself (issue #637): yolo mode on for its repository, and it was ready. */
   byHopper?: boolean;

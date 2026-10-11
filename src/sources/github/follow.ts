@@ -18,6 +18,10 @@
 // Closing finishes the loop (issue #677): after the hopper's own merge — yolo mode or Merge now — of a pull request that
 // did not close the issue and ships no part ("Part of #N"), the hopper closes the issue as completed, with one comment
 // that links the pull request, and the item is done. A merge a person made on GitHub stays as issue #721 has it.
+// Pull-based completion (issue #428): the item is resolved upstream, the hopper only follows. Closed as completed, it is
+// merged, as above. Closed as not planned while its pull request is still open, or none is found yet: abandoned — followed
+// no more, never merged, its pull request left as it is; the waiting labels come off and no end label goes on. A person's
+// act still goes through. Reopened with that pull request open, reconciling follows it again (issue #763).
 
 import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
@@ -141,6 +145,18 @@ async function recheckMerge(api: GitHubApi, repo: string, number: number, s: Fol
   return { outcome: 'merged', pullRequest: url, part: true, state: { ...s, part: true } };
 }
 
+const isClosedAsNotPlanned = async (api: GitHubApi, repo: string, number: number): Promise<boolean> => {
+  const issue = await api.getIssue(repo, number);
+  return issue.state === 'closed' && issue.stateReason === 'not_planned';
+};
+
+/** The item closed as not planned upstream (issue #428): the follow ends abandoned; the waiting labels come off. */
+async function abandon(api: GitHubApi, repo: string, number: number, s: Followed & Record<string, unknown>, url: string | undefined): Promise<FollowUp> {
+  await api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED]);
+  const pullRequest = url ?? s.pullRequest ?? '';
+  return { outcome: 'abandoned', pullRequest, part: s.part === true, state: { ...s, ...(pullRequest ? { pullRequest } : {}), follow: 'abandoned' } };
+}
+
 /** Followed after its end; with `act`, a person's Merge now or Close PR on its open pull request (issue #677). */
 export async function followPullRequest(ctx: FollowContext, job: Job, act?: PullRequestAct): Promise<FollowUp | undefined> {
   let s = (job.sourceState?.source ?? {}) as Followed & Record<string, unknown>;
@@ -155,6 +171,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
     }
     let now = await stateOf(ctx.api, repo, number, s);
+    if (!act && (!now || now.state === 'open') && await isClosedAsNotPlanned(ctx.api, repo, number)) return await abandon(ctx.api, repo, number, s, now?.url);
     if (!now && act) throw new SourceError('no pull request is found for it yet', true);
     if (!now) return undefined;
     const part = s.part === true;

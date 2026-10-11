@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- When an issue is closed as not planned while the hopper's pull request for it waits, the hopper stops following that pull request and never merges it, even with yolo mode on. The job shows "abandoned". An issue closed as completed by hand still marks the job merged and done, with nothing for the hopper to do.
 - Issues on the backburner no longer look gone: the Not taken menu entry and the Queue show how many there are, and each one shows its issue number, how long it has been on the backburner and who put it there.
 - An API token can no longer start jobs, answer questions, merge, update or change a machine unless you mint it as a box token in Settings → API tokens. An agent that gets its token with its own sign-in can still read, hold and cancel, but never gets a box token that way.
 - A new Not taken page shows every issue the hopper did not take, grouped by why with counts: requests that wait for your approval come first and have a badge, and an issue on the backburner has a button to take it off. A new request now sends a notification, and an issue whose job has ended no longer shows as taken.
