@@ -473,6 +473,38 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   `hopper vault mint-test aws-role/<id>/<role>`: the hopper mints a read session (named `hopper-mint-test`,
   `<prefix>mint-test`, or the fixed name) and shows the role STS says it assumed, as `aws sts get-caller-identity` would.
   When STS refuses, it shows why.
+- **A read-only AWS setup, step by step** (issue #715). Two IAM identities: the **minting identity** whose keys the
+  hopper holds, and the **read role** it assumes. Tag each new IAM resource as your organization's rules say (for
+  example its MAP tag, `map-migrated`, when the account is in a migration program): add `--tags Key=map-migrated,Value=<id>`
+  to each `create-user`, `create-role` and `create-policy` below.
+  1. The read role, `hopper-read`, with AWS's `ReadOnlyAccess` (or `ViewOnlyAccess`, which reads no data) and a trust
+     policy that lets only the minting identity assume it:
+
+     ```sh
+     aws iam create-role --role-name hopper-read --max-session-duration 3600 \
+       --permissions-boundary arn:aws:iam::aws:policy/ReadOnlyAccess \
+       --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<id>:user/hopper-minter"},"Action":"sts:AssumeRole"}]}'
+     aws iam attach-role-policy --role-name hopper-read --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+     ```
+
+     The permissions boundary keeps the role at read, even when someone attaches a wider policy to it later.
+  2. The minting identity, `hopper-minter`, that may only assume that role:
+
+     ```sh
+     aws iam create-user --user-name hopper-minter
+     aws iam put-user-policy --user-name hopper-minter --policy-name hopper-mint \
+       --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":"arn:aws:iam::<id>:role/hopper-read"}]}'
+     aws iam create-access-key --user-name hopper-minter
+     ```
+
+  3. In Settings → Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
+  4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
+
+  Every read session the hopper mints carries two session policies: `ReadOnlyAccess`, and an inline policy that denies
+  every `Create`, `Delete`, `Put`, `Update` and `Modify` action, IAM's other writes, and `sts:AssumeRole` on any role
+  but `hopper-read` (docs/design.md "A read-only infra box"). So a read session cannot write, even when the role can. A
+  template that asks for read on `aws-role/<id>/hopper-read` gets these sessions, and its read-only check proves the writes
+  fail. The check runs again once a day.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
