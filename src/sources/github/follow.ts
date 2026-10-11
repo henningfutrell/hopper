@@ -176,7 +176,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       || (mergedHere && await closeAfterMerge(ctx.api, repo, number, now.url)));
     const shipsPart = part || (now.state === 'merged' && !whole);
     // A merged part that makes every declared part done (issue #729): the issue is done.
-    const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, repo, number, (await ctx.api.getIssue(repo, number)).body, now.url) : undefined;
+    const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, await ctx.api.getIssue(repo, number), now.url) : undefined;
     // A failed job's followed pull request (issue #786) ends its `hopper:failed` too.
     await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED]);
     const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;

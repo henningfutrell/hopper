@@ -8,8 +8,8 @@ export type Method = keyof GitHubApi;
 export type FakeActor = string | { login: string; type?: string; viaApp?: string };
 
 export interface FakeGitHub extends GitHubApi {
-  /** An issue; its labels and assignees are events by `labelledBy` and `assignedBy` (default: its author, issue #652). */
-  createIssue(o: { repo: string; title?: string; body?: string; author?: string; assignees?: string[]; labels?: string[]; labelledBy?: FakeActor; assignedBy?: FakeActor }): GitHubIssue;
+  /** An issue; its labels and assignees are events by `labelledBy` and `assignedBy` (default: its author, issue #652); `parent`: it is a sub-issue of that issue of the same repo (issue #729). */
+  createIssue(o: { repo: string; title?: string; body?: string; author?: string; assignees?: string[]; labels?: string[]; labelledBy?: FakeActor; assignedBy?: FakeActor; parent?: number }): GitHubIssue;
   /** Assign `login`, recorded as an `assigned` event at `at` (default the fake's clock) by `by` (default the fake's login). */
   assign(repo: string, number: number, login: string, at?: string, by?: FakeActor): void;
   unassign(repo: string, number: number, login: string): void;

@@ -9,7 +9,7 @@ interface RestIssue {
   number: number; title: string; body?: string | null; state: string; html_url: string; updated_at: string;
   user?: { login?: string } | null; assignees?: ({ login?: string } | null)[] | null; labels?: ({ name?: string } | string)[]; closed_by?: { login?: string } | null;
   closed_at?: string | null; state_reason?: string | null;
-  pull_request?: unknown;
+  pull_request?: unknown; sub_issues_summary?: { total?: number; completed?: number; percent_completed?: number } | null;
 }
 interface RestIssueWithRepo extends RestIssue { repository?: { full_name?: string } | null }
 interface RestComment { id: number; body?: string | null; user?: { login?: string } | null; created_at: string; html_url: string }
@@ -23,6 +23,7 @@ export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
     ...(i.closed_by?.login ? { closedBy: i.closed_by.login } : {}),
     ...(i.closed_at ? { closedAt: i.closed_at } : {}),
     ...(i.state_reason ? { stateReason: i.state_reason } : {}),
+    ...(i.sub_issues_summary?.total ? { subIssues: { total: i.sub_issues_summary.total, closed: i.sub_issues_summary.completed ?? 0 } } : {}),
   };
 }
 
