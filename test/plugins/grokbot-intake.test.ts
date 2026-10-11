@@ -44,4 +44,18 @@ describe('Grok Bot routine: intake stopped', () => {
       expect.objectContaining({ source: 'hopper', kind: 'connected_account.expired', provider: 'github', account: 'octo-user', reason: 'GitHub refused the refresh token' }),
     ]));
   });
+
+  it('posts source.request_opened (issue #798): a request card waits for a person to approve it', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const key = 'https://github.com/octocat/hello/issues/7';
+    for (const l of listeners) l(event('source.request_opened', { source: 'github-account', key, hash: 'a'.repeat(64), author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'] }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({
+      source: 'hopper', kind: 'source.request_opened', sourceName: 'github-account', issueUrl: key, author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'],
+    }));
+  });
 });
