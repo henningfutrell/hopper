@@ -13329,3 +13329,44 @@ scope, as every box job did before. A person who grants a job of a request card'
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
 
+
+## Job tracking above lanes (issue #426, 2026-10-11)
+
+Part 2 of the pointed-job work (tracking issue #424): "a service that owns the queue and the job pointers and hands
+pointed jobs to lanes. Lanes ask it for work instead of sources creating lane work directly." The **job tracking** layer
+already sits above the lanes. This section names its parts, so later parts (#427 watches, #431 repository-agnostic lanes)
+build on them and do not make a second queue.
+
+**What it is.** No new module and no new setting: the engine's job queue is the tracking layer.
+
+| Part | Where | What it does |
+|------|-------|--------------|
+| The job queue | the `jobs` table, `JobRepository` (`src/store/jobs.ts`) | Every job, waiting or ended, in the database. A waiting job is `queued` or `held`. |
+| The job pointer | `Job.source` (`JobSourceRef`: source, key, repo, number, url) | What a job points at. The source key is the item's identity in the queue. |
+| Intake | `SourceHost.ingest` (`src/engine/source-host.ts`) | The only way a source's item becomes a job: one transaction that reads the key's newest job and makes a job only when there is none or that one may run again. |
+| The queue gate | `src/engine/queue-gate.ts` | A new job waits unaccepted until the pre-sort or the user accepts it ("Queue gate"). |
+| The order | the queue sorter, the user order, the effective priority (`src/engine/queue-order.ts`, `src/decider/assign.ts`) | Which admissible waiting job comes first. |
+| The hand-off | `decide()`, then `apply` (`src/engine/decision-step.ts`) | Each Decision claims waiting jobs for the free lanes. |
+| Restart | `recover` (`src/engine/recovery.ts`) | A claimed job, and a running job of an idempotent executor, goes back to the queue (`job.requeued`); a running job whose work is still alive is reattached on its lane; every other lane closes ("Recovery at startup"). |
+
+**Source → queue → lane.** A source never touches a lane. A sync offers items to `ingest`; the job waits in the queue;
+a Decision, not the source, gives it a lane. A lane holds only the job a Decision claimed for it ("The engine"). So lanes
+already take their work from the queue. The issue's "lanes ask it for work" is the Decision's claim: the decider stays
+the one place that matches waiting jobs to free lanes, because it alone sees every lane, machine and usage limit at once.
+A lane that pulled for itself would need a second decider.
+
+**Kept unchanged:** the queue order, the priority labels (`priorityOf`, `src/sources/github/priority.ts`, read at intake into the item's priority), and the queue gate. Nothing in
+this part changes them.
+
+**Survives a restart.** The queue is the database, so a restart loses no job. Intake reads the source key in the same
+transaction that makes the job, so the next sync after a restart makes no second job of an item. The gate (a user
+setting in the database), each job's acceptance, priority and user rank stay as they were.
+`test/integration/job-tracking.test.ts` checks this through the real daemon: one lane, a running job, two accepted jobs
+of priority 10 and 90 and one unaccepted job, then a restart over the same database. The interrupted job is requeued, the
+90 runs before the requeued job and the 10, the unaccepted job stays held, and a sync after the restart makes no job.
+`test/integration/restart.test.ts` and `test/integration/github.test.ts` ("a restart keeps sourced jobs deduped") check
+the same for the manual and the GitHub source.
+
+**The pointed-job record (#425) is not built yet.** When it is, its target repository and pointer are the job's
+`source` fields named above, and its status follows the job's. This part adds no separate record, so #425 maps onto one
+queue, not two.
