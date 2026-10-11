@@ -3,8 +3,9 @@
 // and each merged pull request that ships a part of the issue ("Part of #N", issue #579) ticks one more: the parts done
 // are the larger of the two, never more than the parts. A part that starts with an issue (`#N`, `owner/repo#N`, its URL)
 // is a required child: it is done only when that issue is closed, whatever its box says, and no merge counts for it. An
-// issue with no such checklist declares its GitHub sub-issues as its parts: a closed sub-issue is a done part. The hopper
-// never edits the issue: it counts.
+// issue's GitHub sub-issues are its parts too — with no such checklist, its only ones —: a closed sub-issue is a done part.
+// A job's required child is one (issue #729, issue lineage: the hopper links it), so a parent is not done while it is open.
+// A sub-issue a checklist item names counts once, as that item. The hopper never edits the issue: it counts.
 
 import type { Parts } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -42,7 +43,7 @@ export function declaredParts(body: string, repo: string): DeclaredPart[] | unde
   return parts.length > 0 ? parts : undefined;
 }
 
-/** The issue's sub-issues as its parts: a closed one is done; undefined: it has none. */
+/** The issue's sub-issues as its parts, as GitHub sums them up: a closed one is done; undefined: it has none. */
 const subIssueParts = (issue: GitHubIssue): Parts | undefined =>
   issue.subIssues && { done: Math.min(issue.subIssues.closed, issue.subIssues.total), total: issue.subIssues.total };
 
@@ -55,11 +56,24 @@ async function childDone(api: Pick<GitHubApi, 'getIssue'>, part: DeclaredPart & 
   }
 }
 
+const sameIssue = (a: IssueRef, b: IssueRef): boolean => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
+
+/** Beside a checklist, the sub-issues no item names; when they cannot be listed, all of them as GitHub sums them up. */
+async function unnamedSubIssues(api: Pick<GitHubApi, 'subIssues'>, issue: GitHubIssue, named: IssueRef[]): Promise<Parts> {
+  if (!issue.subIssues) return { done: 0, total: 0 };
+  try {
+    const subs = (await api.subIssues(issue.repo, issue.number)).filter((s) => !named.some((n) => sameIssue(n, s)));
+    return { done: subs.filter((s) => s.state === 'closed').length, total: subs.length };
+  } catch {
+    return subIssueParts(issue)!;
+  }
+}
+
 /**
  * The parts done of `issue`: undefined when it declares none. `merged`: a part's pull request seen merged now, counted
  * even when GitHub does not list it yet.
  */
-export async function partsOf(api: Pick<GitHubApi, 'referencingPullRequests' | 'getIssue'>, issue: GitHubIssue, merged?: string): Promise<Parts | undefined> {
+export async function partsOf(api: Pick<GitHubApi, 'referencingPullRequests' | 'getIssue' | 'subIssues'>, issue: GitHubIssue, merged?: string): Promise<Parts | undefined> {
   const declared = declaredParts(issue.body, issue.repo);
   if (!declared) return subIssueParts(issue);
   const plain = declared.filter((p) => !p.issue);
@@ -69,13 +83,16 @@ export async function partsOf(api: Pick<GitHubApi, 'referencingPullRequests' | '
   if (merged) urls.add(merged);
   const plainDone = Math.min(plain.length, Math.max(plain.filter((p) => p.ticked).length, urls.size));
   const childrenDone = (await Promise.all(children.map((c) => childDone(api, c)))).filter(Boolean).length;
-  return { done: plainDone + childrenDone, total: declared.length };
+  const subs = await unnamedSubIssues(api, issue, children.map((c) => c.issue));
+  return { done: plainDone + childrenDone + subs.done, total: declared.length + subs.total };
 }
 
-/** The parts done when nothing can be read: the ticked boxes, else the sub-issues as the issue says. */
+/** The parts done when nothing can be read: the ticked boxes and the sub-issues as the issue sums them up. */
 export function tickedParts(issue: GitHubIssue): Parts | undefined {
   const declared = declaredParts(issue.body, issue.repo);
-  return declared ? { done: declared.filter((p) => p.ticked).length, total: declared.length } : subIssueParts(issue);
+  const subs = subIssueParts(issue);
+  if (!declared) return subs;
+  return { done: declared.filter((p) => p.ticked).length + (subs?.done ?? 0), total: declared.length + (subs?.total ?? 0) };
 }
 
 /** Every declared part is done. */

@@ -28,6 +28,9 @@ export interface GitHubIssue {
   subIssues?: { total: number; closed: number };
 }
 
+/** One of an issue's GitHub sub-issues (issue #729): where it is, and whether it is closed. */
+export interface SubIssue { repo: string; number: number; state: 'open' | 'closed' }
+
 /** The pull request whose merge closed an issue (GitHub's ClosedEvent closer). */
 export interface ClosingPullRequest {
   url: string;
@@ -117,6 +120,8 @@ export interface GitHubProjectItem {
 export interface GitHubApi {
   listOpenIssues(repo: string, label: string): Promise<GitHubIssue[]>;
   getIssue(repo: string, number: number): Promise<GitHubIssue>;
+  /** The issue's GitHub sub-issues, all pages (issue #729: a sub-issue no checklist item "Parts" names is a part too). */
+  subIssues(repo: string, number: number): Promise<SubIssue[]>;
   /** Every comment, all pages, oldest first. */
   listComments(repo: string, number: number): Promise<GitHubComment[]>;
   /** Who edited the issue's title or body, and when, from its timeline (issue #662), oldest first. Absent: not read. */

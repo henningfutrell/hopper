@@ -82,6 +82,16 @@ export const repoChecksEvents = {
   'repo_checks.dismissed': strict({ repo: z.string(), dismissed: z.boolean(), by: z.string() }),
 };
 
+// Issue lineage (issue #729, src/github-proxy/broker.ts): a job filed an issue through the hopper, a child of the job's own
+// issue — a follow-up, or a required child the hopper linked as a GitHub sub-issue (`subIssue`; `subIssueError`: GitHub refused the link).
+const issueRef = strict({ repo: z.string(), number: z.number().int() });
+export const issueLineageEvents = {
+  'job.child_issue_filed': strict({
+    requestId: z.string(), parent: issueRef, child: strict({ ...issueRef.shape, url: z.string() }), required: z.boolean(),
+    subIssue: z.boolean().optional(), subIssueError: z.string().optional(),
+  }),
+};
+
 // Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
 // the vault, a person took the grant back. Never a value.
 export const vaultGrantEvents = {

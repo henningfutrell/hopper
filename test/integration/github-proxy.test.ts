@@ -18,6 +18,12 @@
 //   Scenario: a job of another user files an issue, and may do nothing else
 //     Then the issue is filed with the hopper's connection, marked; a comment is refused
 //     And both are in that job's timeline and in the hopper's own user's log, naming the user and the job
+//   Scenario: an issue a job files is a child of the job's issue (issue #729: issue lineage)
+//     Given a job running for octo/tools#7
+//     When the job files an issue through the hopper
+//     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
+//     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
+//     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
 //   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
@@ -32,6 +38,7 @@ import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { PROXY_HELP } from '../../src/github-proxy/index.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
+import { issueIdOf } from '../support/fake-sub-issues.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { holder, hopperGh, type Run } from '../support/job-holder.ts';
@@ -68,8 +75,8 @@ async function start() {
 }
 
 /** A job of the user's own, running in the holder: its id and variables. */
-async function running(t: Awaited<ReturnType<typeof start>>, repo = 'octo/tools', userId = ADMIN_ID): Promise<{ job: Job; env: Record<string, string> }> {
-  const job = await t.app.pull({}, { executor: 'holder', repo }, userId);
+async function running(t: Awaited<ReturnType<typeof start>>, repo = 'octo/tools', userId = ADMIN_ID, number?: number): Promise<{ job: Job; env: Record<string, string> }> {
+  const job = await t.app.pull({}, { executor: 'holder', repo, ...(number !== undefined ? { number } : {}) }, userId);
   const env = await waitFor(async () => t.held.get(job.id)?.env, { what: `job ${job.id} to run` });
   return { job, env };
 }
@@ -100,6 +107,7 @@ describe('GitHub through the hopper (issue #563)', () => {
 
     const [done] = eventsOf(t.app, ADMIN_ID, 'github_proxy.done');
     expect(done).toMatchObject({ jobId: job.id, data: { requestId: answer.requestId, op: 'issue.create', repo: 'octo/tools', number: 1, url: answer.url, own: true, machine: 'local' } });
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([]);
     await t.app.sync();
     expect((await t.app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.map((j) => j.id)).toEqual([job.id]);
   });
@@ -226,5 +234,52 @@ describe('GitHub through the hopper (issue #563)', () => {
     const t = await start();
     const { env } = await running(t);
     expect(t.reach.asked).toEqual([env.HOPPER_URL]);
+  });
+});
+
+describe('issue lineage through the hopper (issue #729)', () => {
+  const subIssueLinks = (f: FakeForge) => f.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/sub_issues'));
+
+  async function parented() {
+    const t = await start();
+    t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Ship it in parts', body: 'Please.', author: 'owner', labels: ['hopper'] });
+    return { t, ...(await running(t, 'octo/tools', ADMIN_ID, 7)) };
+  }
+
+  it('an issue a job files is a follow-up of the job\'s issue: its text names the parent, the lineage is on the job\'s timeline, no sub-issue link', async () => {
+    const { t, job, env } = await parented();
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Later', '--body', 'Do it later.']);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: false });
+    expect(t.github.issues.find((i) => i.number === 8)!.body).toContain('\n---\nFollow-up of octo/tools#7.\nFiled through hopper');
+    expect(subIssueLinks(t.github)).toEqual([]);
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      jobId: job.id, data: { requestId: answer.requestId, parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 8, url: answer.url }, required: false },
+    })]);
+  });
+
+  it('--required links it as a GitHub sub-issue of the job\'s issue', async () => {
+    const { t, job, env } = await parented();
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required']);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: true, subIssue: true });
+    expect(t.github.issues.find((i) => i.number === 8)!.body).toContain('Required child of octo/tools#7: that issue is not done while this one is open.');
+    expect(subIssueLinks(t.github)).toEqual([expect.objectContaining({ path: '/api/v3/repos/octo/tools/issues/7/sub_issues', body: { sub_issue_id: issueIdOf('octo/tools', 8) } })]);
+    expect(t.github.issues.find((i) => i.number === 7)!.subIssues).toEqual(['octo/tools#8']);
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),
+    })]);
+  });
+
+  it('a sub-issue link GitHub refuses leaves the issue filed: the job and the timeline say why', async () => {
+    const { t, env } = await parented();
+    t.github.subIssuesRefused = 422;
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required']);
+    expect(r.code).toBe(0);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, required: true, subIssue: false, subIssueError: expect.stringContaining('GitHub answered 422') });
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      data: expect.objectContaining({ required: true, subIssue: false, subIssueError: expect.stringContaining('GitHub answered 422') }),
+    })]);
   });
 });

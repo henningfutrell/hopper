@@ -43,6 +43,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
   return {
     listOpenIssues: (repo, label) => call(`list issues ${repo}`, (t) => rest.listOpenIssues(req, t, repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, (t) => rest.getIssue(req, t, repo, number)),
+    subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, (t) => rest.subIssues(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),
     issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(req, t, repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(req, t, owner, number)),

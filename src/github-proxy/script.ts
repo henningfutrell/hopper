@@ -17,7 +17,7 @@ export const PROXY_TOKEN_FILE = 'hopper/token';
 export const PROXY_HELP = `hopper-gh: GitHub through the hopper. The hopper acts with its own GitHub connection;
 this machine needs no GitHub login. Never run gh auth login or start a device login.
 
-  sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE)
+  sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE) [--required]
   sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" issue view N    --repo OWNER/NAME
   sh "$HOPPER_GH" issue close N   --repo OWNER/NAME      (this job's own issue only, as completed)
@@ -29,6 +29,9 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
 
 Prints the answer as JSON, with the url. A refusal prints why and exits 1: do not try another way around it.
 An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
+It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
+required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open. Use
+--required only when this job's issue cannot be complete without it; a nice-to-have is a follow-up.
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
 A pull request: push the branch first (git push), on this job's own repository.
@@ -58,6 +61,7 @@ while [ "$i" -lt "$n" ]; do
   a=$1; shift; i=$((i + 1))
   case "$a" in
     --force) set -- "$@" --data-urlencode "force=true" ;;
+    --required) set -- "$@" --data-urlencode "required=true" ;;
     --repo|--title|--body|--head|--base|--body-file|--comment-on)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))

@@ -20,6 +20,7 @@ import type { AddressInfo } from 'node:net';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
 import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
+import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -35,6 +36,8 @@ export interface FakeIssue {
   stateReason?: string;
   /** The comments posted on it, as GitHub's REST answers them (issue #673). */
   comments?: Record<string, unknown>[];
+  /** Its sub-issues, each `owner/name#N` (issue #729). */
+  subIssues?: string[];
 }
 
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
@@ -44,7 +47,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends RepoChecksForge {
+export interface FakeForge extends RepoChecksForge, SubIssuesForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -169,7 +172,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
       updated_at: '2026-10-06T00:00:00Z', user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
-      repository_url: `${base}/api/v3/repos/${i.repo}`,
+      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number),
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
@@ -286,6 +289,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
+      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };

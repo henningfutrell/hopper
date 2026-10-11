@@ -194,6 +194,7 @@
         "bug_report.kept",
         "repo_checks.job_queued",
         "repo_checks.dismissed",
+        "job.child_issue_filed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

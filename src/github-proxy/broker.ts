@@ -6,13 +6,15 @@
 // an event on the job's timeline; a request of
 // another user's job is also an event of the hopper's own user, whose connection it would act with. A job's bug report
 // (`report.bug`, issue #694) is checked and limited the same way, then handed to `report`: Report a bug's own path, with
-// the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it.
+// the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it. An issue a job with an issue
+// files is a child of that issue (issue #729, issue lineage): its text names the parent, a required one is linked as a
+// GitHub sub-issue of it, and the link is recorded on the job's timeline (`job.child_issue_filed`).
 import { randomUUID } from 'node:crypto';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -116,11 +118,19 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         return r;
       };
       const masked = maskRequest(req);
-      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId)}` } : masked;
+      const jobRepo = repoOf(job);
+      const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
+      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId, parent)}` } : masked;
       try {
-        const result = await api.perform(sent);
+        const result = await api.perform(sent, parent?.required ? parent : undefined);
         record('github_proxy.done', { op: req.op, repo: req.repo, number: result.number, url: result.url });
-        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
+        const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
+        user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
+          requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
+          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}),
+        } });
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
       } catch (e) {
         const status = e instanceof ProxyGitHubError ? e.status : undefined;
         const error = (e as Error).message;

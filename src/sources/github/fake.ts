@@ -101,6 +101,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       return open(label).filter((i) => i.repo === repo).map(copy);
     },
     async getIssue(repo, n) { enter('getIssue', [repo, n]); return copy(find(repo, n)); },
+    async subIssues(repo, n) {
+      enter('subIssues', [repo, n]);
+      return (subIssues.get(key(repo, n)) ?? []).flatMap((k) => issues.get(k) ?? []).map((i) => ({ repo: i.repo, number: i.number, state: i.state }));
+    },
     async listComments(repo, n) {
       enter('listComments', [repo, n]);
       find(repo, n);

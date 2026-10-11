@@ -2012,12 +2012,34 @@ GitHub does not list it yet, and keeps them in the job's source state (`parts`);
 A part whose text starts with an issue — `#N`, `owner/repo#N` or the issue's URL — is a **required child**: it is done only
 when that issue is closed (as completed or not planned: a person closed it), whatever its box says, and no merged pull
 request counts for it; the merged `Part of #N` pull requests count only for the parts that name no issue. Each required
-child is read once per parts read (`getIssue`); one that cannot be read counts by its box, read again next time. An issue
-with no checklist under `Parts` declares its **GitHub sub-issues** as its parts: a closed sub-issue is a done part, as
-GitHub counts them in the issue (`sub_issues_summary`, read with the issue: no extra call). So a parent is not done while a
+child is read once per parts read (`getIssue`); one that cannot be read counts by its box, read again next time. An issue's
+**GitHub sub-issues** are parts too: a closed sub-issue is a done part. With no checklist under `Parts` they are its only
+parts, as GitHub counts them in the issue (`sub_issues_summary`, read with the issue: no extra call). Beside a checklist
+(issue #729 part 3), the sub-issues are listed (`subIssues`, one more call, only for an issue that has both), and each one no
+checklist item names is one more part; a sub-issue an item names counts once, as that item. A list that cannot be read
+adds them as GitHub sums them up (a named one may then count twice; done still waits for it). This is what makes a job's
+**required child** ("Issue lineage" below) hold its parent whatever the parent declares. So a parent is not done while a
 child it named in `Parts`, or a sub-issue, is open. When every part is done, the prompt says so and tells the job to check
-the issue and close it as completed when nothing is left. The parent ↔ child lineage of issues a job files, and its chain
-on the card, are the issue's next part.
+the issue and close it as completed when nothing is left.
+
+**Issue lineage** (issue #729 part 3, `src/github-proxy/broker.ts`, `ui/src/model/lineage.ts`). An issue a job files through
+the hopper (`issue.create`) is a **child** of the job's own issue — its source's, a fork's parent's —, recorded both ways:
+
+- **On GitHub, child → parent.** The hopper's note at the issue's end names the parent: `Follow-up of owner/repo#N.`, or
+  `Required child of owner/repo#N: that issue is not done while this one is open.` GitHub shows the mention on the
+  parent's timeline too, so the parent links back.
+- **In the hopper, both ways.** `job.child_issue_filed` on the job's timeline: `parent`, `child` (with its URL),
+  `required`. The job card (`LineageChips`) reads these events (`GET /api/events?types=job.child_issue_filed`, again
+  on each new one) and shows `child of #N` (`required by #N`) on a child's card, and `children n, m required` on a
+  parent's, with every child and the count of all descendants on hover.
+
+A child is a **follow-up** unless the job marks it **required** (`hopper-gh issue create … --required`): then the hopper
+also links it as a **GitHub sub-issue** of the job's issue (`POST …/issues/{n}/sub_issues`, with the new issue's id), and
+so it is a part the parent waits on (above). The question left by part 2 — a sub-issue is a required part, so linking
+every filed issue would let a nice-to-have follow-up block its parent — is answered so: only a child the job marks
+required is linked; any other is lineage only. A link GitHub refuses leaves the issue filed: the answer and the event
+carry `subIssue: false` and `subIssueError`, and the job can say so. Only the hopper's own job marks a required child, and
+only of an issue it has: another user's job (untrusted) does not change the hopper's issues' parts.
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper closes one only after its
 own merge of a pull request with no closing keyword that is no part (issue #677, "Closing finishes the loop").
@@ -11063,7 +11085,9 @@ the similar open reports, or the refusal's status.
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
 "Filed through hopper for job `<job id>` (request `<request id>`). It is not a job: it waits for a person to triage it."
 It is never labelled or assigned — the request cannot carry either — so no source takes it (intake is by the `hopper`
-label and the assignee, issue #387): a job cannot spawn a job; a person labels it. **Ids only on GitHub.** The owner
+label and the assignee, issue #387): a job cannot spawn a job; a person labels it. A job with an issue of its own files a
+**child** of it (issue #729, "Issue lineage"): the note names the parent first, and `--required` (`required`, the
+hopper's own job only) links it as a sub-issue of the parent; the answer adds `parent` and `required` (and `subIssue`). **Ids only on GitHub.** The owner
 asked for the machine and the user in the issue; the repo law ("GitHub text is neutral") and the publishing rule forbid
 both, so the issue names the job and the request, and the event under that request id has the machine and the user.
 
