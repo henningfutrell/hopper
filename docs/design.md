@@ -1497,7 +1497,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -13615,6 +13615,42 @@ kept, hits, misses) and the waits (count, total time).
 
 **Dependency.** This part does not wait for job 3 (#427). It assumes job 3's GitHub watches poll GitHub through `makeRequest`
 and register with `createPollSchedule`, with the GitHub watch interval as `intervalMs` and the limiter's `batchSize`.
+
+## One read per sync pass (issue #822, 2026-10-11)
+
+Part 2 of issue #822 (GitHub API use). Part 1 (#825) gave the release check a token and a wait to GitHub's reset.
+
+**Pass reads** (`src/sources/github/pass-reads.ts`). One **sync** of a GitHub source is one pass: the sync loop runs its
+steps — discover, check, reports, write-backs, after done, thread asks — inside `JobSource.pass` (`RunsPasses`,
+`src/domain/source-item.ts`; absent: the steps run as is). Inside a pass, a read of the `GitHubApi` with the same
+arguments is asked of GitHub once, and two at the same time share one answer. Why: the check, the reports and the follow
+of each job read the same issue and pull requests, and the GraphQL reads are POSTs, which the shared rate limiter's ETag
+cache cannot answer. Measured on three followed pull requests of one repository: each issue was read twice per pass; now once.
+- A write to a repository drops what the open passes read of that repository, and every read not of one repository
+  (`projectItems`, `listAssignedIssues`, `listInstalledRepos`), when the write starts and again when it ends. A pass never acts
+  on what it changed itself.
+- A read that failed is not kept: the next one in the pass asks again.
+- A read outside a pass goes to GitHub. The pass is an `AsyncLocalStorage` context, so only what the pass starts shares its
+  reads; what is kept ends with the pass.
+- Every `GitHubApi` method is sorted as a read or a write at compile time: a new method does not compile until it is.
+- Wired in `src/sources/compose.ts`: the App source and a connected account's source each read through one `passReads`; the
+  account's survives a rebuild of its source.
+
+**Deferred calls** (`deferAfterMs`, `GitHubRateLimited`, `src/github-limiter/limiter.ts`). The job sources' adapters
+(`src/sources/github/app/api.ts`, `account/api.ts`) make their calls with `deferAfterMs` = one minute
+(`SOURCE_DEFER_AFTER_MS`). A call the limiter would hold longer — after GitHub refused one for its rate, or at the reserve —
+is not made: it throws `GitHubRateLimited` with the time it may go. The pass ends at once instead of holding to the reset;
+its work is kept, as for every transient error, and the next sync asks again. Shorter waits are waited, as before. Every
+other caller (the GitHub watches, the proxy, the release check) waits as before.
+
+**What a person sees.** A rate-limited call is a transient `GitHubApiError` with `retryAt` and the text
+"<what>: GitHub rate-limited the hopper: next retry at HH:MM UTC" (`rateLimitedError`, `src/sources/github/app/http.ts`),
+whether GitHub refused it (403 or 429, `holdAfter`) or the limiter deferred it. That text is what the source's status
+(`lastError`, `detail.repoErrors`, `detail.checkErrors`) and a job's report retry (`detail.reportRetries`) show, in place of
+GitHub's error.
+
+**Left for a later part.** Fetching many issues or pull requests in one GraphQL request, and one combined status or
+check-runs call per ref.
 
 ## The hopper label means full automation (issue #435, 2026-10-11)
 

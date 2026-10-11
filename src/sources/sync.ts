@@ -263,7 +263,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
-    try {
+    // One pass (issue #822): the source asks GitHub once for what the steps read twice.
+    const pass = async () => {
       if (paused === undefined) {
         const { seen, created } = await pull(slot);
         st.itemsSeen = seen;
@@ -278,6 +279,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot)), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+    };
+    try {
+      await (slot.source.pass ? slot.source.pass(pass) : pass());
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();

@@ -1,12 +1,13 @@
 // The shared rate limiter (issue #436) on GitHub's calls: through `makeRequest`, as every GitHub adapter makes them,
 // against a fake GitHub on loopback that keeps a real rate limit — it answers 403 when no call is left, and 304 to a
-// conditional request whose ETag still matches, which costs no call. The clock is the test's: a wait moves it on.
+// conditional request whose ETag still matches, which costs no call. The clock is the test's: a wait moves it on. A job
+// source's call (issue #822) is not made when it would wait more than a minute: it is deferred, and says to when.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_RATE_LIMITER } from '../../src/domain/github-rate-limit.ts';
-import { createGitHubLimiter } from '../../src/github-limiter/limiter.ts';
-import { makeRequest } from '../../src/sources/github/app/http.ts';
+import { GitHubRateLimited, createGitHubLimiter } from '../../src/github-limiter/limiter.ts';
+import { makeRequest, toApiError } from '../../src/sources/github/app/http.ts';
 
 const RESET_MS = 600_000;
 
@@ -73,7 +74,10 @@ async function setup(o: FakeOpts = {}) {
   });
   const req = makeRequest(`http://127.0.0.1:${port}`, limiter);
   const poll = (n: number) => req('GET /repos/{owner}/{repo}/issues/{n}', { owner: 'o', repo: 'r', n, headers: { authorization: 'token t1' } });
-  return { clock, waits, gh, limiter, req, poll };
+  // As the job sources ask (issue #822): a wait longer than a minute is not waited.
+  const deferring = makeRequest(`http://127.0.0.1:${port}`, limiter, { deferAfterMs: 60_000 });
+  const pollDeferring = (n: number) => deferring('GET /repos/{owner}/{repo}/issues/{n}', { owner: 'o', repo: 'r', n, headers: { authorization: 'token t1' } });
+  return { clock, waits, gh, limiter, req, poll, pollDeferring };
 }
 
 const WATCHES = Array.from({ length: 120 }, (_, i) => i + 1);
@@ -158,5 +162,39 @@ describe('the shared rate limiter (issue #436)', () => {
     expect(gh.seen.notModified).toBe(2);
     await poll(2);
     expect(gh.seen.notModified).toBe(2);
+  });
+
+  it('a job source call that would wait longer than a minute is not made: it is deferred to the time GitHub gives (issue #822)', async () => {
+    const { pollDeferring, waits, gh, clock } = await setup({ refuseOnce: { status: 429, headers: { 'retry-after': '300' } } });
+    await expect(pollDeferring(1)).rejects.toMatchObject({ status: 429 });
+    const deferred = await pollDeferring(1).catch((e: unknown) => e);
+    expect(deferred).toBeInstanceOf(GitHubRateLimited);
+    expect(deferred).toMatchObject({ retryAt: clock.t + 300_000 });
+    expect(waits).toEqual([]);
+    expect(gh.seen.calls).toBe(1);
+  });
+
+  it('a job source call with a shorter wait waits, as every other call does', async () => {
+    const { pollDeferring, waits } = await setup({ refuseOnce: { status: 429, headers: { 'retry-after': '30' } } });
+    await expect(pollDeferring(1)).rejects.toMatchObject({ status: 429 });
+    await pollDeferring(1);
+    expect(waits).toEqual([30_000]);
+  });
+
+  it('a call at the reserve is deferred to the reset; a watch\'s waits for it', async () => {
+    const { poll, pollDeferring, waits } = await setup({ limit: 100, remaining: 51 });
+    await poll(1);
+    await expect(pollDeferring(2)).rejects.toMatchObject({ retryAt: RESET_MS });
+    expect(waits).toEqual([]);
+    await poll(2);
+    expect(waits).toEqual([RESET_MS]);
+  });
+
+  it('a rate-limit refusal or deferral reads as when the next try is, and is transient (issue #822)', async () => {
+    const { poll, pollDeferring } = await setup({ remaining: 0 });
+    const refused = toApiError(await poll(1).catch((e: unknown) => e), 'get o/r#1', 'KEY');
+    expect(refused).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
+    const deferred = toApiError(await pollDeferring(1).catch((e: unknown) => e), 'get o/r#1', 'KEY');
+    expect(deferred).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
   });
 });

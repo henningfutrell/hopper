@@ -10,7 +10,7 @@ import type {
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
-import type { SourceItem, SourceRef } from './source-item.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
@@ -470,7 +470,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests, HasThread {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
