@@ -1,7 +1,7 @@
 // Launch parameters (issue #708): a template is a base skeleton — its image, its approved secrets, its operation
 // profiles, and the defaults and maximums of its limits —, and each launch fills in the rest within what it allows.
 // Pure. A parameter outside what the template allows is refused with what it allows, never clamped.
-import { toolSet, toolsProblem, type LaunchParams, type LimitRange, type ResolvedParams, type TemplateLimits } from '../domain/sandboxes.ts';
+import { toolSet, toolsProblem, type LaunchParams, type LimitRange, type ResolvedParams, type SandboxRecord, type TemplateLimits } from '../domain/sandboxes.ts';
 
 export { limitsProblem } from '../domain/sandboxes.ts';
 
@@ -55,4 +55,19 @@ export function resolveParams(t: LaunchTemplate | undefined, p: LaunchParams): R
     ok: true,
     params: { secrets, cpus, memoryMb, ...(ttlMinutes !== undefined ? { ttlMinutes } : {}), ...(p.profile !== undefined ? { profile: p.profile } : {}), ...(tools.length ? { tools } : {}) },
   };
+}
+
+/** A launch's operation profile, `operation/kind/name`, as the vault reads a profile. */
+export interface LaunchedProfile { operation: string; asset: { kind: string; name: string } }
+
+/**
+ * What a box's sandbox record says its launch gives it (issue #708): the secrets it resolved and its one profile. The
+ * vault gives the box's jobs nothing else. Undefined: no record, or a box of no template — one taken on from before the
+ * records among them —, which its template alone decides.
+ */
+export function launchScopeOf(r: SandboxRecord | undefined): { secrets: string[]; profile?: LaunchedProfile } | undefined {
+  if (!r?.template) return undefined;
+  const [operation, kind, ...name] = (r.params.profile ?? '').split('/');
+  const profile = operation && kind && name.length ? { operation, asset: { kind, name: name.join('/') } } : undefined;
+  return { secrets: r.params.secrets, ...(profile ? { profile } : {}) };
 }

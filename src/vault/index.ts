@@ -17,6 +17,7 @@ import type { SharedSecrets } from './shared.ts';
 import { withSharedSecrets } from './shared-delivery.ts';
 
 export { clientTargets } from './service.ts';
+export { withLaunch, type LaunchScope } from './box.ts';
 export { vaultView, type Vault } from './vault.ts';
 export { approvalWait } from '../domain/vault.ts';
 

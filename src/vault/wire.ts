@@ -34,7 +34,14 @@ export const vaultOps = {
     user,
     ask: z.strictObject({ name, token: z.string().max(1000) }),
     /** The machine whose link signed the ask, as the hopper knows it; absent: no joined machine holds the key. */
-    machine: z.strictObject({ name: z.string().max(200), key: z.string().max(200), template: z.string().max(64).optional() }).optional(),
+    machine: z.strictObject({
+      name: z.string().max(200), key: z.string().max(200), template: z.string().max(64).optional(),
+      /** What a box the hopper launched was launched with (issue #708): the delivery gives it nothing else. */
+      launch: z.strictObject({
+        secrets: z.array(name).max(256),
+        profile: z.strictObject({ operation: z.string().max(32), asset: z.strictObject({ kind: z.string().max(32), name: z.string().max(253) }) }).optional(),
+      }).optional(),
+    }).optional(),
     /** Whether the job's token is one the user's link key gives (issue #563): only the hopper holds that key. */
     holds: z.boolean(),
   }),

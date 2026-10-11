@@ -5,13 +5,13 @@
 // client (src/sandbox/runtime.ts places each box), and keeps a sandbox record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
 import { randomUUID } from 'node:crypto';
 import type { SandboxesView } from '../domain/machines.ts';
-import type { ContainerRuntime } from '../domain/sandboxes.ts';
+import type { ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
 import { runFlags } from './flags.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
-import { DEFAULT_LIMITS } from './params.ts';
+import { DEFAULT_LIMITS, launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
@@ -19,6 +19,12 @@ import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runti
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
 export { hopperAddress, ownContainer } from './address.ts';
+export { cachedSandboxes } from './records.ts';
+
+/** What each of the user's boxes was launched with, by its name (issue #708): the vault gives a box's jobs nothing else. */
+export function launchScopes(records: SandboxRecord[], userId: string): Map<string, { secrets: string[]; profile?: LaunchedProfile }> {
+  return new Map(records.filter((r) => r.userId === userId).flatMap((r) => { const s = launchScopeOf(r); return s ? [[r.name, s] as const] : []; }));
+}
 
 /** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
 export const COMPOSE_NETWORK = 'hopper_default';
@@ -77,7 +83,11 @@ export interface Sandboxes {
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
   check(): Promise<void>;
   start(): void;
-  stop(): void;
+  /**
+   * Ends the timer, then waits for a reconcile or check pass in flight: the hopper closes its database after this. A pass
+   * that waits on a machine's link ends once the hopper closes its links.
+   */
+  stop(): Promise<void>;
 }
 
 /** The sandbox flags of the line Add machine shows: the boxes' own builder, with a box's default limits. */
@@ -156,9 +166,10 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       timer = setInterval(() => { void reconcile(); void check(); }, RECONCILE_MS);
       timer.unref();
     },
-    stop() {
+    async stop() {
       if (timer) clearInterval(timer);
       timer = undefined;
+      await Promise.allSettled([running, checking]);
     },
   };
 }
