@@ -26,7 +26,7 @@ export function registerSourceIntakeRoutes(app: FastifyInstance, o: {
       const d = await o.access.decideTextAcceptance(s.userId, { ownerId: s.userId, key: body.keys[0]! });
       if (!d.allowed && d.unavailable) throw new HttpError(503, `${ACCESS_UNAVAILABLE}: ${d.reason}`);
       if (!d.allowed) throw new HttpError(403, `approving the request is refused: ${d.reason}`);
-      action = { ...body, acting: actingOf(s.identity) };
+      action = { ...body, acting: actingOf(s) };
     }
     const r = await o.tenant(req).registry.intakeAction(parseWith(sourceParams, req.params).name, action);
     if (r.ok) return r.result;

@@ -22,7 +22,8 @@
       "type": "string",
       "enum": [
         "ui",
-        "cli"
+        "cli",
+        "api"
       ]
     },
     "actors": {

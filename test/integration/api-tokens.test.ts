@@ -49,7 +49,7 @@ async function boot(o: { openFga?: boolean; signIn?: unknown } = {}): Promise<{ 
   const runtime = createFakeContainerRuntime();
   t = await startTestApp({
     dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(1) },
-    seams: { containerRuntime: runtime, ...(o.openFga === false ? {} : { authorizationServer: createFakeAuthorizationServer() }) },
+    seams: { containerRuntime: runtime, authorizationServer: o.openFga === false ? undefined : createFakeAuthorizationServer() },
   });
   return { a: t, runtime };
 }

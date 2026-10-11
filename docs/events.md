@@ -1116,7 +1116,7 @@ Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a 
 | `hash` | string | yes |
 | `author` | string | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 | `actors` | object[] | yes |
 
 ```json
