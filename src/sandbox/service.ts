@@ -1,8 +1,8 @@
 // The sandbox module (issue #708, design.md "Sandbox boxes the hopper launches"): the one owner of the life of the
 // sandbox boxes the hopper starts. Everything that creates, inspects, stops or removes one goes through it: the launch
 // (Add machine → A sandbox box, POST /ui/api/machines/sandbox), the reconcile pass (every 10 s and at start), and the
-// view (GET /api/sandboxes). It drives one container runtime (src/sandbox/runtime.ts picks it) and keeps a sandbox
-// record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
+// view (GET /api/sandboxes). It drives the container runtime beside the hopper, and a client target's own through its
+// client (src/sandbox/runtime.ts places each box), and keeps a sandbox record per box (the instance's `sandboxes` table). A box it cannot remove is a cleanup problem, shown on Machines.
 import { randomUUID } from 'node:crypto';
 import type { SandboxesView } from '../domain/machines.ts';
 import type { ContainerRuntime } from '../domain/sandboxes.ts';
@@ -14,8 +14,9 @@ import { launchBox, type LaunchRequest } from './launch.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
+import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
 
-export { BOX_IMAGE, BOX_LABEL, LaunchRefused, USER_LABEL, type LaunchRequest } from './launch.ts';
+export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
 
 /** The network the release compose.yaml makes and names (issue #711): the same name whatever the project is called. */
@@ -40,6 +41,8 @@ export interface SandboxesOptions {
   network: string;
   /** The URL a box dials the hopper at, from that network: written into the record at launch. */
   joinUrl: () => string;
+  /** A user's client target by name, for a box on it (the remote runtime); absent: boxes start only beside the hopper. */
+  clients?: ClientTargets;
   /** A join code for the user's box `container`, of `template` when it is one's. */
   mint(userId: string, container: string, template: string | undefined): string;
   /** The boxes a user's client targets name; undefined: they cannot be read now. A user the instance lacks names none. */
@@ -58,7 +61,8 @@ export interface Sandboxes {
   view(userId: string): Promise<SandboxesView>;
   /**
    * Launch a box for the user: of a template (its approved image, its parameters within its limits), else of the agent
-   * (the published box image). Throws LaunchRefused before it starts anything; any other error: it did not start.
+   * (the published box image); beside the hopper, or on the client target `machine` names. Throws LaunchRefused before
+   * it starts anything; any other error: it did not start.
    */
   launch(userId: string, l: LaunchRequest): Promise<{ container: string }>;
   /** One reconcile pass, at `now` (default the clock's). */
@@ -69,7 +73,6 @@ export interface Sandboxes {
   stop(): void;
 }
 
-const NO_RUNTIME = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot start sandbox boxes itself. docs/deploy.md "Sandbox boxes the hopper starts"';
 /** The sandbox flags of the line Add machine shows: the boxes' own builder, with a box's default limits. */
 const LINE = runFlags({ cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default }).join(' ');
 
@@ -79,20 +82,33 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   let unclaimed = new Set<string>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let running: Promise<void> | undefined;
-  let runtimeDown: string | undefined;
+  const down = new Map<string, string>();
+  const places = createPlacements({ local: o.runtime, network: o.network, joinUrl: o.joinUrl, ...(o.clients ? { clients: o.clients } : {}) });
 
+  /**
+   * The hopper's own runtime, then each client target that holds a recorded box. One that cannot be listed now — a
+   * machine not dialled in — keeps its boxes and their records, past their time limit too, until it can.
+   */
   const pass = async (now: Date): Promise<void> => {
-    if (!o.runtime) return;
-    try {
-      unclaimed = await reconcilePass({
-        runtime: o.runtime, repo: o.repo, instanceId: o.instanceId, now, boxesOf: o.boxesOf, waiting: o.waiting(now), launching,
-        newId: randomUUID, joinUrl: o.joinUrl(), logger: o.logger,
-      }, problems, unclaimed);
-      runtimeDown = undefined;
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      if (runtimeDown !== reason) o.logger.warn(`hopper: cannot list the sandbox boxes: ${(runtimeDown = reason)}`);
+    const remote = new Map(o.repo.list().filter((r) => r.machine !== LOCAL).map((r) => [`${r.userId}\0${r.machine}`, { userId: r.userId, machine: r.machine }]));
+    const groups = [...(o.runtime ? [{ machine: LOCAL, key: LOCAL, userId: undefined }] : []), ...[...remote].map(([key, g]) => ({ ...g, key }))];
+    const next = new Set<string>();
+    for (const g of groups) {
+      const at = places.runtimeOf(g.userId ?? '', g.machine);
+      if (!at) continue;
+      try {
+        for (const name of await reconcilePass({
+          runtime: at.runtime, machine: g.machine, ...(g.userId !== undefined ? { userId: g.userId } : {}), repo: o.repo, instanceId: o.instanceId, now, boxesOf: o.boxesOf,
+          waiting: o.waiting(now), launching, newId: randomUUID, joinUrl: at.joinUrl, logger: o.logger,
+        }, problems, unclaimed)) next.add(name);
+        down.delete(g.key);
+      } catch (e) {
+        const reason = e instanceof Error ? e.message : String(e);
+        if (down.get(g.key) !== reason) o.logger.warn(`hopper: cannot list the sandbox boxes${g.userId === undefined ? '' : ` on ${g.machine}`}: ${reason}`);
+        down.set(g.key, reason);
+      }
     }
+    unclaimed = next;
   };
   const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
   const checkPass = o.runtime && o.checks
@@ -110,26 +126,24 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
         launch: { available: problem === undefined, ...(problem !== undefined ? { problem } : {}), ...(o.runtime ? { runtime: o.runtime.kind } : {}) },
         line: LINE,
         boxes: o.repo.list().filter((r) => r.userId === userId).map(({ userId: _u, ...box }) => box),
-        problems: [...problems.values()].filter((p) => p.userId === userId).map(({ userId: _u, ...p }) => p),
+        problems: [...problems.values()].filter((p) => p.userId === userId).map(({ userId: _u, machine: _m, ...p }) => p),
       };
     },
 
     async launch(userId, l) {
-      if (!o.runtime) throw new Error(NO_RUNTIME);
-      const problem = await o.runtime.problem();
-      if (problem) throw new Error(problem);
+      const at = await places.place(userId, l.machine);
       const record = await launchBox({
-        runtime: o.runtime, repo: o.repo, instanceId: o.instanceId, network: o.network, joinUrl: o.joinUrl(), now: o.clock.now(),
+        runtime: at.runtime, repo: o.repo, instanceId: o.instanceId, machine: at.machine, network: at.network, joinUrl: at.joinUrl, now: o.clock.now(),
         id: randomUUID(), mint: (container, template) => o.mint(userId, container, template), launching,
       }, userId, l);
-      o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${o.runtime.kind}); it joins as a machine`);
+      o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${at.runtime.kind} on ${at.machine}); it joins as a machine`);
       return { container: record.name };
     },
 
     reconcile,
     check,
     start() {
-      if (!o.runtime || timer) return;
+      if (timer) return;
       void reconcile();
       void check();
       timer = setInterval(() => { void reconcile(); void check(); }, RECONCILE_MS);

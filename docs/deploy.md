@@ -538,6 +538,27 @@ boxes, as it can add and remove any machine.
 Turn it off: remove `compose.override.yaml` and run `podman compose up -d`. The boxes it started keep
 running; remove their machines in the Machines view first if you want them gone.
 
+### Sandbox boxes on another machine
+
+A machine that joined with Add machine → *A computer* can hold sandbox boxes too (issue #708). The hopper starts
+them in that machine's own rootless Podman (or rootless Docker when Podman is not there), through the machine's
+client: no socket of that machine is given to the hopper, and nothing listens on the machine. On the machine, once:
+
+```sh
+systemctl --user enable --now podman.socket
+loginctl enable-linger "$USER"
+```
+
+The second line keeps your user's services, the socket included, running after you sign out. Under WSL, also keep
+the distro running: WSL stops an idle distro, and its containers with it.
+
+Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
+pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address
+the machine's client dialled in on. The machine's client checks each call again: it creates only a container with the
+sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
+away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
+again.
+
 ## Vault backends (optional)
 
 The vault keeps its secrets itself. It can also keep a secret in HashiCorp Vault, 1Password or Bitwarden (issue #585,

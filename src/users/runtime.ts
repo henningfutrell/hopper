@@ -41,7 +41,7 @@ import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
-import { createUserLink } from './link.ts';
+import { createUserLink, type UserLink } from './link.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
@@ -66,6 +66,8 @@ export interface UserMachineLink {
   join(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
   /** The client token of the client target holding this machine key; undefined when none does. */
   tokenFor(key: string): string | undefined;
+  /** The client target named `machine`, reached down its link, and where it dialled in (issue #708: a box on it). */
+  client: Pick<UserLink, 'named' | 'dialled'>;
 }
 
 /** What the instance gives each user runtime. */
@@ -380,11 +382,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
-    machineLink: {
-      hopperKey: hopperLink.publicKey,
-      join: (j) => host.joinMachine(j),
-      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined),
-    },
+    machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
+      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined) },
     async start() {
       if (started) return; started = true;
       await engine.start();

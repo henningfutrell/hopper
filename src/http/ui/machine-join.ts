@@ -26,7 +26,8 @@ export const launchParams = z.strictObject({
   profile: z.string().max(300).optional(),
   tools: z.array(z.string().max(32)).max(16).optional(),
 });
-export const machineSandboxBody = z.strictObject({ agent: z.enum(BOX_AGENTS).default('claude'), template: z.string().min(1).max(64).optional(), params: launchParams.default({}) });
+/** `machine`: the client target the box starts on (issue #708); absent, the computer the hopper runs on. */
+export const machineSandboxBody = z.strictObject({ agent: z.enum(BOX_AGENTS).default('claude'), template: z.string().min(1).max(64).optional(), params: launchParams.default({}), machine: z.string().min(1).max(63).optional() });
 
 export function registerMachineJoinRoutes(app: FastifyInstance, o: {
   admin: Guard; tenant: (req: FastifyRequest) => TenantParts; instance: Pick<InstanceStore, 'joinCodes'>; clock: Clock; sandboxes: Pick<Sandboxes, 'launch'>;
@@ -42,11 +43,11 @@ export function registerMachineJoinRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/machines/sandbox', o.admin, async (req) => {
     const id = userIdOf(req);
     if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
-    const { agent, template: name, params } = parseWith(machineSandboxBody, req.body ?? {});
+    const { agent, template: name, params, machine } = parseWith(machineSandboxBody, req.body ?? {});
     const template = name === undefined ? undefined : o.tenant(req).vault.view().templates.find((x) => x.name === name);
     if (name !== undefined && !template) throw new HttpError(404, `no template ${name}`);
     try {
-      return await o.sandboxes.launch(id, { agent, params, ...(template ? { template } : {}) });
+      return await o.sandboxes.launch(id, { agent, params, ...(template ? { template } : {}), ...(machine ? { machine } : {}) });
     } catch (e) {
       if (e instanceof LaunchRefused) throw new HttpError(e.status, e.message);
       throw new HttpError(502, `the sandbox box did not start: ${e instanceof Error ? e.message : String(e)}`);

@@ -5,13 +5,14 @@
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
 // release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /level` an escalation
 // level's run (issue #482); `POST /reap` and `POST /survey`
-// its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
+// its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
 import type { FixedListRelease } from '../machines/client-bridge.ts';
 import type { DiskReading } from '../domain/machines.ts';
+import type { RuntimeAnswer, RuntimeRelay, RuntimeRelayCall } from '../domain/sandboxes.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskOf } from '../machines/disk.ts';
 import { resourcesOf } from '../machines/resources.ts';
@@ -110,6 +111,23 @@ export async function clientWorkTree(t: ClientTransport, workTree: string): Prom
   const { workTreeProblem } = await clientCall<{ workTreeProblem?: unknown }>(t, '/work-tree', { workTree }, 15000);
   return typeof workTreeProblem === 'string' ? { workTreeProblem } : {};
 }
+
+/** Which container runtime the client target has (issue #708): `{kind}`, or `{problem}`, what to do to give it one. */
+export async function clientRuntimeWhich(t: ClientTransport): Promise<{ kind: 'podman' | 'docker' } | { problem: string }> {
+  const r = await clientCall<{ kind?: unknown; problem?: unknown }>(t, '/runtime', { which: true }, 15000);
+  if (r.kind === 'podman' || r.kind === 'docker') return { kind: r.kind };
+  return { problem: typeof r.problem === 'string' ? r.problem : 'its client names no container runtime' };
+}
+
+/** One container runtime call on the client target's own runtime (issue #708): its runtime's answer. */
+export async function clientRuntimeCall(t: ClientTransport, call: RuntimeRelayCall): Promise<RuntimeAnswer> {
+  const r = await clientCall<{ status?: unknown; text?: unknown }>(t, '/runtime', call, call.timeoutMs ?? 30000);
+  if (typeof r.status !== 'number' || typeof r.text !== 'string') throw new ClientError(`client ${t.machine}: its runtime answer has no status`);
+  return { status: r.status, text: r.text };
+}
+
+/** The relay a remote runtime (src/sandbox/remote.ts) drives the client target's own runtime through. */
+export const runtimeRelay = (t: ClientTransport): RuntimeRelay => ({ which: () => clientRuntimeWhich(t), call: (c) => clientRuntimeCall(t, c) });
 
 /** Loads a client release onto the client target — or, for one with a fixed file list, the bridge to it (issue #545); it restarts to run it. */
 export async function loadClientRelease(t: ClientTransport, release: ClientRelease | FixedListRelease): Promise<void> {

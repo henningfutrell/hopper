@@ -1,7 +1,9 @@
 // Launching a sandbox box (issue #708): a template and its parameters → a record, a volume, a container, started.
 // The record is written before the container is made, so a container of the hopper's never exists without one but
 // while a launch makes it; a launch that fails leaves nothing it made — the container, a volume it made new, the
-// record. A home volume that was there already (a box of that name before it, kept) stays.
+// record. A home volume that was there already (a box of that name before it, kept) stays. Each box carries its
+// record's id as a label, so a create whose answer was lost (a machine's link that dropped mid-call) finds the box it
+// made instead of leaving it behind: create is idempotent by the sandbox id.
 import { checkWait } from '../domain/read-only-check.ts';
 import type { BoxTool, ContainerRuntime, LaunchParams, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
@@ -14,6 +16,8 @@ import { toolsImage } from './tools.ts';
 export const BOX_LABEL = 'io.hopper.box';
 /** The label naming the user whose box it is. */
 export const USER_LABEL = 'io.hopper.user';
+/** The label naming the sandbox record of the box: its id. */
+export const SANDBOX_LABEL = 'io.hopper.sandbox';
 /** The published image a box of an agent runs: its `box-<agent>` tag. */
 export const BOX_IMAGE = 'ghcr.io/henningfutrell/hopper';
 
@@ -26,12 +30,15 @@ export class LaunchRefused extends Error {
   }
 }
 
-export interface LaunchRequest { agent: string; template?: TemplateView; params: LaunchParams }
+/** `machine`: the client target it starts on; absent, the computer the hopper runs on. */
+export interface LaunchRequest { agent: string; template?: TemplateView; params: LaunchParams; machine?: string }
 
 export interface LaunchContext {
   runtime: ContainerRuntime;
   repo: SandboxRepository;
   instanceId: string;
+  /** Where it runs: `local`, or a client target's name. */
+  machine: string;
   network: string;
   joinUrl: string;
   now: Date;
@@ -72,7 +79,7 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
   for (let n = 2; taken.has(name); n++) name = `${stem}-${n}`;
   const record: SandboxRecord = {
     id: c.id, userId, name, agent: l.agent, ...(t ? { template: { name: t.name, version: t.savedAt } } : {}), image, params,
-    runtime: c.runtime.kind, machine: 'local', containerId: '', volume: `${name}-home`, keepHome: t?.limits?.keepHome ?? true,
+    runtime: c.runtime.kind, machine: c.machine, containerId: '', volume: `${name}-home`, keepHome: t?.limits?.keepHome ?? true,
     state: 'starting', createdAt: c.now.toISOString(),
     ...(params.ttlMinutes !== undefined ? { expiresAt: new Date(c.now.getTime() + params.ttlMinutes * 60_000).toISOString() } : {}),
     address: c.joinUrl,
@@ -81,13 +88,18 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
   c.launching.add(record.id);
   let madeVolume = false;
   try {
-    const labels = { [BOX_LABEL]: c.instanceId, [USER_LABEL]: userId };
+    const labels = { [BOX_LABEL]: c.instanceId, [USER_LABEL]: userId, [SANDBOX_LABEL]: record.id };
     const code = c.mint(name, t?.name);
     madeVolume = await c.runtime.createVolume(record.volume, labels);
-    record.containerId = await c.runtime.create({
+    const spec = {
       name, image, network: c.network, volume: record.volume, labels, user,
       env: { HOPPER_CLIENT_NAME: name, HOPPER_JOIN: `${c.joinUrl}#${code}` },
       limits: { cpus: params.cpus, memoryMb: params.memoryMb },
+    };
+    record.containerId = await c.runtime.create(spec).catch(async (e: unknown) => {
+      const made = (await c.runtime.list({ [SANDBOX_LABEL]: record.id }).catch(() => []))[0];
+      if (!made) throw e;
+      return made.id;
     });
     c.repo.update(record);
     await c.runtime.start(record.containerId);

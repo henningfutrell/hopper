@@ -3,7 +3,7 @@
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketBytes, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
@@ -15,8 +15,8 @@ interface Inspected { Id?: string; Name?: string; ImageName?: string; Config?: {
 
 const enc = encodeURIComponent;
 
-export function createPodmanRuntime(socket: string): ContainerRuntime {
-  const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => socketCall(socket, method, API + path, body, timeoutMs);
+export function createPodmanRuntime(socket: string, via: SocketCall = socketCall): ContainerRuntime {
+  const call = (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Answer> => via(socket, method, API + path, body, timeoutMs);
   const refusal = (what: string, a: Answer): Error => refused('podman', what, a);
 
   return {

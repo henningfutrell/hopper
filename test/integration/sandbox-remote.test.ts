@@ -5,12 +5,14 @@
 //
 // Feature: sandbox boxes on an attached machine
 //   Scenario: a box launched on a client target runs in that machine's Podman, dialling the hopper where the machine does
-//   Scenario: a machine that is not a client target, or not dialled in, is refused, and nothing starts
+//   Scenario: a machine that is not a client target, or not dialled in, is refused, and nothing starts; a machine that
+//     hangs up is not dialled in at once (its link closes on the hopper's end too)
 //   Scenario: the box on the machine is ready once it joins, and goes when its time limit passes
 //   Scenario: while the machine is away its boxes are kept; once it dials in again they are checked
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startLinkedClient } from '../../src/client/main.ts';
 import { joinHopper } from '../../src/client/join.ts';
@@ -24,6 +26,11 @@ import { startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtim
 import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
 
+// The machine's herdr answers, so it shows online (test/integration/machine-join.test.ts does the same).
+const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
+chmodSync(HERDR, 0o755);
+const saved = { ...process.env };
+
 let t: TestApp | undefined;
 let api: FakeRuntimeApi | undefined;
 const clients: Client[] = [];
@@ -36,6 +43,7 @@ afterEach(async () => {
   await api?.close();
   api = undefined;
   for (const c of cleanups.splice(0)) c();
+  process.env = { ...saved };
 });
 
 const PLUGINS = { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['test'] } };
@@ -52,6 +60,8 @@ interface Setup { a: TestApp; session: string; local: FakeContainerRuntime; libp
 async function boot(): Promise<Setup> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
+  process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
+  process.env.FAKE_HERDR_RUNNING = '1';
   const local = createFakeContainerRuntime();
   t = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: PLUGINS, seams: { containerRuntime: local } });
   const session = await t.login();
@@ -62,7 +72,7 @@ async function boot(): Promise<Setup> {
   await joinHopper({ line: `${t.url}#${code}`, name: 'studio', dir: studio });
   const socket = api.socket;
   const startStudio = (): void => {
-    clients.push(startLinkedClient({ dir: studio, herdrBin: '/bin/false', session: 'hopper', installDir: testInstallDir(), backoffMs: [50], runtimeSockets: () => ({ podman: socket }) }));
+    clients.push(startLinkedClient({ dir: studio, herdrBin: HERDR, session: 'hopper', installDir: testInstallDir(), backoffMs: [50], runtimeSockets: () => ({ podman: socket }) }));
   };
   startStudio();
   await online(t, 'studio');
@@ -70,6 +80,9 @@ async function boot(): Promise<Setup> {
 }
 
 const online = (a: TestApp, name: string) => waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === name && m.online), { timeoutMs: 10000, what: `${name} online` });
+/** Whether the hopper holds studio's link now. */
+const dialled = (a: TestApp): boolean => { const l = a.user().machineLink.client.named('studio')?.link(); return !!l && !l.destroyed; };
+const away = (a: TestApp) => waitFor(() => !dialled(a), { timeoutMs: 5000, what: 'studio\'s link closed' });
 const view = async (a: TestApp, session: string): Promise<{ boxes: Box[] }> => (await a.api('GET', '/api/sandboxes', undefined, { 'x-hopper-session': session })).body;
 const launch = (a: TestApp, session: string, body: unknown) => a.ui<{ container: string; error: string }>('/ui/api/machines/sandbox', body, { token: session });
 const onStudio = (libpod: FakeLibpod, name: string) => [...libpod.containers.values()].find((c) => c.name === name);
@@ -100,10 +113,10 @@ describe('sandbox boxes on an attached machine', () => {
     expect(nope.body.error).toBe('no client target nope: a sandbox box starts on the computer the hopper runs on, or on a machine that joined with Add machine');
 
     await clients.splice(0)[0]!.stop();
-    await waitFor(async () => !((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'studio')!.online, { timeoutMs: 10000, what: 'studio offline' });
-    const away = await launch(a, session, { machine: 'studio' });
-    expect(away.status).toBe(409);
-    expect(away.body.error).toMatch(/studio.*not dialled in/);
+    await away(a);
+    const off = await launch(a, session, { machine: 'studio' });
+    expect(off.status).toBe(409);
+    expect(off.body.error).toMatch(/studio.*not dialled in/);
     expect(libpod.containers.size).toBe(0);
     expect((await view(a, session)).boxes).toEqual([]);
   });
@@ -127,13 +140,14 @@ describe('sandbox boxes on an attached machine', () => {
     const { a, session, libpod, startStudio } = await boot();
     await launch(a, session, { machine: 'studio', params: { ttlMinutes: 30 } });
     await clients.splice(0)[0]!.stop();
+    await away(a);
     const later = new Date(Date.now() + 31 * 60_000);
     await a.app.sandboxes.reconcile(later);
     expect((await view(a, session)).boxes.map((b) => b.name)).toEqual(['hopper-sandbox-claude']);
     expect(onStudio(libpod, 'hopper-sandbox-claude')).toBeDefined();
 
     startStudio();
-    await online(a, 'studio');
+    await waitFor(() => dialled(a), { timeoutMs: 5000, what: 'studio dialled in again' });
     await a.app.sandboxes.reconcile(later);
     expect(onStudio(libpod, 'hopper-sandbox-claude')).toBeUndefined();
     expect((await view(a, session)).boxes).toEqual([]);

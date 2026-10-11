@@ -73,6 +73,7 @@ describe('every ClientError the transport can throw', () => {
     'client ${t.machine}: the answer on its link did not prove itself: its client signature is not this machine\'s link key\'s': 'its text',
     'client ${t.machine}: ${status} ${text.slice(0, 200)}': 'its text',
     'client ${t.machine}: answer is not JSON': 'its text',
+    'client ${t.machine}: its runtime answer has no status': 'its text',
   };
 
   it('each one is placed', () => {

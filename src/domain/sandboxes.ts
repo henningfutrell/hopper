@@ -2,7 +2,7 @@
 // runtime port, what a box is created as, the launch parameters a template allows, and the sandbox record.
 
 /** The container runtimes the hopper can drive (issue #708). `remote` is an attached machine's, through its client. */
-export const RUNTIME_KINDS = ['podman', 'docker'] as const;
+export const RUNTIME_KINDS = ['podman', 'docker', 'remote'] as const;
 export type RuntimeKind = (typeof RUNTIME_KINDS)[number];
 
 /** A container as the container runtime lists or inspects it. */
@@ -87,6 +87,17 @@ export interface ContainerRuntime {
   remove(id: string): Promise<void>;
   /** The containers that carry every one of these labels; none given: every container. */
   list(labels?: Record<string, string>): Promise<ContainerInfo[]>;
+}
+
+/** One call of a runtime's API, as the remote runtime carries it to a machine's client (issue #708). */
+export interface RuntimeRelayCall { method: string; path: string; body?: unknown; timeoutMs?: number }
+/** The runtime's own answer: its status and its body. */
+export interface RuntimeAnswer { status: number; text: string }
+
+/** How the remote runtime reaches a client target's own runtime: its client says which it has, and runs each call. */
+export interface RuntimeRelay {
+  which(): Promise<{ kind: 'podman' | 'docker' } | { problem: string }>;
+  call(c: RuntimeRelayCall): Promise<RuntimeAnswer>;
 }
 
 /** A range a template allows for one parameter: what a launch gets when it names none, and the most it may name. */

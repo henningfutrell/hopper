@@ -81,6 +81,13 @@ export function templateText(m: MachineSnapshot): string | null {
 }
 
 /**
+ * The machines a sandbox box can start on besides the computer the hopper runs on (issue #708): client targets online
+ * now, through their own Podman. Not a sandbox box itself: a box has no runtime to start another in.
+ */
+export const boxHosts = (machines: Pick<MachineSnapshot, 'id' | 'online' | 'client'>[]): string[] =>
+  machines.filter((m) => m.client && m.online && !m.id.startsWith('hopper-sandbox-')).map((m) => m.id);
+
+/**
  * A machine off the hopper's network on Machines (issue #711): why its jobs cannot reach the hopper, and the command that
  * joins it to the hopper's network when one fits; null for a machine whose jobs reach it.
  */

@@ -8,6 +8,9 @@ export interface Answer { status: number; text: string }
 /** How long one call may take; a pull may take longer, so it passes its own. */
 export const CALL_MS = 30_000;
 
+/** How an adapter sends one call: over the socket here, or carried to a machine's client (remote.ts). */
+export type SocketCall = (socket: string, method: string, path: string, body?: unknown, timeoutMs?: number) => Promise<Answer>;
+
 export async function socketCall(socket: string, method: string, path: string, body?: unknown, timeoutMs = CALL_MS): Promise<Answer> {
   const a = await socketBytes(socket, method, path, body, timeoutMs);
   return { status: a.status, text: a.bytes.toString('utf8') };
