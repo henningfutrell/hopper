@@ -20,7 +20,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh } from '../machines/index.ts';
+import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
@@ -208,7 +208,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
   const { key: hopperLink, transport: clientTransport, named: clientNamed } = link;
-  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
+  // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
+  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   let applyJobSources = (_built: BuiltJobSource[]): void => {};
@@ -228,8 +229,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
           // after the other, over the one shared ssh connection.
           : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}) }).then(async (found) => ({
             ...found,
-            // Its herdr session running, and its herdr client and server versions (issue #741).
-            ...(m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : { online: true }),
+            // Its herdr session running, its herdr client and server versions, and first the herdr the hopper owns there (issue #741): installed, linked, the session server moved to it when nothing is lost.
+            ...(m.herdr ? await probeOwnedHerdr(keepHerdr, { target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }, () => jobsOnMachine(m.name).length > 0) : { online: true }),
           })))),
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or

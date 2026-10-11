@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
-| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
+| `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
@@ -4034,8 +4034,9 @@ the person should not set a path; use `PATH`, just call the tool.
 - **No `herdrBin`.** The `ssh` machine-source plugin has no such option (its schema refuses it); the Edit
   form and the machine card show no herdr path. `MachineSnapshot.herdr` is `{ session }`, with the herdr client and server versions its probe read (issue #741); a herdr-claude
   pane state records `ssh` and `session` only (an older one's `herdrBin` is read past, not used).
-- **How a call finds herdr there**: `PATH="$HOME/.local/bin:$PATH" exec 'herdr' '--session' …`
-  (`REMOTE_PATH` in `src/executors/ssh.ts`, used by the herdr CLI client over ssh). `~/.local/bin` first, where
+- **How a call finds herdr there**: the hopper's **owned herdr** `~/.local/share/hopper/herdr/current/herdr` when it is
+  linked (issue #741, `REMOTE_HERDR` in `src/executors/ssh.ts`, used by the herdr CLI client over ssh), else
+  `PATH="$HOME/.local/bin:$PATH"` and `herdr` by name (`REMOTE_PATH`). `~/.local/bin` first, where
   herdr installs and updates itself and where `systemd/hopper-herdr.service` runs the session server from, then the
   machine's own PATH (issue #741: the PATH came first, and an older herdr an image baked into `/usr/local/bin` won). This replaces the absolute path that was resolved once at attach because each call's shell could
   lose its PATH (row `herdr` above); the fallback is named in the command, so that race cannot hide it.
@@ -12100,12 +12101,50 @@ problem.
 its first failure opens the problem `Herdr outdated on <m>`, not a recurrence later. Its check is the machine's herdr
 problem: once a probe finds it gone, the problem resolves by itself (`causePresent`, `src/failures/causes.ts`).
 
-**Not built (carried in the issue).** A hopper-owned, versioned herdr path per target that the update and connect flow
-installs and updates, and the same for seat images; the client release mechanism still updates only the hopper's own
-client files.
+**The hopper owns the herdr there** (part 2 of the issue; `src/machines/herdr-owned.ts`, the decision and the commands,
+pure; `src/machines/herdr-owned-ssh.ts`, the keeper over ssh). Each probe of an ssh target that runs herdr first runs the
+keeper (`probeOwnedHerdr`), then `probeHerdrOverSsh` as above:
+
+- **The hopper's herdr** is the one on the daemon's PATH (`/usr/local/bin/herdr` in the image), its version from
+  `herdr --version`, read again every 5 minutes: an update of the hopper brings a new one. The hopper has none, or it
+  says no version: nothing is installed, and Machines says why.
+- **Installed per version.** When `~/.local/share/hopper/herdr/<version>/herdr` is missing there, the keeper copies the
+  hopper's herdr there over the same ssh connection (stdin to a `.part` file, then a rename; the copy must say its
+  version). Only to a machine whose `uname -sm` is the hopper's: another platform keeps the lookup by name, and the probe
+  says why. The installer at herdr.dev installs only the latest release, so the hopper's own binary is the only herdr
+  of a known version.
+- **`current` while the server takes it.** The keeper asks the session server through the owned herdr. Compatible, or no
+  server running: it links `~/.local/share/hopper/herdr/current` to that version. Every herdr call there starts with
+  `REMOTE_HERDR` (`src/executors/ssh.ts`): `current/herdr` when it is executable, else herdr by name from
+  `~/.local/bin` and the PATH. Not compatible: the keeper removes the link, so the calls go on through the herdr the
+  server takes.
+- **The switch** (`decideHerdrSwitch`): restarting the session server from the owned herdr closes every pane there, and
+  stopping a container's main process stops the container (and its image starts its own herdr again: a loop). So the
+  keeper switches only when all hold: no job of the hopper runs there; no pane is open in the session (counted with
+  `pane list`, and counted again just before the stop); the server is not the container's main process — in a
+  container (`/run/.containerenv`, `/.dockerenv`) a server with PID 1, or whose parent is PID 1, is; and no switch to
+  this version was tried there before (`<version>/switch-tried`, written before the stop, and kept in memory too).
+  The switch stops the server (`server stop`), links `current`, and starts it again: by `systemctl --user restart
+  hopper-herdr` when the unit there starts from `current` (the session `hopper` only), else as a process of its own
+  (`setsid`, else `nohup`). Then it waits up to 10 s for the server. The log says it once.
+- **What waits, what holds.** A job or a pane: the switch waits for a later probe, and Machines says so. A server that
+  is a container's main process: a **herdr problem** — the machine takes no new job — saying the herdr its image puts in
+  place must be updated to the hopper's version. A switch already tried: never again for that version; the note says to
+  restart the server by hand. When the probe finds a herdr problem, the keeper's note follows it.
+- **Machines** shows the hopper's herdr per ssh target (`MachineSnapshot.herdr.owned`): its version, `in use`, or `not in
+  use` and why.
+- **`scripts/attach-machine.sh`** copies this machine's herdr to the same versioned path there and links `current`
+  (same platform only, else a warning); `systemd/hopper-herdr.service` starts the session server from `current/herdr`,
+  else `~/.local/bin/herdr`.
+
+**Not built (carried in the issue).** Seat images: they must not put herdr in `/usr/local/bin`. That change is in the
+images, not in this repository. Until it is made, a seat whose session server is the container's main process and
+runs another protocol than the hopper's herdr shows the herdr problem above.
 
 Tests: `test/machines/herdr-version.test.ts` (the parse), `test/adapters/ssh-machine-herdr.test.ts` (the probe over the
-fake ssh, the snapshot and the log), `test/herdr/cli-client-ssh.test.ts` (`~/.local/bin` wins over the PATH),
+fake ssh, the snapshot and the log), `test/machines/herdr-owned.test.ts` (the switch decision and the facts),
+`test/adapters/ssh-machine-owned-herdr.test.ts` (install, link, switch, once per version, over the fake ssh),
+`test/scripts/attach-machine.test.ts` (the install there), `test/herdr/cli-client-ssh.test.ts` (`~/.local/bin` wins over the PATH),
 `test/decider/herdr-problem.test.ts` (the hold), `test/failures/signature.test.ts`, `test/failures/assess.test.ts` and
 `test/failures/cause-check.test.ts` (the cause, its problem, its check), `test/ui/machine-herdr.test.ts` (the versions on
 Machines).
