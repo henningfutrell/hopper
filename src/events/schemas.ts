@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
@@ -14,7 +14,8 @@ import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
-const decisionPoint = z.enum(DECISION_POINTS);
+// A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
+const decisionPoint = z.enum(EVENT_DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
@@ -286,7 +287,7 @@ export const EVENT_SCHEMAS = {
   // person's override of one, an admin's change to a decision point's settings.
   'minor_decision.picked': strict({
     pickId: z.string(), point: decisionPoint, by: z.literal('jev'), options: z.array(strict({ id: z.string(), label: z.string() })),
-    pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(),
+    pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(), categories: z.array(z.enum(RISK_CATEGORIES)).optional(),
     mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1), applied: z.boolean(),
     notApplied: z.enum(NOT_APPLIED).optional(), consequential: z.array(z.string()).optional(), questionId: z.string().optional(),
     machineId: z.string().optional(),

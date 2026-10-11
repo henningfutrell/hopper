@@ -8,12 +8,13 @@
     "point": {
       "type": "string",
       "enum": [
-        "question-answer",
+        "question-risk",
         "failure-assessment",
         "lane-count",
         "job-machine",
         "intake-order",
-        "merge-order"
+        "merge-order",
+        "question-answer"
       ]
     },
     "by": {
@@ -49,6 +50,22 @@
     },
     "error": {
       "type": "string"
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "credentials",
+          "destructive",
+          "publish",
+          "pay",
+          "permissions",
+          "ci",
+          "data",
+          "other"
+        ]
+      }
     },
     "mode": {
       "type": "string",

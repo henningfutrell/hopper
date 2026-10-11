@@ -1,6 +1,7 @@
 // The decider calls view (issue #550): each decision point's settings and its record over the window, read from
 // its events — asked, picked, applied, compared with what was decided after, agreed, overridden — and the newest
-// picks with what was decided. A person's override replaces what was compared. Pure.
+// picks with what was decided. A person's override replaces what was compared. A pick at a point no longer asked at (an
+// event from before) is left out. Pure.
 import {
   DECISION_POINTS, DECISION_POINT_TEXT, type DecisionPoint, type DomainEvent, type MinorDecisionPickView, type MinorDecisionSettings,
   type MinorDecisionsView, MINOR_DECISION_WINDOW_DAYS, type TypesafeKeyView,
@@ -16,12 +17,14 @@ export function picksOf(events: readonly DomainEvent[]): MinorDecisionPickView[]
     const d = e.data as Record<string, unknown>;
     const id = d.pickId as string;
     if (e.type === 'minor_decision.picked') {
+      if (!(DECISION_POINTS as readonly string[]).includes(d.point as string)) continue;
       picks.set(id, {
         pickId: id, at: e.at, point: d.point as DecisionPoint, options: d.options as MinorDecisionPickView['options'],
         mode: d.mode as MinorDecisionPickView['mode'], threshold: d.threshold as number, applied: d.applied === true,
         ...(e.jobId ? { jobId: e.jobId } : {}), ...(typeof d.questionId === 'string' ? { questionId: d.questionId } : {}),
         ...(typeof d.machineId === 'string' ? { machineId: d.machineId } : {}),
         ...(typeof d.pick === 'string' ? { pick: d.pick } : {}), ...(typeof d.confidence === 'number' ? { confidence: d.confidence } : {}),
+        ...(Array.isArray(d.categories) ? { categories: d.categories as MinorDecisionPickView['categories'] } : {}),
         ...(typeof d.error === 'string' ? { error: d.error } : {}),
         ...(d.notApplied ? { notApplied: d.notApplied as MinorDecisionPickView['notApplied'] } : {}),
         ...(Array.isArray(d.consequential) ? { consequential: d.consequential as string[] } : {}),

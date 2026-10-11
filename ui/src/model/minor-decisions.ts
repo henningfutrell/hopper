@@ -32,7 +32,8 @@ function fate(p: Pick): string {
 
 export function pickSummary(p: Pick): string {
   if (p.pick === undefined) return `no pick${p.error ? `: ${p.error}` : ''}`;
-  return `${optionText(p.options, p.pick)} at ${pct(p.confidence ?? 0)} — ${fate(p)}`;
+  const kinds = p.categories && p.categories.length > 0 ? ` (${p.categories.join(', ')})` : '';
+  return `${optionText(p.options, p.pick)}${kinds} at ${pct(p.confidence ?? 0)} — ${fate(p)}`;
 }
 
 /** What was decided after the pick; empty while it is not known. */

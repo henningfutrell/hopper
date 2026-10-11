@@ -1,6 +1,6 @@
 # Questions and deciders
 
-When a job asks a question, the hopper tries to answer it without you: first from fixed facts, then with Jev for a choice between listed options, then up the escalation levels. Only what they must not or cannot decide comes to you, in the Questions view.
+When a job asks a question, the hopper tries to answer it without you: first from fixed facts, then up the escalation levels. Each answer a level gives is checked for risk. Only what they must not or cannot decide comes to you, in the Questions view.
 
 ## What it is
 
@@ -22,10 +22,9 @@ Each question goes through the **question gates**, in this order:
 | Step | Who | What it does |
 |---|---|---|
 | 1 | Fixed answers | Answers with no model: **Yes** to an allowed dialog (edit, create, write or read a file inside the job's work tree), or the answer a person gave before to the same question on the same issue. |
-| 2 | Jev first | Only for a question that lists its options. Jev picks one option. See "Jev and the Decider" below. |
-| 3 | Escalation levels, lowest first | Each level answers or escalates to the next level up. A level that fails, times out or replies in the wrong form escalates. It never answers by mistake. |
-| 4 | Risk rules | Run on every answer. A hit sends the question to the owner, whatever level answered. |
-| 5 | Owner | You. Above the top level. |
+| 2 | Escalation levels, lowest first | Each level answers or escalates to the next level up. A level that fails, times out or replies in the wrong form escalates. It never answers by mistake. |
+| 3 | Risk check and guards | Run on every answer. The Decider's risk call checks the answer when it is active, else the risk rules do. A risk, or a guard, sends the question to the owner, whatever level answered. |
+| 4 | Owner | You. Above the top level. |
 
 A new hopper has one escalation level, `level-1`. It runs the `claude` CLI on this machine with the model `fable`. You can add, remove, reorder and tune levels in **Settings → Question gates**. A level runs either:
 
@@ -41,15 +40,26 @@ A level's answer goes into the job with no person only when all of these are tru
 - Auto-answer is on (the default).
 - The level does not escalate.
 - The level's confidence meets the threshold (`high` by default).
-- No risk rule matches the question or the answer.
-- No consequential guard matches (for example, a change of permissions, or work on a machine the blast-radius gate keeps).
-- The job is not high priority.
+- The risk check finds no risk in the question and the answer (see "The risk check" below).
+- No guard matches: deleting, deploying or publishing, spending money, sending a message, a change of permissions, or work on a machine the blast-radius gate keeps.
+- The job is not high priority, or **Hold high-priority questions for me** is off (the default).
 
 When a lower level is below the threshold, the question climbs to the next level. When the top level is below it, the question comes to you.
 
+**Settings → Question gates** shows the confidence each level gave with the answers it did not escalate, over the last 30 days. When most of a level's answers fall below the threshold, the page flags that level: its answers seldom go into a job by themselves.
+
+### The risk check
+
+Each answer a level gives without escalating gets one risk check:
+
+- **The Decider's risk call**, when its decision point "The risk in a question and its answer" is active in **Settings → Decider**. Jev reads the question, the answer and the job's goal. It says how risky they are (none, low or real), of which kinds (credentials, destructive, publish, pay, permissions, CI, data, other), and how sure it is. A real risk, a check below the point's confidence, or a check that fails sends the question to you.
+- **The risk rules**, when the risk call is off, in shadow (the default), or the TypeSafe API key is not set. The card then says "Risk checked by keyword rules". In shadow, the Decider's check is recorded next to the rules, and **Settings → Decider** shows where the two disagree.
+
+The guards always hold, whatever the Decider says.
+
 ### Risk rules
 
-Risk rules are code, not settings. Nobody can weaken them. They match:
+Risk rules are code, not settings. Nobody can weaken them. A plain negation ("uses no secrets", "secret-free") is no match. They match:
 
 | Rule | Catches |
 |---|---|
@@ -66,7 +76,7 @@ Jev makes small, bounded choices first, before a model or a person. These are **
 
 | Decision point | Jev picks |
 |---|---|
-| Answering a question with listed options | one of the question's options |
+| The risk in a question and its answer | how risky a level's answer is, and of which kinds (see "The risk check") |
 | A failed job no rule explains | run it again, or hand it to a person |
 | How many lanes a machine runs | the lanes, from those the lane rules allow (an admin still applies them) |
 | The machine a waiting job goes to | the machine, when more than one can take the job |
@@ -77,7 +87,7 @@ Each point has a mode in **Settings → Decider**:
 - **Shadow** (the default): Jev's pick is only recorded, next to what was decided.
 - **Active**: a pick at or above the point's confidence (85% by default) is applied.
 
-Jev never decides a consequential choice: one that deletes, deploys or publishes, force-pushes, spends money, touches credentials, sends a message, changes permissions, or runs on a gated machine. Its pick is recorded as consequential and not applied.
+Jev never decides a consequential choice: one that deletes, deploys or publishes, force-pushes, spends money, touches credentials, sends a message, changes permissions, or runs on a gated machine. Its pick is recorded as consequential and not applied. Jev never answers a question: it only checks the risk of a level's answer.
 
 Jev needs your TypeSafe API key. Set it in **Settings → Decider**, or with `hopper typesafe-key set` (it reads the key from standard input). Without a key, Jev is off and every decision is made as before.
 
@@ -108,7 +118,7 @@ hopper question dismiss <question-id>
 
 | Filter | Sentence on the card |
 |---|---|
-| Guard | A risk rule or the consequential guard held the answer back. |
+| Guard | The risk check (the Decider or a risk rule) or a guard held the answer back. |
 | Not confident | The top level was not confident enough. |
 | No answer | No level gave an answer. |
 | Sent up | The top level sent it up to a person. |

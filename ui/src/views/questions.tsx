@@ -32,7 +32,7 @@ import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
 import { unseenByOwner } from '@/model/questions';
-import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, stageName, trailReason } from '@/model/escalation';
+import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, riskCheckNote, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
@@ -67,14 +67,19 @@ function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: stri
   );
 }
 
-/** Why the question came to a person and what the level recommends: the top of its card, nothing to expand (issue #679). */
+/**
+ * Why the question came to a person and what the level recommends: the top of its card, nothing to expand (issue #679).
+ * When the keyword risk rules checked the answer, a note says so, with a link to the Decider's settings.
+ */
 function ReasonBanner({ q }: { q: QuestionView }) {
   const said = recommendationLine(q.escalation);
+  const note = riskCheckNote(q.escalation);
   const guard = q.escalation?.reason === 'guard';
   return (
     <div data-slot="escalation-reason" className={`space-y-0.5 rounded-md border p-2.5 text-sm ${guard ? 'border-bad/40 bg-bad/5' : 'border-question/30 bg-question/5'}`}>
       <div className="font-medium">{reasonSentence(q.escalation)}</div>
       {said && <div className="text-muted-foreground">{said}</div>}
+      {note && <div data-slot="risk-check-note" className="text-xs text-muted-foreground">{note} <a className="underline" href="#settings/decider">Decider settings</a></div>}
     </div>
   );
 }

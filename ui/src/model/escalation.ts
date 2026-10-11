@@ -1,6 +1,7 @@
-// Why a question came to a person (issue #679): one plain sentence for the top of its card — every hold on the answer —,
-// what the levels recommend, and the reasons the Questions list filters by.
-import type { Escalation, EscalationHold, EscalationReason, Question } from './wire.ts';
+// Why a question came to a person (issue #679): one plain sentence for the top of its card — every hold on the answer,
+// the Decider's risk call among them —, what the levels recommend, how the answer was checked for risk, and the reasons
+// the Questions list filters by.
+import type { DeciderRiskHold, Escalation, EscalationHold, EscalationReason, Question, RiskCategory } from './wire.ts';
 
 /** Each reason as the filter names it. */
 export const REASON_LABELS: Record<EscalationReason, string> = {
@@ -11,12 +12,27 @@ export const REASON_LABELS: Record<EscalationReason, string> = {
 /** A level, Jev or the fixed answers, as a person reads its name: `fable` → `Fable`. */
 export const stageName = (tier: string): string => tier.charAt(0).toUpperCase() + tier.slice(1);
 
+/** A kind of risk as a person reads it. */
+const KIND: Record<RiskCategory, string> = {
+  credentials: 'credentials', destructive: 'destructive', publish: 'publish', pay: 'pay', permissions: 'permissions', ci: 'CI', data: 'data', other: 'other',
+};
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+/** The Decider's risk hold (issue #679): the kinds of a real risk, a check not sure enough, or a check that failed. */
+function deciderPhrase(d: DeciderRiskHold): string {
+  if (d.error !== undefined) return `the Decider's risk check failed (${d.error}), so it is held to be safe`;
+  if (d.risk === 'real') return `the Decider found a real risk${d.categories && d.categories.length > 0 ? `: ${d.categories.map((c) => KIND[c]).join(', ')}` : ''}`;
+  return `the Decider was not sure enough of the risk (${pct(d.confidence ?? 0)}, needs ${pct(d.threshold)})`;
+}
+
 /** One hold as part of the sentence: `risk rule credentials holds it`, `Fable was not confident enough (medium confidence, needs high)`. */
 function holdPhrase(h: EscalationHold, by: string | undefined): string {
   const names = (h.guards ?? []).map((g) => g.name);
   const plural = names.length === 1 ? '' : 's';
   switch (h.reason) {
-    case 'guard': return `${h.by === 'risk' ? `risk rule${plural}` : `guard${plural}`} ${names.join(', ')} ${names.length === 1 ? 'holds' : 'hold'} it`;
+    case 'guard':
+      if (h.decider) return deciderPhrase(h.decider);
+      return `${h.by === 'risk' ? `risk rule${plural}` : `guard${plural}`} ${names.join(', ')} ${names.length === 1 ? 'holds' : 'hold'} it`;
     case 'high_priority': return 'its job is high priority';
     case 'auto_answer_off': return 'auto-answer is off';
     case 'low_confidence': return `${by ?? 'the level'} was not confident enough (${h.confidence ?? 'no'} confidence, needs ${h.threshold ?? 'more'})`;
@@ -56,6 +72,19 @@ export function reasonSentence(e: Escalation | undefined): string {
     case 'fork': return 'Sent to you while a fork works on it: answer now, or wait for its result.';
     case undefined: return 'Sent to you. The reason was not recorded for this question.';
   }
+}
+
+/**
+ * When the keyword risk rules checked the answer (issue #679), the card says so: with no Decider, how to get a better
+ * check; with the Decider in shadow, what it said. Undefined: the Decider checked it, or nothing did.
+ */
+export function riskCheckNote(e: Escalation | undefined): string | undefined {
+  const c = e?.riskCheck;
+  if (c?.by !== 'rules') return undefined;
+  if (!c.shadow) return 'Risk checked by keyword rules; set up the Decider for better checks.';
+  const d = c.decision;
+  const said = d ? `${d.risk} risk${d.categories.length > 0 ? ` (${d.categories.map((k) => KIND[k]).join(', ')})` : ''}` : `no answer (${c.error ?? 'no pick'})`;
+  return `Risk checked by keyword rules. The Decider, in shadow, says: ${said}.`;
 }
 
 /** The longest recommendation the banner shows; the full answer is on the trail. */

@@ -44,7 +44,11 @@ describe('auto-answer', () => {
     expect(q!.attempts).toEqual([expect.objectContaining({ tier: 'frontier', confidence: 'high', outcome: 'accepted' })]);
     expect((await a.events('types=question.escalated_to_human')).filter((e) => e.jobId === job.id)).toHaveLength(0);
     const gates = (await a.api('GET', '/api/question-gates')).body as QuestionGatesView;
-    expect(gates.autoAnswer).toEqual({ enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 1, corrected: 0, agreement: 1 } });
+    expect(gates.autoAnswer).toEqual({
+      enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 1, corrected: 0, agreement: 1 },
+      // The confidence spread (issue #679): the level's answer it did not escalate, at high.
+      calibration: [{ level: 'frontier', high: 1, medium: 0, low: 0, none: 0, total: 1, below: 0, flagged: false }],
+    });
   });
 
   it('a risky question reaches a person, whatever the level says', async () => {

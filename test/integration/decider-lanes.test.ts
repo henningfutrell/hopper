@@ -33,6 +33,7 @@ function fakeJev(answer: (ask: MinorDecisionAsk) => JevPick | undefined): JevCho
     asks,
     available: () => ({ available: true }),
     pick: async (ask) => { asks.push(ask); return answer(ask) ?? { ok: false, why: 'not this point' }; },
+    choose: async () => ({ ok: false, why: 'no risk call here' }),
     check: async () => ({ ok: true }),
   };
 }

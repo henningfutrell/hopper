@@ -311,7 +311,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
-    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { first: minorDecisions, gated },
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, gated, risk: minorDecisions,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
     answerUrl: (id) => o.uiUrl(`question-${id}`),
     onAnswered: (q: Question) => engine.onAnswered(q),

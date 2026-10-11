@@ -1,10 +1,12 @@
 """Ask Jev, through TypeSafe, one decider call for the hopper (issue #550).
 
-Reads {"model", "instructions", "criteria": {option id: meaning}, "state"} as JSON on stdin and prints one JSON line:
-{"ok": true, "pick": <option id>, "confidence": <0..1>} or {"ok": false, "error": "<Type>: <message>"}. Always exits 0.
+Reads {"model", "state", "choices": {name: {"instructions", "criteria": {option id: meaning}}}} as JSON on stdin and
+prints one JSON line: {"ok": true, "picks": {name: {"pick": <option id>, "confidence": <0..1>}}} or
+{"ok": false, "error": "<Type>: <message>"}. Always exits 0.
 
-One TypeSafe Choice, named `decision`, over the options: the same call grok-bot-jev's own client makes for its gates
-(`TypeSafeClient(model).system_one(state, questions)`), with TYPESAFE_API_KEY from the environment. Writes nothing.
+One TypeSafe Choice per name, over its options, in one call: the same call grok-bot-jev's own client makes for its gates
+(`TypeSafeClient(model).system_one(state, questions)`), with TYPESAFE_API_KEY from the environment. A decider call is one
+choice, named `decision`; the risk call (issue #679) is several. Writes nothing.
 """
 import sys
 
@@ -13,20 +15,24 @@ sys.dont_write_bytecode = True
 import json  # noqa: E402
 
 
+def pick_of(answer, criteria: dict) -> dict:
+    choice = str(answer.choice)
+    if choice not in criteria:
+        raise ValueError(f"Jev picked {choice!r}, not one of {list(criteria)}")
+    confidence = float(getattr(answer, "confidence", None) or (getattr(answer, "probabilities", None) or {}).get(choice, 0.0))
+    return {"pick": choice, "confidence": min(max(confidence, 0.0), 1.0)}
+
+
 def pick(request: dict) -> dict:
     try:
         from typesafe_sdk import Choice, TypeSafeClient
     except ImportError as exc:
         raise RuntimeError(f"typesafe_sdk not installed: {exc}") from exc
-    question = Choice(instructions=request["instructions"], criteria=request["criteria"])
+    choices = request["choices"]
+    questions = {name: Choice(instructions=c["instructions"], criteria=c["criteria"]) for name, c in choices.items()}
     with TypeSafeClient(model=request["model"]) as client:
-        result = client.system_one(state=request["state"], questions={"decision": question})
-    answer = result.choices["decision"]
-    choice = str(answer.choice)
-    if choice not in request["criteria"]:
-        raise ValueError(f"Jev picked {choice!r}, not one of {list(request['criteria'])}")
-    confidence = float(getattr(answer, "confidence", None) or (getattr(answer, "probabilities", None) or {}).get(choice, 0.0))
-    return {"ok": True, "pick": choice, "confidence": min(max(confidence, 0.0), 1.0)}
+        result = client.system_one(state=request["state"], questions=questions)
+    return {"ok": True, "picks": {name: pick_of(result.choices[name], c["criteria"]) for name, c in choices.items()}}
 
 
 def main() -> None:

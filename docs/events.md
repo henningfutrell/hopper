@@ -2193,12 +2193,13 @@ Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a de
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
 | `confidence` | number | no |
 | `error` | string | no |
+| `categories` | `credentials` \| `destructive` \| `publish` \| `pay` \| `permissions` \| `ci` \| `data` \| `other`[] | no |
 | `mode` | `off` \| `shadow` \| `active` | yes |
 | `threshold` | number | yes |
 | `applied` | boolean | yes |
@@ -2239,7 +2240,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -2263,7 +2264,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -2282,7 +2283,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 

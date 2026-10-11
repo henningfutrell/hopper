@@ -28,7 +28,7 @@ const FAKE_TYPESAFE = join(import.meta.dirname, '..', 'plugins', 'fixtures', 'fa
 const GOOD = 'ts-good-0123456789abcdef-wxyz';
 const OTHER = 'ts-good-fedcba9876543210-qrst';
 const BAD = 'ts-bad-0123456789abcdef-nope';
-const PICK = 'Which name should the new module take?\n1. ledger\n2. journal';
+const QUESTION = 'Which name should the new module take?\n1. ledger\n2. journal';
 
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
@@ -96,10 +96,11 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect(v.jev).toEqual({ available: true });
     expect(v.typesafeKey).toMatchObject({ set: true, last4: 'wxyz' });
     // Jev is asked at the next decision, with the key, through TypeSafe: no restart.
-    const job = await a.pull({ op: 'ask', message: PICK });
+    const job = await a.pull({ op: 'ask', message: QUESTION });
     await a.waitForStatus(job.id, 'finished');
     const [pick] = await picked(a, job.id);
-    expect(pick!.data).toMatchObject({ by: 'jev', pick: '1', confidence: 0.9 });
+    // The risk call on the level's answer (issue #679): the fake TypeSafe picks the first option, no risk.
+    expect(pick!.data).toMatchObject({ by: 'jev', point: 'question-risk', pick: 'none', confidence: 0.9 });
     // Kept in the vault's system scope: sealed, and not one of the vault's own secrets.
     expect(rows(a)).toHaveLength(1);
     expect(rows(a)[0]).toMatchObject({ name: 'system/typesafe-api-key' });
@@ -134,7 +135,7 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ set: false });
     expect((await view(a)).jev).toEqual({ available: false, why: 'Jev is off until a TypeSafe API key is set' });
-    const job = await a.pull({ op: 'ask', message: PICK });
+    const job = await a.pull({ op: 'ask', message: QUESTION });
     await a.waitForStatus(job.id, 'finished');
     expect(await picked(a, job.id)).toEqual([]);
     expect((await a.events('types=vault.secret_set,vault.secret_removed')).map((e) => [e.type, e.data.name])).toEqual([
