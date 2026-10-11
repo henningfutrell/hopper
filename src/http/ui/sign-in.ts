@@ -1,5 +1,6 @@
-// The sign-in routes (design.md "Sign-in: realms"); the realms themselves are src/auth/. None of them needs a session, so all of them sit behind one per-address
-// rate limit (@fastify/rate-limit, SIGN_IN_RATE a minute) in their own Fastify context. Routes:
+// The sign-in routes (design.md "Sign-in: realms"); the realms themselves are src/auth/. None of them needs a session, so all of them sit behind one per-caller
+// rate limit (@fastify/rate-limit, SIGN_IN_RATE a minute) in their own Fastify context: a caller is its address, or behind the
+// tunnel the address its edge names (issue #795, `tunnelCaller`). Routes:
 //   POST /ui/login                        ← the one-time login code (a form)
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
 //   POST /ui/auth/password                ← { username, password }, tried against the LDAP
@@ -27,8 +28,14 @@ import { useLoginCode } from './login-code.ts';
 import type { InstanceAdmin } from '../instance-admin.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 
-/** Sign-in attempts a minute from one address, every sign-in route together. */
+/** Sign-in attempts a minute from one caller, every sign-in route together. */
 export const SIGN_IN_RATE = 20;
+
+/** Who a request counts as for the sign-in limit (issue #795): its address, or the tunnel's caller. */
+export type CallerOf = (req: FastifyRequest) => string;
+
+/** The sign-in limit's options: SIGN_IN_RATE a minute per caller. The API-token exchange has its own count of the same. */
+export const signInLimit = (caller: CallerOf) => ({ max: SIGN_IN_RATE, timeWindow: '1 minute', keyGenerator: caller });
 
 const nameParams = z.object({ name: z.string() });
 export const startQuery = z.object({ binding: z.string().optional() });
@@ -94,9 +101,10 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   /** An origin UI mutations come from (loopback, a LAN name, the public URL): no sign-in and password sign-in answer there. */
   isUiOrigin: (origin: string) => boolean;
   refuse: (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => unknown;
+  caller: CallerOf;
 }): void {
   parent.register(async (app) => {
-    await app.register(rateLimit, { max: SIGN_IN_RATE, timeWindow: '1 minute' });
+    await app.register(rateLimit, signInLimit(o.caller));
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
       done(null, Object.fromEntries(new URLSearchParams(body as string)));
     });

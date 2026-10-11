@@ -25,7 +25,7 @@ import { registerMachineJoinRoutes } from './machine-join.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { apiTokenIdOf, identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
-import { registerSignInRoutes } from './sign-in.ts';
+import { registerSignInRoutes, type CallerOf } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
@@ -50,6 +50,8 @@ export interface UiRouteOptions {
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
+  /** Who a request counts as for the sign-in limit: its address, or the tunnel's caller (issue #795). */
+  caller: CallerOf;
   clock: Clock;
   updater: Updater;
   /** Whether a session may do what is the instance's (issue #240). */
@@ -185,7 +187,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerSignInRoutes(app, {
-    sessions, signIn, refuse, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
+    sessions, signIn, refuse, caller: o.caller, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
     userFor: (who) => o.tenants.signInAs(who),
     connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
     userName: (id) => o.instance.users.get(id)?.name ?? id,
@@ -311,7 +313,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
-  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn });
+  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.

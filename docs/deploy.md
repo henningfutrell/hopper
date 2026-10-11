@@ -572,14 +572,16 @@ What it does, and what it keeps out:
   and for the event stream (`/api/events/stream`, whose session is in the query). The UI, its sign-in pages and the
   installer stay off the internet.
 - **A limit per caller at the edge.** 120 requests a minute per address, and 5 API-token exchanges a minute per address.
+- **A limit per caller in the hopper.** The edge names each caller's address to the hopper (`x-hopper-caller`, after it
+  drops one the caller sent). The hopper reads that header only from the ngrok agent, so its sign-in limit (20 a minute,
+  the API-token exchange on its own count) counts each caller. A stranger cannot use up your agent's exchanges.
 - **The URL must be fixed.** The Host guard takes `HOPPER_PUBLIC_URL` only. A random URL that changes at each start
   does not pass it: the log says so (`the tunnel's endpoint is not HOPPER_PUBLIC_URL`), and nothing is announced.
 - **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
   when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
 
-Residual risk, stated: the hopper does not trust the tunnel's forwarded address, so every caller through the tunnel
-shares one address for the hopper's own sign-in limit (20 a minute). Callers from many addresses could use it up and
-delay an agent's token exchange for a minute. The ngrok log shows the authtoken when ngrok refuses it.
+Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The ngrok log
+shows the authtoken when ngrok refuses it.
 
 To turn it off: remove the four lines and run `podman compose up -d --remove-orphans`.
 
