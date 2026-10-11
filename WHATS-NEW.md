@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A template in Settings → Vault now sets the CPUs, memory and time limit its boxes get, and the most a box may ask for. When you start a sandbox box in Add machine, you can now pick its CPUs, memory, time limit, which secrets and tools it gets, and one operation. The page says when a value is more than the template allows.
 - An AWS minting credential can now name the session name the hopper uses when it takes on a role, or a start for that name. Use it when the role lets in only one session name.
 - A job on a sandbox box now gets no secret from the vault until you grant it. The Vault page shows each job that asks, with Grant. One grant also covers that job when you run it again, and Revoke takes it back.
 - A sandbox box you start with only some of a template's secrets, or for one operation, now gets only those: its jobs are refused anything else.

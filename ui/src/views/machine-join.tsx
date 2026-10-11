@@ -4,14 +4,17 @@
 // behind a link, for a machine that cannot run the client. Phone width first: every control stacks.
 // A sandbox box the hopper can start itself (issue #603: it is given a rootless Podman socket) is started with one
 // click (POST /ui/api/machines/sandbox): no line to run. When it cannot, the form says why and shows the line. A box
-// may start on a client target online now instead (issue #708): in that machine's own Podman, through its client.
+// may start on a client target online now instead (issue #708): in that machine's own Podman, through its client. The
+// box's launch parameters (issue #708, launch-params.tsx) start at its template's defaults and are checked before Start.
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { get, post } from '@/lib/api';
 import { BOX_AGENTS, boxHosts, boxPlace, boxSignInLine, joinLine, type BoxAgent, type JoinChoice } from '@/model/machines';
+import { launchDraft, launchParams } from '@/model/sandbox-launch';
 import type { TemplateView, MachinesConfig, SandboxesView, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
+import { LaunchParamsInput } from './launch-params';
 
 interface Minted { code: string; expiresAt: string }
 
@@ -35,6 +38,9 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
   // A sandbox box may be one of a template (issue #558): its line names the template and runs its image.
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [template, setTemplate] = useState<TemplateView | null>(null);
+  const [draft, setDraft] = useState(launchDraft(undefined));
+  const pick = (t: TemplateView | null) => { setTemplate(t); setDraft(launchDraft(t ?? undefined)); };
+  const params = launchParams(draft, template ?? undefined);
   useEffect(() => { get<VaultView>('/api/vault').then((v) => setTemplates(v.templates), () => setTemplates([])); }, []);
   // Whether the hopper starts a box itself (issue #603), and why not.
   const [launch, setLaunch] = useState<SandboxesView['launch'] | null>(null);
@@ -73,10 +79,11 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
     }
   };
   const start = async () => {
+    if (!params.ok) return;
     setBusy(true);
     try {
       before.current = new Set(machines.map((m) => m.id));
-      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}), ...(where !== 'local' ? { machine: where } : {}) });
+      const r = await post<{ container: string }>('/ui/api/machines/sandbox', { agent, ...(template ? { template: template.name } : {}), params: params.params, ...(where !== 'local' ? { machine: where } : {}) });
       setStarted(r.container);
     } catch (e) {
       toast.error((e as Error).message);
@@ -106,8 +113,8 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
       {kind === 'box' && templates.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">template</span>
-          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(null)}>none</Button>
-          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => setTemplate(t)}>{t.name}</Button>)}
+          <Button type="button" size="sm" variant={template === null ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => pick(null)}>none</Button>
+          {templates.map((t) => <Button key={t.name} type="button" size="sm" variant={template?.name === t.name ? 'default' : 'outline'} className="min-h-9" disabled={busy || minted !== null || started !== null} onClick={() => pick(t)}>{t.name}</Button>)}
           {template && <span className="text-muted-foreground">{!template.approval || template.pending.image ? 'its boxes take no job and get nothing until a person approves the template in Settings → Vault' : `its boxes get ${template.gives.join(', ') || 'no vault secret'}`}</span>}
         </div>
       )}
@@ -122,9 +129,10 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
       )}
       {hopperStarts && !started && (
         <div className="grid gap-2 text-xs">
+          <LaunchParamsInput template={template} draft={draft} busy={busy} problem={params.ok ? undefined : params.error} onChange={setDraft} />
           <span className="text-muted-foreground">{where === 'local' ? 'The hopper starts the box in rootless Podman on the computer it runs on.' : `The hopper starts the box on ${where}, in that machine's own rootless Podman, through its client.`} Removing the machine stops the box and removes it; its home volume stays.</span>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="lg" disabled={busy} onClick={() => void start()}>{busy ? 'Starting the box…' : 'Start the box'}</Button>
+            <Button type="button" size="lg" disabled={busy || !params.ok} onClick={() => void start()}>{busy ? 'Starting the box…' : 'Start the box'}</Button>
             <Button type="button" size="lg" variant="ghost" disabled={busy} onClick={onDone}>Cancel</Button>
           </div>
         </div>

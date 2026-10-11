@@ -4512,9 +4512,20 @@ deleted the home volume.
   each launch from what the runtime says of the hopper (`address.ts`), and the box's start check proves it before the
   launch answers. A box on a client target dials the URL that machine's client dialled in on (#695): an address the
   machine proved it reaches.
-- **Not built yet:** the template limits and the launch parameters in the UI
-  (the API takes them; Add machine launches with the template's defaults); a box with tools (issue #716) on a client
+- **On the page (part 5, 2026-10-11).** A template's form (Settings → Vault, `ui/src/views/vault-template-form.tsx`,
+  `sandbox-limits.tsx`) sets its limits: a default and a max for CPUs, memory (GiB on the page, MiB on the wire) and
+  the time limit (minutes), and whether the home volume stays; an empty pair is the hopper's default, and the form
+  always sends `limits`, so emptying a pair puts the hopper's default back. The template shows them as a Limits row.
+  Add machine → *A sandbox box* (`ui/src/views/launch-params.tsx`) starts at the template's defaults (the hopper's
+  for a box of no template) and takes CPUs, memory, the time limit, which of the secrets the template gives now,
+  one operation profile and which of its tools; it sends them as `params`. The page checks both before anything is
+  sent (`ui/src/model/sandbox-launch.ts`, pure, with the server's words); the server checks again and stays the
+  authority. Since the UI bundles nothing of `src/`, the page keeps its own copy of the rules; `test/ui/sandbox-launch.test.ts`
+  runs the same drafts through the page and through `resolveParams` and fails when they disagree.
+- **Not built yet:** a box with tools (issue #716) on a client
   target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
+  The line Add machine shows for a box the hopper does not start carries the hopper's default limits, not the
+  template's or the launch's.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 
@@ -10944,7 +10955,7 @@ slice reads a value but the sealer's own check of a rotation.
 
 **Seams.** `src/domain/vault.ts` (the types and limits), `src/store/vault.ts` (the table), `src/vault/service.ts`
 (set, remove, view, reseal: the only code that seals a vault value), `src/http/vault.ts` (the read),
-`src/http/ui/vault.ts` (the edits, admin), `ui/src/views/vault.tsx` and `ui/src/model/vault.ts` (the page).
+`src/http/ui/vault.ts` (the edits, admin), `ui/src/views/vault.tsx`, `ui/src/views/vault-template-form.tsx` and `ui/src/model/vault.ts` (the page).
 
 | dir | owns | must not import |
 |-----|------|-----------------|
