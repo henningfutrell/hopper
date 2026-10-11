@@ -1,4 +1,5 @@
-// Run again, the sync loop's half (issues #313, #354; a rejected job too, issue #387; with a brief, and Continue, issue #551): an ended job's source gives its item back
+// Run again, the sync loop's half (issues #313, #354; a rejected job too, issue #387; with a brief, and Continue, issue #551;
+// Rework, issue #724, a done job's open pull request sent back with notes): an ended job's source gives its item back
 // (`JobSource.rerun` — on GitHub a closed issue is reopened and the end labels go) and the new job is
 // queued in the same step (`SourceHost.rerun`), so the user sees it at once. The sync loop (sync.ts)
 // hands it the job's report chain.
@@ -6,7 +7,7 @@
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import { sourceRef, withEdits } from './item-text.ts';
-import type { ActingPerson, ContinuedBy, Job } from '../domain/types.ts';
+import { following, type ActingPerson, type ContinuedBy, type Job } from '../domain/types.ts';
 
 export interface RerunContext {
   host: SourceHost;
@@ -19,42 +20,55 @@ export interface RerunContext {
   syncSoon(source: JobSource): void;
 }
 
+type Reworked = Awaited<ReturnType<NonNullable<JobSource['rework']>>>;
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function createRerun(c: RerunContext) {
   const store = c.host.store;
   const conflict = (jobId: string, why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
 
-  /** Why an ended job's item cannot run again now, or its source. */
-  function check(jobId: string): RerunResult | JobSource {
+  /** Why an ended job's item cannot run again now — or, `rework`, be sent back for rework (issue #724) —, or its source. */
+  function check(jobId: string, rework = false): RerunResult | JobSource {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
+    if (rework) {
+      if (job.status !== 'finished') return conflict(jobId, `it is ${job.status}: only a finished job's pull request is sent back for rework`);
+      if (!following(job)) return conflict(jobId, 'it follows no open pull request to rework');
+    }
     if (job.status !== 'failed' && job.status !== 'finished' && job.status !== 'rejected') return conflict(jobId, `it is ${job.status}, not failed, finished or rejected`);
     const source = c.sourceOf(job);
     if (!source) return conflict(jobId, 'its source is not running');
     if (!source.rerun) return conflict(jobId, `its source ${source.name} cannot run an item again`);
+    if (rework && !source.rework) return conflict(jobId, `its source ${source.name} cannot rework a pull request`);
     if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict(jobId, 'a newer job of its item exists');
     if (!c.flagsOf(job).finalReported) return conflict(jobId, 'its end is not reported to its source yet');
     return source;
   }
 
-  /** The item given back by its source, then `then` with it, on the job's report chain. */
-  async function takeBack(jobId: string, then: (item: SourceItem, source: JobSource) => RerunResult): Promise<RerunResult> {
-    const checked = check(jobId);
+  /**
+   * The item given back by its source (`give`: for Run again, `rerun`), then `then` with it and what `give` answered
+   * besides, on the job's report chain.
+   */
+  async function takeBack<G extends { item: SourceItem }>(
+    jobId: string, then: (item: SourceItem, source: JobSource, given: G) => RerunResult,
+    give: (source: JobSource, job: Job) => Promise<G> = async (source, job) => ({ item: await source.rerun!(job) }) as G, rework = false,
+  ): Promise<RerunResult> {
+    const checked = check(jobId, rework);
     if ('ok' in checked) return checked;
     let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
     await c.enqueue(jobId, async () => {
-      const source = check(jobId);
+      const source = check(jobId, rework);
       if ('ok' in source) { result = source; return; }
-      let item;
+      let given: G;
       try {
-        item = await source.rerun!(store.jobs.get(jobId)!);
+        given = await give(source, store.jobs.get(jobId)!);
       } catch (e) {
         result = e instanceof RerunRefused ? conflict(jobId, e.message) : { ok: false, reason: 'source', message: `its source could not give the item back: ${message(e)}` };
         return;
       }
       // Who edited it since its snapshot, read before the new job is made: the job runs the snapshot's text (issue #662).
-      result = then(await withEdits(c.host, source, item), source);
+      result = then(await withEdits(c.host, source, given.item), source, given);
     });
     // The new job's claim is reported at once, not at the next poll.
     if (result.ok) c.syncSoon(checked);
@@ -68,6 +82,12 @@ export function createRerun(c: RerunContext) {
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {
       return takeBack(jobId, () => c.host.continueJob(jobId, brief, by));
+    },
+    /** Rework (issue #724): the pull request made a draft and the item given back, and a new job queued, told the notes. */
+    rework(jobId: string, notes: string, acting?: ActingPerson): Promise<RerunResult> {
+      return takeBack<Reworked>(jobId, (item, source, given) => ({
+        ok: true, job: c.host.rework(jobId, item, sourceRef(source), { pullRequest: given.pullRequest, notes, state: given.state }, acting),
+      }), (source, job) => source.rework!(job), true);
     },
   };
 }

@@ -116,7 +116,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
 }
 
 /** A GitHub error as the SourceError the sync loop reads (permanent or not). */
-function sourceError(err: unknown): SourceError {
+export function sourceError(err: unknown): SourceError {
   if (err instanceof SourceError) return err;
   if (err instanceof GitHubApiError) return new SourceError(err.message, err.permanent, err.status);
   return new SourceError((err as Error).message, false);

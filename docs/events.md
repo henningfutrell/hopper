@@ -748,6 +748,28 @@ Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the fa
 }
 ```
 
+## `job.rework_requested`
+
+Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finished job's open pull request back for rework (issue #724: the card in Pull requests, `hopper job rework`, or `POST /ui/api/jobs/:id/rework`), with notes: the pull request became a draft and stays open on its branch, the job no longer follows it, and the new job of its item (`nextJobId`, its `rerunOf` this job) reworks it, told the notes. That job is done only when it pushed to the pull request after the rework and marked it ready. `person` and `via` (`ui`, `cli`): who acted and the way.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `notes` | string | yes |
+| `nextJobId` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "notes": "Rename the flag.",
+  "nextJobId": "j-2",
+  "person": "operator",
+  "via": "ui"
+}
+```
+
 ## `job.dismissed`
 
 Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked entry (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`.

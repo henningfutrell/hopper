@@ -1850,6 +1850,22 @@ call, recorded as `job.finish_briefed`. Its next end is judged again. At most `M
 or with no such pull request, an executor that cannot resume, or any other state, the job fails `not complete:` and is
 handed to a person as before.
 
+**Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
+to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
+(Send back for rework), the operator CLI (`hopper job rework <id> --notes <text>`) or `POST /ui/api/jobs/:id/rework`
+(least role operator), always with notes. It is open only for a finished job that follows an open pull request (**PR
+waiting**), the newest job of its item, its end reported. On the job's report chain, its source (`JobSource.rework`)
+makes the pull request a draft — it stays open on its branch, never merged or closed — and gives the item back as Run
+again does (on GitHub the end labels go, `hopper:pr-ready` with them). Then, in one tx (`SourceHost.rework`), the ended
+job's source state stops following the pull request (`follow: reworked`: no card, no yolo merge), and a new job of the
+item is queued, its `rerunOf` the ended job and its `rework` the pull request, the notes and who asked, told the
+**rework brief** (`reworkBrief`) after its prompt: check out that branch, make the changes, push, mark it ready, open no
+new pull request. `job.rework_requested` on the ended job. A draft is not done, so the pull request never counts as done
+while it is in rework. The new job's done-check counts the reworked pull request as its own (a part, a finish step) but
+counts it done only once the job pushed to it after the job began (`isUpdatedBy`): marking it ready again with no push is
+`not complete: … the pull request sent back for rework, #N, has no push since the rework`. Once done, the new job follows
+the pull request as any other. The notes go to the job only, never to GitHub.
+
 **Yolo mode** (issue #579, `src/domain/yolo-mode.ts`) is whether a job may merge its own pull request once the
 repo's checks pass. Off unless a person turns it on: an admin's setting of the user's (`yoloMode` in the user's
 settings; `GET /api/yolo-mode`, `POST /ui/api/yolo-mode`, `yolo_mode.changed`; Settings → Yolo mode), `on` for every

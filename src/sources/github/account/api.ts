@@ -61,5 +61,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
+    toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),
   };
 }

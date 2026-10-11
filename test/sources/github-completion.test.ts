@@ -297,3 +297,39 @@ describe('pullRequestOpen (issue #630): a liveness fact of a timed-out job', () 
     await expect(source.pullRequestOpen!(job)).rejects.toThrow('gh: timeout');
   });
 });
+
+describe('a job that reworks a pull request sent back (issue #724)', () => {
+  /** Issue 1's pull request, opened before the job and sent back; the job reworks it. */
+  function reworking(open: (gh: FakeGitHub) => { url: string }) {
+    const s = withIssue();
+    const pr = open(s.gh);
+    return { ...s, pr, job: { ...s.job, rework: { pullRequest: pr.url, notes: 'Rename it.', at: s.job.createdAt } } };
+  }
+  const number = (url: string) => url.split('/').at(-1);
+
+  it('ready for review again with no push since the rework is not done, and says so', async () => {
+    const { gh, source, job, pr } = reworking((g) => g.openPullRequest(REPO, 1, { createdAt: BEFORE, isDraft: true }));
+    gh.markReady(pr.url);
+    expect(await source.notComplete!(job)).toMatch(new RegExp(`the pull request sent back for rework, #${number(pr.url)}, has no push since the rework`));
+  });
+
+  it('pushed to after the rework and ready: done', async () => {
+    const { gh, source, job, pr } = reworking((g) => g.openPullRequest(REPO, 1, { createdAt: BEFORE, isDraft: true }));
+    gh.pushToPullRequest(pr.url, AFTER);
+    gh.markReady(pr.url);
+    expect(await source.notComplete!(job)).toBeUndefined();
+  });
+
+  it('pushed to and still a draft: the finish step marks it ready, as for the job\'s own', async () => {
+    const { gh, source, job, pr } = reworking((g) => g.openPullRequest(REPO, 1, { createdAt: BEFORE, isDraft: true }));
+    gh.pushToPullRequest(pr.url, AFTER);
+    expect(await source.unfinishedPullRequest!(job)).toEqual({ pullRequest: pr.url, step: 'mark_ready' });
+  });
+
+  it('a part sent back counts as partly done only once pushed to after the rework', async () => {
+    const { gh, source, job, pr } = reworking((g) => g.openPartPullRequest(REPO, 1, { createdAt: BEFORE }));
+    expect(await source.partlyDone!(job)).toBeUndefined();
+    gh.pushToPullRequest(pr.url, AFTER);
+    expect(await source.partlyDone!(job)).toBe(pr.url);
+  });
+});

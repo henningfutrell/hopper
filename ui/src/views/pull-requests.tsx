@@ -2,8 +2,9 @@
 // without a merge — grouped per job repository, with the repository's yolo mode and, for an admin, a switch that turns
 // it on or off. The header says how many repositories have yolo mode on, and where merging waits. Read from
 // `GET /api/pull-requests`, again every few seconds and after a change. An open card has Merge now and Close PR for an
-// operator (issue #677), each confirmed once.
-import { ExternalLink, GitMerge, GitPullRequest, X } from 'lucide-react';
+// operator (issue #677), each confirmed once, and Send back for rework (issue #724): with notes, the pull request becomes
+// a draft and a new job reworks it.
+import { ExternalLink, GitMerge, GitPullRequest, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -11,6 +12,7 @@ import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, type Tone } from '@/components/status';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
@@ -29,10 +31,15 @@ const YoloBadge = ({ on }: { on: boolean }) => (
   <StatusBadge status={on ? 'yolo-on' : 'yolo-off'} label={on ? 'yolo on' : 'yolo off'} tone={on ? 'warn' : 'muted'} />
 );
 
-/** Merge now and Close PR (issue #677): an open card with a pull request, for an operator. */
+/**
+ * Merge now and Close PR (issue #677), and Send back for rework (issue #724): an open card with a pull request, for an
+ * operator. Rework's notes say what to change; they go to the new job, never to GitHub.
+ */
 function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   const operator = useCanOperate();
   const [busy, setBusy] = useState(false);
+  const [reworking, setReworking] = useState(false);
+  const [notes, setNotes] = useState('');
   if (!operator || c.state !== 'open' || !c.pullRequest) return null;
   const run = async (what: 'merge' | 'close') => {
     setBusy(true);
@@ -40,16 +47,35 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
     setBusy(false);
     onChanged();
   };
+  const rework = async () => {
+    setBusy(true);
+    const ok = await act(`/ui/api/jobs/${c.jobId}/rework`, { notes: notes.trim() }, `#${c.pullRequest!.number} sent back for rework`);
+    setBusy(false);
+    if (ok) { setReworking(false); setNotes(''); onChanged(); }
+  };
   return (
-    <div data-slot="pr-actions" className="flex flex-wrap gap-2 pt-1">
-      <Confirm title={mergeQuestion(c)} action="Merge" onConfirm={() => void run('merge')}
-        description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
-        <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
-      </Confirm>
-      <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
-        description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
-        <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>
-      </Confirm>
+    <div className="space-y-2 pt-1">
+      <div data-slot="pr-actions" className="flex flex-wrap gap-2">
+        <Confirm title={mergeQuestion(c)} action="Merge" onConfirm={() => void run('merge')}
+          description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
+          <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
+        </Confirm>
+        <Button data-slot="pr-rework" size="sm" variant="outline" disabled={busy || reworking} title="Make it a draft, and a new job reworks it with your notes"
+          onClick={() => setReworking(true)}><Undo2 />Send back for rework</Button>
+        <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
+          description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
+          <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>
+        </Confirm>
+      </div>
+      {reworking && <>
+        <Textarea data-slot="pr-rework-notes" aria-label="Rework notes" className="min-h-16 text-sm" maxLength={8000}
+          placeholder="What should change? The new job is told your notes. The pull request becomes a draft until it is reworked."
+          value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <div className="flex gap-2">
+          <Button data-slot="pr-rework-send" size="xs" disabled={busy || notes.trim() === ''} onClick={() => void rework()}>Send back</Button>
+          <Button size="xs" variant="ghost" disabled={busy} onClick={() => setReworking(false)}>Cancel</Button>
+        </div>
+      </>}
     </div>
   );
 }
