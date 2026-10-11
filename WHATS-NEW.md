@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper now keeps a local map of the GitHub issues it sees: each issue with its repository, the organization or user that owns it, the projects it is in, and the issues and pull requests linked to it. Nothing uses the map yet. Each GitHub source in Plugins has two new settings: one turns the map off, the other sets how often an issue is read again for it.
 - A machine whose work tree is a checkout of one repository now runs jobs of any other repository too: each such job gets its own copy of its repository, made there for it. Before, the job worked in the work tree's repository, which was the wrong one.
 - A source's next sync time on Sources is now the time it really syncs. While a sync runs, the card says it is syncing, and after it the countdown starts again from the true next time.
 - Click a bar or a question on the lane timeline, or a job's line in Live activity or Events, to open that job's own page: its state, lane, times, error and what happened to it.

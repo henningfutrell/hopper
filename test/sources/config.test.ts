@@ -15,6 +15,8 @@ const SHARED_DEFAULTS = {
   hopperName: null,
   priorityLabels: { 'hopper:high': 75, 'hopper:low': 25 },
   defaultPriority: 50,
+  issueGraph: true,
+  graphRefreshMinutes: 60,
   executor: 'herdr-claude',
   model: null,
   recentComments: 10,

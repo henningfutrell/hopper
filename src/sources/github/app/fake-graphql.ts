@@ -6,10 +6,11 @@
 // open ones whose merge will close it. And `repository(owner, name).issueOrPullRequest(number)` (issue #618): a pull
 // request any issue of the repo knows, by its number; an issue; or NOT_FOUND. And an issue's cross-references (issue
 // #430): its closing pull requests — the open ones and the merged one that closed it — and the pull requests that mention it.
+// And an issue's place (issue #437).
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
-import type { FakePullRequest } from './fake-state.ts';
+import type { FakeIssue, FakePullRequest, FakeRepo } from './fake-state.ts';
 
 interface GqlBody {
   query?: string;
@@ -46,6 +47,7 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     const nodes = issue.mentionedBy.map((m) => ({ __typename: 'CrossReferencedEvent', source: { __typename: 'PullRequest', url: m.url, body: m.body, repository: { nameWithOwner: m.repo } } }));
     return { status: 200, body: { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: closing }, timelineItems: { nodes } } } } } };
   }
+  if (/subIssues/.test(b.query ?? '')) return { status: 200, body: { data: { repository: place(ctx, repo, issue) } } };
   if (/CROSS_REFERENCED_EVENT/.test(b.query ?? '')) {
     const nodes = issue.mentionedBy.map(({ repo: nameWithOwner, ...m }) => ({ source: { __typename: 'PullRequest', ...withHead(m), repository: { nameWithOwner } } }));
     return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };
@@ -57,6 +59,24 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   const pr = issue.closedByPullRequest;
   const nodes = issue.state !== 'closed' ? [] : [{ closer: pr ? { __typename: 'PullRequest', ...pr } : null }];
   return { status: 200, body: { data: { repository: { issue: { timelineItems: { nodes } } } } } };
+}
+
+/** An issue's place (issue #437): its owner, the projects naming it, its open closing pull requests and its mentions. */
+function place(ctx: FakeCtx, repo: FakeRepo, issue: FakeIssue) {
+  const url = `https://github.com/${repo.owner}/${repo.name}/issues/${issue.number}`;
+  const type = ctx.state.installations.find((i) => i.account === repo.owner)?.accountType ?? 'User';
+  const item = (p: { url: string; state?: string; repo?: string }) =>
+    ({ url: p.url, number: Number(p.url.slice(p.url.lastIndexOf('/') + 1)), state: p.state ?? 'OPEN', repository: { nameWithOwner: p.repo ?? `${repo.owner}/${repo.name}` } });
+  const projects = ctx.state.projects.filter((p) => p.items.some((it) => it.url === url))
+    .map((p) => ({ project: { number: p.number, url: `https://github.com/orgs/${p.owner}/projects/${p.number}`, owner: { login: p.owner } } }));
+  return {
+    owner: { __typename: type, login: repo.owner },
+    issue: {
+      url, number: issue.number, title: issue.title, state: issue.state.toUpperCase(), updatedAt: issue.updatedAt, parent: null, subIssues: { nodes: [] },
+      projectItems: { nodes: projects }, closedByPullRequestsReferences: { nodes: issue.openPullRequests.map(item) },
+      timelineItems: { nodes: issue.mentionedBy.map((m) => ({ source: { __typename: 'PullRequest', ...item(m) } })) },
+    },
+  };
 }
 
 function fieldNode(name: string, value: string | number) {

@@ -4,6 +4,7 @@
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
 // pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
+// And an issue's place for the issue graph (issue-place.ts, issue #437).
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
@@ -13,6 +14,8 @@ import {
   crossReferencesFrom, referencingPullRequestsFrom, repoPullRequestsFrom,
 } from '../closer.ts';
 import type { IssueCrossReferences } from '../../../domain/cross-references.ts';
+import { ISSUE_PLACE_QUERY, issuePlaceFrom } from '../issue-place.ts';
+import type { IssuePlace } from '../../../domain/issue-graph.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -168,4 +171,10 @@ export async function issueEdits(req: Request, token: string, repo: string, numb
   const { owner, repo: name } = splitRepo(repo);
   const r = await req('POST /graphql', { query: ISSUE_EDITS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
   return issueEditsFrom(r.data);
+}
+
+export async function issuePlace(req: Request, token: string, repo: string, number: number): Promise<IssuePlace> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', { query: ISSUE_PLACE_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
+  return issuePlaceFrom(r.data, `place of ${repo}#${number}`);
 }

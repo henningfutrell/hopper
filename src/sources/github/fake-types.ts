@@ -15,7 +15,7 @@ export interface FakeGitHub extends GitHubApi {
   assign(repo: string, number: number, login: string, at?: string, by?: FakeActor): void;
   unassign(repo: string, number: number, login: string): void;
   addComment(repo: string, number: number, author: string, body: string): GitHubComment;
-  /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662). */
+  /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662); its `updatedAt` becomes `at`. */
   editIssue(repo: string, number: number, change: { title?: string; body?: string }, editor: string, at?: string): void;
   /**
    * Closed by hand or by a commit, no pull request: as `reason` (default completed), at `at` (default the

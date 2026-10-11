@@ -1,0 +1,51 @@
+// An issue's place for the issue graph (issue #437): GitHub's GraphQL answer read into what the graph is made of.
+import { describe, expect, it } from 'vitest';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
+import { issuePlaceFrom } from '../../src/sources/github/issue-place.ts';
+
+const item = (url: string, number: number, state: string, repo = 'Acme/app') => ({ url, number, state, repository: { nameWithOwner: repo } });
+
+describe('issuePlaceFrom', () => {
+  it('reads the owner, Projects, closing pull requests, cross-references, parent and sub-issues', () => {
+    const place = issuePlaceFrom({ data: { repository: {
+      owner: { __typename: 'Organization', login: 'Acme' },
+      issue: {
+        url: 'https://github.com/Acme/app/issues/7', number: 7, title: 'Add a graph', state: 'OPEN', updatedAt: '2026-10-11T10:00:00Z',
+        parent: item('https://github.com/Acme/app/issues/1', 1, 'OPEN'),
+        subIssues: { nodes: [item('https://github.com/Acme/app/issues/9', 9, 'CLOSED'), null] },
+        projectItems: { nodes: [{ project: { number: 3, title: 'Roadmap', url: 'https://github.com/orgs/Acme/projects/3', owner: { __typename: 'Organization', login: 'Acme' } } }] },
+        closedByPullRequestsReferences: { nodes: [item('https://github.com/Acme/app/pull/8', 8, 'MERGED')] },
+        timelineItems: { nodes: [
+          { source: { __typename: 'Issue', ...item('https://github.com/other/lib/issues/2', 2, 'OPEN', 'other/lib') } },
+          { source: { __typename: 'PullRequest', ...item('https://github.com/Acme/app/pull/8', 8, 'MERGED') } },
+          {},
+        ] },
+      },
+    } } }, 'place');
+    expect(place).toEqual({
+      issue: { repo: 'Acme/app', number: 7, url: 'https://github.com/Acme/app/issues/7', title: 'Add a graph', state: 'open', updatedAt: '2026-10-11T10:00:00Z' },
+      owner: { login: 'Acme', type: 'Organization' },
+      projects: [{ owner: 'Acme', number: 3, url: 'https://github.com/orgs/Acme/projects/3', title: 'Roadmap' }],
+      closedBy: [{ kind: 'pull_request', repo: 'Acme/app', number: 8, url: 'https://github.com/Acme/app/pull/8', state: 'merged' }],
+      references: [
+        { kind: 'issue', repo: 'other/lib', number: 2, url: 'https://github.com/other/lib/issues/2', state: 'open' },
+        { kind: 'pull_request', repo: 'Acme/app', number: 8, url: 'https://github.com/Acme/app/pull/8', state: 'merged' },
+      ],
+      parent: { kind: 'issue', repo: 'Acme/app', number: 1, url: 'https://github.com/Acme/app/issues/1', state: 'open' },
+      subIssues: [{ kind: 'issue', repo: 'Acme/app', number: 9, url: 'https://github.com/Acme/app/issues/9', state: 'closed' }],
+    });
+  });
+
+  it('keeps what a token can read when a part is refused (a user\'s Project and an installation token)', () => {
+    const place = issuePlaceFrom({
+      data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: { url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'OPEN', updatedAt: 'u', projectItems: { nodes: [{ project: null }] } } } },
+      errors: [{ type: 'FORBIDDEN', message: 'Resource not accessible by integration' }],
+    }, 'place');
+    expect(place).toMatchObject({ owner: { login: 'me', type: 'User' }, projects: [], closedBy: [], references: [], subIssues: [] });
+  });
+
+  it('no issue is an error that names the read', () => {
+    expect(() => issuePlaceFrom({ data: { repository: { owner: { login: 'me' }, issue: null } }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to an Issue.' }] }, 'place of me/r#4'))
+      .toThrow(new GitHubApiError('place of me/r#4: Could not resolve to an Issue.', true));
+  });
+});
