@@ -11737,8 +11737,10 @@ pull request with no closing keyword closes the issue with the comment).
 
 Owner request: the hopper records machine resources over time (issue #560) and plan usage over time (issue #385), but
 each machine's lane count is fixed, and the usage limits scale every machine's lanes the same way. Combine the two
-histories so that the hopper sets lanes per machine. This first part is **shadow**: the hopper shows and records a
-**lane recommendation** per machine, next to its configured lanes, and the decider keeps the configured lanes.
+histories so that the hopper sets lanes per machine. The first part was **shadow**: the hopper shows and records a
+**lane recommendation** per machine, next to its configured lanes, and the decider keeps the configured lanes. The
+second part adds **active mode** per machine: the recommendation is applied within the bounds, each change with its
+reason, and an admin undoes it.
 
 **Lane load** (`MachineHistoryRepository.laneLoad`, `src/store/machine-history.ts`). In SQL, over the machine samples of
 the last 7 days (`LANE_TUNING_WINDOW_DAYS`): per machine and lanes in use, how many samples, how many at or above each
@@ -11757,38 +11759,60 @@ nothing leaves room for the 2. With one lane count only, no cost is known, and t
 least limited executor, `laneEffect`, `src/decider/usage.ts`, so a week window in its burn window does not count), against
 the usage limits the decider uses (`policyOf`).
 Below the soft limit by more than 10% (`free`), the recommendation is the headroom. Within 10% of the soft limit
-(`near`), past it (`soft`) or at the hard limit (`hard`), it is never more than the configured lanes: the decider's
+(`near`), past it (`soft`) or at the hard limit (`hard`), it is never more than the lanes in use: the decider's
 lane cap already scales the lanes down from there, so the recommendation adds none, and high-priority work keeps its
 lanes (issue #535). Then it is kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
 (not enough history): the configured lanes, confidence 0. **Confidence** is the samples the headroom stands on per hour
 (60 samples: 1).
 
 **Settings** (`laneTuning` in the user's settings, `LaneTuningSettings`: per machine id, `{ autoTune, minLanes,
-maxLanes }`; a machine absent has the defaults: on, 1, 8). In the database, edited on Machines (admin) and by the CLI.
-`POST /ui/api/lanes/tuning { machineId, autoTune?, minLanes?, maxLanes? }`: a field left out keeps its value; bounds
-are whole numbers from 0 to 64 (`MAX_TUNED_LANES`), the least at most the most (else 400); an unknown machine is 404.
-Each change is one `lanes.tuning_changed { machineId, from, to, by }`. The answer is the plan.
+maxLanes, mode }`; a machine absent has the defaults: on, 1, 8, `shadow`; a setting saved before active mode has no
+`mode` and reads as `shadow`, so no migration). In the database, edited on Machines (admin) and by the CLI.
+`POST /ui/api/lanes/tuning { machineId, autoTune?, minLanes?, maxLanes?, mode? }`: a field left out keeps its value;
+bounds are whole numbers from 0 to 64 (`MAX_TUNED_LANES`), the least at most the most (else 400); an unknown machine is
+404. Each change is one `lanes.tuning_changed { machineId, from, to, by }`. The answer is the plan.
 
-**The plan** (`GET /api/lanes/plan`, `LaneTuningPlan`: `at`, `mode: 'shadow'`, `windowDays`, and per machine its
-`LaneRecommendation` — `configured`, `lanes`, `headroom`, `reason`, `confidence`, `usedFrac`, `usage`, `tuning`). One
+**The plan** (`GET /api/lanes/plan`, `LaneTuningPlan`: `at`, `windowDays`, per machine its `LaneRecommendation` —
+`configured`, `inUse`, `lanes`, `headroom`, `reason`, `confidence`, `usedFrac`, `usage`, `tuning`, `undo` —, and
+`changes`, the latest 20 `lanes.applied` and `lanes.undone`, newest first). One
 code path (`engine.laneTuning.plan`, `src/engine/lane-tuning.ts`): the Machines view and `hopper lanes plan` (JSON)
-read the same route, as issue #623 asks. `hopper lanes tune <machine> [--auto on|off] [--min <n>] [--max <n>]` makes
-the UI's POST (`src/cli-operator-lanes.ts`).
+read the same route, as issue #623 asks. `hopper lanes tune <machine> [--auto on|off] [--min <n>] [--max <n>] [--mode
+shadow|active]` and `hopper lanes undo <machine>` make the UI's POSTs (`src/cli-operator-lanes.ts`).
 
 **Shadow record.** After each resource record that kept new samples (every minute, `createHistoryRecorders`'
-`afterMachineRecord`), the plan is computed again, and for each tuned online machine with a known headroom whose
+`afterMachineRecord`), the plan is computed again, and for each tuned online machine in shadow mode with a known headroom whose
 recommended or configured lanes changed since its last record, one `lanes.recommended { machineId, lanes, configured,
 headroom, reason, confidence, usage, mode: 'shadow' }`. A change in the reason alone records nothing, so the log is not
 a minute-by-minute copy. The last recorded per machine is read from the event log once, so a restart records no
 duplicate.
 
+**Active mode** (`mode: 'active'`). At the same record, a machine in active mode has its recommendation applied when
+`laneChange` (`src/decider/lane-tuning.ts`, pure) allows it: auto-tune on, online, a known headroom, a confidence of
+0.5 or more (`MIN_APPLY_CONFIDENCE`, half an hour of samples, so one quiet minute moves nothing), and lanes other than
+the **lanes in use**. Applied, the machine's **applied lanes** (`appliedLanes` in the user's settings, `AppliedLanes`:
+per machine id, `{ lanes, from, at, reason, undone? }`) are set, with one `lanes.applied { machineId, from, to,
+configured, reason, confidence }`, in one transaction. The engine's machine list (`tunedMachines`,
+`src/engine/lane-tuning.ts`, the `machines` of the `EngineContext`) gives a machine in active mode with auto-tune on its
+applied lanes, kept within its bounds now (`lanesInUse`), as `maxLanes`, and its configured lanes as
+`configuredLanes`. So the decider, its lane cap past the soft limit, priority lanes, the Machines view and the usage
+report all read the lanes in use, from one place; the decider stays as it was. `lanes.applied`, `lanes.undone` and
+`lanes.tuning_changed` are triggers: the next Decision opens or drains lanes to the new count. Near the soft limit or
+past it the recommendation is never more than the lanes in use, so active mode never adds lanes there; the lane cap
+scales the lanes in use down as before.
+
+**Undo.** `POST /ui/api/lanes/undo { machineId }` (admin) puts the lanes before the last change back: the applied lanes
+become `{ lanes: from, from: lanes, undone: true }`, one `lanes.undone { machineId, from, to, by }`. The undone lanes
+are not applied again until the recommendation moves to other lanes; then that is applied as usual. Nothing to undo
+(nothing applied, already undone, shadow, auto-tune off) is 409; an unknown machine 404. Back to shadow, or auto-tune
+off, removes the applied lanes: the configured lanes apply again, and active mode starts from them next time.
+
 **UI.** Machines has a *Lane tuning* panel under the machine cards (`ui/src/views/lane-tuning.tsx`): per machine the
-recommended lanes against the configured lanes (`Recommends 4 lanes; configured 2: 2 more`), the reason, the
-confidence, and for an admin auto-tune and the bounds, saved per machine; read again on `machine.recorded`.
+recommended lanes against the configured lanes (`Recommends 4 lanes; configured 2: 2 more`; in active mode `4 lanes in
+use, as recommended; configured 2`), the reason, the confidence, its last 5 changes with their reasons, and for an admin
+the undo of the last change (`Undo: back to 2`), auto-tune, active mode and the bounds, saved per machine; read again on
+`machine.recorded`.
 
 **Not built yet** (left for the next parts of issue #688):
-- **Active mode**: apply the recommendation within the bounds, at each Decision, with each change in the history with
-  its reason and an owner's undo; a `mode` setting per machine (shadow or active).
 - **Per-job cost profile**: per finished job, the CPU, memory and disk peaks and averages on its machine during its run,
   net of the machine's baseline, its duration and the plan usage it burned, grouped by repository, job kind and
   template; and placement that uses a job's expected cost.
@@ -11799,10 +11823,13 @@ confidence, and for an admin auto-tune and the bounds, saved per machine; read a
 
 Tests: `test/decider/lane-tuning.test.ts` (headroom: none without history, pressure and its resource, a few pressured
 samples, the room past the most seen, one lane count; the recommendation: free, near, soft, hard, bounds, off, offline,
-no history), `test/integration/lane-tuning.test.ts` (the real daemon: the plan from samples, near the soft limit,
-settings and refusals, the shadow record once per change after a resource record, `hopper lanes plan` and `tune`),
-`test/ui/lane-tuning.test.ts` (the model), `test/ui/lane-tuning-view.test.ts` (the panel: the line, Save sends what
-changed, crossing bounds refused, a viewer reads only).
+no history; active mode: the lanes in use, near the soft limit, when a change applies, an undone change),
+`test/integration/lane-tuning.test.ts` (the real daemon: the plan from samples, near the soft limit, settings and
+refusals, the shadow record once per change after a resource record, `hopper lanes plan`, `tune` and `undo`; active
+mode: applied within the bounds as the machine's lanes for the decider and the usage report, too little history,
+undo and its refusals, back to shadow), `test/ui/lane-tuning.test.ts` (the model), `test/ui/lane-tuning-view.test.ts`
+(the panel: the line, Save sends what changed, crossing bounds refused, active mode, the history, undo, a viewer reads
+only).
 
 ## Report a bug (issue #694, 2026-10-10)
 

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
+import type { AppliedLanesSettings, AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 
@@ -84,11 +84,19 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getLaneTuning() {
       const text = read('laneTuning');
-      return text === undefined ? {} : JSON.parse(text) as LaneTuningSettings;
+      // A setting saved before active mode has no mode: it is in shadow.
+      return text === undefined ? {} : Object.fromEntries(Object.entries(JSON.parse(text) as LaneTuningSettings).map(([id, t]) => [id, { ...t, mode: t.mode ?? 'shadow' }]));
     },
     setLaneTuning(settings) {
       write('laneTuning', JSON.stringify(Object.fromEntries(Object.entries(settings).sort(([a], [b]) => a.localeCompare(b))
-        .map(([id, t]) => [id, { autoTune: t.autoTune, minLanes: t.minLanes, maxLanes: t.maxLanes }]))));
+        .map(([id, t]) => [id, { autoTune: t.autoTune, minLanes: t.minLanes, maxLanes: t.maxLanes, mode: t.mode }]))));
+    },
+    getAppliedLanes() {
+      const text = read('appliedLanes');
+      return text === undefined ? {} : JSON.parse(text) as AppliedLanesSettings;
+    },
+    setAppliedLanes(applied) {
+      write('appliedLanes', JSON.stringify(applied));
     },
     getPriorityLanes() {
       const text = read('priorityLanes');

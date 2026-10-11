@@ -44,5 +44,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'usage.limits_changed': { from: { soft: 0.7, hard: 0.95 }, to: { soft: 0.6 } },
   'lanes.recommended': { machineId: 'laptop', lanes: 4, configured: 2, reason: 'x', confidence: 1.5, usage: 'free', mode: 'shadow' },
   'lanes.tuning_changed': { machineId: 'laptop', from: { autoTune: true, minLanes: 1, maxLanes: 8 }, to: { autoTune: 'yes', minLanes: 1, maxLanes: 3 }, by: 'admin' },
+  'lanes.applied': { machineId: 'laptop', from: 2, to: -1, configured: 2, reason: 'x', confidence: 1 },
+  'lanes.undone': { machineId: 'laptop', from: 4, to: 2 },
   'queue.gate_changed': { from: { mode: 'open', autoAcceptPerHour: null }, to: { mode: 'review', autoAcceptPerHour: 0 } },
 };

@@ -172,6 +172,8 @@
         "item.new_text_accepted",
         "lanes.recommended",
         "lanes.tuning_changed",
+        "lanes.applied",
+        "lanes.undone",
         "bug_report.filed",
         "bug_report.failed",
         "jev.mode_changed",
