@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- You can send a finished job's pull request back for rework with your notes, from its card in Pull requests or the command line: the pull request turns into a draft, and a new job makes the changes on the same pull request before it counts as done again.
 - A hopper in containers now checks its own setup when it starts. If a service it needs is missing or out of date, a banner says what is wrong, what does not work until then, and the one command that fixes it. The update also keeps your own extra services and mounts in a separate file, so they survive every update.
 - Each waiting pull request on the Pull requests page now has Merge now and Close PR buttons, each asking once before it acts. Merge now works whether yolo mode is on or off.
 - A pull request that ships only part of an issue no longer marks the issue done when it merges, so the hopper goes on with the rest. Only a pull request that closes the issue, or the last part, marks it done. Issues that were marked done this way go back to the queue by themselves.

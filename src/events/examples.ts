@@ -49,6 +49,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'queue.ordered': { jobIds: ['j2', 'j1'] },
   'job.claimed_by_operator': {},
   'job.rerun': { by: 'user' },
+  'job.rework_requested': { pullRequest: 'https://github.com/owner/repo/pull/14', notes: 'Rename the flag.', nextJobId: 'j-2', person: 'operator', via: 'ui' },
   'job.dismissed': { by: 'user' },
   'job.work_kept': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper'] },
   'job.work_removed': { paths: ['/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'] },

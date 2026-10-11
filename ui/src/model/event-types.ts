@@ -13,7 +13,7 @@ const ALL: Record<EventType, true> = {
   'plugin.installed': true, 'plugin.removed': true,
   'job.accepted': true, 'job.rejected': true, 'queue.ordered': true, 'queue.gate_changed': true,
   'job.claimed_by_operator': true,
-  'job.rerun': true,
+  'job.rerun': true, 'job.rework_requested': true,
   'job.dismissed': true,
   'job.unassigned': true, 'job.reassigned': true,
   'job.work_kept': true, 'job.work_removed': true, 'job.cleanup_deferred': true, 'job.cleaned_up': true,

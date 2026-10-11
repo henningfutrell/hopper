@@ -1,9 +1,14 @@
 // The bodies of the job and question actions of the UI session.
 import { z } from 'zod';
+import { MAX_REWORK_NOTES } from '../../domain/pull-requests.ts';
 
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 /** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */
 export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional() });
+/** Rework's notes (issue #724): what the new job is told to change in the pull request sent back. Required. */
+export const reworkBody = z.object({
+  notes: z.string().trim().min(1, 'notes must not be empty').max(MAX_REWORK_NOTES, `notes must be at most ${MAX_REWORK_NOTES} characters`),
+}).strict();
 /** Re-queue's confirmation (issue #530): `freshSession` true agrees that a parked job with no agent session starts a fresh one. */
 export const requeueBody = z.object({ freshSession: z.boolean().optional() }).strict();
 /** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */

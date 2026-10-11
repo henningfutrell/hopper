@@ -80,9 +80,12 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     expect(r.body).toMatchObject({ rerunOf: job.id, source: { key: issue.url }, rework: { pullRequest: url, notes: NOTES, via: 'ui' } });
     expect(String(r.body.spec.payload.prompt)).toContain(url);
     expect(String(r.body.spec.payload.prompt)).toContain('Rename the flag to --dry-run.');
-    // The pull request stays open as a draft (not merged, not closed); the issue is no longer PR ready.
-    expect(await pullOf(gh, url)).toMatchObject({ state: 'open', isDraft: true });
-    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    // The pull request stays open, made a draft (the new job may already have marked it ready again), never merged or
+    // closed; the issue is no longer PR ready.
+    expect(gh.calls.filter((c) => c.method === 'toDraft').map((c) => c.args)).toEqual([[REPO, Number(url.split('/').at(-1))]]);
+    expect(await pullOf(gh, url)).toMatchObject({ state: 'open' });
+    const drafted = gh.calls.findIndex((c) => c.method === 'toDraft');
+    expect(gh.calls.slice(drafted).some((c) => c.method === 'removeLabels' && (c.args[2] as string[]).includes('hopper:pr-ready'))).toBe(true);
     expect(gh.issue(REPO, issue.number).labels).toContain('hopper');
     // The ended job keeps its end, and no longer counts as a waiting pull request: never done while in rework.
     expect((await app.job(job.id)).status).toBe('finished');
@@ -143,7 +146,8 @@ describe('Rework: send a done job\'s pull request back (issue #724)', () => {
     expect(done.code).toBe(0);
     const next = JSON.parse(done.out) as Job;
     expect(next).toMatchObject({ rerunOf: job.id, rework: { pullRequest: url, notes: NOTES, via: 'cli' } });
-    expect(await pullOf(gh, url)).toMatchObject({ state: 'open', isDraft: true });
+    // Made a draft (the new job may have marked it ready again already).
+    expect(gh.calls).toContainEqual({ method: 'toDraft', args: [REPO, Number(url.split('/').at(-1))] });
 
     // Only the newest job of an item, finished, with an open pull request it follows, is sent back.
     const again = await app.ui<{ error: string }>(`/ui/api/jobs/${job.id}/rework`, { notes: NOTES }, { token });

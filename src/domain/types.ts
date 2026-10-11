@@ -13,6 +13,7 @@ import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
+import type { JobRework } from './pull-requests.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -174,6 +175,8 @@ export interface Job extends JobPhaseFields {
   source?: JobSourceRef;
   /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
   rerunOf?: JobId;
+  /** Set when this job reworks a pull request a person sent back (issue #724): it, the notes, who. */
+  rework?: JobRework;
   /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
   dismissedAt?: string;
   /**
