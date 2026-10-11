@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Give an issue the label "hopper:specialty" to let its job elbow in: when every lane is full, it may start one lane past a machine's lane cap. The lane board shows the extra lane, and the machine goes back to its cap when the job ends.
 - The lane recommendation on Machines now also looks at failed jobs: when jobs on a machine fail much more often with more lanes in use than with fewer, it recommends fewer lanes and says why.
 - Pull requests shows every open pull request your jobs opened, also one a job is fixing now and one from a job that ended before the hopper kept track of them. The hopper keeps those up to date and merges them as it does any other.
 - A template a job asks for with read needs only is now checked before its first box: the hopper tries writes in a box of it, and each write must be refused while each read works. Until the check passes, no box of it starts. The Vault page shows the result, and you can run the check again there or from the command line.

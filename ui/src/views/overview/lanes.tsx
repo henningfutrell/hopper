@@ -6,7 +6,7 @@ import { Confirm } from '@/components/confirm';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { canPickUp, laneRows, machineName, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
+import { canPickUp, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf } from '@/model/job';
 import { REVIEW_UI } from '@/model/reviews';
 import type { Job, ReviewKind } from '@/model/wire';
@@ -103,6 +103,7 @@ const LANE_MEANING = {
   unopened: 'Room for a lane this machine may open; none is open there now.',
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
+const ELBOWED_IN = 'A specialty job elbowed in: it started on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
 
 function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;
@@ -116,7 +117,8 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
         <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
         {priority && <PriorityLaneMark />}
-        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={CLOSES_AFTER}>closes after this job</span>}
+        {row.elbowIn && <span data-slot="elbow-in" className="shrink-0 rounded border border-warn/40 px-1 text-warn" title={ELBOWED_IN}>elbow-in · over the cap</span>}
+        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={row.elbowIn ? ELBOWED_IN : CLOSES_AFTER}>closes after this job</span>}
         <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
           tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
       </div>
@@ -179,6 +181,11 @@ export function LanesPanel() {
           {notOpen.length === 1 ? 'Priority lane' : 'Priority lanes'} {notOpen.join(', ')} not open now: opened for the next high-priority job
         </a>
       )}
+      {overCap(machines).map((o) => (
+        <div key={o.machineId} data-slot="over-cap" className="text-xs text-warn" title={ELBOWED_IN}>
+          {machineName(o.machineId, machines)}: {o.inUse}/{o.lanes} lanes in use · {o.inUse - o.lanes} over the cap, back to {o.lanes} when the work over it ends
+        </div>
+      ))}
       {laneless.map((m) => <div key={m.id} data-lane-idle className="text-xs text-muted-foreground">{machineName(m.id, machines)}: {idle.get(m.id)}</div>)}
     </Panel>
   );

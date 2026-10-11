@@ -54,9 +54,7 @@ export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'c
  * human cleared the marker. Unreported, the item is still the same attempt: a failing report must
  * not loop.
  */
-export function isRerunnable(job: Job): boolean {
-  return TERMINAL_STATUSES.includes(job.status) && job.sourceState?.sync?.finalReported === true;
-}
+export const isRerunnable = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status) && job.sourceState?.sync?.finalReported === true;
 
 /** What an agent pushes. `executor` names a registered Executor; `payload` is opaque to the queue. */
 export interface JobSpec {
@@ -83,6 +81,11 @@ export interface JobSpec {
    * too, it researches first and, once the research is accepted, writes the proposal (src/domain/review.ts REVIEW_KINDS).
    */
   research?: true;
+  /**
+   * Designated specialty (issue #762; its item labelled `hopper:specialty`): when it fits on no machine, it may elbow in —
+   * start a lane past the machine's lane cap, within the machine's elbow-ins. No other job goes past the cap this way.
+   */
+  specialty?: true;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
@@ -273,6 +276,8 @@ export interface MachineSnapshot extends MachineHerdr {
   configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
+  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. */
+  elbowIns?: number;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];

@@ -4,6 +4,7 @@ import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { idleReason, planGoneLanes, planLanes } from './lanes.ts';
 import { laneSlots } from './priority-lanes.ts';
+import { isSpecialty } from '../domain/elbow-in.ts';
 import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
@@ -89,11 +90,12 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
   const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
+  const specialty = new Set(inputs.running.filter(isSpecialty).map((j) => j.id));
 
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {
     const unassigned = (idleByMachine.get(s.machine.id) ?? []).filter((l) => !taken.has(l.id));
-    const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs, priorityOf);
+    const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs, priorityOf, specialty);
     const idle = idleReason(s, hold, placed.wait);
     return idle === undefined ? plan : { ...plan, idle };
   });

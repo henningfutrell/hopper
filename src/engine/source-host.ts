@@ -2,6 +2,7 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
+import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
 import { asksOf, isRerunnable, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
@@ -85,6 +86,8 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
     // Labelled hopper:research or hopper:proposal, or with a Research or Proposal heading in its body (issues #537,
     // #543; the layout of #542): the job is asked for the research or the proposal, not the work — research first.
     ...Object.fromEntries(asksOf(item.labels, item.body ?? '').map((k) => [REVIEW_SECTIONS[k].specFlag, true as const])),
+    // Labelled hopper:specialty (issue #762): it may elbow in past a machine's lane cap; no other job may.
+    ...(item.labels.includes(SPECIALTY_LABEL) ? { specialty: true as const } : {}),
   };
   return withParts(spec, f, routedBy);
 }
