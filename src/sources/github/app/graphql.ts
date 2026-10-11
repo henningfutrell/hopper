@@ -4,7 +4,8 @@
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
 // pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
-// And an issue's place for the issue graph (issue-place.ts, issue #437).
+// And an issue's place for the issue graph (issue-place.ts, issue #437). The reads of one issue or pull request go through
+// `ask` (graphql-batch.ts, issue #822): the ones asked at the same time are one request.
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
@@ -18,6 +19,7 @@ import { ISSUE_PLACE_QUERY, issuePlaceFrom } from '../issue-place.ts';
 import type { IssuePlace } from '../../../domain/issue-graph.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
+import type { AskGraphQL } from './graphql-batch.ts';
 
 const MAX_PAGES = 50;
 const named = (value: string) => `${value} field { ... on ProjectV2FieldCommon { name } }`;
@@ -94,44 +96,24 @@ export async function projectItems(req: Request, token: string, owner: string, n
   throw new GitHubApiError(`project ${owner}/projects/${number}: organization: ${org.error}; user: ${user.error}${hint}`, true);
 }
 
-export async function closingPullRequest(req: Request, token: string, repo: string, number: number): Promise<ClosingPullRequest | undefined> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: CLOSING_PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return closingPullRequestFrom(r.data, `closer of ${repo}#${number}`);
+export async function closingPullRequest(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ClosingPullRequest | undefined> {
+  return closingPullRequestFrom(await ask(token, CLOSING_PULL_REQUEST_QUERY, repo, number), `closer of ${repo}#${number}`);
 }
 
-export async function openClosingPullRequests(req: Request, token: string, repo: string, number: number): Promise<OpenPullRequest[]> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: OPEN_PULL_REQUESTS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return openPullRequestsFrom(r.data, `pull requests of ${repo}#${number}`);
+export async function openClosingPullRequests(ask: AskGraphQL, token: string, repo: string, number: number): Promise<OpenPullRequest[]> {
+  return openPullRequestsFrom(await ask(token, OPEN_PULL_REQUESTS_QUERY, repo, number), `pull requests of ${repo}#${number}`);
 }
 
-export async function referencingPullRequests(req: Request, token: string, repo: string, number: number): Promise<ReferencingPullRequest[]> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: REFERENCING_PULL_REQUESTS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return referencingPullRequestsFrom(r.data, `pull requests mentioning ${repo}#${number}`);
+export async function referencingPullRequests(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ReferencingPullRequest[]> {
+  return referencingPullRequestsFrom(await ask(token, REFERENCING_PULL_REQUESTS_QUERY, repo, number), `pull requests mentioning ${repo}#${number}`);
 }
 
-export async function crossReferences(req: Request, token: string, repo: string, number: number): Promise<IssueCrossReferences> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: CROSS_REFERENCES_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return crossReferencesFrom(r.data, `cross-references of ${repo}#${number}`);
+export async function crossReferences(ask: AskGraphQL, token: string, repo: string, number: number): Promise<IssueCrossReferences> {
+  return crossReferencesFrom(await ask(token, CROSS_REFERENCES_QUERY, repo, number), `cross-references of ${repo}#${number}`);
 }
 
-export async function pullRequest(req: Request, token: string, repo: string, number: number): Promise<NumberedPullRequest | undefined> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return pullRequestFrom(r.data, `pull request ${repo}#${number}`);
+export async function pullRequest(ask: AskGraphQL, token: string, repo: string, number: number): Promise<NumberedPullRequest | undefined> {
+  return pullRequestFrom(await ask(token, PULL_REQUEST_QUERY, repo, number), `pull request ${repo}#${number}`);
 }
 
 export async function openPullRequests(req: Request, token: string, repo: string): Promise<BranchPullRequest[]> {
@@ -167,14 +149,10 @@ export function issueEditsFrom(data: unknown): ItemEdit[] {
   return edits.sort((a, b) => a.at.localeCompare(b.at));
 }
 
-export async function issueEdits(req: Request, token: string, repo: string, number: number): Promise<ItemEdit[]> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', { query: ISSUE_EDITS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
-  return issueEditsFrom(r.data);
+export async function issueEdits(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ItemEdit[]> {
+  return issueEditsFrom(await ask(token, ISSUE_EDITS_QUERY, repo, number));
 }
 
-export async function issuePlace(req: Request, token: string, repo: string, number: number): Promise<IssuePlace> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', { query: ISSUE_PLACE_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
-  return issuePlaceFrom(r.data, `place of ${repo}#${number}`);
+export async function issuePlace(ask: AskGraphQL, token: string, repo: string, number: number): Promise<IssuePlace> {
+  return issuePlaceFrom(await ask(token, ISSUE_PLACE_QUERY, repo, number), `place of ${repo}#${number}`);
 }

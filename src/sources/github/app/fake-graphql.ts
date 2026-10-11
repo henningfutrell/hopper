@@ -83,9 +83,40 @@ function fieldNode(name: string, value: string | number) {
   return typeof value === 'number' ? { number: value, field: { name } } : { name: value, field: { name } };
 }
 
+/** The text from `open` (a `{`) to its matching `}`. */
+function blockAt(text: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{') depth++;
+    if (text[i] === '}' && --depth === 0) return text.slice(open, i + 1);
+  }
+  return text.slice(open);
+}
+
+/**
+ * A batched read (issue #822): `q<i>: repository(owner: $o<i>, name: $n<i>) { … $k<i> … }` aliases, each answered as its own
+ * query would be, its errors' paths under its alias. The requests the fake saw show how many went.
+ */
+function batched(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
+  const query = b.query ?? '';
+  const vars = (b.variables ?? {}) as Record<string, unknown>;
+  const data: Record<string, unknown> = {};
+  const errors: { path?: unknown[] }[] = [];
+  for (const m of query.matchAll(/(q(\d+)): repository\(owner: \$o\d+, name: \$n\d+\) \{/g)) {
+    const [, alias, i] = m as unknown as [string, string, string];
+    const selection = blockAt(query, m.index + m[0].length - 1);
+    const one = { query: `repository(owner: $owner, name: $name) ${selection}`, variables: { owner: vars[`o${i}`], name: vars[`n${i}`], number: vars[`k${i}`] } } as GqlBody;
+    const body = closer(ctx, req, one).body as { data?: { repository?: unknown }; errors?: { path?: unknown[] }[] };
+    data[alias] = body.data?.repository ?? null;
+    for (const e of body.errors ?? []) errors.push({ ...e, path: [alias, ...(e.path ?? []).slice(1)] });
+  }
+  return { status: 200, body: { data, ...(errors.length ? { errors } : {}) } };
+}
+
 export function graphql(ctx: FakeCtx, req: FakeReq): FakeReply {
   const b = (req.body ?? {}) as GqlBody;
   const query = b.query ?? '';
+  if (/q0: repository\(owner/.test(query)) return batched(ctx, req, b);
   if (/repository\(owner/.test(query)) return closer(ctx, req, b);
   const login = b.variables?.login ?? '';
   const number = Number(b.variables?.number);

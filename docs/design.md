@@ -1497,7 +1497,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -13721,7 +13721,29 @@ whether GitHub refused it (403 or 429, `holdAfter`) or the limiter deferred it. 
 GitHub's error.
 
 **Left for a later part.** Fetching many issues or pull requests in one GraphQL request, and one combined status or
-check-runs call per ref.
+check-runs call per ref. Part 3 below does the first. The second needs nothing: the pull request reads carry their head
+commit's checks (`statusCheckRollup`), so no status or check-runs call is made for a ref.
+
+## Batched GraphQL reads (issue #822 part 3, 2026-10-11)
+
+**Batched reads** (`src/sources/github/app/graphql-batch.ts`). The GraphQL reads of one issue or pull request —
+`closingPullRequest`, `openClosingPullRequests`, `referencingPullRequests`, `crossReferences`, `pullRequest`, `issueEdits`,
+`issuePlace` — go through `batchGraphQL`, one for each adapter (App and connected account). The reads asked with one token
+in the same turn of the event loop (`setImmediate` from `node:timers`, so a test's fake timers do not hold it) go to GitHub
+as one request: `q0: repository(owner: $o0, name: $n0) { … $k0 … }`, `q1: …`, at most `GRAPHQL_BATCH_MAX` = 20 to a
+request. Why: the follows of one sync run side by side (`after-done.ts`, one job queue each), so each step of them asks
+about every followed issue at about the same time. GitHub's GraphQL limit charges at least one point a request, and a
+request of many small reads costs about what one does. Measured on three followed pull requests of one repository:
+12 GraphQL requests per sync before, 4 now (`test/integration/github-graphql-batch.test.ts`).
+- Each read gets the answer its own query would have had: its alias's data as `repository`, its alias's errors with the
+  path under `repository`, and the errors that name no alias. So an issue GitHub does not know fails only its own read.
+- A request that fails (a rate limit, a 5xx, the network) fails each read in it; each adapter maps the error for each
+  read as before (its "what", a **deferred call**, a 401 renewal on the connected account).
+- A read asked alone goes as its own query, as before.
+- Pass reads (above) sit on top: a read asked twice in a pass is still asked once.
+- A cold App adapter asks for a repository's installation, and for an installation's token, once for every read that waits
+  on it (`installationFor`, `createAuth`): before, the reads of one sync each asked, and so went in separate requests.
+- The node:http fake GitHub (`fake-graphql.ts`) answers the aliased form, each alias as its own query.
 
 ## The hopper label means full automation (issue #435, 2026-10-11)
 

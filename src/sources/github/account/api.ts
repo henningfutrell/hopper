@@ -6,6 +6,7 @@
 import { GitHubApiError, isPermanent } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
+import { batchGraphQL } from '../app/graphql-batch.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -25,6 +26,7 @@ const refused = (err: unknown) => (err as { status?: unknown }).status === 401;
 
 export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
   const req = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
+  const ask = batchGraphQL(req);
   const call = async <T>(what: string, fn: (token: string) => Promise<T>): Promise<T> => {
     const token = await o.token();
     try {
@@ -47,8 +49,8 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     getIssue: (repo, number) => call(`get ${repo}#${number}`, (t) => rest.getIssue(req, t, repo, number)),
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, (t) => rest.subIssues(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),
-    issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(req, t, repo, number)),
-    issuePlace: (repo, number) => call(`place of ${repo}#${number}`, (t) => issuePlace(req, t, repo, number)),
+    issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(ask, t, repo, number)),
+    issuePlace: (repo, number) => call(`place of ${repo}#${number}`, (t) => issuePlace(ask, t, repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(req, t, owner, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, (t) => rest.ensureLabel(req, t, repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, (t) => rest.addLabels(req, t, repo, number, labels)),
@@ -60,11 +62,11 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closeIssue(req, t, repo, number)),
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, (t) => rest.postComment(req, t, repo, number, body)),
-    closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(req, t, repo, number)),
-    openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(req, t, repo, number)),
-    referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, (t) => referencingPullRequests(req, t, repo, number)),
-    crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, (t) => crossReferences(req, t, repo, number)),
-    pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, (t) => pullRequest(req, t, repo, number)),
+    closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, (t) => closingPullRequest(ask, t, repo, number)),
+    openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, (t) => openClosingPullRequests(ask, t, repo, number)),
+    referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, (t) => referencingPullRequests(ask, t, repo, number)),
+    crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, (t) => crossReferences(ask, t, repo, number)),
+    pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, (t) => pullRequest(ask, t, repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
