@@ -142,6 +142,7 @@ function PickRow({ p, label, onSaved }: { p: MinorDecisionPickView; label: strin
         <span className="num font-mono text-muted-foreground" title={p.at}>{clock(p.at)}</span>
         <span className="font-medium">{label}</span>
         {p.jobId && <span className="min-w-0 truncate text-muted-foreground">{nameOf(p.jobId)}</span>}
+        {p.machineId && <span className="min-w-0 truncate text-muted-foreground">machine {p.machineId}</span>}
       </div>
       <div>{pickSummary(p)}</div>
       {decided && <div className="text-muted-foreground">{decided}</div>}

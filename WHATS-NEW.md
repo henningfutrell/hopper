@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jev can now pick how many lanes a machine runs and which machine a waiting job goes to, inside what the lane rules allow. Both start in shadow: Settings → Decider shows how often Jev agrees. Set them to active, and a sure pick becomes the machine's recommendation on Machines, which you still apply, or the machine a job goes to.
 - Sources now checks how each of your job repositories is set up on GitHub. It warns you when a main or release branch takes a push with no pull request or no passing check, allows force pushes, or when secret scanning or push protection is off.
 - Jobs that were already in the queue before the hopper checked who wrote, labelled and assigned an issue are now checked too, when the update starts. A job of an issue you or your trusted people made runs as before. Any other waits, and its issue shows as a request in Sources: approve it there and the job runs, or cancel the job.
 - The hopper now places a job by what similar jobs cost before: when jobs of the same repository or kind used much memory or CPU, a new one goes to a machine with room for it, not to one it would push to its limit. The job's start reason says what it is expected to cost.

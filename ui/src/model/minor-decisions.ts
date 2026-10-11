@@ -4,7 +4,7 @@
 import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, TypesafeKeyView } from './wire.ts';
 
 /** A pick as these read it: its identity and place aside. */
-type Pick = Omit<MinorDecisionPickView, 'pickId' | 'at' | 'point' | 'jobId' | 'questionId'>;
+type Pick = Omit<MinorDecisionPickView, 'pickId' | 'at' | 'point' | 'jobId' | 'questionId' | 'machineId'>;
 
 export const MODE_TEXT: Readonly<Record<MinorDecisionMode, string>> = {
   off: 'Off', shadow: 'Shadow: record only', active: 'Active: Jev decides when sure',
@@ -25,6 +25,7 @@ function fate(p: Pick): string {
     case 'shadow': return 'recorded only';
     case 'below_threshold': return `below the ${pct(p.threshold)} needed`;
     case 'consequential': return `consequential${p.consequential?.length ? ` (${p.consequential.join(', ')})` : ''}: never decided by Jev`;
+    case 'too_late': return 'too late: decided before Jev answered';
     default: return 'not applied';
   }
 }

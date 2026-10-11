@@ -285,6 +285,7 @@ export const EVENT_SCHEMAS = {
     pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(),
     mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1), applied: z.boolean(),
     notApplied: z.enum(NOT_APPLIED).optional(), consequential: z.array(z.string()).optional(), questionId: z.string().optional(),
+    machineId: z.string().optional(),
   }),
   'minor_decision.compared': strict({ pickId: z.string(), point: decisionPoint, pick: z.string(), actual: z.string(), agreed: z.boolean(), decidedBy: z.string() }),
   'minor_decision.overridden': strict({ pickId: z.string(), point: decisionPoint, pick: z.string().optional(), actual: z.string() }),

@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
+import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFirst, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -60,6 +60,8 @@ export interface EngineOptions {
    * recommendation and its undo. Throws an EngineError when refused. Absent: refused.
    */
   machineLanes?: (machineId: string, lanes: number) => Promise<void>;
+  /** Decider calls through Jev first (issue #550): a machine's lanes and a waiting job's machine (issue #688). Absent: Jev is never asked. */
+  jevFirst?: JevFirst;
 }
 
 /** What the engine's modules share. */

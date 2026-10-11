@@ -40,6 +40,34 @@
     "mode": {
       "type": "string",
       "const": "shadow"
+    },
+    "decidedBy": {
+      "type": "string",
+      "const": "jev"
+    },
+    "rules": {
+      "type": "object",
+      "properties": {
+        "lanes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reason": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "lanes",
+        "reason",
+        "confidence"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

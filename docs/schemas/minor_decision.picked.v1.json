@@ -9,7 +9,9 @@
       "type": "string",
       "enum": [
         "question-answer",
-        "failure-assessment"
+        "failure-assessment",
+        "lane-count",
+        "job-machine"
       ]
     },
     "by": {
@@ -68,7 +70,8 @@
         "shadow",
         "below_threshold",
         "consequential",
-        "no_pick"
+        "no_pick",
+        "too_late"
       ]
     },
     "consequential": {
@@ -78,6 +81,9 @@
       }
     },
     "questionId": {
+      "type": "string"
+    },
+    "machineId": {
       "type": "string"
     }
   },

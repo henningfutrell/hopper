@@ -20,6 +20,7 @@ export function picksOf(events: readonly DomainEvent[]): MinorDecisionPickView[]
         pickId: id, at: e.at, point: d.point as DecisionPoint, options: d.options as MinorDecisionPickView['options'],
         mode: d.mode as MinorDecisionPickView['mode'], threshold: d.threshold as number, applied: d.applied === true,
         ...(e.jobId ? { jobId: e.jobId } : {}), ...(typeof d.questionId === 'string' ? { questionId: d.questionId } : {}),
+        ...(typeof d.machineId === 'string' ? { machineId: d.machineId } : {}),
         ...(typeof d.pick === 'string' ? { pick: d.pick } : {}), ...(typeof d.confidence === 'number' ? { confidence: d.confidence } : {}),
         ...(typeof d.error === 'string' ? { error: d.error } : {}),
         ...(d.notApplied ? { notApplied: d.notApplied as MinorDecisionPickView['notApplied'] } : {}),

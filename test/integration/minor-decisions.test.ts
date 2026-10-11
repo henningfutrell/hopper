@@ -232,7 +232,9 @@ describe('overrides and the view', () => {
     expect((await a.ui('/ui/api/minor-decisions/points/question-answer', { threshold: 1.5 }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/minor-decisions/points/nowhere', { mode: 'off' }, { token })).status).toBe(404);
     const v = await view(a);
-    expect(v.points.map((p) => [p.point, p.mode, p.threshold])).toEqual([['question-answer', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85]]);
+    expect(v.points.map((p) => [p.point, p.mode, p.threshold])).toEqual([
+      ['question-answer', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85], ['lane-count', 'shadow', 0.85], ['job-machine', 'shadow', 0.85],
+    ]);
   });
 
   it('off: Jev is not asked', async () => {

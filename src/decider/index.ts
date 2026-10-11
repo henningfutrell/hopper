@@ -96,7 +96,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const specialty = new Set(inputs.running.filter(isSpecialty).map((j) => j.id));
 

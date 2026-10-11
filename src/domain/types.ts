@@ -348,8 +348,12 @@ export interface DecisionInputs {
   priorityLanes?: PriorityLanesInput;
   /** The machines the blast-radius gate keeps from ordinary placement, and what may pass (issue #542). Absent on Decisions stored before it: none. */
   blastRadius?: BlastRadiusInput;
-  /** Each waiting job's expected cost, where one is known (issue #688): a machine where it does not fit is passed over. Absent on Decisions stored before it: none. */
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>;
+  /**
+   * Issue #688. `expectedCosts`: each waiting job's expected cost, where one is known: a machine where it does not fit is
+   * passed over. `placementPicks`: Jev's applied picks of a waiting job's machine (`job-machine`), taken first where the
+   * job may go. Absent on Decisions stored before them: none.
+   */
+  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>;
   policy: DeciderPolicy;
 }
 
