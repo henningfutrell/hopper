@@ -28,7 +28,7 @@ const fixture: PullRequestsView = {
 
 const repoChecks = (repo: string, over: Partial<RepoChecks> = {}): RepoChecks => ({
   repo, state: 'checks', yolo: false, dismissed: false, checkedAt: '2026-10-08T10:00:00.000Z',
-  found: { required: ['test'], workflows: [], pullRequests: { read: 3, withChecks: 3 } }, ...over,
+  found: { required: ['test'], workflows: [], pullRequests: { read: 3, withChecks: 3 } }, setup: { state: 'set up', problems: [], unread: [] }, ...over,
 });
 const noChecks = { found: { required: [], workflows: [], pullRequests: { read: 2, withChecks: 0 } }, state: 'no checks' as const, yolo: true };
 const checksFixture: RepoChecksView = {
