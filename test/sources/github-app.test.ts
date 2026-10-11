@@ -39,7 +39,7 @@ describe('app mode discovery', () => {
 
   it('takes issues assigned to the user\'s connected account; the bot\'s own comments never reach the job (issue #387)', async () => {
     const { gh, source } = setupApp();
-    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.createIssue({ repo: REPO, assignees: [], labels: ['hopper'] });
     gh.addComment(REPO, 1, BOT, 'a bot note');
     gh.addComment(REPO, 1, 'owner', 'an assignee note');

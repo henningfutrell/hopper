@@ -57,7 +57,7 @@ async function boot(o: { secrets?: Record<string, string>; dbPath?: string; fga?
   }
   const fga = o.fga ?? createFakeAuthorizationServer();
   t = await startTestApp({
-    dbPath, plugins: { machines: lanes(1) }, seams: o.noOpenFga ? {} : { authorizationServer: fga },
+    dbPath, plugins: { machines: lanes(1) }, seams: { authorizationServer: o.noOpenFga ? undefined : fga },
     secrets: { HOPPER_MASTER_KEY: KEY, PYTHONPATH: FAKE_TYPESAFE, ...o.secrets },
   });
   return { a: t, session: await t.login(), fga };

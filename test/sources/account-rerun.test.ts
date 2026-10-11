@@ -6,6 +6,7 @@ import type { Job } from '../../src/domain/types.ts';
 import { createAccountSource } from '../../src/sources/compose.ts';
 import { githubAccountOptions } from '../../src/sources/config.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
+import { testTrust } from './fixtures/github-support.ts';
 
 const REPO = 'owner/repo';
 
@@ -26,7 +27,7 @@ function source(login: string | undefined) {
   const gh = createFakeGitHub();
   const s = createAccountSource({
     name: 'github-account', provider: 'github', accounts: accounts(login), api: gh,
-    clock: { now: () => new Date('2026-10-07T12:00:00Z') }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined,
+    clock: { now: () => new Date('2026-10-07T12:00:00Z') }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, trust: testTrust(),
   }, githubAccountOptions.parse({}));
   return { gh, s };
 }

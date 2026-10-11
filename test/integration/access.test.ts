@@ -54,7 +54,7 @@ async function boot(o: { server?: FakeAuthorizationServer | null; dbPath?: strin
     dbPath = db.dbPath;
   }
   const server = o.server ?? createFakeAuthorizationServer();
-  const a = await startTestApp({ dbPath, plugins: { machines: lanes(2) }, seams: o.server === null ? {} : { authorizationServer: server } });
+  const a = await startTestApp({ dbPath, plugins: { machines: lanes(2) }, seams: { authorizationServer: o.server === null ? undefined : server } });
   apps.push(a);
   return { a, server, token: await a.login() };
 }

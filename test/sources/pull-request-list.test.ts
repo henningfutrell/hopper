@@ -7,9 +7,11 @@ import { jobForIssue, REPO } from './fixtures/github-support.ts';
 const NOW = Date.parse('2026-10-02T10:00:00.000Z');
 const PR = `https://github.com/${REPO}/pull/7`;
 
-function waits(seen: PullRequestSeen | undefined, o: { yolo?: boolean; pullRequest?: string | null } = {}) {
+function waits(seen: PullRequestSeen | undefined, o: { yolo?: boolean; pullRequest?: string | null; untrusted?: boolean } = {}) {
   const pullRequest = o.pullRequest === null ? {} : { pullRequest: o.pullRequest ?? PR };
-  const job: Job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', ...pullRequest, ...(seen ? { seen } : {}) } } });
+  const base = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', ...pullRequest, ...(seen ? { seen } : {}) } } });
+  const { origin: _o, ...source } = base.source!;
+  const job: Job = o.untrusted ? { ...base, source } : base;
   const v = pullRequestList([job], () => job, { on: o.yolo ?? true, repos: {} }, [REPO], NOW);
   return v.repos[0]!.pullRequests[0]!;
 }
@@ -45,6 +47,11 @@ describe('why a pull request waits (issue #677)', () => {
   it('yolo on, no checks after the grace window: ready, merging', () => {
     expect(waits(seen({ checks: 'none', pushedAt: ago(NO_CHECKS_GRACE_MS + 1000) })).waits).toBe('ready');
     expect(waits(seen({ checks: 'none' })).waits).toBe('ready');
+  });
+
+  it('yolo on, a job whose item was neither of a trusted origin nor approved: only a person merges it (issue #652)', () => {
+    expect(waits(seen(), { untrusted: true }).waits).toBe('untrusted origin');
+    expect(waits(seen(), { untrusted: true, yolo: false }).waits).toBe('yolo off');
   });
 
   it('a refused merge says so', () => {
