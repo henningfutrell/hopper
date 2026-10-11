@@ -32,6 +32,7 @@ import { useCanAdmin } from '@/store/selectors';
 import { JoinMachineForm } from './machine-join';
 import { PriorityLanesPanel } from './priority-lanes';
 import { BlastRadiusPanel } from './blast-radius';
+import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 
@@ -254,6 +255,7 @@ export function Machines() {
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
         : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
       {machines.length > 0 && <LaneTuningPanel />}
+      {machines.length > 0 && <JobCostsPanel />}
       {machines.length > 0 && <PriorityLanesPanel />}
       {machines.length > 0 && <BlastRadiusPanel />}
     </div>

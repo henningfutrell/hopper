@@ -5,10 +5,11 @@
 // `lanes.applied` with its reason —, dismisses it until it moves (`lanes.dismissed`), or undoes the last one applied
 // (`lanes.undone`). Each machine's settings — auto-tune and the bounds — are the user's, in the database.
 import { laneEffect } from '../decider/usage.ts';
+import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
 import { laneActions, recommendLanes } from '../decider/lane-tuning.ts';
 import type { UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LANE_TUNING, LANE_TUNING_WINDOW_DAYS, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneChange, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
+  DEFAULT_LANE_TUNING, JOB_COST_WINDOW_DAYS, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneChange, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
 } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -25,6 +26,8 @@ export type LaneTuningPatch = Partial<LaneTuning>;
 export interface LaneTuningService {
   /** Every machine's lane recommendation now: `GET /api/lanes/plan` and `hopper lanes plan`. */
   plan(): Promise<LaneTuningPlan>;
+  /** The job cost profiles over the job cost window, and grouped: `GET /api/lanes/costs` and `hopper lanes costs`. */
+  costs(): Promise<JobCosts>;
   /** Record `lanes.recommended` for each tuned machine with a known headroom whose recommended or configured lanes changed. How many events. */
   record(): Promise<number>;
   /** Change one machine's settings; `by` names who. The plan after it. */
@@ -102,8 +105,20 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
     return r;
   };
 
+  const costs = async (): Promise<JobCosts> => {
+    const machines = await c.machines.list();
+    const now = c.clock.now();
+    const runs = c.store.machineHistory.jobRuns({ from: new Date(now.getTime() - JOB_COST_WINDOW_DAYS * DAY_MS), to: now });
+    const profiles = jobCostProfiles(runs, (id) => {
+      const job = c.store.jobs.get(id);
+      return job && { ...(job.source?.repo ? { repo: job.source.repo } : {}), kind: jobCostKind(job.spec) };
+    }, (id) => machines.find((m) => m.id === id)?.template?.name);
+    return { at: now.toISOString(), windowDays: JOB_COST_WINDOW_DAYS, jobs: profiles.slice(0, JOB_COSTS_LISTED), groups: jobCostGroups(profiles) };
+  };
+
   return {
     plan,
+    costs,
     async record() {
       if (c.stopping()) return 0;
       const p = await plan();

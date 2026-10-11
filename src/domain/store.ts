@@ -13,7 +13,7 @@ import type {
   Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User,
   UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem,
 } from './types.ts';
-import type { ConnectedAccountProvider, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
+import type { ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
 
 export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 export type { VaultRepository } from './vault.ts';
@@ -235,6 +235,8 @@ export interface MachineHistoryRepository {
   series(q: MachineHistoryQuery): ResourceSeries[];
   /** Lane load over [from, to): per machine and lanes in use, ordered by machine and lanes in use (issue #688). */
   laneLoad(q: { from: Date; to: Date; pressure: ResourcePressure }): LaneLoad[];
+  /** The job runs that ended in [from, to), with what the machine and usage samples in each show (issue #688). */
+  jobRuns(q: { from: Date; to: Date }): JobRun[];
   /** Delete the samples older than `before`; how many. */
   prune(before: Date): number;
 }
