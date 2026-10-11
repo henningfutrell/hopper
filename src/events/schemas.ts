@@ -317,6 +317,8 @@ export const EVENT_SCHEMAS = {
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
+  // A master key rotation (issue #659): the short fingerprints of the key replaced and the new one, who pressed it, the counts. Never a key.
+  'vault.master_key_rotated': strict({ from: z.string(), to: z.string(), by: z.string(), resealed: z.number().int().nonnegative(), unreadable: z.number().int().nonnegative() }),
   'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string() }),

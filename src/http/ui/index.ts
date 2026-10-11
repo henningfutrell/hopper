@@ -338,7 +338,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Self-update and the master key (issues #44, #659): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey });
+  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

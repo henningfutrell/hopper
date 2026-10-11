@@ -4,6 +4,7 @@ import type { InstanceSettingsRepository, UserSettingsRepository } from '../doma
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneDismissals, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -281,5 +282,10 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setMasterKeyFingerprint: (fingerprint) => write('masterKeyFingerprint', fingerprint),
     masterKeySaved: () => read('masterKeySaved'),
     setMasterKeySaved: (fingerprint) => write('masterKeySaved', fingerprint),
+    masterKeyRotation() {
+      const text = read('masterKeyRotation');
+      return text === undefined ? undefined : JSON.parse(text) as MasterKeyRotation;
+    },
+    setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
   };
 }

@@ -46,17 +46,20 @@ export interface KeptSecrets {
 }
 
 /**
- * The master key this start runs on. `given`: HOPPER_MASTER_KEY. `generated`: made now, on a fresh hopper: shown once,
+ * The master key this hopper runs on. `given`: HOPPER_MASTER_KEY. `generated`: made now, on a fresh hopper: shown once,
  * to be given as HOPPER_MASTER_KEY. `old-token-key`: read from the old token key, to be given as HOPPER_MASTER_KEY.
+ * `rotated`: made by a rotation in this run, shown once, to be given as HOPPER_MASTER_KEY before the next start.
  * `missing`: none, while the database keeps secrets: the hopper starts limited.
  */
 export type MasterKey =
-  | { source: 'given' | 'generated' | 'old-token-key'; key: string; previous: string[]; fingerprint: string; notes: string[] }
+  | { source: 'given' | 'generated' | 'old-token-key' | 'rotated'; key: string; previous: string[]; fingerprint: string; notes: string[] }
   | { source: 'missing'; problem: string; fingerprint?: string };
 
 export interface MasterKeyRecord {
   fingerprint(): string | undefined;
   setFingerprint(fingerprint: string): void;
+  /** The last rotation: the fingerprint of the key it replaced, and when (issue #659). */
+  rotation?(): { from: string; at: string } | undefined;
 }
 
 const listOf = (text: string | undefined): string[] => (text ?? '').split(/[\s,]+/).filter(Boolean);
@@ -121,6 +124,10 @@ export function resolveMasterKey(o: {
       record.setFingerprint(fingerprint);
     } else if (recorded !== fingerprint) {
       if (!previous.some((p) => fingerprintOf(p) === recorded)) {
+        const rotation = record.rotation?.();
+        if (rotation?.from === fingerprint) {
+          throw new MasterKeyMismatch(`the master key does not match this database: it was rotated at ${rotation.at} to the key of fingerprint ${shortFingerprint(recorded)}, and ${MASTER_KEY_VARIABLE} is the key it replaced (fingerprint ${shortFingerprint(fingerprint)}). Give the new key, the one the rotation showed; nothing was changed`);
+        }
         throw new MasterKeyMismatch(`the master key does not match this database: it was set up with the key of fingerprint ${shortFingerprint(recorded)}, and ${MASTER_KEY_VARIABLE} has fingerprint ${shortFingerprint(fingerprint)}. Give the right key; nothing was changed`);
       }
       record.setFingerprint(fingerprint);
@@ -164,19 +171,28 @@ export function resolveMasterKey(o: {
   return { source: 'generated', key, previous: [], fingerprint, notes: [] };
 }
 
+/** `env` as the parts read it, and the one way to change the master key in it: a rotation (issue #659). */
+export interface KeyedEnv {
+  env: Record<string, string | undefined>;
+  /** The parts read `key` from now on: they seal under it at their next call. */
+  use(key: { key: string; previous: readonly string[] }): void;
+}
+
 /**
  * `env` as the parts read it: the master key and its previous keys as resolved (none when `key` is undefined), and none
  * of the files or old variables. Every other variable is `env`'s, read live.
  */
-export function withMasterKey(env: Record<string, string | undefined>, key: { key: string; previous: readonly string[] } | undefined): Record<string, string | undefined> {
+export function withMasterKey(env: Record<string, string | undefined>, key: { key: string; previous: readonly string[] } | undefined): KeyedEnv {
   const over: Record<string, string | undefined> = Object.fromEntries(MASTER_KEY_VARIABLES.map((n) => [n, undefined]));
-  if (key) {
-    over[MASTER_KEY_VARIABLE] = key.key;
-    if (key.previous.length) over[PREVIOUS_KEYS_VARIABLE] = key.previous.join('\n');
-  }
-  return new Proxy(env, {
-    get: (target, name) => (typeof name === 'string' && name in over ? over[name] : target[name as string]),
-  });
+  const use = (k: { key: string; previous: readonly string[] }): void => {
+    over[MASTER_KEY_VARIABLE] = k.key;
+    over[PREVIOUS_KEYS_VARIABLE] = k.previous.length ? k.previous.join('\n') : undefined;
+  };
+  if (key) use(key);
+  return {
+    env: new Proxy(env, { get: (target, name) => (typeof name === 'string' && name in over ? over[name] : target[name as string]) }),
+    use,
+  };
 }
 
 /**
@@ -198,7 +214,7 @@ export function mismatchOf(key: { key: string; previous: readonly string[] }, re
   return `the master key does not match this database: it was set up with the key of fingerprint ${shortFingerprint(recorded)}, and this one has fingerprint ${shortFingerprint(fingerprintOf(key.key))}`;
 }
 
-const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE}`, generated: 'made for this new hopper', 'old-token-key': 'read from the old token key' } as const;
+const SOURCE_WORDS = { given: `given at launch as ${MASTER_KEY_VARIABLE}`, generated: 'made for this new hopper', 'old-token-key': 'read from the old token key', rotated: 'made by a rotation' } as const;
 
 /**
  * The start's lines about the master key: where it came from and its fingerprint, never the key (issue #685: a log goes

@@ -145,13 +145,34 @@ export interface SealerState {
 }
 
 /**
- * The sealer under the runtime's HOPPER_MASTER_KEY and HOPPER_MASTER_KEY_PREVIOUS (each also `_FILE`). No key:
- * no sealer, and a problem saying so — nothing the hopper owns is then stored, and a stored one is not opened.
- * A key that is no key throws, so the daemon does not start on it (fails closed).
+ * A sealer under the keys `keys` answers at each call (issue #659): a master key rotation in a running hopper changes
+ * the keys every part seals and opens under, with no restart. The sealer of one set of keys is made once and kept.
+ */
+export function liveSealer(keys: () => { key: string; previous: readonly string[] }): Sealer {
+  let made: { text: string; sealer: Sealer } | undefined;
+  const now = (): Sealer => {
+    const k = keys();
+    const text = [k.key, ...k.previous].join('\n');
+    if (made?.text !== text) made = { text, sealer: createSealer(k.key, k.previous) };
+    return made.sealer;
+  };
+  now();
+  return {
+    get keyId() { return now().keyId; },
+    seal: (value, context) => now().seal(value, context),
+    open: (sealed, context) => now().open(sealed, context),
+    current: (sealed) => now().current(sealed),
+  };
+}
+
+const previousOf = (secret: RuntimeSecrets): string[] => (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean);
+
+/**
+ * The sealer under the runtime's HOPPER_MASTER_KEY and HOPPER_MASTER_KEY_PREVIOUS (each also `_FILE`), read at each
+ * call (a rotation, issue #659). No key: no sealer, and a problem saying so — nothing the hopper owns is then stored,
+ * and a stored one is not opened. A key that is no key throws, so the daemon does not start on it (fails closed).
  */
 export function sealerOf(secret: RuntimeSecrets): SealerState {
-  const key = secret(MASTER_KEY_VARIABLE);
-  if (!key) return { problem: `the master key is missing: the hopper is limited until it is given as ${MASTER_KEY_VARIABLE} at launch (docs/deploy.md "The master key")` };
-  const previous = (secret(PREVIOUS_KEYS_VARIABLE) ?? '').split(/[\s,]+/).filter(Boolean);
-  return { sealer: createSealer(key, previous) };
+  if (!secret(MASTER_KEY_VARIABLE)) return { problem: `the master key is missing: the hopper is limited until it is given as ${MASTER_KEY_VARIABLE} at launch (docs/deploy.md "The master key")` };
+  return { sealer: liveSealer(() => ({ key: secret(MASTER_KEY_VARIABLE) ?? '', previous: previousOf(secret) })) };
 }

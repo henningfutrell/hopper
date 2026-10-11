@@ -8,6 +8,8 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The hopper's admin can now change the master key with one click on the Vault page, or one command. Every secret is locked again under the new key at once, with no restart, and the new key is shown one time to save. Use it if the key may have been seen.
+- The container setup no longer keeps any secret on disk: the files it makes at each start live in memory only, and the master key is only in your settings file. Before you update, put the master key in your settings file; the update stops until you do.
 - The Queue page now shows each job as a short card, so you can scan and compare jobs at a glance: the issue, its state, its lane and whether its repository merges by itself. Click a card to see its details, or open and close every card at once.
 - Lane tuning now only recommends: the hopper no longer changes a machine's lanes by itself. On Machines, Apply sets the machine's lanes to the recommended number, and Dismiss hides the recommendation until it changes. Each applied change shows who applied it and why, and an admin can undo it. A machine that ran on lanes the hopper set keeps them as its own lanes.
 - Proposal paths are now easier to compare. Each path card shows its bullets, bold text and code as formatted text, and shows Security, Effort, Risk, Friction and any other field on a row of its own, also on a phone.

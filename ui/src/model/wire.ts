@@ -23,7 +23,7 @@ import type {
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
-  MasterKeyView,
+  MasterKeyRotated, MasterKeyView,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -46,7 +46,7 @@ export type {
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, Confidence, Escalation, EscalationReason, GuardHit,
   CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
-  MasterKeyView,
+  MasterKeyRotated, MasterKeyView,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,

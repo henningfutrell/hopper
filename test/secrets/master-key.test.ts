@@ -143,7 +143,7 @@ describe('the master key (issue #659)', () => {
 
   it('withMasterKey: the parts read the resolved key, and no file or old variable', () => {
     const env: Record<string, string | undefined> = { PATH: '/bin', HOPPER_MASTER_KEY_FILE: '/x', HOPPER_TOKEN_KEY: OTHER, HOPPER_TOKEN_KEY_FILE: '/y' };
-    const keyed = withMasterKey(env, { key: KEY, previous: [OTHER] });
+    const { env: keyed, use } = withMasterKey(env, { key: KEY, previous: [OTHER] });
     expect(keyed.HOPPER_MASTER_KEY).toBe(KEY);
     expect(keyed.HOPPER_MASTER_KEY_PREVIOUS).toBe(OTHER);
     expect(keyed.HOPPER_MASTER_KEY_FILE).toBeUndefined();
@@ -152,6 +152,10 @@ describe('the master key (issue #659)', () => {
     expect(keyed.PATH).toBe('/bin');
     env.LATER = 'set while running';
     expect(keyed.LATER).toBe('set while running');
-    expect(withMasterKey(env, undefined).HOPPER_MASTER_KEY).toBeUndefined();
+    expect(withMasterKey(env, undefined).env.HOPPER_MASTER_KEY).toBeUndefined();
+    // A rotation (issue #659): the parts read the new key from then on, and no previous key.
+    use({ key: OTHER, previous: [] });
+    expect(keyed.HOPPER_MASTER_KEY).toBe(OTHER);
+    expect(keyed.HOPPER_MASTER_KEY_PREVIOUS).toBeUndefined();
   });
 });

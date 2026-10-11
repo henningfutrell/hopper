@@ -73,4 +73,60 @@ describe('the master key banner (#659)', () => {
     expect(banner.textContent).toContain(problem);
     expect(banner.textContent).toContain('Nothing is deleted');
   });
+
+  it('a rotated key (issue #659 requirement 6): save the new key now, shown once in the banner; a start with the old key is refused', async () => {
+    const { el } = await render({ view: { source: 'rotated', previous: false, fingerprint: '0123456789abcdef', saved: false, revealable: false }, revealed: KEY });
+    const banner = el.querySelector('[data-master-key]')!;
+    expect(banner.textContent).toContain('Save the new master key now');
+    expect(banner.textContent).toContain('replaced is refused');
+    expect(banner.textContent).not.toContain('start log');
+    expect(el.querySelector('[data-master-key-value]')?.textContent).toBe(KEY);
+    expect(button(el, 'Show the key')).toBeUndefined();
+    expect(button(el, 'I saved it')).toBeDefined();
+  });
+
+  it('a rotated key, saved: give it at the next launch; the old one is refused', async () => {
+    const { el } = await render({ view: { source: 'rotated', previous: false, fingerprint: '0123456789abcdef', saved: true, revealable: false } });
+    const banner = el.querySelector('[data-master-key]')!;
+    expect(banner.textContent).toContain('HOPPER_MASTER_KEY');
+    expect(banner.textContent).toContain('replaced is refused');
+  });
+});
+
+type CardProps = { view: MasterKeyView | null; admin: boolean; busy: boolean; onRotate(): void };
+async function renderCard(p: Partial<CardProps>): Promise<{ el: Element; props: CardProps }> {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  document.body.innerHTML = '<div id="root"></div>';
+  const path = '../../ui/src/app/master-key.tsx';
+  const { MasterKeyRotationCard } = (await import(path)) as { MasterKeyRotationCard: (p: CardProps) => ReturnType<typeof createElement> };
+  const props: CardProps = { view: { source: 'given', previous: false, fingerprint: '0123456789abcdef', saved: true, revealable: false }, admin: true, busy: false, onRotate: vi.fn(), ...p };
+  await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(MasterKeyRotationCard, props)); });
+  return { el: document.getElementById('root')!, props };
+}
+
+describe('rotating the master key on Settings → Vault (#659)', () => {
+  it('the admin rotates after a confirm; a cancel rotates nothing', async () => {
+    const { el, props } = await renderCard({});
+    expect(el.textContent).toContain('0123456789abcdef');
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    vi.stubGlobal('confirm', confirm);
+    await act(async () => button(el, 'Rotate the master key')!.click());
+    expect(props.onRotate).not.toHaveBeenCalled();
+    await act(async () => button(el, 'Rotate the master key')!.click());
+    expect(props.onRotate).toHaveBeenCalledOnce();
+    expect(String(confirm.mock.calls[0]![0])).toContain('HOPPER_MASTER_KEY');
+    vi.unstubAllGlobals();
+  });
+
+  it('not the admin: no button, and who can', async () => {
+    const { el } = await renderCard({ admin: false });
+    expect(button(el, 'Rotate the master key')).toBeUndefined();
+    expect(el.textContent).toContain('the hopper\'s admin');
+  });
+
+  it('limited: the problem, no button', async () => {
+    const { el } = await renderCard({ view: { source: 'missing', previous: false, saved: false, revealable: false, problem: 'the master key is missing' } });
+    expect(button(el, 'Rotate the master key')).toBeUndefined();
+    expect(el.textContent).toContain('the master key is missing');
+  });
 });

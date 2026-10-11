@@ -21,6 +21,8 @@ interface Service {
 /** `${NAME}`, `${NAME:-default}` or `${NAME-default}`. */
 const VARIABLE = /^\$\{([A-Za-z0-9_]+)(?::?-([^}]*))?\}$/;
 const LOOPBACK = '127.0.0.1';
+/** Where the compose file's own start files are: a variable naming one is the file's wiring, never a setting of the install. */
+const OWN_FILES = '/run/hopper-secrets/';
 const DEFAULT_PORT = '4790';
 
 function services(text: string): Record<string, Service> | string {
@@ -93,7 +95,8 @@ function localValue(key: string, old: string, next: string | undefined): string 
     if (o[1] !== key || !o[2]) return undefined;
     return next === undefined || (r && r[1] === key && r[2] !== o[2]) ? o[2] : undefined;
   }
-  if (!literal(old) || old === next) return undefined;
+  // A file the old compose file made and the new one does not (the old token key's, issue #659) is not carried.
+  if (!literal(old) || old === next || old.startsWith(OWN_FILES)) return undefined;
   return next === undefined || r?.[1] === key ? old : undefined;
 }
 

@@ -2520,6 +2520,28 @@ Version 1 (`docs/schemas/vault.secret_migrated.v1.json`). One of the hopper's ow
 }
 ```
 
+## `vault.master_key_rotated`
+
+Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin rotated the master key (issue #659): every secret the old key sealed, in every vault, was sealed again under a new key in one transaction (`resealed`); `unreadable` counts the ones the old key sealed that did not open, left as they were. `from` and `to` are the two keys' short fingerprints, never a key; `by` pressed it. The new key is shown once, to them. Appended to every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `by` | string | yes |
+| `resealed` | integer | yes |
+| `unreadable` | integer | yes |
+
+```json
+{
+  "from": "9c1e04b7a2d35f60",
+  "to": "4b7d2e91c0a6f358",
+  "by": "admin",
+  "resealed": 12,
+  "unreadable": 0
+}
+```
+
 ## `template.saved`
 
 Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
