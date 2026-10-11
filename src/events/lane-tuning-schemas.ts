@@ -15,6 +15,8 @@ export const LANE_TUNING_EVENT_SCHEMAS = {
   'lanes.recommended': strict({
     machineId: z.string(), lanes, configured: lanes, headroom: lanes.optional(), reason: z.string(),
     confidence, usage: z.enum(LANE_USAGE_BANDS), mode: z.literal('shadow').optional(),
+    // Jev picked the lanes (issue #550, `lane-count` active); `rules`: the rules' own recommendation.
+    decidedBy: z.literal('jev').optional(), rules: strict({ lanes, reason: z.string(), confidence }).optional(),
   }),
   'lanes.tuning_changed': strict({ machineId: z.string(), from: laneTuning, to: laneTuning, by: z.string() }),
   // `by`: the admin who applied it. Absent, with `configured`: the hopper applied it itself in active mode.

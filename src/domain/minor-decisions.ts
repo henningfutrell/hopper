@@ -4,7 +4,7 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-answer', 'failure-assessment'] as const;
+export const DECISION_POINTS = ['question-answer', 'failure-assessment', 'lane-count', 'job-machine'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 
 /** off: Jev is not asked. shadow: Jev's pick is recorded next to what was decided. active: a confident pick is applied. */
@@ -23,6 +23,8 @@ export type MinorDecisionSettings = Record<DecisionPoint, DecisionPointSettings>
 export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
   'question-answer': { mode: 'shadow', threshold: 0.85 },
   'failure-assessment': { mode: 'shadow', threshold: 0.85 },
+  'lane-count': { mode: 'shadow', threshold: 0.85 },
+  'job-machine': { mode: 'shadow', threshold: 0.85 },
 };
 
 /** What each point is, in plain words (issue #217): the UI's labels. */
@@ -34,6 +36,14 @@ export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string
   'failure-assessment': {
     label: 'A failed job no rule explains',
     describe: 'A job failed with no known cause. Jev picks: run it again, or hand it to a person.',
+  },
+  'lane-count': {
+    label: 'How many lanes a machine runs',
+    describe: 'The lane tuning rules recommend new lanes for a machine. Jev picks the lanes from the ones the rules allow. An admin still applies them.',
+  },
+  'job-machine': {
+    label: 'The machine a waiting job goes to',
+    describe: 'More than one machine can take a waiting job. Jev picks the machine. Active, a sure pick goes first when that machine has a free lane.',
   },
 };
 
@@ -53,8 +63,8 @@ export interface MinorDecisionAsk {
 /** Jev's answer: the option it picks and its confidence; or why it could not answer. */
 export type JevPick = { ok: true; pick: string; confidence: number } | { ok: false; why: string };
 
-/** Why a pick was not applied. */
-export const NOT_APPLIED = ['shadow', 'below_threshold', 'consequential', 'no_pick'] as const;
+/** Why a pick was not applied. `too_late`: the decision was made before Jev answered. */
+export const NOT_APPLIED = ['shadow', 'below_threshold', 'consequential', 'no_pick', 'too_late'] as const;
 export type NotApplied = typeof NOT_APPLIED[number];
 
 /** A pick and what was decided after it. */
@@ -64,6 +74,8 @@ export interface MinorDecisionPickView {
   point: DecisionPoint;
   jobId?: string;
   questionId?: string;
+  /** The machine the decision is about (`lane-count`). */
+  machineId?: string;
   options: MinorDecisionOption[];
   /** Absent: Jev could not answer (`error`). */
   pick?: string;
@@ -146,8 +158,15 @@ export interface JevChooser {
 export interface MinorDecisionInput extends MinorDecisionAsk {
   jobId?: string;
   questionId?: string;
+  /** The machine the decision is about (`lane-count`). */
+  machineId?: string;
   /** What makes the decision consequential (deletes, sends, publishes, pays, permissions, a gated machine): never applied. */
   consequential: readonly string[];
+  /**
+   * What was decided while Jev was asked, read when its pick comes: the pick is then not applied (`too_late`) and is
+   * compared with it at once. Undefined: still open. Absent: the decision waits for Jev.
+   */
+  settled?: () => { actual: string; by: string } | undefined;
 }
 
 /** What Jev first did: not asked (off, or Jev unavailable), or its pick and whether it is applied. */

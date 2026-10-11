@@ -96,6 +96,26 @@ export interface LaneRecommendation {
   dismissed?: { at: string; by: string };
   /** The last recommendation applied can be undone: back `to` these lanes. */
   undo?: { to: number };
+  /**
+   * `jev`: the lanes are Jev's pick at the `lane-count` decision point (issue #550), applied as the point is active and
+   * Jev was sure; `rules` holds the rules' own recommendation. Absent: the rules decided.
+   */
+  decidedBy?: 'jev';
+  rules?: { lanes: number; reason: string; confidence: number };
+}
+
+/** Jev's applied pick of a machine's lanes, and the rules' recommendation and configured lanes it was picked at. */
+export interface JevLanes {
+  lanes: number;
+  confidence: number;
+  rulesLanes: number;
+  configured: number;
+}
+
+/** Jev's applied pick of a waiting job's machine (`job-machine`, issue #550): placement takes it first when a lane is free there. */
+export interface PlacementPick {
+  machineId: string;
+  confidence: number;
 }
 
 /**

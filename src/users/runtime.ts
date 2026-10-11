@@ -346,6 +346,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
     // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
+    // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
+    jevFirst: minorDecisions,
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({

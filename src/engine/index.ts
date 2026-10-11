@@ -23,6 +23,7 @@ import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
+import { createPlacementPicks } from './lane-calls.ts';
 
 import { EngineError } from './errors.ts';
 export { EngineError };
@@ -96,7 +97,7 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected);
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
@@ -105,6 +106,7 @@ export function createEngine(o: EngineOptions): Engine {
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
+    jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -119,7 +121,10 @@ export function createEngine(o: EngineOptions): Engine {
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
-  const laneTuning = createLaneTuning(c);
+  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine.
+  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes };
+  const laneTuning = createLaneTuning(c, laneCalls);
+  const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -155,7 +160,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (event.type === 'job.queued' && event.jobId) {
           const jobId = event.jobId;
           setImmediate(() => classifier.classifyJob(jobId));
+          // Its status is read now, before a Decision can claim it (issue #688, `job-machine`).
+          placementPicks.ask(jobId, event.at);
         }
+        if ((event.type === 'job.claimed' || event.type === 'job.cancelled') && event.jobId) placementPicks.forget(event.jobId);
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
@@ -168,6 +176,7 @@ export function createEngine(o: EngineOptions): Engine {
         o.logins.sweep();
         o.questions.sweep();
         for (const k of REVIEW_KINDS) o.reviews[k].sweep();
+        placementPicks.sweep();
         // Auto-park (issue #650): one pass at a time; a pass still ending panes skips this tick.
         if (!autoParking) {
           autoParking = true;

@@ -4,6 +4,7 @@ import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, Lan
 import { nowIso, policyOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
 import type { BlastRadius } from './blast-radius.ts';
+import type { PlacementPicks } from './lane-calls.ts';
 import { releaseLane } from './outcome.ts';
 import { autoAccept } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
@@ -16,12 +17,13 @@ const RUNNING = ['claimed', 'running'] as const;
 /** A job's expected cost, where one is known (issue #688). */
 export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
 
-async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf): Promise<() => DecisionInputs> {
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<() => DecisionInputs> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     const expectedCosts = expectedOf(waiting, expected);
+    const placementPicks = picks.input(waiting);
     return {
       at: nowIso(c),
       trigger,
@@ -37,6 +39,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       priorityLanes: priorityLanes.input(machines),
       blastRadius: blastRadius.input(machines),
       ...(expectedCosts ? { expectedCosts } : {}),
+      ...(placementPicks ? { placementPicks } : {}),
       policy: policyOf(c),
     };
   };
@@ -121,8 +124,8 @@ function freeStrandedLanes(c: EngineContext): void {
 }
 
 /** Returns the claims whose executors the caller must start, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf): Promise<Claim[]> {
-  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected);
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<Claim[]> {
+  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
   autoAccept(c);

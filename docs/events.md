@@ -2166,12 +2166,12 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`) and the decision went on as before. A question's pick names it (`questionId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`, `lane-count`, `job-machine`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -2180,9 +2180,10 @@ Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a de
 | `mode` | `off` \| `shadow` \| `active` | yes |
 | `threshold` | number | yes |
 | `applied` | boolean | yes |
-| `notApplied` | `shadow` \| `below_threshold` \| `consequential` \| `no_pick` | no |
+| `notApplied` | `shadow` \| `below_threshold` \| `consequential` \| `no_pick` \| `too_late` | no |
 | `consequential` | string[] | no |
 | `questionId` | string | no |
+| `machineId` | string | no |
 
 ```json
 {
@@ -2216,7 +2217,7 @@ Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided aft
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -2240,7 +2241,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -2259,7 +2260,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 
@@ -3511,7 +3512,7 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
 
 ## `lanes.recommended`
 
-Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure or slow progress, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there.
+Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure or slow progress, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there. `decidedBy: jev`: the lanes are Jev's applied pick at the `lane-count` decision point (issue #550), and `rules` the rules' own recommendation.
 
 | field | type | required |
 |---|---|---|
@@ -3523,6 +3524,8 @@ Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommend
 | `confidence` | number | yes |
 | `usage` | `free` \| `near` \| `soft` \| `hard` | yes |
 | `mode` | string | no |
+| `decidedBy` | string | no |
+| `rules` | object | no |
 
 ```json
 {

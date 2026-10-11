@@ -21,6 +21,7 @@ describe('decider calls model', () => {
     expect(pickSummary({ ...base, pick: '1', confidence: 0.99, mode: 'active', notApplied: 'consequential', consequential: ['delete'] })).toBe('ledger (1) at 99% — consequential (delete): never decided by Jev');
     expect(pickSummary({ ...base, pick: '1', confidence: 0.99, mode: 'active', applied: true })).toBe('ledger (1) at 99% — applied');
     expect(pickSummary({ ...base, error: 'TypeSafe answered 503', notApplied: 'no_pick' })).toBe('no pick: TypeSafe answered 503');
+    expect(pickSummary({ ...base, pick: '2', confidence: 0.9, mode: 'active', notApplied: 'too_late' })).toBe('journal (2) at 90% — too late: decided before Jev answered');
   });
 
   it('pickDecided: what was decided, by whom, and whether Jev agreed', () => {
