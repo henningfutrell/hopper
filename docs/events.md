@@ -3659,3 +3659,43 @@ Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed
   "by": "octocat"
 }
 ```
+
+## `repo_checks.job_queued`
+
+Version 1 (`docs/schemas/repo_checks.job_queued.v1.json`). A person queued the "Add PR checks to <repo>" job for job repository `repo` (`owner/repo`, lowercased), which has no checks (issue #677): an issue filed through their own GitHub connection with the hopper label, assigned to their connected account, so a job source takes it. `existing`: an open issue of that title was there, and none was filed. Its `number` and `url`, and `by`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `existing` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "number": 41,
+  "url": "https://github.com/owner/repo/issues/41",
+  "existing": false,
+  "by": "octocat"
+}
+```
+
+## `repo_checks.dismissed`
+
+Version 1 (`docs/schemas/repo_checks.dismissed.v1.json`). A person dismissed (`dismissed: true`) or brought back (`false`) the "Add PR checks" recommendation for job repository `repo` (`owner/repo`, lowercased; issue #677). The "no checks" warning stays. `by` who did it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `dismissed` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "dismissed": true,
+  "by": "octocat"
+}
+```

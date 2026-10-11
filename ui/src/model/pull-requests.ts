@@ -1,6 +1,6 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
-// closing issue. The daemon builds the list; the UI only says it.
-import type { PullRequestCard, PullRequestsView } from './wire.ts';
+// closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
+import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
 
@@ -49,3 +49,15 @@ export const yoloNote = (on: boolean): string => on
 export const yoloToggle = (repo: string, on: boolean): { repos: Record<string, boolean> } => ({ repos: { [repo]: on } });
 
 export const hasCards = (v: PullRequestsView): boolean => v.repos.some((r) => r.pullRequests.length > 0);
+
+/** The header's warning (issue #677): every job repository with no checks; '' when none. */
+export function noChecksLine(v: RepoChecksView): string {
+  const none = (v.repos ?? []).filter((r) => r.state === 'no checks');
+  if (none.length === 0) return '';
+  return `no checks: ${none.map((r) => r.repo).join(', ')}${none.some((r) => r.yolo) ? ' (yolo merges unverified code there)' : ''}`;
+}
+
+/** A repository group's warning when it has no checks (issue #677). */
+export const noChecksNote = (r: Pick<RepoChecks, 'yolo'>): string => r.yolo
+  ? 'No checks: yolo mode merges unverified code here.'
+  : 'No checks: nothing verifies a pull request here before a person merges it.';

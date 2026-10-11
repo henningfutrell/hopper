@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
+import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan } from './parts.ts';
 
 const strict = z.strictObject;
 const decisionPoint = z.enum(DECISION_POINTS);
@@ -360,9 +360,7 @@ export const EVENT_SCHEMAS = {
   ...ITEM_EVENT_SCHEMAS,
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  // Report a bug (issue #694): what was filed, never its text.
-  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
-  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  ...bugReportEvents, ...repoChecksEvents,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

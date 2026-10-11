@@ -184,6 +184,8 @@
         "lanes.dismissed",
         "bug_report.filed",
         "bug_report.failed",
+        "repo_checks.job_queued",
+        "repo_checks.dismissed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

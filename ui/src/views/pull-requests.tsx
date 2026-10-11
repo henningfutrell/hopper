@@ -3,8 +3,9 @@
 // it on or off. The header says how many repositories have yolo mode on, and where merging waits. Read from
 // `GET /api/pull-requests`, again every few seconds and after a change. An open card has Merge now and Close PR for an
 // operator (issue #677), each confirmed once, and Send back for rework (issue #724): with notes, the pull request becomes
-// a draft and a new job reworks it.
-import { ExternalLink, GitMerge, GitPullRequest, Undo2, X } from 'lucide-react';
+// a draft and a new job reworks it. A repository with no checks (issue #677, `GET /api/repo-checks`) is named in the
+// header and warned of in its group, with the job that adds them: Queue job files it at once, Dismiss hides it.
+import { ExternalLink, GitMerge, GitPullRequest, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -17,8 +18,8 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, mergeQuestion, hasCards, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
-import type { PullRequestCard, PullRequestsView } from '@/model/wire';
+import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
+import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
 import { useCanAdmin, useCanOperate } from '@/store/selectors';
 
@@ -103,7 +104,39 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   );
 }
 
-function RepoGroup({ group, onChanged }: { group: PullRequestsView['repos'][number]; onChanged: () => void }) {
+/** A repository with no checks (issue #677): the warning, and the recommended job with Queue job and Dismiss for an operator. */
+function NoChecks({ r, onChanged }: { r: RepoChecks; onChanged: () => void }) {
+  const operator = useCanOperate();
+  const [busy, setBusy] = useState(false);
+  const send = async (path: string, body: unknown, done: string) => {
+    setBusy(true);
+    await act(path, body, done);
+    setBusy(false);
+    onChanged();
+  };
+  const job = r.recommendation;
+  return (
+    <div role="note" data-slot="repo-no-checks" className="flex gap-2 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs">
+      <TriangleAlert className="size-4 shrink-0 text-amber-600" />
+      <div className="space-y-1">
+        <p>{noChecksNote(r)}</p>
+        {job && (
+          <div data-slot="repo-checks-job" className="flex flex-wrap items-center gap-2">
+            <span>Recommended job: <span className="font-medium">{job.title}</span></span>
+            {job.queued
+              ? <GhLink url={job.queued.url}>queued as #{job.queued.number}</GhLink>
+              : operator && <Button size="xs" variant="outline" disabled={busy} title="File it as an issue with the hopper label, assigned to you"
+                onClick={() => void send('/ui/api/repo-checks/queue', { repo: r.repo }, `Queued: ${job.title}`)}>Queue job</Button>}
+            {operator && <Button size="xs" variant="ghost" disabled={busy} title="Hide this job for this repository; the warning stays"
+              onClick={() => void send('/ui/api/repo-checks/dismiss', { repo: r.repo, dismissed: true }, `Dismissed for ${r.repo}`)}>Dismiss</Button>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RepoGroup({ group, checks, onChanged }: { group: PullRequestsView['repos'][number]; checks?: RepoChecks; onChanged: () => void }) {
   const admin = useCanAdmin();
   const [busy, setBusy] = useState(false);
   const toggle = async (on: boolean) => {
@@ -116,11 +149,13 @@ function RepoGroup({ group, onChanged }: { group: PullRequestsView['repos'][numb
     <section data-repo={group.repo}>
       <Panel title={group.repo} icon={GitPullRequest} count={group.pullRequests.length || ''} bodyClassName="p-0"
         action={<>
+          {checks?.state === 'no checks' && <StatusBadge status="no-checks" label="no checks" tone="warn" />}
           <YoloBadge on={group.yolo} />
           <Switch checked={group.yolo} disabled={!admin || busy} aria-label={`Yolo mode for ${group.repo}`}
             title={admin ? undefined : 'Only an admin changes yolo mode'} onCheckedChange={(on) => void toggle(on)} />
         </>}>
         <p data-slot="yolo-note" className="border-b px-4 py-2 text-xs text-muted-foreground">{yoloNote(group.yolo)}</p>
+        {checks?.state === 'no checks' && <NoChecks r={checks} onChanged={onChanged} />}
         {group.pullRequests.length
           ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} onChanged={onChanged} />)}</ul>
           : <Empty>no pull request waits</Empty>}
@@ -131,7 +166,13 @@ function RepoGroup({ group, onChanged }: { group: PullRequestsView['repos'][numb
 
 export function PullRequests() {
   const [view, setView] = useState<PullRequestsView | undefined>();
-  const load = useCallback(async () => setView(await get<PullRequestsView>('/api/pull-requests')), []);
+  const [checks, setChecks] = useState<RepoChecksView>({ repos: [] });
+  const load = useCallback(async () => {
+    setView(await get<PullRequestsView>('/api/pull-requests'));
+    // The checks are read in the background on the daemon: a failed read leaves the last answer.
+    const c = await get<RepoChecksView>('/api/repo-checks').catch(() => undefined);
+    if (Array.isArray(c?.repos)) setChecks(c);
+  }, []);
   usePoll(load, POLL_MS);
   const reload = () => { load().catch(() => {}); };
   if (!view) return <Panel title="Pull requests" icon={GitPullRequest}><Empty>loading</Empty></Panel>;
@@ -141,10 +182,11 @@ export function PullRequests() {
         <div className="space-y-1 text-sm">
           <p data-slot="pr-yolo-line">{yoloLine(view)}</p>
           <p data-slot="pr-waiting-line" className="text-muted-foreground">{waitingLine(view)}</p>
+          {noChecksLine(checks) && <p data-slot="pr-no-checks-line" className="text-warn">{noChecksLine(checks)}</p>}
           {!hasCards(view) && <p data-slot="pr-empty" className="text-muted-foreground">No pull request waits.</p>}
         </div>
       </Panel>
-      {view.repos.map((g) => <RepoGroup key={g.repo} group={g} onChanged={reload} />)}
+      {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
     </div>
   );
 }

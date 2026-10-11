@@ -15,9 +15,11 @@
 // one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
 // GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
 import { createHash } from 'node:crypto';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { serveGit } from './fake-git.ts';
+import { readBody, send } from './fake-http.ts';
+import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -38,18 +40,11 @@ export interface FakeIssue {
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
 interface FakePull { repo: string; number: number; title: string; body: string; head: string; base: string; draft?: boolean }
 
-/**
- * What a repository has of checks for pull requests (issue #677): required status checks in its default branch's
- * protection and in its rulesets, its workflow files by name, and the check rollup of each of its newest pull requests
- * (`null`: none ran). `down`: GitHub answers 503 to all of it.
- */
-export interface FakeRepoChecks { required?: string[]; ruleset?: string[]; workflows?: Record<string, string>; pullRequests?: (string | null)[]; down?: boolean }
-
 export interface ForgeRequest { method: string; path: string; query: Record<string, string>; body: Record<string, unknown>; auth: string }
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge {
+export interface FakeForge extends RepoChecksForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -68,8 +63,6 @@ export interface FakeForge {
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
-  /** GitHub: each repository's checks for pull requests, by owner/name (issue #677); a repository not named here has none. */
-  repoChecks?: Record<string, FakeRepoChecks>;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
@@ -88,20 +81,6 @@ export interface FakeForge {
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
 }
-
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
-  const text = Buffer.concat(chunks).toString('utf8');
-  if (!text) return {};
-  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
-  try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text }; }
-}
-
-const send = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(body === undefined ? '' : JSON.stringify(body));
-};
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
@@ -257,6 +236,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`));
       if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
+      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body);
+      if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {
@@ -292,14 +273,6 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
           && (repos.length === 0 || repos.includes(i.repo)) && (words.length === 0 || words.some((w) => (where === 'body' ? i.body : i.title).toLowerCase().includes(w))));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
-      if (r.method === 'POST' && path === '/graphql' && String(r.body.query).includes('statusCheckRollup')) {
-        // The check rollups of a repository's newest pull requests (issue #677: does it have checks?).
-        const v = (r.body.variables ?? {}) as Record<string, unknown>;
-        const c = forge?.repoChecks?.[`${String(v.owner)}/${String(v.name)}`];
-        if (c?.down) return { status: 503, body: { message: 'Service Unavailable' } };
-        const nodes = (c?.pullRequests ?? []).map((state) => ({ commits: { nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }] } }));
-        return { status: 200, body: { data: { repository: { pullRequests: { nodes } } } } };
-      }
       if (r.method === 'POST' && path === '/graphql') {
         const id = String((r.body.variables as Record<string, unknown> | undefined)?.id ?? '');
         const pull = pulls.find((p) => `PR_${p.repo}_${p.number}` === id);
@@ -312,24 +285,6 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const repo = m[1]!;
       const rest = m[2] ?? '';
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
-      // A repository's checks for pull requests (issue #677): branch protection, rulesets, workflow files.
-      const checks = forge?.repoChecks?.[repo];
-      if (checks?.down && r.method === 'GET' && /^(branches|rules|contents)\//.test(rest)) return { status: 503, body: { message: 'Service Unavailable' } };
-      if (r.method === 'GET' && /^branches\/[^/]+$/.test(rest)) {
-        const contexts = checks?.required ?? [];
-        return { status: 200, body: { name: rest.slice('branches/'.length), protected: contexts.length > 0, protection: { enabled: contexts.length > 0, required_status_checks: { enforcement_level: contexts.length > 0 ? 'everyone' : 'off', contexts } } } };
-      }
-      if (r.method === 'GET' && /^rules\/branches\/[^/]+$/.test(rest)) {
-        const ruleset = checks?.ruleset ?? [];
-        return { status: 200, body: ruleset.length === 0 ? [] : [{ type: 'required_status_checks', parameters: { required_status_checks: ruleset.map((context) => ({ context })) } }] };
-      }
-      if (r.method === 'GET' && rest.startsWith('contents/.github/workflows')) {
-        const files = checks?.workflows ?? {};
-        const name = rest.slice('contents/.github/workflows'.length).replace(/^\//, '');
-        if (!name) return Object.keys(files).length === 0 ? { status: 404, body: { message: 'Not Found' } } : { status: 200, body: Object.keys(files).map((f) => ({ name: f, path: `.github/workflows/${f}`, type: 'file' })) };
-        const text = files[decodeURIComponent(name)];
-        return text === undefined ? { status: 404, body: { message: 'Not Found' } } : { status: 200, body: { name, encoding: 'base64', content: Buffer.from(text).toString('base64') } };
-      }
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
       }

@@ -169,6 +169,8 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'lanes.dismissed': 'An admin dismissed a machine\'s lane recommendation (issue #688): the `lanes` it recommended at the `configured` lanes, and why (`reason`). Not offered again until the recommendation or the configured lanes move. `by`: who.',
   'bug_report.filed': 'A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper\'s own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user\'s connection; `by` is then `job <id>`. Never its text.',
   'bug_report.failed': 'A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.',
+  'repo_checks.job_queued': 'A person queued the "Add PR checks to <repo>" job for job repository `repo` (`owner/repo`, lowercased), which has no checks (issue #677): an issue filed through their own GitHub connection with the hopper label, assigned to their connected account, so a job source takes it. `existing`: an open issue of that title was there, and none was filed. Its `number` and `url`, and `by`.',
+  'repo_checks.dismissed': 'A person dismissed (`dismissed: true`) or brought back (`false`) the "Add PR checks" recommendation for job repository `repo` (`owner/repo`, lowercased; issue #677). The "no checks" warning stays. `by` who did it.',
 };
 
 type Prop = Record<string, unknown>;

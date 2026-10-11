@@ -219,6 +219,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setIntakeActors(settings) {
       write('intakeActors', JSON.stringify({ actors: settings.actors }));
     },
+    getRepoChecksDismissed() {
+      const text = read('repoChecksDismissed');
+      return text === undefined ? [] : JSON.parse(text) as string[];
+    },
+    setRepoChecksDismissed(repos) {
+      write('repoChecksDismissed', JSON.stringify([...repos]));
+    },
     getBackfills() {
       const text = read('backfills');
       return text === undefined ? {} : JSON.parse(text) as Record<string, string>;

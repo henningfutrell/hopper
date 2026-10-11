@@ -28,7 +28,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import { ADMIN_ID, type DomainEvent, type RepoChecks, type RepoChecksView } from '../../src/domain/types.ts';
-import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
+import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -130,7 +130,7 @@ describe('Repositories with no checks', () => {
     expect(of((await app.api<RepoChecksView>('GET', '/api/repo-checks')).body, BARE).recommendation).toEqual({
       title: `Add PR checks to ${BARE}`, queued: { number: 1, url: `${github.url}/${BARE}/issues/1` },
     });
-    expect(eventsOf(app, 'repo_checks.job_queued').map((e) => e.data)).toEqual([
+    expect(eventsOf(app, 'repo_checks.job_queued').map((e) => e.data).reverse()).toEqual([
       { repo: BARE, number: 1, url: `${github.url}/${BARE}/issues/1`, existing: false, by: expect.any(String) },
       { repo: BARE, number: 1, url: `${github.url}/${BARE}/issues/1`, existing: true, by: expect.any(String) },
     ]);
@@ -157,7 +157,7 @@ describe('Repositories with no checks', () => {
     expect(of((await app.api<RepoChecksView>('GET', '/api/repo-checks')).body, BARE)).toMatchObject({ dismissed: true });
     const back = await app.ui<RepoChecks>('/ui/api/repo-checks/dismiss', { repo: BARE.toUpperCase(), dismissed: false }, { token });
     expect(back.body).toMatchObject({ dismissed: false, recommendation: { title: `Add PR checks to ${BARE}` } });
-    expect(eventsOf(app, 'repo_checks.dismissed').map((e) => e.data)).toEqual([
+    expect(eventsOf(app, 'repo_checks.dismissed').map((e) => e.data).reverse()).toEqual([
       { repo: BARE, dismissed: true, by: expect.any(String) },
       { repo: BARE, dismissed: false, by: expect.any(String) },
     ]);

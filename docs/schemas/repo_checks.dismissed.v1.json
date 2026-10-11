@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "dismissed": {
+      "type": "boolean"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "dismissed",
+    "by"
+  ],
+  "additionalProperties": false
+}
