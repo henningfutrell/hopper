@@ -69,13 +69,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       const span = 'preset' in r ? PRESET_MS[r.preset] : Date.parse(r.to) - Date.parse(r.from);
       write('usageGraphView', JSON.stringify({ range: 'preset' in r ? { preset: r.preset } : { from: r.from, to: r.to }, step: graphStepFor(span) }));
     },
-    getHistoryRetentionDays() {
-      const text = read('historyRetentionDays');
-      return text === undefined ? undefined : Number(text);
-    },
-    setHistoryRetentionDays(days) {
-      write('historyRetentionDays', String(days));
-    },
+    getHistoryRetentionDays() { const text = read('historyRetentionDays'); return text === undefined ? undefined : Number(text); },
+    setHistoryRetentionDays(days) { write('historyRetentionDays', String(days)); },
     getUsageLimits() {
       const text = read('usageLimits');
       if (text === undefined) return undefined;

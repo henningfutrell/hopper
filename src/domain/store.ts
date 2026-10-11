@@ -9,7 +9,6 @@ import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
 import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
-import type { PointedJobRepository } from './pointed-jobs.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -491,7 +490,7 @@ export interface UserStore {
   /** The issue graph (issue #437): store only, nothing reads it yet. */
   issueGraph: import('./issue-graph.ts').IssueGraphRepository;
   /** Pointed jobs (issue #425). */
-  pointedJobs: PointedJobRepository;
+  pointedJobs: import('./pointed-jobs.ts').PointedJobRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

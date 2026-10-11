@@ -54,11 +54,7 @@ const TENANT_BASE = `
   CREATE INDEX jobs_status ON jobs (status);
   CREATE INDEX jobs_source_key ON jobs (source_key);
   CREATE TABLE lanes (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (machine_id, number));
-  CREATE TABLE decisions (
-    seq BIGSERIAL PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
-  );
+  CREATE TABLE decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
   CREATE TABLE events (
     seq BIGSERIAL PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,

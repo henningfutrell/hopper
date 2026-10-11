@@ -67,11 +67,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: by, closedAt: at, stateReason: 'completed' });
     closers.set(p.issue, { url: p.url, createdAt: p.createdAt, mergedAt: at });
   };
-  const pull = (url: string) => {
-    const p = pulls.find((x) => x.url === url && x.state === 'open');
-    if (!p) throw new Error(`no open pull request ${url}`);
-    return p;
-  };
+  const pull = (url: string) => { const p = pulls.find((x) => x.url === url && x.state === 'open'); if (!p) throw new Error(`no open pull request ${url}`); return p; };
   let pullNumber = 1000;
   const xrefs = createFakeCrossReferences(issues, human, addPull);
   const projects = new Map<string, GitHubProjectItem[] | Error>();

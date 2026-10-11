@@ -79,9 +79,7 @@ const radiusLevel = z.enum(RADIUS_LEVELS);
 /** An operation on an asset (issues #559, #584). */
 const asset = strict({ kind: z.enum(ASSET_KINDS), name: z.string() });
 const operationProfile = strict({ operation: z.enum(OPERATIONS), asset });
-const discoveryChanges = strict({
-  first: z.boolean(), added: z.array(z.string()), removed: z.array(z.string()), level: strict({ from: radiusLevel, to: radiusLevel }).optional(),
-});
+const discoveryChanges = strict({ first: z.boolean(), added: z.array(z.string()), removed: z.array(z.string()), level: strict({ from: radiusLevel, to: radiusLevel }).optional() });
 const blastRadiusSettings = strict({
   gateAt: z.enum(GATE_AT),
   pass: strict({ labels: z.array(z.string()), repos: z.array(z.string()), minPriority: z.number().int().optional() }),
@@ -95,8 +93,7 @@ const usageLimits = strict({ soft: z.number().min(0).max(1), hard: z.number().mi
 const problemScope = strict({ machineId: z.string().optional(), executor: z.string().optional() });
 
 const divergence = strict({
-  jobId: z.string(), advice: adviceAction,
-  native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
+  jobId: z.string(), advice: adviceAction, native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
 });
 
 // Phase shifts (issue #548): a phase, a review kind, the settings an admin saves.
