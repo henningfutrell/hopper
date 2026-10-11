@@ -39,6 +39,12 @@ describe('the report context', () => {
     expect(text).not.toContain('line 20\n');
   });
 
+  it('names the failure\'s signature, so the duplicate search finds a report of the same error', () => {
+    const text = reportContext({ install: { kind: 'install' }, system: SYSTEM, job: job({ error: 'agent exited 1' }), failureId: 'fail-9', signature: '0123456789ab' });
+    expect(text).toContain('- Failure: fail-9\n- Signature: 0123456789ab');
+    expect(reportContext({ install: { kind: 'install' }, system: SYSTEM, signature: '0123456789ab' })).not.toContain('Signature');
+  });
+
   it('never carries the job\'s item: its repository, title or issue text', () => {
     const text = reportContext({
       install: { kind: 'install' }, system: SYSTEM,
@@ -65,6 +71,11 @@ describe('the report context', () => {
 describe('the address mask', () => {
   it('keeps times, versions and C++ names', () => {
     expect(maskAddresses('at 12:30:45, v1.2.3, std::vector')).toBe('at 12:30:45, v1.2.3, std::vector');
+  });
+
+  it('masks an IP address at the end of a sentence, and keeps a longer dotted number', () => {
+    expect(maskAddresses('It failed at 10.20.30.40. Then 192.168.1.2.')).toBe('It failed at [IP address, masked]. Then [IP address, masked].');
+    expect(maskAddresses('oid 1.3.6.1.4.1')).toBe('oid 1.3.6.1.4.1');
   });
 
   it('masks private host names', () => {

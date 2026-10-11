@@ -10253,7 +10253,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view`, `pr create|view`, `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|ready`, `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -10272,6 +10272,11 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401
    renews the token once) — **200** `{ ok, op, repo, requestId, number, url, … }`, or **502** with what GitHub said.
+
+A job's bug report (`report.bug`, issue #694) takes steps 1, 2 (`reportRequest`) and 5 (3 per job and 10 per machine
+**in any day**), skips 3 and 4 — it is not an act of the hopper's connection — and is then Report a bug's own path with
+the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }`, **409** with
+the similar open reports, or the refusal's status.
 
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
 "Filed through hopper for job `<job id>` (request `<request id>`). It is not a job: it waits for a person to triage it."
@@ -11732,22 +11737,38 @@ masked in the title and body. Each outcome is one event on the person's log, nev
 by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context { jobId? }` answers
 `{ context, repo }` and changes nothing (404 for a job that is not the person's).
 
+**The duplicate search by signature.** A report on a job whose failure record has a **signature** (the failure
+assessor's, 12 hex digits) names it in the context (`- Signature: <hex>`). Before the title search, the open
+`user-report` issues whose body has that signature are searched (`in:body`); every one found is similar, first. Only
+while the context sent still names it: a signature the person removed is not searched for either.
+
+**Jobs report too** (`fileForJob`). A running job files a hopper bug with `sh "$HOPPER_GH" report bug --title T (--body
+TEXT | --body-file F) [--comment-on N] [--force]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
+second script: one script, one token, one place a job looks for anything GitHub. The proxy checks the job's token and
+the limits (3 per job, 10 per machine, in any day), then files it by the person's path, with the **job's own user's**
+connection, so the job never signs in to GitHub. No person reads a job's text before it is sent, so its title and body
+pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's, on the job
+itself; the body ends "Filed by a job (`<id>`) with Report a bug in a hopper."; `bug_report.filed` and `.failed` carry
+`fromJob: true` and `by: job <id>`. Similar open reports are answered **409** with the list and what to do next
+(`--comment-on N`, or `--force`): nothing is filed until the job chooses. The label is still `user-report`, so a job's
+report never starts a job either.
+
 **UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): a form
 with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
 to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
-*Add to #N* each and *File a new report*; after filing, the line names the issue and links it.
+*Add to #N* each and *File a new report*; after filing, the line names the issue and links it. Every hand-off card,
+failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form, with
+that job's context. A problem card has none: it is many jobs, and each of its failures has its own row.
 
 **Not built yet** (left for the next parts of issue #694):
-- *Report a bug* on every failure, hand-off and question card, with that job's context (the route takes `jobId` now).
-- **Jobs report too**: `hopper-report bug --title … --body …` in the job skill, through the same code path, proxied by the
-  hopper as `hopper-gh` is (issue #563), marked as the job's (`reportBody`'s `fromJob`), rate-limited per job and per day.
 - **Your reports** in Settings: each report with its state (open or closed), refreshed from GitHub.
 - **Fallback**: with the GitHub connection down or no access to the repository, the report kept and sent later, and the
   form says so.
 - `hopper report bug` in the CLI, JSON out, the same code path (issue #623).
-- The duplicate search by an error signature, beside the title.
 
-Tests: `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
+Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
+connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit; the signature search),
+`test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
 `test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).

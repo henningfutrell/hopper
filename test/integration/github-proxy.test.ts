@@ -24,18 +24,17 @@
 //     Given a machine where the reach check finds no hopper at the URL the job would be given
 //     When a job starts there
 //     Then it fails at once: "this machine cannot reach the hopper at <url>", with the action, and no file is kept there
-import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Executor, MachineShell } from '../../src/domain/ports.ts';
-import type { DiscoveryFacts, DomainEvent, Job } from '../../src/domain/types.ts';
+import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { PROXY_HELP } from '../../src/github-proxy/index.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { holder, hopperGh, type Run } from '../support/job-holder.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -44,54 +43,6 @@ afterEach(async () => {
   for (const a of apps.splice(0)) await a.stop();
   for (const c of cleanups.splice(0)) await c();
 });
-
-const NOTHING: DiscoveryFacts = { path: ['/usr/bin'], bins: [{ dir: '/usr/bin', name: 'sh' }], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } };
-
-/** A running job of the holder: the variables it runs with, and what ends it. */
-interface Held { env: Record<string, string>; end(): void }
-
-/**
- * An executor whose jobs hold their lane until ended, keeping their credential files as real files under `root`
- * (the machine's disk, as the MachineShell port writes them).
- */
-function holder(root: string) {
-  const held = new Map<string, Held>();
-  /** What the reach check says on the machine (issue #695); the URLs it was asked for. */
-  const reach: { unreached?: string; asked: string[] } = { asked: [] };
-  const shell: MachineShell = {
-    async reap() { return { kept: [] }; },
-    async survey() { return { scopes: [], processes: [], scratch: [] }; },
-    async keepCredential(_jobId, dir, file, content) {
-      const path = join(root, dir, file);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, content, { mode: 0o600 });
-    },
-    async discover() { return NOTHING; },
-    async reach(url) { reach.asked.push(url); return reach.unreached; },
-  };
-  const executor: Executor = {
-    name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
-    async run(ctx) {
-      const env = { ...(await ctx.credentials?.(`/work/.hopper-scratch/${ctx.job.id}`)) };
-      await new Promise<void>((end) => held.set(ctx.job.id, { env, end }));
-      return { kind: 'finished', result: 'ended' };
-    },
-    resume: async () => ({ kind: 'failed', error: 'not resumed' }),
-  };
-  return { executor, held, reach };
-}
-
-interface Run { code: number; stdout: string; stderr: string }
-
-/** The job runs the script it was given, on its machine: its variables, its files under `root`. */
-function hopperGh(root: string, env: Record<string, string>, args: string[]): Promise<Run> {
-  const onDisk = (v: string | undefined) => (v === undefined ? undefined : join(root, v));
-  return new Promise((resolve) => {
-    execFile('sh', [onDisk(env.HOPPER_GH)!, ...args], {
-      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: onDisk(env.HOPPER_TOKEN_FILE) } as NodeJS.ProcessEnv,
-    }, (err, stdout, stderr) => resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr }));
-  });
-}
 
 const json = (r: Run): Record<string, unknown> => JSON.parse(r.stdout) as Record<string, unknown>;
 

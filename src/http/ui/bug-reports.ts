@@ -36,7 +36,7 @@ export function bugReportsOf(t: TenantParts, updater: Pick<Updater, 'status'>, l
   return createBugReports({
     github: () => t.githubProxy.reports(),
     job: (id) => t.store.jobs.get(id),
-    failureOf: (id) => t.store.failures.forJob(id)?.id,
+    failureOf: (id) => { const r = t.store.failures.forJob(id); return r ? { id: r.id, signature: r.signature } : undefined; },
     install: () => updater.status().installed ?? {},
     system: () => ({ platform: process.platform, release: release(), arch: arch(), node: process.version, hostname: hostname() }),
     record: (e) => { t.store.events.append(e); },
