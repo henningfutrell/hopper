@@ -146,6 +146,8 @@ export interface VaultView {
   system?: { secrets: SystemSecretView[]; audit: SystemSecretAudit[] };
   /** The shared secrets (issue #718): what the hopper's admin shares with agents, for a template to name. Never a value. */
   shared?: SharedSecretView[];
+  /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for. */
+  readPolicy?: string[];
 }
 
 /**

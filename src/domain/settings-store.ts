@@ -2,6 +2,7 @@
 // instance's. Each value is absent until set.
 
 import type { IntakeMigration } from './intake.ts';
+import type { ReadPolicy } from './read-policy.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
@@ -42,6 +43,9 @@ export interface UserSettingsRepository {
   /** The blast-radius settings the user saved (issue #542); absent: never saved, the defaults apply. */
   getBlastRadius(): BlastRadiusSettings | undefined;
   setBlastRadius(settings: BlastRadiusSettings): void;
+  /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for; absent: never set, none. */
+  getReadPolicy(): ReadPolicy | undefined;
+  setReadPolicy(policy: ReadPolicy): void;
   /** A machine's last discovery (issue #542); absent: never discovered. */
   getDiscovery(machineId: string): DiscoveryRecord | undefined;
   setDiscovery(record: DiscoveryRecord): void;
