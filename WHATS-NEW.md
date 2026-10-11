@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Proposal paths are now easier to compare. Each path card shows its bullets, bold text and code as formatted text, and shows Security, Effort, Risk, Friction and any other field on a row of its own, also on a phone.
 - A new comment on an issue no longer holds its job as changed. Only an edit of the issue's title or text holds a job until you decide, so status notes and bot updates no longer stop the queue. Jobs held only for new comments go on by themselves.
 - Lane tuning can now run in active mode per machine: the hopper sets the machine's lanes from its own history, within the least and most lanes you set. Machines shows each change with its reason, and an admin can undo the last change.
 - A sandbox box can now have aws, kubectl, helm and terraform added when it starts. Pick the tools on a template in the Vault page, or name them when you start a box from the command line. The hopper adds each tool from its own release and checks it first. A template a job asks for gets the tools its work needs.
