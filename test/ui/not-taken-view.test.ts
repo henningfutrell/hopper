@@ -2,7 +2,8 @@
 // Issue #798 in the UI, against a fake of the daemon's HTTP surface. The issues a source did not take have their own view,
 // Not taken, badged with the request cards waiting for approval: each source's issues grouped by why, with a count per
 // group, no inner scroll box, Approve on a request card and Take off the backburner on a backburner issue. Sources groups
-// its intake the same way. A taken issue whose job has ended says so, not "taken".
+// its intake the same way. A taken issue whose job has ended says so, not "taken". Issue #808: the issues on the backburner
+// are counted in the nav and from the Queue, and each says its number, since when and by whom it is on the backburner.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +20,7 @@ const DETAIL = {
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1', jobStatus: 'running' },
     { key: url(2), title: 'Taken, job ended', repo: 'octo-user/hopper', jobId: 'j-2', jobStatus: 'finished' },
     { key: url(3), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
-    { key: url(4), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
+    { key: url(4), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner', backburner: { since: '2026-10-01T09:00:00.000Z', by: 'octo-user' } },
     { key: url(5), title: 'Kept out too', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
     { key: url(6), title: 'PR open', repo: 'octo-user/hopper', reason: 'done: its pull request waits for review', group: 'pr-waiting' },
     { key: url(7), title: 'Half', repo: 'octo-user/hopper', reason: 'partly done: the rest runs once its pull request merges', group: 'partly-done' },
@@ -139,5 +140,37 @@ describe('Sources: intake grouped, no inner scroll box, a taken issue whose job 
     expect(row(intake()!, url(1)).textContent).toContain('taken');
     expect(row(intake()!, url(2)).textContent).toContain('its job ended: finished');
     expect(row(intake()!, url(2)).querySelector('.text-ok')).toBeNull();
+  });
+});
+
+describe('the backburner is always visible (issue #808)', () => {
+  it('the nav entry also counts the issues on the backburner, apart from the requests', async () => {
+    await boot('#overview');
+    await vi.waitFor(() => expect(navLink('#not-taken').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
+    expect(navLink('#not-taken').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
+    expect(navLink('#not-taken').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
+  });
+
+  it('each row says its issue number; a backburner row says since when and by whom, and looks unlike a taken one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-11T09:00:00.000Z') });
+    try {
+      await boot('#not-taken');
+      await vi.waitFor(() => expect(view()).not.toBeNull());
+    } finally { vi.useRealTimers(); }
+    expect(row(view()!, url(3)).textContent).toContain('#3');
+    const parked = row(view()!, url(4));
+    expect(parked.textContent).toContain('#4');
+    expect(parked.querySelector('[data-backburner-since]')!.textContent).toBe('on the backburner 10d ago, by octo-user');
+    expect(parked.getAttribute('data-backburner')).not.toBeNull();
+    expect(row(view()!, url(5)).textContent).toContain('on the backburner');
+    expect(row(view()!, url(5)).querySelector('[data-backburner-since]')).toBeNull();
+  });
+
+  it('the Queue links to the issues on the backburner, with their count', async () => {
+    await boot('#queue');
+    const link = () => document.querySelector<HTMLAnchorElement>('[data-slot="queue-backburner"]');
+    await vi.waitFor(() => expect(link()).not.toBeNull());
+    expect(link()!.getAttribute('href')).toBe('#not-taken');
+    expect(link()!.textContent).toContain('2 issues on the backburner');
   });
 });
