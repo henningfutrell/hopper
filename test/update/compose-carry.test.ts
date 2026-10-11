@@ -75,6 +75,12 @@ describe('moving what .env cannot hold to compose.override.yaml (issue #697)', (
     ]));
   });
 
+  it('keeps an install\'s own project name: another name would start the stack on new, empty volumes', () => {
+    const r = carryOverride(SHIPPED.replace(/^name: hopper$/m, 'name: lab'), SHIPPED, undefined);
+    expect(parse(r.override!)).toEqual({ name: 'lab' });
+    expect(r.notes).toEqual(['name moved to compose.override.yaml']);
+  });
+
   it('drops a service the hopper once shipped and no longer does, and moves nothing it named itself', () => {
     const old = SHIPPED.replace(/^services:\n/m, 'services:\n  secrets:\n    image: x\n');
     expect(carryOverride(old, SHIPPED, undefined)).toEqual({ override: undefined, notes: ['service secrets: the hopper no longer ships it, dropped'] });

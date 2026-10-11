@@ -126,6 +126,8 @@ describe('hopper update: the compose file the image ships with, the whole stack 
     expect(bak).toHaveLength(1);
     expect(read(dir, bak[0]!)).toBe('# mine\nservices:\n  hopper:\n    group_add: ["1"]\n');
     expect(r.out).toMatch(/hopper: group_add: compose\.override\.yaml has it already, kept/);
+    expect(r.out).toContain(`backups: `);
+    expect(r.out).toMatch(/backups: .*compose\.override\.yaml\.bak-/);
 
     const plain = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
     expect((await update(plain)).status).toBe(0);
