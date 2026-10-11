@@ -8,6 +8,9 @@ import type { Job } from './types.ts';
 import { noChecksSettled, readyToMerge, type PullRequestSeen, type Tended } from './pull-requests.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
+// The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
+export * from './repo-checks.ts';
+
 /**
  * Why a waiting pull request is not merged yet: the first that holds, in this order. `no pull request`: none named nor
  * found yet. `tending`: its item's tend job works on it; `tend failed`: that job failed, and it waits on a person (issue

@@ -67,3 +67,15 @@ export const legacyLanePlan = strict({
 });
 /** `idle` (issue #440): why the machine leaves lanes unused. */
 export const lanePlan = legacyLanePlan.extend({ idle: z.string().optional() });
+
+// Report a bug (issue #694): what was filed, never its text.
+export const bugReportEvents = {
+  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+};
+
+// Repositories with no checks (issue #677): the Add PR checks job queued, the recommendation dismissed.
+export const repoChecksEvents = {
+  'repo_checks.job_queued': strict({ repo: z.string(), number: z.number().int(), url: z.string(), existing: z.boolean(), by: z.string() }),
+  'repo_checks.dismissed': strict({ repo: z.string(), dismissed: z.boolean(), by: z.string() }),
+};

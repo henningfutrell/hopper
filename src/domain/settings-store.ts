@@ -85,6 +85,9 @@ export interface UserSettingsRepository {
   /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
   getIntakeActors(): IntakeActorSettings | undefined;
   setIntakeActors(settings: IntakeActorSettings): void;
+  /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
+  getRepoChecksDismissed(): string[];
+  setRepoChecksDismissed(repos: string[]): void;
   /** The one-time backfills that completed on this store (issue #637: `done-check`), each with when. */
   getBackfills(): Record<string, string>;
   setBackfills(done: Record<string, string>): void;

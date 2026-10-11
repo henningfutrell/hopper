@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 // The Pull requests view (issue #637), rendered inside the whole app against a fake of the daemon's HTTP surface: the
 // header says how many repositories have yolo mode on and where merging waits; one group per repository, with its yolo
-// badge and a switch an admin turns; each card with its state badge and its repository's yolo badge.
+// badge and a switch an admin turns; each card with its state badge and its repository's yolo badge. A repository with no
+// checks (issue #677) is flagged in the header and its group, with the job that adds them: Queue job and Dismiss.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
-import type { PullRequestCard, PullRequestsView } from '../../src/domain/types.ts';
+import { noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
+import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
 
 const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
   jobId: 'j1', repo: 'owner/a', issue: { number: 10, url: 'https://github.com/owner/a/issues/10' },
@@ -25,7 +26,20 @@ const fixture: PullRequestsView = {
   ],
 };
 
-function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin') {
+const repoChecks = (repo: string, over: Partial<RepoChecks> = {}): RepoChecks => ({
+  repo, state: 'checks', yolo: false, dismissed: false, checkedAt: '2026-10-08T10:00:00.000Z',
+  found: { required: ['test'], workflows: [], pullRequests: { read: 3, withChecks: 3 } }, ...over,
+});
+const noChecks = { found: { required: [], workflows: [], pullRequests: { read: 2, withChecks: 0 } }, state: 'no checks' as const, yolo: true };
+const checksFixture: RepoChecksView = {
+  repos: [
+    repoChecks('owner/a'),
+    repoChecks('org/b', { ...noChecks, recommendation: { title: 'Add PR checks to org/b' } }),
+    repoChecks('org/c', { ...noChecks, recommendation: { title: 'Add PR checks to org/c', queued: { number: 7, url: 'https://github.com/org/c/issues/7' } } }),
+  ],
+};
+
+function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin', checks: RepoChecksView) {
   const bodies: { path: string; body: unknown }[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
@@ -35,7 +49,7 @@ function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin') {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/sources': { sources: [] },
     '/api/questions': { questions: [] }, '/api/accounts': { accounts: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
-    '/api/pull-requests': view,
+    '/api/pull-requests': view, '/api/repo-checks': checks,
   };
   const fetch = vi.fn(async (input: string, init: RequestInit = {}) => {
     const [path] = String(input).split('?') as [string];
@@ -55,13 +69,13 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin') {
+async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', checks: RepoChecksView = { repos: [] }) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#pull-requests';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  const daemon = fakeDaemon(view, role);
+  const daemon = fakeDaemon(view, role, checks);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -201,6 +215,44 @@ describe('Pull requests view', () => {
   it('a viewer is not offered rework', async () => {
     await boot(fixture, 'viewer');
     expect(cardOf('j1').querySelector('[data-slot="pr-rework"]')).toBeNull();
+  });
+
+  it('a repository with no checks is flagged in the header and in its group (issue #677)', async () => {
+    await boot(fixture, 'admin', checksFixture);
+    await vi.waitFor(() => expect(text('[data-slot="pr-no-checks-line"]')).toBe('no checks: org/b, org/c (yolo merges unverified code there)'));
+    const group = (repo: string) => document.querySelector(`[data-repo="${repo}"]`)!;
+    expect(group('owner/a').querySelector('[data-slot="repo-no-checks"]')).toBeNull();
+    expect(text('[data-slot="repo-no-checks"]', group('org/b'))).toContain('No checks: yolo mode merges unverified code here.');
+    expect(noChecksLine({ repos: [repoChecks('a/b', { state: 'no checks' })] })).toBe('no checks: a/b');
+    expect(noChecksLine(checksFixture.repos[0] ? { repos: [checksFixture.repos[0]] } : { repos: [] })).toBe('');
+    expect(noChecksLine({} as RepoChecksView)).toBe('');
+  });
+
+  it('Queue job posts the repository at once; a queued job shows its issue; Dismiss posts the repository (issue #677)', async () => {
+    const daemon = await boot(fixture, 'admin', checksFixture);
+    const group = (repo: string) => document.querySelector(`[data-repo="${repo}"]`)!;
+    const buttonIn = (el: ParentNode, label: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined;
+    await vi.waitFor(() => expect(group('org/b').querySelector('[data-slot="repo-checks-job"]')).not.toBeNull());
+    expect(text('[data-slot="repo-checks-job"]', group('org/b'))).toContain('Add PR checks to org/b');
+    await act(async () => { buttonIn(group('org/b'), 'Queue job')!.click(); });
+    await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/repo-checks/queue', body: { repo: 'org/b' } }]));
+    expect(buttonIn(group('org/c'), 'Queue job')).toBeUndefined();
+    expect(group('org/c').querySelector('a[href="https://github.com/org/c/issues/7"]')!.textContent).toContain('#7');
+    await act(async () => { buttonIn(group('org/c'), 'Dismiss')!.click(); });
+    await vi.waitFor(() => expect(daemon.bodies[1]).toEqual({ path: '/ui/api/repo-checks/dismiss', body: { repo: 'org/c', dismissed: true } }));
+  });
+
+  it('a dismissed recommendation keeps the warning; a viewer sees the warning and no buttons (issue #677)', async () => {
+    const dismissed: RepoChecksView = { repos: [repoChecks('org/b', { ...noChecks, dismissed: true })] };
+    await boot(fixture, 'viewer', checksFixture);
+    const group = (repo: string) => document.querySelector(`[data-repo="${repo}"]`)!;
+    await vi.waitFor(() => expect(group('org/b').querySelector('[data-slot="repo-no-checks"]')).not.toBeNull());
+    expect(text('[data-slot="repo-checks-job"]', group('org/b'))).toContain('Add PR checks to org/b');
+    expect([...group('org/b').querySelectorAll('[data-slot="repo-checks-job"] button')]).toEqual([]);
+    await act(async () => root?.unmount());
+    await boot(fixture, 'admin', dismissed);
+    await vi.waitFor(() => expect(group('org/b').querySelector('[data-slot="repo-no-checks"]')).not.toBeNull());
+    expect(group('org/b').querySelector('[data-slot="repo-checks-job"]')).toBeNull();
   });
 
   it('no card in any repo: the view says no pull request waits', async () => {

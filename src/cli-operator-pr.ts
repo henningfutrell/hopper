@@ -1,6 +1,7 @@
 // Merge now and Close PR from the command line (issue #677, design.md "PR waiting"): `hopper pr merge|close <n>` finds the
 // card of pull request <n> on the Pull requests list (GET /api/pull-requests) and acts on it as the card's buttons do,
-// on the same route. `--repo` picks one when two repositories have a pull request of that number.
+// on the same route. `--repo` picks one when two repositories have a pull request of that number. `hopper prs` reads the
+// list (issue #637); `hopper yolo <repo> on|off|default` sets one repository's yolo mode.
 import { parseArgs } from 'node:util';
 import type { PullRequestsView } from './domain/types.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
@@ -27,4 +28,17 @@ export function prCall(args: string[]): Call {
       return { jobId: cards[0]!.jobId };
     },
   };
+}
+
+const YOLO_OF: Record<string, boolean | null> = { on: true, off: false, default: null };
+
+export function prsCall(args: string[]): Call {
+  if (args.length > 0) throw usage('prs');
+  return { role: 'viewer', path: '/api/pull-requests' };
+}
+
+export function yoloCall(args: string[]): Call {
+  const [repo, mode, ...extra] = args;
+  if (!repo || !/^[^/\s]+\/[^/\s]+$/.test(repo) || mode === undefined || !(mode in YOLO_OF) || extra.length > 0) throw usage('yolo <owner/repo> on|off|default');
+  return { role: 'admin', path: '/ui/api/yolo-mode', body: async () => ({ repos: { [repo]: YOLO_OF[mode] } }) };
 }

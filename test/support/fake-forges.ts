@@ -15,9 +15,11 @@
 // one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
 // GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
 import { createHash } from 'node:crypto';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { serveGit } from './fake-git.ts';
+import { readBody, send } from './fake-http.ts';
+import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -42,7 +44,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge {
+export interface FakeForge extends RepoChecksForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -79,20 +81,6 @@ export interface FakeForge {
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
 }
-
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
-  const text = Buffer.concat(chunks).toString('utf8');
-  if (!text) return {};
-  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
-  try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text }; }
-}
-
-const send = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(body === undefined ? '' : JSON.stringify(body));
-};
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
@@ -248,6 +236,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`));
       if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
+      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body);
+      if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {
