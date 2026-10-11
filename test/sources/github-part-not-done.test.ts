@@ -4,6 +4,7 @@
 // A merge recorded as the whole issue before this rule is checked once: one that did not close the issue was a part,
 // so `hopper:done` comes off and the issue is offered again.
 import { describe, expect, it } from 'vitest';
+import { closesByKeyword } from '../../src/sources/github/completion.ts';
 import { REPO, jobForIssue, setup } from './fixtures/github-support.ts';
 
 const AFTER = '2026-10-02T11:00:00.000Z';
@@ -99,5 +100,14 @@ describe('a merge recorded as the whole issue before issue #721, checked once', 
       expect(await source.follow!(job)).toBeUndefined();
     }
     expect(gh.calls).toEqual([]);
+  });
+});
+
+describe('a closing keyword (issue #721)', () => {
+  it.each([
+    ['Closes #1', true], ['fixes: #1', true], ['Resolved owner/repo#1', true], ['closes https://github.com/owner/repo/issues/1', true],
+    ['Part of #1', false], ['Refs #1', false], ['Closes #12', false], ['Closes other/repo#1', false], ['encloses #1', false],
+  ] as const)('%s → %s', (body, closes) => {
+    expect(closesByKeyword(body, 'owner/repo', 1)).toBe(closes);
   });
 });

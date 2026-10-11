@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A pull request that ships only part of an issue no longer marks the issue done when it merges, so the hopper goes on with the rest. Only a pull request that closes the issue, or the last part, marks it done. Issues that were marked done this way go back to the queue by themselves.
 - The hopper's admin can now share a vault secret with every user's agents, or with chosen users, so each person needs no copy of their own. Every user sees the shared secrets on the Vault page and can add one to a template; a job gets it only from a box of an approved template that names it. Secrets stay each user's own unless the admin shares them.
 - Scripts and agents on the hopper's host can now set vault secrets, save and approve templates and start sandbox boxes from the command line, with no browser sign-in. A secret's value is read from standard input only.
 - A machine whose jobs cannot reach the hopper now shows as off-network on Machines, with why. When it is a container, you also get the one command that joins it to the hopper's network, ready to copy. Its jobs wait and say why. The container setup now always makes the hopper's network under the same name, so new boxes reach the hopper with no extra step.

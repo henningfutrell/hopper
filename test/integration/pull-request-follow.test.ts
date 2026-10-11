@@ -95,6 +95,45 @@ describe('the pull request after done', () => {
     expect((await app.events('types=job.pull_request_merged')).map((e) => e.data)).toEqual([{ pullRequest: job.partlyDone, part: true }]);
   });
 
+  it('a part on a branch named for the issue (issue #721): partly done, never hopper:pr-ready; merged, never hopper:done, and the next part runs', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const onBranch = (job: Job): void => {
+      gh.openPartPullRequest(REPO, job.source!.number!, { createdAt: new Date().toISOString(), headRef: `issue-${job.source!.number}-first-part` });
+    };
+    const { issue, job } = await doneWithPullRequest(gh, app, () => onBranch);
+    expect(job.partlyDone).toMatch(/\/pull\/\d+$/);
+    await labelled(gh, issue.number, 'hopper:partly-done');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    gh.mergePullRequest(job.partlyDone!);
+    await app.sync();
+    await waitFor(() => !gh.issue(REPO, issue.number).labels.includes('hopper:partly-done'), { what: 'hopper:partly-done gone' });
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'open' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+    await app.sync();
+    await waitFor(async () => (await jobsFor(app, issue.url)).length === 2, { what: 'the next part queued' });
+  });
+
+  it('a part recorded as the whole issue before issue #721: checked once, hopper:done comes off and the next part runs', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job } = await doneWithPullRequest(gh, app, opensPartPullRequest);
+    await labelled(gh, issue.number, 'hopper:partly-done');
+    // What a build before issue #721 left: the part merged, recorded as the whole issue, hopper:done on the open issue.
+    gh.mergePullRequest(job.partlyDone!);
+    gh.removeLabel(REPO, issue.number, 'hopper:partly-done');
+    gh.addLabel(REPO, issue.number, 'hopper:done');
+    const kept = app.user().store.jobs.get(job.id)!.sourceState;
+    app.user().store.jobs.update(job.id, { sourceState: { ...kept, source: { pullRequest: job.partlyDone, follow: 'merged' } } });
+    await app.sync();
+    await waitFor(() => !gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done gone' });
+    expect((await app.events('types=job.pull_request_merged')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: job.partlyDone, part: true }]]);
+    await app.sync();
+    await waitFor(async () => (await jobsFor(app, issue.url)).length === 2, { what: 'the next part queued' });
+    await app.sync();
+    expect(await app.events('types=job.pull_request_merged')).toHaveLength(1);
+  });
+
   it('a job that failed only for want of a merged pull request, handed to a person: finished once its pull request is ready; the hand-off closes', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
