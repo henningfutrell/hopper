@@ -57,6 +57,17 @@ export interface LaneLoad {
   memTotalBytes?: number;
 }
 
+/**
+ * Lane progress: the job runs on a machine that ended `finished` or `failed` at this many lanes in use (a run's average
+ * lanes in use, rounded, at least 1), and how many of them failed. Slow progress shows in the failures.
+ */
+export interface LaneProgress {
+  machineId: string;
+  lanesBusy: number;
+  runs: number;
+  failed: number;
+}
+
 /** Where usage stands against the usage limits, for lane tuning: `near` is within NEAR_SOFT below the soft limit. */
 export const LANE_USAGE_BANDS = ['free', 'near', 'soft', 'hard'] as const;
 export type LaneUsageBand = typeof LANE_USAGE_BANDS[number];

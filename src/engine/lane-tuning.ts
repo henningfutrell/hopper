@@ -6,7 +6,7 @@
 // (`lanes.undone`). Each machine's settings — auto-tune and the bounds — are the user's, in the database.
 import { laneEffect } from '../decider/usage.ts';
 import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
-import { laneActions, recommendLanes } from '../decider/lane-tuning.ts';
+import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
 import type { UserStore } from '../domain/ports.ts';
 import {
   DEFAULT_LANE_TUNING, JOB_COST_WINDOW_DAYS, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneChange, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
@@ -75,10 +75,12 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
     const policy = policyOf(c);
     const dismissals = c.store.settings.getLaneDismissals();
     const changes = c.store.events.recent(CHANGES_READ, ['lanes.applied', 'lanes.undone']).map(changeOf);
-    const loads = c.store.machineHistory.laneLoad({ from: new Date(now.getTime() - LANE_TUNING_WINDOW_DAYS * DAY_MS), to: now, pressure: RESOURCE_PRESSURE });
+    const from = new Date(now.getTime() - LANE_TUNING_WINDOW_DAYS * DAY_MS);
+    const loads = c.store.machineHistory.laneLoad({ from, to: now, pressure: RESOURCE_PRESSURE });
+    const progress = laneProgress(c.store.machineHistory.jobRuns({ from, to: now }));
     const machinesOut: LaneRecommendation[] = machines.map((m) => {
       const r = recommendLanes({
-        machine: m, loads, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: policy.softLimit, hard: policy.hardLimit, tuning: tuningOf(c.store, m.id),
+        machine: m, loads, progress, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: policy.softLimit, hard: policy.hardLimit, tuning: tuningOf(c.store, m.id),
       });
       return { ...r, ...laneActions(r, dismissals[m.id], changes.find((x) => x.machineId === m.id)) };
     });

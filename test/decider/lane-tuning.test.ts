@@ -3,8 +3,10 @@
 // no lanes added near or past the soft limit. The hopper recommends; an admin applies a recommendation, dismisses it or
 // undoes the last one applied: what each can do with a recommendation now.
 import { describe, expect, it } from 'vitest';
-import { laneActions, laneHeadroom, recommendLanes } from '../../src/decider/lane-tuning.ts';
-import { DEFAULT_LANE_TUNING, type LaneChange, type LaneDismissal, type LaneLoad, type LaneRecommendation } from '../../src/domain/types.ts';
+import { laneActions, laneHeadroom, laneProgress, recommendLanes } from '../../src/decider/lane-tuning.ts';
+import {
+  DEFAULT_LANE_TUNING, type JobRun, type LaneChange, type LaneDismissal, type LaneLoad, type LaneProgress, type LaneRecommendation,
+} from '../../src/domain/types.ts';
 
 const GIB = 1024 ** 3;
 
@@ -14,7 +16,7 @@ const load = (lanesBusy: number, over: Partial<LaneLoad> = {}): LaneLoad => ({
 });
 
 const machine = { id: 'm', label: 'box', online: true, maxLanes: 2 };
-const free = { usedFrac: 0.2, soft: 0.7, hard: 0.95 };
+const free = { usedFrac: 0.2, soft: 0.7, hard: 0.95, progress: [] };
 
 describe('lane headroom', () => {
   it('none without ten minutes at a lane count of one or more', () => {
@@ -51,6 +53,56 @@ describe('lane headroom', () => {
     const h = laneHeadroom([load(2)]);
     expect(h).toMatchObject({ lanes: 2 });
     expect(h!.why).toBe('no resource pressure at 2 lanes in use, the most seen; no lower lane count to measure a lane\'s cost');
+  });
+});
+
+/** Runs of `m` that ended at `lanesBusy` lanes in use: `runs` of them, `failed` failed. */
+const prog = (lanesBusy: number, runs: number, failed: number): LaneProgress => ({ machineId: 'm', lanesBusy, runs, failed });
+
+describe('slow progress', () => {
+  const run = (lanesBusyAvg: number | undefined, end: JobRun['end'], machineId = 'm'): JobRun => ({
+    jobId: 'j', machineId, startedAt: '2026-10-10T10:00:00.000Z', endedAt: '2026-10-10T10:30:00.000Z', end, samples: 30,
+    ...(lanesBusyAvg === undefined ? {} : { lanesBusyAvg }), usage: {},
+  });
+
+  it('per machine and lane count, the runs that finished or failed and how many failed', () => {
+    expect(laneProgress([
+      run(1, 'finished'), run(1.4, 'failed'), run(2.6, 'failed'), run(3, 'finished'), run(2, 'finished', 'n'),
+      // A person's act, not the machine's: not counted. No sample: no lane count.
+      run(1, 'cancelled'), run(1, 'requeued'), run(1, 'parked'), run(undefined, 'failed'),
+      // At most a fraction of a lane: one lane.
+      run(0.4, 'failed'),
+    ])).toEqual([prog(1, 3, 2), prog(3, 2, 1), { machineId: 'n', lanesBusy: 2, runs: 1, failed: 0 }]);
+  });
+
+  it('one less than the first lane count whose runs fail far more often than at fewer lanes', () => {
+    const loads = [load(0), load(1), load(2), load(3), load(4)];
+    const h = laneHeadroom(loads, [prog(1, 4, 0), prog(2, 2, 0), prog(3, 4, 3), prog(4, 6, 6)]);
+    expect(h).toMatchObject({ lanes: 2, samples: 60 });
+    expect(h!.why).toBe('slow progress at 3 lanes in use (3 of 4 runs failed; 0 of 6 at fewer lanes): 2 lanes run without it');
+  });
+
+  it('not slow progress: too few runs, a rise of 25% or less, or no runs at fewer lanes to compare', () => {
+    const loads = [load(0), load(1), load(2)];
+    expect(laneHeadroom(loads, [prog(1, 4, 0), prog(2, 3, 3)])?.lanes).toBeGreaterThanOrEqual(2);
+    expect(laneHeadroom(loads, [prog(1, 4, 1), prog(2, 4, 2)])?.lanes).toBeGreaterThanOrEqual(2);
+    expect(laneHeadroom(loads, [prog(1, 3, 0), prog(2, 4, 4)])?.lanes).toBeGreaterThanOrEqual(2);
+    // Failures at one lane are the jobs', not the load's.
+    expect(laneHeadroom(loads, [prog(1, 8, 8)])?.lanes).toBeGreaterThanOrEqual(2);
+  });
+
+  it('resource pressure at fewer lanes than slow progress still limits first', () => {
+    const loads = [load(0), load(1), load(2, { pressured: { cpu: 30, memory: 0, disk: 0 } }), load(3)];
+    expect(laneHeadroom(loads, [prog(1, 4, 0), prog(3, 4, 4)])).toMatchObject({ lanes: 1 });
+    expect(laneHeadroom(loads, [prog(1, 4, 0), prog(2, 4, 4)])!.why).toMatch(/^slow progress at 2 lanes in use/);
+  });
+
+  it('the recommendation reads only its own machine\'s runs', () => {
+    const loads = [load(0), load(1), load(2), load(3)];
+    const other = [prog(1, 4, 0), prog(2, 4, 4)].map((p) => ({ ...p, machineId: 'n' }));
+    expect(recommendLanes({ machine, loads, ...free, progress: other, tuning: DEFAULT_LANE_TUNING }).headroom).toBeGreaterThanOrEqual(3);
+    expect(recommendLanes({ machine, loads, ...free, progress: [prog(1, 4, 0), prog(2, 4, 4)], tuning: DEFAULT_LANE_TUNING }))
+      .toMatchObject({ lanes: 1, headroom: 1 });
   });
 });
 
