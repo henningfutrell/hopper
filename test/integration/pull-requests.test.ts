@@ -185,3 +185,80 @@ describe('the Pull requests list and yolo mode (issue #637)', () => {
     expect((await hopper(app, ['yolo', OTHER, 'maybe'])).code).toBe(2);
   });
 });
+
+describe('Merge now and Close PR on a card (issue #677)', () => {
+  it('Merge now merges an open pull request on the yolo path, with yolo mode off and checks still pending, and records who pressed it', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    const w = await waiting(gh, app, OTHER, { checks: 'pending' });
+    await app.sync();
+    await waitFor(async () => (await cardOf(app, w.job.id))?.waits === 'yolo off', { what: 'waits for a person' });
+
+    const r = await app.ui<{ outcome: string; pullRequest: string }>('/ui/api/pull-requests/merge', { jobId: w.job.id }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ outcome: 'merged', pullRequest: w.url, part: false });
+    expect(gh.calls.filter((c) => c.method === 'merge').map((c) => c.args)).toEqual([[OTHER, Number(w.url.split('/').at(-1))]]);
+    // The merge closes the issue through the pull request's closing keyword.
+    expect(gh.issue(OTHER, w.issue.number).state).toBe('closed');
+    expect(gh.issue(OTHER, w.issue.number).labels).toContain('hopper:done');
+    const [merged] = (await app.events('types=job.pull_request_merged')).filter((e) => e.jobId === w.job.id);
+    expect(merged!.data).toEqual({ pullRequest: w.url, part: false, person: expect.any(String), via: 'ui' });
+    expect(await cardOf(app, w.job.id)).toBeUndefined();
+
+    // Nothing left to merge: refused, nothing asked of GitHub.
+    const again = await app.ui('/ui/api/pull-requests/merge', { jobId: w.job.id }, { token });
+    expect(again.status).toBe(409);
+    expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
+  });
+
+  it('a refused Merge now answers what GitHub said and the card stays; Close PR closes it without a merge', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    const w = await waiting(gh, app, REPO, { checks: 'passing' });
+    gh.failNext('merge', new GitHubApiError('Pull Request is not mergeable (HTTP 405)', true, 405));
+
+    const refused = await app.ui<{ error: string }>('/ui/api/pull-requests/merge', { jobId: w.job.id }, { token });
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(refused.body)).toContain('not mergeable');
+    expect(gh.issue(REPO, w.issue.number).state).toBe('open');
+    expect(await cardOf(app, w.job.id)).toMatchObject({ state: 'open' });
+    expect((await app.job(w.job.id)).status).toBe('finished');
+
+    const closed = await app.ui('/ui/api/pull-requests/close', { jobId: w.job.id }, { token });
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({ outcome: 'closed', pullRequest: w.url });
+    expect(gh.calls.filter((c) => c.method === 'closeWithoutMerge').map((c) => c.args)).toEqual([[REPO, Number(w.url.split('/').at(-1))]]);
+    expect(gh.issue(REPO, w.issue.number).state).toBe('open');
+    expect(gh.issue(REPO, w.issue.number).labels).toContain('hopper:pr-closed');
+    const [shut] = (await app.events('types=job.pull_request_closed')).filter((e) => e.jobId === w.job.id);
+    expect(shut!.data).toEqual({ pullRequest: w.url, part: false, person: expect.any(String), via: 'ui' });
+    expect(await cardOf(app, w.job.id)).toMatchObject({ state: 'closed' });
+
+    expect((await app.ui('/ui/api/pull-requests/close', { jobId: 'no-such-job' }, { token })).status).toBe(404);
+  });
+
+  it('hopper pr merge <n> and hopper pr close <n> answer JSON on the same path; an unknown number is refused', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const toMerge = await waiting(gh, app, REPO, { checks: 'pending' });
+    const toClose = await waiting(gh, app, OTHER, { checks: 'pending' });
+    const n = (url: string) => url.split('/').at(-1)!;
+
+    const merged = await hopper(app, ['pr', 'merge', n(toMerge.url), '--json']);
+    expect(merged.err).toBe('');
+    expect(merged.code).toBe(0);
+    expect(JSON.parse(merged.out)).toMatchObject({ outcome: 'merged', pullRequest: toMerge.url });
+    expect(gh.issue(REPO, toMerge.issue.number).state).toBe('closed');
+    const [m] = (await app.events('types=job.pull_request_merged')).filter((e) => e.jobId === toMerge.job.id);
+    expect(m!.data).toMatchObject({ via: 'cli', person: 'operator CLI' });
+
+    const closed = await hopper(app, ['pr', 'close', n(toClose.url), '--repo', OTHER, '--json']);
+    expect(closed.code).toBe(0);
+    expect(JSON.parse(closed.out)).toMatchObject({ outcome: 'closed', pullRequest: toClose.url });
+
+    expect((await hopper(app, ['pr', 'merge', '99999'])).code).toBe(2);
+    expect((await hopper(app, ['pr', 'squash', '1'])).code).toBe(2);
+  });
+});

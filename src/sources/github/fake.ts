@@ -231,6 +231,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (p.state !== 'open' || p.isDraft || p.conflicting) throw new GitHubApiError(`Pull Request is not mergeable (HTTP 405): ${p.url}`, true, 405);
       merged(p, new Date().toISOString(), o.app?.botLogin ?? human);
     },
+    async closeWithoutMerge(repo, n) {
+      enter('closeWithoutMerge', [repo, n]);
+      const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
+      if (!p) throw notFound(`${repo}/pull/${n}`);
+      if (p.state === 'open') p.state = 'closed';
+    },
   };
 
   // A connected account's listing across repos; the app's installation token has none.

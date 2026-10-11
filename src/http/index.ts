@@ -12,6 +12,7 @@ import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
+import type { StackDrift } from '../domain/types.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
@@ -64,6 +65,8 @@ export interface ServerOptions {
   updater: Updater;
   /** The build's directory, whose compose.yaml GET /api/update/compose serves (issue #697); default this build's. */
   buildDir?: string;
+  /** How the stack differs from the compose file of this version (issue #697): GET /api/update/drift. */
+  stackDrift?: () => Promise<StackDrift>;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */

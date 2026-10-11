@@ -156,6 +156,29 @@ describe('Pull requests view', () => {
     expect(daemon.bodies).toEqual([]);
   });
 
+  it('an open card has Merge now and Close PR, each asks once, then posts the job (issue #677)', async () => {
+    const daemon = await boot(fixture);
+    const buttonIn = (el: ParentNode, label: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLButtonElement | undefined;
+    const dialog = () => vi.waitFor(() => { const d = document.querySelector('[role="alertdialog"]'); expect(d).not.toBeNull(); return d!; });
+    expect(buttonIn(cardOf('j4'), 'Merge now')).toBeUndefined();
+    expect(buttonIn(cardOf('j2'), 'Merge now')).toBeUndefined();
+    await act(async () => { buttonIn(cardOf('j1'), 'Merge now')!.click(); });
+    expect((await dialog()).textContent).toContain('Merge #11 into its base branch now?');
+    expect(daemon.bodies).toEqual([]);
+    await act(async () => { buttonIn(await dialog(), 'Merge')!.click(); });
+    await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/pull-requests/merge', body: { jobId: 'j1' } }]));
+    await vi.waitFor(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull());
+    await act(async () => { buttonIn(cardOf('j3'), 'Close PR')!.click(); });
+    expect((await dialog()).textContent).toContain('Close #11 without a merge?');
+    await act(async () => { buttonIn(await dialog(), 'Close PR')!.click(); });
+    await vi.waitFor(() => expect(daemon.bodies[1]).toEqual({ path: '/ui/api/pull-requests/close', body: { jobId: 'j3' } }));
+  });
+
+  it('a viewer sees no Merge now or Close PR', async () => {
+    await boot(fixture, 'viewer');
+    expect([...cardOf('j1').querySelectorAll('button')].map((b) => b.textContent)).toEqual([]);
+  });
+
   it('no card in any repo: the view says no pull request waits', async () => {
     await boot({ yolo: { on: 0, total: 1 }, waiting: [], repos: [{ repo: 'owner/a', yolo: false, pullRequests: [] }] });
     expect(text('[data-slot="pr-empty"]')).toBe('No pull request waits.');

@@ -31,7 +31,8 @@ Do them in order. Do not do the update another way.
 5. Read \`${UPDATE_SCRIPT_FILE}\`. Then run it: \`sh ${UPDATE_SCRIPT_FILE}\`.
 6. When it stops, read its last line. Fix that cause, then run the script again. The line tells how to go back.
 7. Check the result: \`podman compose ps\` (or \`docker compose ps\`) shows postgres, openfga and hopper running;
-   the UI opens; Settings → Version names the new commit.
+   the UI opens; Settings → Version names the new commit; and \`GET /api/update/drift\` answers no gaps (the UI shows
+   no "stack differs" banner). A gap names what is still missing; the fix is this script again, never a hand edit.
 
 ## What the script does
 
@@ -40,15 +41,17 @@ Do them in order. Do not do the update another way.
 2. Backs up the database (\`hopper-backup-<time>.dump\`, \`pg_dump -Fc\`), \`compose.yaml\` and \`.env\`.
 3. Pulls the image.
 4. Moves the install's own settings from the old compose.yaml to \`.env\`: the bind address, the port, and \`HOPPER_*\`
-   settings set in the file. It names what it cannot move (a service of the install's own) for \`compose.override.yaml\`.
-   It sets \`HOPPER_IMAGE\` to the image.
+   settings set in the file. It sets \`HOPPER_IMAGE\` to the image. What \`.env\` cannot hold moves to
+   \`compose.override.yaml\` (a service of the install's own with its volumes, a host folder mounted into a service, a key
+   the hopper never sets, the install's own project name); an existing one is kept as \`compose.override.yaml.bak-<commit>\`, and nothing it has is replaced.
 5. Puts in the compose.yaml the image ships with, and shows the change.
 6. Pulls the images of the whole stack, and recreates the whole stack.
 7. Checks that the hopper and OpenFGA answer.
 
 ## Go back
 
-\`cp compose.yaml.bak-<commit> compose.yaml\`, \`cp .env.bak-<commit> .env\`, then \`podman compose up -d --force-recreate\`.
+\`cp compose.yaml.bak-<commit> compose.yaml\`, \`cp .env.bak-<commit> .env\`, the same for \`compose.override.yaml\` when
+the script wrote one (remove it when it made a new one), then \`podman compose up -d --force-recreate\`.
 A store migration that ran keeps the database usable by the build before it. To restore the database itself:
 \`podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-backup-<time>.dump\`.
 `;

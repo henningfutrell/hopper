@@ -1,8 +1,11 @@
 // What an install changed in its compose.yaml, moved out of it (issue #697): the compose file the image ships with replaces it whole at
 // each update, so the install's own settings live in .env — the published port's bind address (HOPPER_BIND) and port, and
-// the hopper's settings it set in place or with another default than the new file's. What cannot move to .env, a service of the install's own,
-// is named for a person to move to compose.override.yaml. Read by `hopper update carry`, which the update script runs.
-import { parse } from 'yaml';
+// the hopper's settings it set in place or with another default than the new file's (`hopper update carry`). What .env cannot
+// hold moves to compose.override.yaml, which compose reads beside it (`hopper update override`): a service of the install's
+// own with the volumes it names, a host folder mounted into a service, a key of a service the hopper never sets, and the
+// project name, when the install gave its own. The
+// update script runs both.
+import { isMap, parse, parseDocument, type Document } from 'yaml';
 
 /** The `.env` lines to add, in order, and what a person must move by hand. */
 export interface Carried {
@@ -110,7 +113,95 @@ export function carryLocalSettings(oldText: string, newText: string): Carried {
     const v = localValue(key, value, nextEnv.get(key));
     if (v !== undefined) add(`${key}=${v}`);
   }
-  const notes = Object.keys(old).filter((name) => !(name in nextServices))
-    .map((name) => `service ${name} is not in the new compose.yaml: move it to compose.override.yaml by hand (the old file is kept as the backup)`);
-  return { env, notes };
+  return { env, notes: [] };
+}
+
+/** Every service a hopper compose.yaml has shipped: one the new file lacks is the hopper's, retired, never the install's. */
+const SHIPPED_SERVICES = new Set(['postgres', 'hopper', 'secrets', 'openfga', 'openfga-migrate', 'hopper-vault', 'kms', 'vault']);
+/** Every key a shipped service has set: the hopper's to change, so never carried. */
+const SHIPPED_KEYS = new Set(['build', 'command', 'depends_on', 'entrypoint', 'env_file', 'environment', 'healthcheck', 'image', 'ports', 'profiles', 'restart', 'user', 'volumes', 'working_dir']);
+/** A volume entry that mounts a host folder or file: the install's own, as a shipped file mounts only named volumes. */
+const HOST_PATH = /^(\/|\.{1,2}\/|~)/;
+const OVERRIDE = 'compose.override.yaml';
+const HEADER = ' Moved here from compose.yaml by the hopper update (issue #697): compose.yaml is replaced whole at each update,\n and compose reads this file beside it. Yours to edit.';
+
+/** What `hopper update override` answers: the whole new compose.override.yaml, or undefined when nothing moves; and what it did. */
+export interface CarriedOverride {
+  override: string | undefined;
+  notes: string[];
+}
+
+const volumeSource = (v: unknown): string | undefined =>
+  typeof v === 'string' ? v.split(':')[0] : v && typeof v === 'object' ? String((v as { source?: unknown }).source ?? '') : undefined;
+
+/** The top-level volumes the moved services name, that the new file does not declare. */
+function namedVolumes(services: Record<string, unknown>[], declared: Record<string, unknown>): string[] {
+  const names = services.flatMap((s) => (Array.isArray(s.volumes) ? s.volumes as unknown[] : []).map(volumeSource));
+  return [...new Set(names.filter((n): n is string => !!n && !HOST_PATH.test(n) && !(n in declared)))];
+}
+
+/**
+ * The compose.override.yaml that keeps what `oldText` (an install's compose.yaml) has and `newText` (the compose file the
+ * update puts in) cannot: `overrideText` (the install's own override, if any) with what moves added, its comments kept;
+ * nothing it already has is replaced.
+ */
+export function carryOverride(oldText: string, newText: string, overrideText: string | undefined): CarriedOverride {
+  const old = services(oldText);
+  if (typeof old === 'string') return { override: undefined, notes: [`the old compose.yaml was not read (${old}): nothing moved to ${OVERRIDE}`] };
+  const nextDoc = parse(newText) as { name?: unknown; services?: Record<string, Record<string, unknown>>; volumes?: Record<string, unknown> } | null;
+  const next = nextDoc?.services ?? {};
+  let doc: Document;
+  try {
+    doc = parseDocument(overrideText ?? '');
+    if (doc.errors.length) throw doc.errors[0];
+  } catch (e) {
+    return { override: undefined, notes: [`${OVERRIDE} was not read (${(e as Error).message.split('\n')[0]}): nothing moved to it`] };
+  }
+  if (!isMap(doc.contents)) doc.contents = doc.createNode({}) as never;
+  const notes: string[] = [];
+  let moved = false;
+  const has = (path: string[]): boolean => doc.hasIn(path);
+  const put = (path: string[], value: unknown, note: string, kept: string): void => {
+    if (has(path)) { notes.push(`${kept}: ${OVERRIDE} has it already, kept`); return; }
+    doc.setIn(path, doc.createNode(value));
+    notes.push(`${note} moved to ${OVERRIDE}`);
+    moved = true;
+  };
+  // The project name: another one would start the stack on new, empty volumes.
+  const oldName = (parse(oldText) as { name?: unknown } | null)?.name;
+  if (typeof oldName === 'string' && literal(oldName) && oldName !== nextDoc?.name) put(['name'], oldName, 'name', 'name');
+  const movedServices: Record<string, unknown>[] = [];
+  for (const [name, raw] of Object.entries(old)) {
+    const service = (raw ?? {}) as Record<string, unknown>;
+    if (!(name in next)) {
+      if (SHIPPED_SERVICES.has(name)) { notes.push(`service ${name}: the hopper no longer ships it, dropped`); continue; }
+      put(['services', name], service, `service ${name}`, `service ${name}`);
+      movedServices.push(service);
+      continue;
+    }
+    const nextTargets = new Set((Array.isArray(next[name]?.volumes) ? next[name].volumes as unknown[] : []).map(String));
+    const mounts = (Array.isArray(service.volumes) ? service.volumes : [])
+      .filter((v) => typeof v === 'string' && HOST_PATH.test(v) && !nextTargets.has(v)) as string[];
+    for (const mount of mounts) {
+      const list = doc.getIn(['services', name, 'volumes']);
+      if (Array.isArray((list as { items?: unknown[] } | undefined)?.items) && (list as { items: { value?: unknown }[] }).items.some((i) => i.value === mount)) {
+        notes.push(`${name}: volume ${mount}: ${OVERRIDE} has it already, kept`);
+        continue;
+      }
+      if (list === undefined) doc.setIn(['services', name, 'volumes'], doc.createNode([mount]));
+      else doc.addIn(['services', name, 'volumes'], mount);
+      notes.push(`${name}: volume ${mount} moved to ${OVERRIDE}`);
+      moved = true;
+    }
+    for (const [key, value] of Object.entries(service)) {
+      if (SHIPPED_KEYS.has(key) || key in (next[name] ?? {})) continue;
+      put(['services', name, key], value, `${name}: ${key}`, `${name}: ${key}`);
+    }
+  }
+  for (const volume of namedVolumes(movedServices, nextDoc?.volumes ?? {})) {
+    put(['volumes', volume], null, `volume ${volume}`, `volume ${volume}`);
+  }
+  if (!moved) return { override: undefined, notes };
+  if (overrideText === undefined || !overrideText.trim()) doc.commentBefore = HEADER;
+  return { override: doc.toString({ flowCollectionPadding: false, nullStr: '' }), notes };
 }

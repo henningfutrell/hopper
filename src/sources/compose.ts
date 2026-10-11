@@ -147,9 +147,9 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.unfinishedPullRequest ? s.unfinishedPullRequest(job) : Promise.reject(new Error(why()));
     },
-    follow(job) {
+    follow(job, act) {
       const s = current();
-      return s?.follow ? s.follow(job) : Promise.reject(new SourceError(why(), false));
+      return s?.follow ? s.follow(job, act) : Promise.reject(new SourceError(why(), false));
     },
     rerun(job) {
       const s = current();

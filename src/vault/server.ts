@@ -22,8 +22,8 @@ import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wir
 
 const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 
-/** Starts the vault server on `host`:`port` (0: any free one). Its database, keys and KMS come from `env`. */
-export async function startVaultServer(o: { env: Record<string, string | undefined>; host: string; port: number; clock?: Clock }): Promise<{ url: string; stop(): Promise<void> }> {
+/** Starts the vault server on `host`:`port` (0: any free one). Its database, keys and KMS come from `env`; `commit` is its build's. */
+export async function startVaultServer(o: { env: Record<string, string | undefined>; host: string; port: number; clock?: Clock; commit?: string }): Promise<{ url: string; stop(): Promise<void> }> {
   // The master key (issue #659): HOPPER_MASTER_KEY, else the old token key while the install is moved from it. Checked
   // against the database's fingerprint at each user's first request: a wrong key seals nothing and opens nothing.
   const masterKey = launchKey(o.env);
@@ -57,8 +57,9 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   }
 
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
-  // The container's health check: the server answers. Says nothing of the vault.
-  app.get('/health', async () => ({ ok: true }));
+  // The container's health check: the server answers. Says nothing of the vault. The commit it runs, when its build knows
+  // it: the hopper names a vault container on another version (issue #697).
+  app.get('/health', async () => ({ ok: true, ...(o.commit ? { commit: o.commit } : {}) }));
   app.post<{ Params: { op: string } }>(`${VAULT_OP_PATH}:op`, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const expected = secret(VAULT_KEY_VARIABLE) ?? '';

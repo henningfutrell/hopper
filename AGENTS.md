@@ -71,9 +71,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
-  one (the merge of a job's pull request does), and posts no comments. Five exceptions, each the user's own act or setting: with
+  one (the merge of a job's pull request does), and posts no comments. Six exceptions, each the user's own act or setting: with
   yolo mode on for a repository (issue #637), the hopper merges a done job's ready pull request that it follows — not a draft, no
-  merge conflicts, its checks passed — or it has none, and none started within two minutes of its last push (issue #677; issue #652 had none wait) —, a merge commit, and that merge closes the issue as a person's would; Run again
+  merge conflicts, its checks passed — or it has none, and none started within two minutes of its last push (issue #677; issue #652 had none wait) —, a merge commit, and that merge closes the issue as a person's would; Merge now and Close PR on a Pull requests card or `hopper pr merge|close`
+  (issue #677) merge, on the same path whatever yolo mode and the checks say, or close without a merge, a job's open pull request, as a person's act; Run again
   (issue #354) reopens the job's closed issue, so the new job can finish against it; Assign to me in Sources (issue #440)
   assigns a labelled issue to the user's connected account; resolving a hand-off in Needs a person (issue #551) posts one
   short comment — what was done, the person's note and link, naming no person, the resolver included — and sets the end
