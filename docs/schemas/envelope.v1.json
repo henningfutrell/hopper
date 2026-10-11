@@ -175,6 +175,7 @@
         "lanes.tuning_changed",
         "lanes.applied",
         "lanes.undone",
+        "lanes.dismissed",
         "bug_report.filed",
         "bug_report.failed",
         "jev.mode_changed",

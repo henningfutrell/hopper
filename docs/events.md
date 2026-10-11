@@ -3357,7 +3357,7 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
 
 ## `lanes.recommended`
 
-Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. `mode` `shadow`: recorded, not applied. Recorded when the recommended or the configured lanes change.
+Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there.
 
 | field | type | required |
 |---|---|---|
@@ -3368,7 +3368,7 @@ Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommend
 | `reason` | string | yes |
 | `confidence` | number | yes |
 | `usage` | `free` \| `near` \| `soft` \| `hard` | yes |
-| `mode` | string | yes |
+| `mode` | string | no |
 
 ```json
 {
@@ -3378,14 +3378,13 @@ Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommend
   "headroom": 4,
   "confidence": 1,
   "usage": "free",
-  "mode": "shadow",
   "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more"
 }
 ```
 
 ## `lanes.tuning_changed`
 
-Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, the least and most lanes a recommendation may name, and the `mode` (`shadow`: recommend only; `active`: apply; absent in a change saved before active mode: shadow). `from` and `to`, and `by`.
+Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`. `mode` (`shadow`, `active`) only in a change saved while active mode was there.
 
 | field | type | required |
 |---|---|---|
@@ -3400,14 +3399,12 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
   "from": {
     "autoTune": true,
     "minLanes": 1,
-    "maxLanes": 8,
-    "mode": "shadow"
+    "maxLanes": 8
   },
   "to": {
     "autoTune": true,
     "minLanes": 1,
-    "maxLanes": 8,
-    "mode": "active"
+    "maxLanes": 3
   },
   "by": "admin"
 }
@@ -3415,31 +3412,32 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
 
 ## `lanes.applied`
 
-Version 1 (`docs/schemas/lanes.applied.v1.json`). Active mode applied a machine's lane recommendation (issue #688): the lanes the decider uses for it went `from` → `to`, within its bounds; `configured` the lanes it is configured with. `reason` in plain words, `confidence` 0..1 from the history it stands on. An admin can undo it.
+Version 1 (`docs/schemas/lanes.applied.v1.json`). An admin applied a machine's lane recommendation (issue #688): its configured lanes went `from` → `to`, set as an edit of the machine sets them. `reason` in plain words, `confidence` 0..1 from the history it stands on, `by`: who. An admin can undo it. Without `by` (and with `configured`): the hopper applied it itself in active mode, before each one was an admin's.
 
 | field | type | required |
 |---|---|---|
 | `machineId` | string | yes |
 | `from` | integer | yes |
 | `to` | integer | yes |
-| `configured` | integer | yes |
+| `configured` | integer | no |
 | `reason` | string | yes |
 | `confidence` | number | yes |
+| `by` | string | no |
 
 ```json
 {
   "machineId": "laptop",
   "from": 2,
   "to": 4,
-  "configured": 2,
   "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more",
-  "confidence": 1
+  "confidence": 1,
+  "by": "admin"
 }
 ```
 
 ## `lanes.undone`
 
-Version 1 (`docs/schemas/lanes.undone.v1.json`). An admin undid the last lane change active mode applied to a machine (issue #688): its lanes went back `from` → `to`. Those lanes are not applied again until the recommendation moves. `by`: who.
+Version 1 (`docs/schemas/lanes.undone.v1.json`). An admin undid the last lane recommendation applied to a machine (issue #688): its configured lanes went back `from` → `to`. `by`: who.
 
 | field | type | required |
 |---|---|---|
@@ -3453,6 +3451,28 @@ Version 1 (`docs/schemas/lanes.undone.v1.json`). An admin undid the last lane ch
   "machineId": "laptop",
   "from": 4,
   "to": 2,
+  "by": "admin"
+}
+```
+
+## `lanes.dismissed`
+
+Version 1 (`docs/schemas/lanes.dismissed.v1.json`). An admin dismissed a machine's lane recommendation (issue #688): the `lanes` it recommended at the `configured` lanes, and why (`reason`). Not offered again until the recommendation or the configured lanes move. `by`: who.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `lanes` | integer | yes |
+| `configured` | integer | yes |
+| `reason` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "lanes": 4,
+  "configured": 2,
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more",
   "by": "admin"
 }
 ```

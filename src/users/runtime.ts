@@ -54,6 +54,7 @@ import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
+import { machineLanesEditor } from './machine-lanes.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -330,10 +331,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
     // The usage sources follow the plugins config live (issue #356).
     usage: () => [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
-    policy: {
-      softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
-      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing,
-    },
+    policy: { softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
+      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing },
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, doneRecheckMs: config.doneRecheckMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
@@ -344,8 +343,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
     jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
-    // Read at each Decision; reached only after `failures` exists.
-    problems: () => failures.blocks(),
+    // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
+    problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({

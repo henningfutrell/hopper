@@ -27,13 +27,15 @@
       "type": "number",
       "minimum": 0,
       "maximum": 1
+    },
+    "by": {
+      "type": "string"
     }
   },
   "required": [
     "machineId",
     "from",
     "to",
-    "configured",
     "reason",
     "confidence"
   ],

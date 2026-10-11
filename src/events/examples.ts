@@ -193,12 +193,13 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     toHash: 'f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8', editors: ['octocat'], person: 'octocat', via: 'ui',
   },
   'lanes.recommended': {
-    machineId: 'laptop', lanes: 4, configured: 2, headroom: 4, confidence: 1, usage: 'free', mode: 'shadow',
+    machineId: 'laptop', lanes: 4, configured: 2, headroom: 4, confidence: 1, usage: 'free',
     reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more',
   },
-  'lanes.tuning_changed': { machineId: 'laptop', from: { autoTune: true, minLanes: 1, maxLanes: 8, mode: 'shadow' }, to: { autoTune: true, minLanes: 1, maxLanes: 8, mode: 'active' }, by: 'admin' },
-  'lanes.applied': { machineId: 'laptop', from: 2, to: 4, configured: 2, reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more', confidence: 1 },
+  'lanes.tuning_changed': { machineId: 'laptop', from: { autoTune: true, minLanes: 1, maxLanes: 8 }, to: { autoTune: true, minLanes: 1, maxLanes: 3 }, by: 'admin' },
+  'lanes.applied': { machineId: 'laptop', from: 2, to: 4, reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more', confidence: 1, by: 'admin' },
   'lanes.undone': { machineId: 'laptop', from: 4, to: 2, by: 'admin' },
+  'lanes.dismissed': { machineId: 'laptop', lanes: 4, configured: 2, reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more', by: 'admin' },
   'bug_report.filed': { repo: 'henningfutrell/hopper', kind: 'issue', number: 712, url: 'https://github.com/henningfutrell/hopper/issues/712', jobId: 'b3f1c2d4', by: 'octocat' },
   'bug_report.failed': { repo: 'henningfutrell/hopper', error: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
 };
