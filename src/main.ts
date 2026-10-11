@@ -30,7 +30,7 @@ import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
-import { createInstallScriptBuilder, createReleaseCheck, createRestarter, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createReleaseCheck, createRestarter, releaseAccount, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
@@ -261,8 +261,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     appDir, dataDir: workDir, settings: instance.settings, events: runtimes.events, clock, logger,
     builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(workDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
-    // Only the merge of a pull request whose checks passed (issue #652), asked of github.com's API with no token.
-    release: seams.update?.release ?? createReleaseCheck({ apiUrl: 'https://api.github.com', clock }),
+    // Only the merge of a pull request whose checks passed (issue #652), asked of github.com's API with the oldest
+    // user's GitHub connection there (issue #822): never with no token.
+    release: seams.update?.release ?? createReleaseCheck({ clock, github: () => releaseAccount(instance.users.list().flatMap((u) => runtimes.get(u.id)?.connectedAccounts ?? [])) }),
     // A restart would lose the running jobs of every user.
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,

@@ -12960,10 +12960,17 @@ install, the updater asks whether it is the merge of a pull request whose checks
    or `skipped`, at least one `success`. No check runs: held ("no checks is not passing", as for yolo mode). A check that
    failed or has not finished: held, with its name.
 
-Asked of `https://api.github.com` with no token: the update repository is public, and the updater runs for the instance,
-not for one user's connection. An update repository not on github.com, or GitHub not answering, holds the update: it is
-not offered when it cannot be checked. A settled answer (passed, or not the merge of a pull request) is kept for the
-commit; another is asked again after five minutes, so the check stays under GitHub's 60 unauthenticated requests an hour.
+Asked of `https://api.github.com` with a token, never with none (issue #822): github.com gives a request with no token
+60 calls an hour per address, shared with everything else on that address, and an update was held on "API rate limit
+exceeded for <address>". The token is the GitHub connection of the oldest user who has one on github.com
+(`releaseAccount`; a GitHub Enterprise connection's token is no good there), asked at each check, and renewed once when
+GitHub refuses it (`tokenCaller`, as the GitHub proxy). The calls go through the shared rate limiter ("The shared rate
+limiter"), so they are conditional and paced like every other call. No such connection: the update is held with why, and
+GitHub is not asked. An update repository not on github.com, or GitHub not answering, holds the update: it is not offered
+when it cannot be checked. A settled answer (passed, or not the merge of a pull request) is kept for the commit; another
+is asked again after five minutes. GitHub refusing for the rate (403 or 429 with no calls left, or `retry-after`) holds
+the update until GitHub's reset time, with "GitHub rate-limited the hopper: it asks about <commit> again at HH:MM UTC" as
+the reason, and GitHub is not asked again before then.
 
 **Held** (`UpdateState` `held`). The status carries the target and `reason`; no `update.available`, no auto-update, and
 `apply` answers 409 "no update available". The daemon logs `hopper: update held: …` once per target and reason. The update

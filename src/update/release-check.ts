@@ -1,10 +1,15 @@
 // The release check (issue #652, design.md "Self-update"): the hopper updates only to a commit that is the merge of a
 // pull request whose checks passed. A push straight to a channel's branch, a pull request with no checks, a check that
-// failed or has not finished, and a commit GitHub cannot be asked about are all held. Asked of GitHub's REST API with
-// no token: the update repository is public, and the updater runs for the instance, not for a user's connection.
-import type { Clock, ReleaseCheck, ReleaseVerdict } from '../domain/ports.ts';
-import { makeRequest } from '../sources/github/app/http.ts';
+// failed or has not finished, and a commit GitHub cannot be asked about are all held. Asked of GitHub's REST API with a
+// connected GitHub account's token (issue #822), never with none: github.com gives an address with no token 60 calls an
+// hour, shared with everything else on it. GitHub's rate limit holds the commit until its reset time, said in the reason.
+import type { Clock, ConnectedAccountTokens, ReleaseCheck, ReleaseVerdict } from '../domain/ports.ts';
+import type { GitHubLimiter } from '../github-limiter/limiter.ts';
+import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
+import { makeRequest, statusOf } from '../sources/github/app/http.ts';
 
+/** github.com's REST API: where the update repository is asked about. */
+export const GITHUB_API = 'https://api.github.com';
 /** How long an answer that can still change (checks running, failed, none) is kept before GitHub is asked again. */
 export const RELEASE_RETRY_MS = 5 * 60_000;
 /** A check run's conclusions that count as passed; at least one must be `success`. */
@@ -34,18 +39,53 @@ export function checksVerdict(pr: { number: number; url: string }, runs: Run[]):
   return { verdict: { passed: true, pullRequest: pr }, settled: true };
 }
 
-export function createReleaseCheck(o: { apiUrl: string; clock: Clock; retryMs?: number }): ReleaseCheck {
-  const req = makeRequest(o.apiUrl);
-  const retryMs = o.retryMs ?? RELEASE_RETRY_MS;
-  // A settled answer never changes; another is asked again once it is `retryMs` old (60 unauthenticated asks an hour).
-  const known = new Map<string, { verdict: ReleaseVerdict; settled: boolean; at: number }>();
+/** When GitHub refused a call for the rate (a 403 or 429 with no calls left, or `retry-after`): the time it may be asked again, in ms; else undefined. */
+export function rateLimitedUntil(err: unknown, now: number): number | undefined {
+  const status = statusOf(err);
+  if (status !== 403 && status !== 429) return undefined;
+  const headers = (err as { response?: { headers?: Record<string, string | number | undefined> } }).response?.headers ?? {};
+  const after = Number(headers['retry-after']);
+  if (Number.isFinite(after) && after > 0) return now + after * 1000;
+  const reset = Number(headers['x-ratelimit-reset']);
+  if (String(headers['x-ratelimit-remaining']) === '0' && Number.isFinite(reset)) return reset * 1000;
+  return status === 429 ? now + 60_000 : undefined;
+}
 
-  async function ask(gh: { owner: string; repo: string }, commit: string): Promise<{ verdict: ReleaseVerdict; settled: boolean }> {
-    const pulls = (await req('GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls', { ...gh, commit_sha: commit })).data as Pull[];
-    const pr = pulls.find((p) => p.merged_at && p.merge_commit_sha === commit);
-    if (!pr) return { verdict: { passed: false, reason: `${short(commit)} is not the merge of a pull request` }, settled: true };
-    const runs = (await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...gh, ref: pr.head.sha, per_page: 100 })).data as { check_runs: Run[] };
-    return checksVerdict({ number: pr.number, url: pr.html_url }, runs.check_runs);
+/**
+ * The account the release check asks with: the first of `accounts` (the users', oldest first) whose GitHub connection
+ * lives and is on `apiUrl` — a GitHub Enterprise token is no good on github.com. Its token is asked at each check.
+ */
+export function releaseAccount(accounts: ConnectedAccountTokens[], apiUrl = GITHUB_API): TokenSource | { problem: string } {
+  const a = accounts.find((x) => x.account('github') !== undefined && x.endpoints('github').apiUrl === apiUrl);
+  if (!a) return { problem: `no user has a GitHub connection on ${apiUrl}: an admin connects one in Sources → Connect GitHub` };
+  return { token: () => a.token('github'), renew: (refused) => a.renew('github', refused) };
+}
+
+const hhmm = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
+
+export function createReleaseCheck(o: {
+  /** Default: github.com's. */
+  apiUrl?: string; clock: Clock; retryMs?: number;
+  /** The GitHub account the check asks with, its token asked at each check; or why there is none (then nothing is asked). */
+  github: () => TokenSource | { problem: string };
+  /** The shared rate limiter unless a test gives one. */
+  limiter?: GitHubLimiter;
+}): ReleaseCheck {
+  const apiUrl = o.apiUrl ?? GITHUB_API;
+  const req = o.limiter ? makeRequest(apiUrl, o.limiter) : makeRequest(apiUrl);
+  const retryMs = o.retryMs ?? RELEASE_RETRY_MS;
+  // A settled answer never changes; another is asked again once it is `retryMs` old, or at GitHub's reset when rate-limited.
+  const known = new Map<string, { verdict: ReleaseVerdict; settled: boolean; at: number; until?: number }>();
+
+  async function ask(account: TokenSource, gh: { owner: string; repo: string }, commit: string): Promise<{ verdict: ReleaseVerdict; settled: boolean }> {
+    return tokenCaller(account)(async (token) => {
+      const headers = { authorization: `token ${token}` };
+      const pulls = (await req('GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls', { ...gh, commit_sha: commit, headers })).data as Pull[];
+      const pr = pulls.find((p) => p.merged_at && p.merge_commit_sha === commit);
+      if (!pr) return { verdict: { passed: false, reason: `${short(commit)} is not the merge of a pull request` }, settled: true };
+      const runs = (await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...gh, ref: pr.head.sha, per_page: 100, headers })).data as { check_runs: Run[] };
+      return checksVerdict({ number: pr.number, url: pr.html_url }, runs.check_runs);
+    }, (err) => (err instanceof Error ? err : new Error(String(err))));
   }
 
   return {
@@ -55,12 +95,17 @@ export function createReleaseCheck(o: { apiUrl: string; clock: Clock; retryMs?: 
       const key = `${gh.owner}/${gh.repo}@${commit}`;
       const now = o.clock.now().getTime();
       const was = known.get(key);
-      if (was && (was.settled || now - was.at < retryMs)) return was.verdict;
-      let answer: { verdict: ReleaseVerdict; settled: boolean };
+      if (was && (was.settled || (was.until !== undefined ? now < was.until : now - was.at < retryMs))) return was.verdict;
+      const account = o.github();
+      if ('problem' in account) return { passed: false, reason: `GitHub could not be asked about ${short(commit)}: ${account.problem}` };
+      let answer: { verdict: ReleaseVerdict; settled: boolean; until?: number };
       try {
-        answer = await ask(gh, commit);
+        answer = await ask(account, gh, commit);
       } catch (e) {
-        answer = { verdict: { passed: false, reason: `GitHub could not be asked about ${short(commit)}: ${e instanceof Error ? e.message : String(e)}` }, settled: false };
+        const until = rateLimitedUntil(e, now);
+        answer = until !== undefined
+          ? { verdict: { passed: false, reason: `GitHub rate-limited the hopper: it asks about ${short(commit)} again at ${hhmm(until)} UTC` }, settled: false, until }
+          : { verdict: { passed: false, reason: `GitHub could not be asked about ${short(commit)}: ${e instanceof Error ? e.message : String(e)}` }, settled: false };
       }
       known.set(key, { ...answer, at: now });
       return answer.verdict;
