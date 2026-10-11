@@ -8,6 +8,8 @@ import { maskAddresses, maskGitHubTokens, maskKeys, maskSecret } from '../secret
 export const REPORT_REPO = 'henningfutrell/hopper';
 /** The one label a report gets: never `hopper`, so a report never starts a job (issue #655 is the gate for the rest). */
 export const REPORT_LABEL = 'user-report';
+/** How the context names a failure's signature, before its 12 hex digits. */
+export const SIGNATURE_LINE = 'Signature: ';
 /** The log lines of the job a report carries, the last ones. */
 export const TAIL_LINES = 20;
 
@@ -29,6 +31,8 @@ export interface ReportContextInput {
   job?: Job;
   /** The failure record of the job, if it has one. */
   failureId?: string;
+  /** Its signature (the failure assessor's): the duplicate search looks for it in the open reports' text. */
+  signature?: string;
 }
 
 /** Text as a report may carry it: tokens, keys, the host name, IP addresses, private host names and home directories masked. */
@@ -53,6 +57,7 @@ export function reportContext(i: ReportContextInput): string {
   if (job) {
     lines.push(`- Job: ${job.id} (${STATE_WORDS[job.status]})`);
     if (i.failureId) lines.push(`- Failure: ${i.failureId}`);
+    if (i.signature) lines.push(`- ${SIGNATURE_LINE}${i.signature}`);
     if (job.error) lines.push(`- Error: ${job.error.split('\n')[0]!.slice(0, 500)}`);
     const tail = job.errorTail?.trimEnd().split('\n').slice(-TAIL_LINES).join('\n');
     if (tail) lines.push('', `Last ${TAIL_LINES} log lines of the job:`, '', '```text', tail.replaceAll('```', "'''"), '```');

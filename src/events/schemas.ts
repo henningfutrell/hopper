@@ -320,6 +320,7 @@ export const EVENT_SCHEMAS = {
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   'vault.revoked': strict({ template: z.string(), by: z.string() }),
+  'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
@@ -355,8 +356,8 @@ export const EVENT_SCHEMAS = {
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   // Report a bug (issue #694): what was filed, never its text.
-  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string() }),
-  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string() }),
+  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

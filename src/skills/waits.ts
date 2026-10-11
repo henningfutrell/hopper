@@ -17,9 +17,9 @@ export const SKILL_STREAM_TYPES = {
 } as const;
 
 /** The vault's events after which a waiting request may be answered otherwise. Never `vault.credential_asked`: asking again makes one. */
-const VAULT_CHANGES: readonly EventType[] = ['vault.credential_given', 'vault.credential_declined', 'vault.approved', 'vault.secret_set', 'vault.secret_removed'];
+const VAULT_CHANGES: readonly EventType[] = ['vault.credential_given', 'vault.credential_declined', 'vault.approved', 'vault.secret_set', 'vault.secret_removed', 'template.profile_approved'];
 /** The fields of a request that are asked again; `wait` and `timeout` are the watch's. */
-const ASKED = ['name', 'asset', 'why', 'credential'];
+const ASKED = ['name', 'asset', 'why', 'credential', 'needs'];
 
 /** One user's side: their job stream, and their event log to hear the vault's changes on. */
 export interface WaitUser {

@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
@@ -8384,11 +8384,64 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
+**Not built (carried on issue #718).** Tools assembled per run; the read-only negative suite (#715) run before a new template's
 first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
 token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
-built: `vault set <name> --shared` ("Shared secrets").
+built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
+policy, is built ("Templates on request"); so is `template read-policy`.
+
+## Templates on request (issue #716, item 1, 2026-10-10)
+
+Owner's model (issue #716): you ask the hopper to make the template a job needs, and the hopper makes it. Before it, a
+template was only what a person saved on Settings → Vault, or with `hopper template save`. Owner, issue #718: jobs do
+not get write access over the API; they still ask the hopper. So a job asks through the skill request it already has
+(`POST /job/skill`, "Skills: what the hopper can set up for a box"), and the hopper decides.
+
+- **The ask.** `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" [--wait]`.
+  Each **need** is an operation profile, written as the CLI writes one, `<operation>/<kind>/<asset>`; split by spaces,
+  commas or lines; at most 16; each once. A need the hopper cannot read is a 400 that says how to write it.
+- **The template** (`requestTemplate`, `src/skills/template-request.ts`). Its name is `asked-` and 12 hex of a SHA-256
+  over the sorted needs: the same needs, in any order and from any job, get the same template, so a later job with the
+  same needs makes no second one. It runs the hopper's box image (`ghcr.io/henningfutrell/hopper:box-claude`), holds no
+  vault secret, and declares one operation profile per need. It is saved through the vault's own `saveTemplate`, by
+  `job <id>`: the same checks and the same `template.saved` event as a person's save. No secret goes in its scope: when a
+  job on its box loads a skill, the dynamic vault asks a person for that credential ("The dynamic vault"), and a person's
+  giving it approves only that one secret.
+- **The read policy** (`ReadPolicy`, `src/domain/read-policy.ts`; the user's settings, key `readPolicy`, no migration).
+  The assets the hopper approves read on with no person. Each entry is an asset as Access names it (`cluster/lab`), or
+  one that ends in `*` (`aws-account/*`, `namespace/lab/*`): every asset of that kind whose name starts with what is before
+  it. At most 64 entries. An admin sets it on Settings → Vault (panel **Read policy**), with `POST /ui/api/vault`
+  `set-read-policy` (`assets`; replaces it; empty clears it), or `hopper template read-policy set <entry>...`; each set is
+  `vault.read_policy_set`. `GET /api/vault` answers it as `readPolicy`. Empty, or never set: the hopper approves nothing.
+- **The approval.** The hopper approves the template with no person only when it makes it now and every need is a
+  `read` on an asset the policy holds: the vault's own `approveTemplate`, `by` **the read policy** (`vault.approved`,
+  `template.profile_approved` with that `by`). All or nothing: one need outside the policy, or one write, sync or apply
+  need, and the whole template waits for a person on Settings → Vault, as a template a person saved does. The policy
+  never approves a template again: one a person revoked waits for a person.
+- **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
+  is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
+- **The answer.** 200 when the template is approved, its image the approved one, and every profile approved in Access:
+  its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
+  --template <name>`), and the skill each need's asset loads on that box. Else 202 `waiting: template <name> waits for a
+  person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
+  job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again).
+
+**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. Tools assembled per
+run (item 2): every requested template runs the one box image. The read-only negative suite (#715) before a new
+template's first use (item 4). A need's credential is asked of a person when a job on the box first loads the skill;
+the template does not name a vault secret the user already has. Templates made on request are not removed when no job
+uses them.
+
+**Residual risk, stated.** Any job at work may make a template, one per distinct set of needs; it holds no secret and,
+outside the read policy, gives nothing until a person approves it. Inside the policy, a new template's boxes may read the
+assets the policy names: the policy is the admin's statement that this is fine, and it is empty by default.
+
+Tests: `test/integration/template-requests.test.ts` (the real daemon, the real `hopper-skill`, OpenFGA as a double: read
+needs inside the policy approved with no person and allowed by Access; the same needs again, the same template; a write
+need waits, and the job's `--wait` ends when a person approves; no policy, a read waits; a person's change is never
+widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
+entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
+(`template read-policy`), `test/ui/vault-read-policy.test.ts`.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 
@@ -9952,8 +10005,7 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy (item 1); tools assembled per run (item 2); a token-scoped mutating API so an agent does
+**Not built (carried on issue #718).** Tools assembled per run (item 2); a token-scoped mutating API so an agent does
 all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
 first use (item 5), which waits on #715's suite.
 
@@ -10217,7 +10269,7 @@ every start of the job, so a restart or a renewal changes nothing on the machine
 hashed" — this one is not even kept.)
 
 **`hopper-gh`** (`src/github-proxy/script.ts`): POSIX sh and curl, nothing else, so it runs on any machine a job runs
-on. `issue create|comment|view`, `pr create|view`, `help`. Arguments become `--data-urlencode` form fields, rebuilt in
+on. `issue create|comment|view|close`, `pr create|view|ready`, `report bug` (issue #694, "Report a bug"), `help`. Arguments become `--data-urlencode` form fields, rebuilt in
 place (no `eval`); `--body-file` is read by curl. It prints the hopper's JSON answer and exits 1 on a refusal or a
 GitHub failure, 2 on a bad call. Its `help` is the whole manual: the job is told one protocol line
 (`GITHUB_PROXY_LINE`, `src/job-rules/`) and reads the rest only when it needs it.
@@ -10236,6 +10288,11 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
    `issue.comment` 20 and 100, `pr.create` 3 and 20, reads 120 and 600; in memory, a restart starts them again) — **429**;
 6. GitHub (`src/github-proxy/api.ts`: one REST call, `pr.create` without `--base` first reads the default branch; a 401
    renews the token once) — **200** `{ ok, op, repo, requestId, number, url, … }`, or **502** with what GitHub said.
+
+A job's bug report (`report.bug`, issue #694) takes steps 1, 2 (`reportRequest`) and 5 (3 per job and 10 per machine
+**in any day**), skips 3 and 4 — it is not an act of the hopper's connection — and is then Report a bug's own path with
+the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }`, **409** with
+the similar open reports, or the refusal's status.
 
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
 "Filed through hopper for job `<job id>` (request `<request id>`). It is not a job: it waits for a person to triage it."
@@ -11696,22 +11753,38 @@ masked in the title and body. Each outcome is one event on the person's log, nev
 by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context { jobId? }` answers
 `{ context, repo }` and changes nothing (404 for a job that is not the person's).
 
+**The duplicate search by signature.** A report on a job whose failure record has a **signature** (the failure
+assessor's, 12 hex digits) names it in the context (`- Signature: <hex>`). Before the title search, the open
+`user-report` issues whose body has that signature are searched (`in:body`); every one found is similar, first. Only
+while the context sent still names it: a signature the person removed is not searched for either.
+
+**Jobs report too** (`fileForJob`). A running job files a hopper bug with `sh "$HOPPER_GH" report bug --title T (--body
+TEXT | --body-file F) [--comment-on N] [--force]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
+second script: one script, one token, one place a job looks for anything GitHub. The proxy checks the job's token and
+the limits (3 per job, 10 per machine, in any day), then files it by the person's path, with the **job's own user's**
+connection, so the job never signs in to GitHub. No person reads a job's text before it is sent, so its title and body
+pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's, on the job
+itself; the body ends "Filed by a job (`<id>`) with Report a bug in a hopper."; `bug_report.filed` and `.failed` carry
+`fromJob: true` and `by: job <id>`. Similar open reports are answered **409** with the list and what to do next
+(`--comment-on N`, or `--force`): nothing is filed until the job chooses. The label is still `user-report`, so a job's
+report never starts a job either.
+
 **UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): a form
 with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
 to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
-*Add to #N* each and *File a new report*; after filing, the line names the issue and links it.
+*Add to #N* each and *File a new report*; after filing, the line names the issue and links it. Every hand-off card,
+failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form, with
+that job's context. A problem card has none: it is many jobs, and each of its failures has its own row.
 
 **Not built yet** (left for the next parts of issue #694):
-- *Report a bug* on every failure, hand-off and question card, with that job's context (the route takes `jobId` now).
-- **Jobs report too**: `hopper-report bug --title … --body …` in the job skill, through the same code path, proxied by the
-  hopper as `hopper-gh` is (issue #563), marked as the job's (`reportBody`'s `fromJob`), rate-limited per job and per day.
 - **Your reports** in Settings: each report with its state (open or closed), refreshed from GitHub.
 - **Fallback**: with the GitHub connection down or no access to the repository, the report kept and sent later, and the
   form says so.
 - `hopper report bug` in the CLI, JSON out, the same code path (issue #623).
-- The duplicate search by an error signature, beside the title.
 
-Tests: `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
+Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
+connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit; the signature search),
+`test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context redacted, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, no connection, a refused draft),
 `test/ui/bug-report-view.test.ts` (the form), `test/ui/user-menu.test.ts` (the item, not for a viewer).

@@ -2821,6 +2821,25 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 }
 ```
 
+## `vault.read_policy_set`
+
+Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`). Write, sync and apply always wait for a person. Empty: the hopper approves nothing by itself.
+
+| field | type | required |
+|---|---|---|
+| `assets` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "assets": [
+    "cluster/lab",
+    "aws-account/*"
+  ],
+  "by": "Ada"
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
@@ -3374,7 +3393,7 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
 
 ## `bug_report.filed`
 
-Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. Never its text.
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. Never its text.
 
 | field | type | required |
 |---|---|---|
@@ -3384,6 +3403,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 | `url` | string | yes |
 | `jobId` | string | no |
 | `by` | string | yes |
+| `fromJob` | boolean | no |
 
 ```json
 {
@@ -3398,7 +3418,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 
 ## `bug_report.failed`
 
-Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId` and `by` as in `bug_report.filed`.
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
 
 | field | type | required |
 |---|---|---|
@@ -3406,6 +3426,7 @@ Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed
 | `error` | string | yes |
 | `jobId` | string | no |
 | `by` | string | yes |
+| `fromJob` | boolean | no |
 
 ```json
 {

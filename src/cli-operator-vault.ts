@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
-// boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, and launches a box of it
-// without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
+// (issue #716, item 1), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -22,6 +22,9 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      approve one write, sync or apply profile explicitly
   hopper template revoke <name>                      revoke its approval: its boxes take no new job and are given nothing
   hopper template remove <name>                      remove it (refused while a box of it is attached)
+  hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
+                                                     the read policy: the assets read is approved on with no person, for a
+                                                     template a job asks for; set replaces it, set with none clears it
   hopper sandbox list                                the user's sandbox boxes, and whether the hopper can start one now
   hopper sandbox launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]
                                                      start a sandbox box, of an approved template, within its limits`;
@@ -29,7 +32,7 @@ export const VAULT_USAGE = `  hopper vault                                      
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared]`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]';
-const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name>';
+const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
@@ -88,6 +91,7 @@ function limitsOf(values: { cpus?: string | undefined; 'memory-mb'?: string | un
 }
 
 const templatesOf = (v: unknown) => (v as VaultView).templates;
+const readPolicyOf = (v: unknown) => (v as VaultView).readPolicy ?? [];
 
 export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -97,6 +101,12 @@ export function templateCall(args: string[]): Call {
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
   if (verb === 'list' && !name && !flags) return { role: 'viewer', path: '/api/vault', pick: templatesOf };
+  // The read policy (issue #716): shown, or replaced by the entries named (none clears it).
+  if (verb === 'read-policy' && !flags) {
+    if (name === undefined) return { role: 'viewer', path: '/api/vault', pick: readPolicyOf };
+    if (name === 'set') return { ...edit({ action: 'set-read-policy', assets: rest }), pick: readPolicyOf };
+    throw usage(TEMPLATE_VERBS);
+  }
   if (verb === 'save') {
     if (!name || rest.length > 0 || !values.image) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);

@@ -7,11 +7,16 @@
 //                     the catalog, the skill, or `no: <reason>`; 202 `waiting: …` while a person is asked for the
 //                     credential a skill needs (issue #583: a credential request, kept in memory). With `wait` (and
 //                     `timeout`, seconds), the 202 opens a watch on the request and names it: the answer comes on the
-//                     job stream (issue #613, job-stream.ts). It changes no job, question, webhook or setting.
+//                     job stream (issue #613, job-stream.ts). It changes no job, question, webhook or setting. A
+//                     template request (issue #716, `name` sandbox-template, `needs`) saves the template the needs
+//                     say, never widening one, and approves it only inside the user's read policy.
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
 import { createSkillBroker, createSkillWaits, SKILL_PATH, type SkillUser, type SkillWaits } from '../skills/index.ts';
+import { requestTemplate } from '../skills/template-request.ts';
 import { mintTarget } from '../domain/minting.ts';
+import { BOX_IMAGE } from '../sandbox/launch.ts';
+import { BOX_AGENTS } from './ui/machine-join.ts';
 import type { Tenants } from './tenants.ts';
 
 /** A user's side, from their GitHub proxy's (their jobs, the token check, their log) and their vault (a box's template). */
@@ -35,6 +40,14 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
       }) };
     },
     need: (ask, asker) => parts.vault.need(ask, asker),
+    // Issue #716: the template the job's needs say, through the vault's own save and approve, the user's read policy deciding.
+    requestTemplate: (needs, job) => requestTemplate({
+      template: (name) => parts.vault.view().templates.find((t) => t.name === name),
+      save: (t, by) => parts.vault.saveTemplate(t, by),
+      approve: (name, by) => parts.vault.approveTemplate(name, by),
+      policy: () => parts.store.settings.getReadPolicy(),
+      image: `${BOX_IMAGE}:box-${BOX_AGENTS[0]}`,
+    }, needs, `job ${job.id}`),
   };
 }
 
