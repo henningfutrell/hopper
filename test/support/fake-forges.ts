@@ -63,6 +63,8 @@ export interface FakeForge extends RepoChecksForge {
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
+  /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
+  issuesRefused?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
@@ -291,6 +293,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
       const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
       if (r.method === 'GET' && rest === '') return { status: 200, body: { full_name: repo, default_branch: 'dev' } };
+      if (r.method === 'POST' && (rest === 'issues' || /^issues\/\d+\/comments$/.test(rest)) && forge?.issuesRefused) return { status: forge.issuesRefused, body: { message: 'Resource not accessible by integration' } };
       if (r.method === 'POST' && rest === 'issues') {
         const issue: FakeIssue = {
           repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), author: login,

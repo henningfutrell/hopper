@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Report a bug (issue #694), the form rendered against a fake of the daemon's HTTP: it fills in the context the daemon
 // answers, for the person to read and edit; Send stays off until there is a title and what happened; a similar open
-// report is offered first, and the person adds theirs to it, or files a new one; after filing it shows the link.
+// report is offered first, and the person adds theirs to it, or files a new one; after filing it shows the link. When
+// GitHub cannot take it now, it says the hopper keeps it and sends it later, and where to see it.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -89,5 +90,18 @@ describe('Report a bug', () => {
     await click(button(/Add to #5/));
     expect(posts.at(-1)?.body).toMatchObject({ commentOn: 5 });
     expect(document.querySelector('[data-slot="bug-report-sent"]')?.textContent).toContain('Your report was added to issue #5.');
+  });
+
+  it('says the report is kept and sent later when GitHub cannot take it now', async () => {
+    answers = [{ kind: 'kept', id: 'r1', problem: 'your GitHub is not connected: connect it in Sources → Connect GitHub' }];
+    await render();
+    await type(field('Title'), 'Board hangs');
+    await type(field('What happened'), 'It stopped.');
+    await click(button(/Send report/));
+    const kept = document.querySelector('[data-slot="bug-report-kept"]')!;
+    expect(kept.textContent).toContain('your GitHub is not connected');
+    expect(kept.textContent).toContain('The hopper keeps your report and sends it later.');
+    expect(kept.querySelector('a')?.getAttribute('href')).toBe('#settings/reports');
+    expect(button(/Done/)).toBeDefined();
   });
 });
