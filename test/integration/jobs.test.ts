@@ -68,6 +68,17 @@ describe('jobs pulled from a source', () => {
     expect((await t.api('GET', '/api/jobs?status=bogus')).status).toBe(400);
   });
 
+  // Issue #794: the job's progress is its task count; a progress message alone keeps the count it has.
+  it('a job keeps the task count it reported last, with its last progress message; job.progressed carries no fraction', async () => {
+    const job = await t.pull({ op: 'echo', progress: [[1, 3], 'running the tests', [2, 3], 'opening the pull request'] });
+    const done = await t.waitForStatus(job.id, 'finished');
+    expect(done).toMatchObject({ tasks: { done: 2, total: 3 }, progressMessage: 'opening the pull request' });
+    expect(done).not.toHaveProperty('progress');
+    const progressed = (await t.events('types=job.progressed')).filter((e) => e.jobId === job.id);
+    expect(progressed.at(-1)?.data).toEqual({ message: 'opening the pull request', tasks: { done: 2, total: 3 } });
+    expect(progressed.every((e) => !('progress' in e.data))).toBe(true);
+  });
+
   it('a sleep job runs to finished with the full event sequence, and the source hears claimed then finished', async () => {
     const job = await t.pull({ op: 'sleep', ms: 200 });
     const done = await t.waitForStatus(job.id, 'finished');

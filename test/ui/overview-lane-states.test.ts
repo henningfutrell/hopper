@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #381: the Overview's lanes and waiting list say what is really happening. A lane whose job
-// still runs shows busy — one that closes after it says so in neutral words; a progress bar only when
-// a real percentage exists; a job waiting for capacity reads "waiting for a lane", not held, with the
+// still runs shows busy — one that closes after it says so in neutral words; its bar is its task count
+// (issue #794), indeterminate before it has one; a job waiting for capacity reads "waiting for a lane", not held, with the
 // limit that binds; and every state badge in both panels says what it means on hover.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -16,7 +16,7 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
 
 const jobs = [
   job('r1', 'running', { laneId: 'm1/lane-1', startedAt: minutesAgo(25), progressMessage: 'running the tests' }),
-  job('r2', 'running', { laneId: 'm1/lane-2', startedAt: minutesAgo(5), progress: 0.4 }),
+  job('r2', 'running', { laneId: 'm1/lane-2', startedAt: minutesAgo(5), tasks: { done: 2, total: 5 } }),
   job('w1', 'queued', { waitReason: 'waiting for a lane: machine m1\'s lane cap is 2, all 2 in use' }),
   job('h1', 'held', { holdReason: 'router ask_human: awaiting approval' }),
 ];
@@ -85,14 +85,20 @@ describe('Overview lane and queue states', () => {
     expect(card.textContent).not.toContain('draining');
   });
 
-  it('no progress bar without a real percentage: elapsed time and the latest activity instead', async () => {
+  // Issue #794: the bar is the job's task count, x/y; before its task list it is indeterminate, never a 0% or a clock.
+  it('the bar is the task count, x/y; with no task list yet, an indeterminate bar, elapsed time and the latest activity', async () => {
     await boot();
     const card = lane('r1');
-    expect(card.querySelector('[data-slot="progress"]')).toBeNull();
+    const none = card.querySelector('[data-slot="progress"]');
+    expect(none?.getAttribute('data-indeterminate')).toBe('true');
     expect(card.textContent).not.toContain('0%');
+    expect(card.textContent).not.toMatch(/\d+\/\d+/);
     expect(card.textContent).toContain('25m');
     expect(card.textContent).toContain('running the tests');
-    expect(lane('r2').querySelector('[data-slot="progress"]')?.textContent).toContain('40%');
+    const counted = lane('r2').querySelector('[data-slot="progress"]');
+    expect(counted?.getAttribute('data-indeterminate')).toBeNull();
+    expect(counted?.textContent).toContain('2/5');
+    expect((counted?.querySelector('[data-slot="progress-fill"]') as HTMLElement | null)?.style.width).toBe('40%');
   });
 
   it('a job waiting for capacity reads waiting for a lane with the binding limit; held stays for a real hold', async () => {

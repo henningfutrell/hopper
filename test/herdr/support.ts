@@ -1,5 +1,6 @@
 import type { Clock, ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
+import type { TaskCount } from '../../src/domain/task-count.ts';
 import { createFakeHerdrClient, createHerdrClaudeExecutor } from '../../src/executors/herdr/index.ts';
 import type { FakeHerdrOptions } from '../../src/executors/herdr/index.ts';
 
@@ -35,13 +36,13 @@ export function jobWith(payload: Record<string, unknown>, extra: Partial<Job> = 
 export function contextFor(given: Job, laneId = LANE, machine: MachineSnapshot = LOCAL) {
   const job = given.spec.payload.cwd !== undefined && !('machineId' in given.spec) ? { ...given, spec: { ...given.spec, machineId: machine.id } } : given;
   const ac = new AbortController();
-  const progress: { fraction: number; message?: string }[] = [];
+  const progress: { message?: string; tasks?: TaskCount }[] = [];
   const saved: Record<string, unknown>[] = [];
   const workTrees: string[] = [];
   const sessions: string[] = [];
   const ctx: ExecutionContext = {
     job, laneId, machine, signal: ac.signal,
-    progress: (fraction, message) => progress.push({ fraction, message }),
+    progress: (message, tasks) => progress.push({ ...(message !== undefined ? { message } : {}), ...(tasks ? { tasks } : {}) }),
     saveState: (s) => saved.push(s),
     workTree: (path) => workTrees.push(path),
     agentSession: (id) => sessions.push(id),

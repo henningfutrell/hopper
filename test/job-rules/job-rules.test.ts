@@ -31,6 +31,8 @@ describe('the default job rules', () => {
     expect(FIXED_JOB_LINES[0]).toMatch(/^\[hopper work tree\] This job's work tree is <work tree>\./);
     expect(FIXED_JOB_LINES.join('\n')).toContain('HOPPER_QUESTION');
     expect(FIXED_JOB_LINES.join('\n')).toContain('HOPPER_DONE');
+    // Issue #794: every job keeps a task list and writes its count, x/y, as each task completes.
+    expect(FIXED_JOB_LINES.join('\n')).toContain('write a line containing only: HOPPER_TASKS <completed>/<total>');
     expect(FIXED_JOB_LINES.at(-1)).toBe('If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.');
   });
 });

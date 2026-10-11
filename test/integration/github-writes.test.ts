@@ -57,7 +57,7 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   it('claim → progress → question → answer in the UI → finished: labels only, zero comments', async () => {
     const gh = fakeFor(mode);
     const a = await boot(mode, gh);
-    const issue = gh.createIssue({ repo: REPO, title: 'Risky thing', body: body({ op: 'ask', message: 'Is this risky?', progress: [0.25, 0.5] }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, title: 'Risky thing', body: body({ op: 'ask', message: 'Is this risky?', progress: [[1, 4], [2, 4]] }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:claimed'), { what: 'claimed label' });
@@ -92,7 +92,7 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   it('a failed job: labels hopper:failed, zero comments', async () => {
     const gh = fakeFor(mode);
     const a = await boot(mode, gh);
-    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message: 'boom', progress: [0.5] }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message: 'boom', progress: [[2, 4]] }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     await a.waitForStatus(job.id, 'failed');
@@ -146,7 +146,7 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     const fake = await createFakeGitHubServer({
       appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
-        { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?', progress: [0.5] }) },
+        { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?', progress: [[2, 4]] }) },
       ] }] }],
     });
     servers.push(fake);
