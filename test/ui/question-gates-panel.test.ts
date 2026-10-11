@@ -17,7 +17,7 @@ const GATES = {
     { name: 'delete', describe: 'deleting or wiping things' },
     { name: 'deploy', describe: 'deploying or publishing' },
   ],
-  autoAnswer: { enabled: true, threshold: 'high', stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 } },
+  autoAnswer: { enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 } },
 };
 const claudeSchema = {
   type: 'object',
@@ -148,6 +148,16 @@ describe('question gates panel', () => {
     });
     await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ threshold: 'medium' }));
     await vi.waitFor(() => expect(select.value).toBe('medium'));
+  });
+
+  it('issue #679: "hold high-priority questions for me", off by default, is posted to /ui/api/auto-answer', async () => {
+    const daemon = await boot();
+    const box = panel()!.querySelector('[data-slot="auto-answer"]')!;
+    const toggle = box.querySelector<HTMLElement>('[data-slot="hold-high-priority"] [role="switch"]')!;
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await click(toggle);
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ holdHighPriority: true }));
+    expect(box.textContent).not.toMatch(/high-priority jobs always come to you/);
   });
 
   it('Save posts the draft with the version it was based on', async () => {
