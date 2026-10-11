@@ -201,6 +201,23 @@ describe('the Failures view', () => {
     expect(a?.textContent).toContain('Held: Disk full on desk');
   });
 
+  it('Report a bug on a hand-off card and a failure row opens the report form on that job (issue #694)', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff()] }) });
+    const report = (el: Element | null) => [...(el?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Report a bug');
+    expect(report(document.querySelector('[data-failure="f1"]'))).toBeDefined();
+    await act(async () => { report(handoffRow())!.click(); });
+    await settle();
+    expect(document.querySelector('[data-slot="bug-report"]')).not.toBeNull();
+    expect(daemon.posts).toContain('POST /ui/api/bug-reports/context');
+    expect(daemon.bodies).toContainEqual({ jobId: 'j9' });
+  });
+
+  it('a viewer is offered no Report a bug on a card', async () => {
+    await boot('#failures', { failures: view({ handoffs: [handoff()] }), role: 'viewer' });
+    expect(buttonsIn(handoffRow())).not.toContain('Report a bug');
+    expect(buttonsIn(document.querySelector('[data-failure="f1"]'))).not.toContain('Report a bug');
+  });
+
   it('Needs a person: each open hand-off with its reason and what happened, its own count; the nav badge counts it too', async () => {
     await boot('#failures', { failures: view({ handoffs: [handoff(), handoff({ id: 'h2', jobId: 'j8', reason: 'retry_limit' })] }) });
     const section = document.querySelector('[data-section="needs-a-person"]')!;

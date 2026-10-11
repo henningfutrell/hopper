@@ -39,6 +39,12 @@ describe('the report context', () => {
     expect(text).not.toContain('line 20\n');
   });
 
+  it('names the failure\'s signature, so the duplicate search finds a report of the same error', () => {
+    const text = reportContext({ install: { kind: 'install' }, system: SYSTEM, job: job({ error: 'agent exited 1' }), failureId: 'fail-9', signature: '0123456789ab' });
+    expect(text).toContain('- Failure: fail-9\n- Signature: 0123456789ab');
+    expect(reportContext({ install: { kind: 'install' }, system: SYSTEM, signature: '0123456789ab' })).not.toContain('Signature');
+  });
+
   it('never carries the job\'s item: its repository, title or issue text', () => {
     const text = reportContext({
       install: { kind: 'install' }, system: SYSTEM,
