@@ -10,7 +10,8 @@ export const yoloLine = (v: PullRequestsView): string => `yolo: on for ${v.yolo.
 
 /** Why a card waits, in plain words (issue #677). */
 const WAITS_TEXT: Record<MergeWait, string> = {
-  'no pull request': 'no pull request found yet', 'not checked yet': 'not checked yet', draft: 'draft',
+  'no pull request': 'no pull request found yet', tending: 'a job works on it now', 'tend failed': 'the job that worked on it failed: waiting for a person',
+  'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
   'checks pending': 'waiting for checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   ready: 'ready, merging',

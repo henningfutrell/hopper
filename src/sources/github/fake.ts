@@ -228,7 +228,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     async openPullRequests(repo) {
       enter('openPullRequests', [repo]);
-      return pulls.filter((p) => p.repo === repo && p.state === 'open').reverse().map((p): BranchPullRequest => ({ ...shown(p), headRef: p.headRef }));
+      return pulls.filter((p) => p.repo === repo && p.state === 'open').reverse().map((p): BranchPullRequest => ({ ...shown(p), headRef: p.headRef, body: p.body }));
     },
     async merge(repo, n) {
       enter('merge', [repo, n]);

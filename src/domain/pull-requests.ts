@@ -39,7 +39,16 @@ export interface FollowsPullRequests {
    * yolo mode and its checks say, or closed without a merge; GitHub's refusal throws, and nothing is kept of it.
    */
   follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
+  /**
+   * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
+   * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked
+   * again on a later sync. Absent: nothing is reconciled.
+   */
+  unfollowedPullRequests?(jobs: Job[]): Promise<FoundPullRequest[]>;
 }
+
+/** An open pull request of a done job's item that the job does not follow (issue #763); `part`: it ships part of the item. */
+export interface FoundPullRequest { jobId: string; pullRequest: string; part: boolean }
 
 /**
  * What following a waiting pull request last saw of it (issue #637), kept in the job's source state (`seen`): what the
@@ -231,6 +240,16 @@ export function tendsInRow(job: Job, url: string, get: (id: string) => Job | und
 
 /** A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
+
+/**
+ * A done job that may follow its item's open pull request when reconciled with its source (issue #763): finished, and
+ * following none — it ended before the hopper followed pull requests, or its follow ended. Not one that a tend handed on
+ * (`tended`) or a rework (`reworked`), nor one whose merge is still to check again. The caller checks it is the newest job of its item.
+ */
+export const reconcilable = (job: Job): boolean => {
+  const f = (job.sourceState?.source as { follow?: unknown } | undefined)?.follow;
+  return job.status === 'finished' && f !== 'open' && f !== 'tended' && f !== 'reworked' && !rechecksMerge(job);
+};
 
 /**
  * Whether a finished job's merge is checked once more (issue #721): recorded as the whole item — merged, no part — and not

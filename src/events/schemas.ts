@@ -312,6 +312,7 @@ export const EVENT_SCHEMAS = {
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
   'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string() }),
+  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),

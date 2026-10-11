@@ -2998,6 +2998,22 @@ Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's p
 }
 ```
 
+## `job.pull_request_followed`
+
+Version 1 (`docs/schemas/job.pull_request_followed.v1.json`). A done job that followed no pull request — it ended before the hopper followed pull requests, or its follow ended — is the newest job of its item, and its item is open and has an open pull request on its source (issue #763): the sync loop reconciled it, and the job follows that pull request from now on, as PR waiting. It shows on the Pull requests list, and yolo mode merges it and tending tends it as any followed one. `part`: it ships part of the item ("Part of #N").
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "part": false
+}
+```
+
 ## `skill.listed`
 
 Version 1 (`docs/schemas/skill.listed.v1.json`). A running job asked the hopper what it can set up (issue #582) and was answered the catalog. `machine` and `template`: the job's machine and the template it joined as, when it has one.

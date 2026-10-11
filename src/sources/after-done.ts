@@ -13,11 +13,15 @@
 // brief; the job follows it no more (`follow: tended`) and `job.pull_request_tended` names the new job, which brings the
 // same pull request back to ready, or fails saying why and waits on a person. At most `MAX_TENDS` in a row of one pull
 // request. A refusal because a newer job of the item exists is no failure; any other is kept as a retry.
+// Reconciling (issue #763): each sync, before the follows, a done job that follows no pull request (`reconcilable`) and is
+// the newest of its item is matched to its item's open pull request on the source (`unfollowedPullRequests`); one found is
+// followed from now on (`follow: open`, `job.pull_request_followed`), on the job's report chain: a job that ended before the
+// hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
-  following, judge, MAX_TENDS, rechecksMerge, tendBrief, tendsInRow, tendStep,
-  type ActingPerson, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Tended,
+  following, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
+  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type PullRequestAct, type PullRequestSeen, type Tended,
 } from '../domain/types.ts';
 
 export interface AfterDoneContext {
@@ -45,7 +49,8 @@ export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
 
   /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
-  const rechecks = (j: Job) => rechecksMerge(j) && (!j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id);
+  const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
+  const rechecks = (j: Job) => rechecksMerge(j) && newestOfItem(j);
 
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
@@ -124,12 +129,35 @@ export function createAfterDone(c: AfterDoneContext) {
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 
+  /** Follow the open pull request found for a done job that follows none (issue #763), if it still follows none. */
+  function adopt(f: FoundPullRequest): void {
+    const job = store.jobs.get(f.jobId);
+    if (!job || !reconcilable(job) || !newestOfItem(job)) return;
+    const { part: _p, seen: _s, parts: _ps, mergeChecked: _m, ...rest } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
+    c.setSource(job.id, { ...rest, pullRequest: f.pullRequest, follow: 'open', ...(f.part ? { part: true } : {}) });
+    store.events.append({ type: 'job.pull_request_followed', jobId: job.id, data: { pullRequest: f.pullRequest, part: f.part } });
+  }
+
+  /** Reconcile the source's done jobs that follow no pull request with it (issue #763); not while it is paused. */
+  async function reconcile(source: JobSource, jobs: Job[]): Promise<void> {
+    const candidates = jobs.filter((j) => reconcilable(j) && c.finalReported(j) && newestOfItem(j));
+    if (!source.unfollowedPullRequests || candidates.length === 0 || source.paused?.() !== undefined) return;
+    try {
+      const found = await source.unfollowedPullRequests(candidates);
+      await Promise.all(found.map((f) => c.enqueue(f.jobId, async () => { adopt(f); })));
+    } catch (e) {
+      console.warn(`hopper: ${source.name}: reconciling pull requests failed, asked again next sync: ${(e as Error).message}`);
+    }
+  }
+
   const waitsOnPerson = (j: Job) => j.status === 'failed' && NOT_COMPLETE.test(j.error ?? '') && store.handoffs.forJob(j.id)?.status === 'open';
 
   return {
     act,
     /** One sync of the source: every job of its to follow, or to judge again. */
-    async catchUp(source: JobSource, jobs: Job[]): Promise<void> {
+    async catchUp(source: JobSource, listed: Job[]): Promise<void> {
+      await reconcile(source, listed);
+      const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
       // A tend runs after the follow, off the report chain: Run again takes that chain itself.

@@ -58,10 +58,11 @@ export interface NumberedPullRequest extends OpenPullRequest {
   base?: string;
 }
 
-/** An open pull request of a repository, with its branch (issue #637). */
+/** An open pull request of a repository, with its branch (issue #637) and its body (issue #763: the issue it closes). */
 export interface BranchPullRequest extends OpenPullRequest {
   /** Its head branch's name. */
   headRef: string;
+  body: string;
 }
 
 /** A pull request that mentions the issue (its timeline's cross-references), in any state: what a part is told by (issue #579). */

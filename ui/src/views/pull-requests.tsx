@@ -36,7 +36,8 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   const [busy, setBusy] = useState(false);
   const [reworking, setReworking] = useState(false);
   const [notes, setNotes] = useState('');
-  if (!operator || c.state !== 'open' || !c.pullRequest) return null;
+  // A tend job works on it (issue #763): its job follows it no more, so no act until the tend job ends.
+  if (!operator || c.state !== 'open' || !c.pullRequest || c.tendJobId) return null;
   const run = async (what: 'merge' | 'close') => {
     setBusy(true);
     await act(`/ui/api/pull-requests/${what}`, { jobId: c.jobId }, `#${c.pullRequest!.number} ${what === 'merge' ? 'merged' : 'closed'}`);

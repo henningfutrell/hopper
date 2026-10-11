@@ -151,6 +151,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.follow ? s.follow(job, act) : Promise.reject(new SourceError(why(), false));
     },
+    unfollowedPullRequests(jobs) {
+      const s = current();
+      return s?.unfollowedPullRequests ? s.unfollowedPullRequests(jobs) : Promise.reject(new SourceError(why(), false));
+    },
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));

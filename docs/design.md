@@ -1979,12 +1979,31 @@ name is followed only to its merge. `GET /api/pull-requests` (`PullRequestsView`
 prs` give the same: per job repository (and any other a card is in), its yolo mode and its cards, oldest first — the
 issue, the pull request, `state` (`open`, `closed`), `checks` (`passing`, `pending`, `failing`, `none`, `unknown` until
 seen), `mergeable` (`mergeable`, `conflicts`, `unknown`), `draft`, `openedAt`, `yolo`, and for an open one why its merge
-`waits`: the first of `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `checks
+`waits`: the first of `no pull request`, `tending`, `tend failed` (issue #763, below), `not checked yet`, `draft`, `conflicts`, `checks failing`, `yolo off`, `checks pending`, `checks
 not started`, `merge refused` (`mergeError` says what GitHub said), `ready` (issue #677); `base`, the branch it merges into. At the top, `yolo: { on, total }` over those repositories, and `waiting`:
 per repository and reason, how many, the most first. All of it is what the last sync saw (`seen`), never asked of GitHub
 at read time. Only the newest job of an item counts. Each repository's yolo switch is `POST /ui/api/yolo-mode` with
 `repos`; `hopper yolo <owner/repo> on|off|default`. An open card has Merge now and Close PR (issue #677, "No checks means
 ready").
+
+**A pull request stays in sight while it is open** (issue #763: open pull requests a job opened were on GitHub and not on
+the list, and nothing tended them). Two ways it fell out, each closed:
+- *Its tend job works on it.* A tended job follows its pull request no more (`follow: tended`), and its new job is not
+  finished yet. The list keeps the tended job's card while that job — `tended.nextJobId` — is the newest of the item and
+  has not finished: `state` `open`, `waits` `tending`, or `tend failed` once it ended failed (it waits on a person, its
+  hand-off says why), and `tendJobId` names it. The card has no Merge now or Close PR meanwhile: no job follows it. Once
+  the tend job finishes, its own card follows the pull request, or there is none.
+- *Its job follows none.* A done job that ended before the hopper followed pull requests, or whose follow ended, is
+  **reconciled** with its source at each sync, before the follows (`src/sources/after-done.ts`, `JobSource.unfollowedPullRequests`,
+  on GitHub `src/sources/github/reconcile.ts`). A candidate is `reconcilable`: finished, its end reported, the newest job
+  of its item, and following nothing (`follow` absent, `merged` or `closed`; not `open`, `tended`, `reworked`, nor a merge
+  still to check again). Per repository one listing of its open pull requests (newest 100, each with its branch and body);
+  per candidate the newest that closes its issue by a closing keyword, else the newest that ships part of it ("Part of
+  #N"), else the newest on a branch named for it; the issue is read only for a match, and a closed issue's pull request is
+  never taken. A match is followed from then on, on the job's report chain (`follow: open`, `pullRequest`, `part`; `seen`
+  starts again) and `job.pull_request_followed` records it: it shows on the list, yolo mode merges it, tending tends it,
+  as any PR waiting job's. A paused source is not reconciled; a throw is logged and asked again next sync. A failed job is
+  never reconciled: the judge-again path above finishes one whose pull request is done.
 
 **The done-check backfill** (issue #637, `src/failures/backfill.ts`). Failures an earlier done rule left — `not complete:`,
 waiting on a person (its hand-off open, or its record neither run again nor settled), the newest job of its item — are

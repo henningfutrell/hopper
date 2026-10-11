@@ -24,7 +24,7 @@ export interface JobFilter {
   status?: JobStatus[];
   /** Only the jobs with no failure assessment (issue #517). */
   unassessed?: boolean;
-  /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list). */
+  /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list), or handed to a tend job (issue #763). */
   followed?: boolean;
   limit?: number;
 }
