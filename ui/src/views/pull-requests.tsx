@@ -10,7 +10,7 @@ import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
-import { StatusBadge, type Tone } from '@/components/status';
+import { StatusBadge, YoloBadge, type Tone } from '@/components/status';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
@@ -26,10 +26,6 @@ const POLL_MS = 10_000;
 
 const STATE_TONE: Record<PullRequestCard['state'], Tone> = { open: 'busy', merged: 'ok', closed: 'bad' };
 const CHECKS_TONE: Record<PullRequestCard['checks'], string> = { passing: 'text-ok', pending: 'text-warn', failing: 'text-bad', none: '', unknown: '' };
-
-const YoloBadge = ({ on }: { on: boolean }) => (
-  <StatusBadge status={on ? 'yolo-on' : 'yolo-off'} label={on ? 'yolo on' : 'yolo off'} tone={on ? 'warn' : 'muted'} />
-);
 
 /**
  * Merge now and Close PR (issue #677), and Send back for rework (issue #724): an open card with a pull request, for an

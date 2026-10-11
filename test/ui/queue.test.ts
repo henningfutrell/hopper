@@ -63,11 +63,11 @@ describe('open job cards (issue #737)', () => {
     expect(cardOpen(toggleCard(one, 'a'), 'a')).toBe(false);
   });
   it('expand all opens every card, then one card closes on its own; collapse all closes every card again', () => {
-    const all = setAllCards(toggleCard(COLLAPSED, 'a'), true);
+    const all = setAllCards(true);
     expect([cardOpen(all, 'a'), cardOpen(all, 'b')]).toEqual([true, true]);
     const less = toggleCard(all, 'b');
     expect([cardOpen(less, 'a'), cardOpen(less, 'b')]).toEqual([true, false]);
-    const none = setAllCards(less, false);
+    const none = setAllCards(false);
     expect([cardOpen(none, 'a'), cardOpen(none, 'b')]).toEqual([false, false]);
   });
 });

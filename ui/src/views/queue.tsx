@@ -4,17 +4,22 @@
 // `rejected` and is kept, never deleted. The gate names the queue sorter that makes the pre-sort and links to
 // where it is set up, Settings → Routing (issue #201). Below, the locked entries: failed jobs kept in the
 // queue until run again or dismissed (issue #355), the parked jobs, out of their lanes until picked up (issue #501), and the
-// jobs on their own wait, until what they wait for happens (issue #483).
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronsRight, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+// jobs on their own wait, until what they wait for happens (issue #483). Each job card starts collapsed (issue #737), so the
+// jobs are easy to scan and compare: its issue, state, lane, pull request and its repository's yolo mode. A click opens one
+// card for its detail; Expand all and Collapse all open or close every card. Its actions stay on the card either way.
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsRight, ChevronsUpDown, ChevronUp, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
 import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
-import { StatusBadge } from '@/components/status';
+import { StatusBadge, YoloBadge } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { accepting, moved, queueColumns } from '@/model/queue';
-import type { Job, PreSort, QueueGate, QueueGateMode } from '@/model/wire';
+import { get } from '@/lib/api';
+import { laneName } from '@/model/board';
+import { COLLAPSED, accepting, cardOpen, moved, queueColumns, setAllCards, toggleCard } from '@/model/queue';
+import type { Job, PreSort, QueueGate, QueueGateMode, YoloModeView } from '@/model/wire';
+import { repoMerges } from '@/model/yolo-mode';
 import { act, useHopper } from '@/store';
 import { LockedRows, ParkedRows, WaitingOnRows } from './overview/queue';
 import { TextChangeCard } from '@/components/text-change';
@@ -59,19 +64,36 @@ function GatePanel({ gate, presort }: { gate: QueueGate; presort: PreSort | null
   );
 }
 
-function Row({ job, position, children, note }: { job: Job; position: number; children?: React.ReactNode; note?: React.ReactNode }) {
+/** A job card (issue #737): collapsed, the essentials to compare; open, its detail too. Its actions show either way. */
+function Row({ job, position, open, onToggle, yolo, children, note }: {
+  job: Job; position: number; open: boolean; onToggle: () => void; yolo: YoloModeView | null; children?: React.ReactNode; note?: React.ReactNode;
+}) {
+  const machines = useHopper((s) => s.machines);
+  const repo = job.source?.repo;
+  // A click on the card's head opens or closes it, except on a link or a button there.
+  const onHead = (e: React.MouseEvent) => { if (!(e.target as Element).closest('a, button')) onToggle(); };
   return (
-    <div data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
-      <div className="flex items-start gap-2">
+    <div data-job-id={job.id} data-status={job.status} data-expanded={open} className="space-y-1.5 px-4 py-3">
+      <div className="flex cursor-pointer items-start gap-2" onClick={onHead}>
         <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground">{position}</span>
         <JobTitle job={job} className="min-w-0 flex-1" />
+        <Button size="xs" variant="ghost" data-slot="card-toggle" aria-expanded={open} aria-label={open ? 'Collapse the card' : 'Expand the card'}
+          onClick={onToggle}>{open ? <ChevronUp /> : <ChevronDown />}</Button>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 pl-7 text-xs text-muted-foreground">
-        <span className="num">prio {job.priority}</span>
-        {job.advice && <span title={job.advice.reason}>advice <b className="font-medium text-foreground/80">{job.advice.action}</b></span>}
-        <span>for <Since iso={job.createdAt} /></span>
-        {note}
+        <span data-slot="card-state"><StatusBadge status={job.status} /></span>
+        <span data-slot="card-lane" title="its lane">{job.laneId ? laneName(job.laneId, machines) : 'no lane yet'}</span>
+        {repo && yolo && <span data-slot="card-yolo"><YoloBadge on={repoMerges(yolo, repo)} /></span>}
       </div>
+      {open && (
+        <div data-slot="card-detail" className="flex flex-wrap items-center gap-1.5 pl-7 text-xs text-muted-foreground">
+          <span className="num">prio {job.priority}</span>
+          {job.advice && <span title={job.advice.reason}>advice <b className="font-medium text-foreground/80">{job.advice.action}</b></span>}
+          <span>for <Since iso={job.createdAt} /></span>
+          {note}
+          {job.holdReason && <span className="basis-full truncate text-warn/90" title={job.holdReason}>{job.holdReason}</span>}
+        </div>
+      )}
       {children && <div className="flex flex-wrap gap-1.5 pl-7">{children}</div>}
       {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
     </div>
@@ -93,17 +115,28 @@ export function Queue() {
   const { presorted, userOrder } = queueColumns(board.waiting, presort);
   const order = userOrder.map((j) => j.id);
   const post = (ids: string[], done: string) => act('/ui/api/queue/order', { jobIds: ids }, done);
+  const [cards, setCards] = useState(COLLAPSED);
+  const [yolo, setYolo] = useState<YoloModeView | null>(null);
+  // The repositories' yolo mode, read once: without it the cards show no yolo mode.
+  useEffect(() => { get<YoloModeView>('/api/yolo-mode').then(setYolo, () => {}); }, []);
+  const card = (id: string) => ({ open: cardOpen(cards, id), onToggle: () => setCards((c) => toggleCard(c, id)), yolo });
+  const allOpen = cards.all && Object.values(cards.own).every(Boolean);
   return (
     <div className="space-y-3">
       {/* Keyed by the saved limit: a new one resets the field. */}
       {gate && <GatePanel key={String(gate.autoAcceptPerHour)} gate={gate} presort={presort} />}
+      <div className="flex justify-end">
+        <Button size="xs" variant="outline" data-slot="cards-toggle-all" onClick={() => setCards(setAllCards(!allOpen))}>
+          {allOpen ? <><ChevronsDownUp />Collapse all</> : <><ChevronsUpDown />Expand all</>}
+        </Button>
+      </div>
       <div className="grid gap-3 lg:grid-cols-2">
         <Panel title="Pre-sorted" icon={Sparkles} count={presorted.length || ''} list bodyClassName="divide-y p-0"
           action={operate && presorted.length > 0 && (
             <Button size="xs" onClick={() => act('/ui/api/queue/accept-presort', {}, 'Pre-sort accepted')}><Check />Accept pre-sort</Button>
           )}>
           {presorted.length ? presorted.map(({ job, reject }, i) => (
-            <Row key={job.id} job={job} position={i + 1}
+            <Row key={job.id} job={job} position={i + 1} {...card(job.id)}
               note={reject && <span className="text-warn" title={reject}>pre-sort rejects: {reject}</span>}>
               {operate && <>
                 <Button size="xs" variant="outline" onClick={() => post(accepting(order, job.id), 'Job accepted')}><ChevronsRight />Accept</Button>
@@ -114,8 +147,8 @@ export function Queue() {
         </Panel>
         <Panel title="Your order" icon={ListOrdered} count={userOrder.length || ''} list bodyClassName="divide-y p-0">
           {userOrder.length ? userOrder.map((job, i) => (
-            <Row key={job.id} job={job} position={i + 1}
-              note={<>{job.userRank === undefined && <span>by the sorter</span>}{job.status === 'held' && <StatusBadge status="held" />}</>}>
+            <Row key={job.id} job={job} position={i + 1} {...card(job.id)}
+              note={job.userRank === undefined && <span>by the sorter</span>}>
               {operate && <>
                 <MoveButton label="Move up" icon={<ArrowUp />} order={order} next={moved(userOrder, job.id, -1)} post={post} />
                 <MoveButton label="Move down" icon={<ArrowDown />} order={order} next={moved(userOrder, job.id, 1)} post={post} />

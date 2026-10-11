@@ -1,7 +1,7 @@
 // The Queue view (issue #159): the two columns — the pre-sort (waiting jobs not yet accepted, in the
 // pre-sort's order, each with the reason it would reject it) and the user order (accepted waiting
 // jobs, in queue order) — and the user orders a move posts (POST /ui/api/queue/order). Issue #201: how many
-// jobs wait on the pre-sort, the Queue nav badge.
+// jobs wait on the pre-sort, the Queue nav badge. Issue #737: which job cards are open — collapsed by default.
 import { GROUP } from './board.ts';
 import type { Job, PreSort } from './wire.ts';
 
@@ -51,3 +51,16 @@ export function moved(jobs: readonly Job[], id: string, by: -1 | 1 | 'top'): str
   const places = new Set(level);
   return order.map((x) => (places.has(x) ? next.shift()! : x));
 }
+
+/** Which job cards are open (issue #737): `all` after Expand all or Collapse all, `own` a card opened or closed on its own since. */
+export interface CardsOpen { all: boolean; own: Readonly<Record<string, boolean>> }
+
+/** Every card collapsed: the default. */
+export const COLLAPSED: CardsOpen = { all: false, own: {} };
+
+export const cardOpen = (c: CardsOpen, id: string): boolean => c.own[id] ?? c.all;
+
+export const toggleCard = (c: CardsOpen, id: string): CardsOpen => ({ all: c.all, own: { ...c.own, [id]: !cardOpen(c, id) } });
+
+/** Expand all (`true`) or Collapse all (`false`): every card, whatever it was. */
+export const setAllCards = (all: boolean): CardsOpen => ({ all, own: {} });
