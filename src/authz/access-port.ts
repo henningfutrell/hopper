@@ -1,7 +1,7 @@
 // What Access answers (issue #559, design.md "Access: OpenFGA decides each mint"): the port the vault, artifacts, the
 // system scope and a changed item's acceptance ask. Implemented by createAccess (service.ts); apart for its size.
 import type {
-  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
+  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, ApiTokenBoxAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
 
 /** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
@@ -37,6 +37,8 @@ export interface Access extends TemplateApprovals {
   decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
   /** Whether the user's API token may act with a role (issue #718): OpenFGA's `api_token#can_view|can_operate|can_administer`, its owner told. Not recorded. */
   decideApiToken(ask: ApiTokenAsk): Promise<AccessAnswer>;
+  /** Whether the user's API token may do a box action (issue #795): OpenFGA's `api_token#can_run_on_box`, its owner told, and `box_runner` for a box token. Not recorded. */
+  decideBoxAction(ask: ApiTokenBoxAsk): Promise<AccessAnswer>;
   /** A check for a made-up live job of `template`, tried from Settings → Access; recorded as a trial by `by`. */
   tryCheck(request: Omit<MintRequest, 'requester'> & { template: string }, by: string): Promise<AccessDecisionRecord>;
   /** The template approved for the operation profile (the vault's gate writes this, issue #558); pushed at once. */

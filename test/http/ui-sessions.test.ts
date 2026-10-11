@@ -302,6 +302,15 @@ describe('an API token', () => {
     expect(sessions.find(t2.token)).toBeUndefined();
   });
 
+  it('is a box token only when minted with box (issue #795): the flag is kept, listed and read back', () => {
+    setUp();
+    const box = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'grok-bot', box: true } });
+    const plain = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'ci' } });
+    expect(sessions.find(box.token)).toMatchObject({ kind: 'api', box: true });
+    expect(sessions.find(plain.token)?.box).toBeUndefined();
+    expect(sessions.apiTokens('u1').map((t) => [t.label, t.box]).sort()).toEqual([['ci', false], ['grok-bot', true]]);
+  });
+
   it('keeps the role it was minted with at most: a reconcile lowers it, never raises it', () => {
     setUp();
     const s = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: HOUR, api: { label: 'grok-bot' } });

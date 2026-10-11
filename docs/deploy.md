@@ -579,6 +579,9 @@ What it does, and what it keeps out:
   does not pass it: the log says so (`the tunnel's endpoint is not HOPPER_PUBLIC_URL`), and nothing is announced.
 - **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
   when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
+- **No box action without a box token.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
+  start jobs, answer questions, merge, update or change a machine, mint a box token for it in Settings → API tokens (tick
+  Box token), for an hour at most (docs/design.md "Box tokens").
 
 Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The ngrok log
 shows the authtoken when ngrok refuses it.

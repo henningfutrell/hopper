@@ -121,12 +121,13 @@ An **API token** lets an agent act for you over the API. It can do everything yo
 - The access service (OpenFGA) decides each use. When it does not run, no token is made (503).
 - The hopper keeps only its hash. You see the token one time, when it is made.
 - An API token cannot make another API token.
+- Only a **box token** can do a box action: start a job, run a command, approve or merge work, update the hopper, or change the work on a machine (answer a question, end a wait, add a machine, apply lanes). Any other token can read, hold, cancel and change settings, but gets `403` on a box action. See [Box tokens](#box-tokens).
 
 ### Make a token in the UI
 
 1. Open **Settings → API tokens**.
 2. Select **Mint token**.
-3. Fill in **Label — who or what uses it**, the **Role — at most yours**, and the **Lifetime in minutes — 1 to 60**.
+3. Fill in **Label — who or what uses it**, the **Role — at most yours**, and the **Lifetime in minutes — 1 to 60**. Tick **Box token** only when the agent must do box actions.
 4. Select **Mint token**.
 5. Copy the token now. It is not shown again.
 
@@ -136,6 +137,7 @@ The list shows each live token's label, role and end. **Revoke** ends one at onc
 
 ```sh
 hopper token mint --label "nightly report" --role operator --minutes 30
+hopper token mint --label "Grok Bot" --role operator --minutes 30 --box
 hopper token list
 hopper token revoke <id>
 ```
@@ -153,7 +155,15 @@ curl -X POST http://localhost:4790/ui/auth/api-token \
   -d '{"label": "my agent", "minutes": 30}'
 ```
 
-The answer holds `token`. The role is at most the one your sign-in settings give that account. The account must have signed in to the hopper before: this makes no new user.
+The answer holds `token`. The role is at most the one your sign-in settings give that account. The account must have signed in to the hopper before: this makes no new user. An exchange never gives a box token: `"box": true` gets `400`.
+
+### Box tokens
+
+A box token is an API token that may also do box actions. Only a person makes one: in **Settings → API tokens** (tick **Box token**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The token list says `box token` for each one.
+
+- The access service decides each box action too (`api_token#can_run_on_box`). You can narrow it in **Settings → Access**.
+- A token without box gets `403` on a box action: `this is a box action: it needs a box token`.
+- Give an agent a box token only for the time it needs one. It ends after one hour at most.
 
 ### Use a token
 
