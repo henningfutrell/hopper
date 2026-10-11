@@ -20,7 +20,7 @@
 //   Scenario: a create that fails on a name taken meanwhile leaves that container alone
 //   Scenario: a create whose answer was lost is the box its sandbox label names
 //   Scenario: an image that runs as root does not start
-//   Scenario: the line Add machine shows carries the same sandbox flags
+//   Scenario: the line Add machine shows carries the same sandbox flags, with the template's limits
 //   Scenario: without a runtime, or with a rootful one, Add machine says why and starts nothing
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,7 +63,7 @@ interface Box {
   params: { secrets: string[]; cpus: number; memoryMb: number; ttlMinutes?: number; profile?: string };
   createdAt: string; expiresAt?: string; address: string; check?: { passed: boolean; at: string; output?: string };
 }
-interface View { launch: { available: boolean; problem?: string; runtime?: string }; line: string; boxes: Box[]; problems: { container: string; reason: string; at: string }[] }
+interface View { launch: { available: boolean; problem?: string; runtime?: string }; boxes: Box[]; problems: { container: string; reason: string; at: string }[] }
 const machines = async (a: TestApp): Promise<{ version: string; machines: Machine[] }> => (await a.api('GET', '/api/machines/config')).body;
 const view = async (a: TestApp, session: string): Promise<View> => (await a.api('GET', '/api/sandboxes', undefined, { 'x-hopper-session': session })).body as View;
 const launch = (a: TestApp, session: string, body: unknown) => a.ui<{ container: string; error: string }>('/ui/api/machines/sandbox', body, { token: session });
@@ -347,9 +347,27 @@ describe('sandbox boxes the hopper starts', () => {
     expect(runtime.boxes.size).toBe(0);
   });
 
-  it('the line Add machine shows carries the same sandbox flags', async () => {
+  it('the line Add machine shows carries the same sandbox flags, with the template\'s limits', async () => {
     const { a, session } = await boot(createFakeContainerRuntime());
-    expect((await view(a, session)).line).toBe(runFlags({ cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default }).join(' '));
+    type Minted = { code?: string; flags?: string; error?: string };
+    const join = (body: unknown) => a.ui<Minted>('/ui/api/machines/join', body, { token: session });
+    // A box of no template: the hopper's defaults. The flags come with the join code, from the boxes' own builder.
+    const plain = await join({ box: {} });
+    expect(plain.status).toBe(200);
+    expect(plain.body.code).toBeTruthy();
+    expect(plain.body.flags).toBe(runFlags({ cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default }).join(' '));
+    // A computer's line runs no container: no flags.
+    expect((await join({})).body.flags).toBeUndefined();
+    expect((await view(a, session)) as unknown as Record<string, unknown>).not.toHaveProperty('line');
+
+    await kubeTemplate(a, session, { cpus: { default: 2, max: 4 }, memoryMb: { default: 2048, max: 4096 } });
+    expect((await join({ template: 'kube', box: {} })).body.flags).toBe(runFlags({ cpus: 2, memoryMb: 2048 }).join(' '));
+    expect((await join({ template: 'kube', box: { cpus: 3 } })).body.flags).toBe(runFlags({ cpus: 3, memoryMb: 2048 }).join(' '));
+    // Over the template's max: refused with what it allows, and no code is made.
+    const over = await join({ template: 'kube', box: { memoryMb: 8192 } });
+    expect(over.status).toBe(400);
+    expect(over.body.error).toContain('at most 4096');
+    expect(over.body.code).toBeUndefined();
   });
 
   it('without a runtime, Add machine says why and starts nothing', async () => {
