@@ -1,7 +1,8 @@
 // Intake's events (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user
-// from Sources; and (issue #652) a person approved a request card's text, the user's trusted actors changed. Part of
-// EVENT_SCHEMAS (schemas.ts).
+// from Sources; and (issue #652) a person approved a request card's text, the user's trusted actors changed, a job queued
+// before origins were judged got its origin. Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
+import { JOB_ORIGINS } from '../domain/intake-origin.ts';
 import { ACTION_VIAS } from '../domain/types.ts';
 
 const strict = z.strictObject;
@@ -16,4 +17,5 @@ export const INTAKE_EVENT_SCHEMAS = {
     actors: z.array(strict({ role: z.enum(['author', 'labelled', 'assigned']), login: z.string().optional(), app: z.string().optional(), trusted: z.boolean() })),
   }),
   'intake.actors_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'job.origin_judged': strict({ key: z.string(), origin: z.enum(JOB_ORIGINS) }),
 };

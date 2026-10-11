@@ -283,8 +283,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const urls = found.issues.map((i) => i.url);
       const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
       const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
-      // An issue whose job has not ended keeps it; any other is judged by its origin (issue #652).
-      const verdicts = await originsOf(api, o.trust, found.issues.filter((i) => !known.has(i.url) || rerun.has(i.url)), config.label, assignee);
+      // An issue whose job has not ended keeps it, unless that job waits for its origin (the backfill); any other is judged
+      // by its origin (issue #652).
+      const judged = found.issues.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
+      const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
       const requests = new Map<string, IntakeRequest>();
       const items: SourceItem[] = [];
       for (const issue of found.issues) {

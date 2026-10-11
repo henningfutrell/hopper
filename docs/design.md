@@ -12502,7 +12502,8 @@ the snapshot (issue #662 `gateItem`), and a change since holds it as a text chan
 its job is made shows the card again, with the approved text and the change line by line.
 
 **The job's origin.** `SourceItem.origin` → `JobSourceRef.origin`: `trusted` or `approved`. Run again and Rework keep the
-origin of the job they follow. A job of a source that does not judge origins, or one taken before this change, has none.
+origin of the job they follow. A job of a source that does not judge origins has none; one taken before this change has
+none until the backfill below judges it.
 
 **Yolo mode** (requirement 7) merges only a job with an origin: a job with none waits for a person (`untrusted origin` on
 the Pull requests card). Its checks rule stays as issue #677 set it: no checks, settled, is ready — the owner's later
@@ -12513,9 +12514,20 @@ lowercased; empty: the connected login only. A bot's login is refused. `intake.a
 the user's settings (`intakeActors`), told to OpenFGA at each check: the role lives in the model (`intake#trusted_actor`),
 so an edited model can widen or narrow who it admits.
 
-**Not in this part** (left to the next parts of #652): holding queued jobs that fail requirement 1 at the first start
-(the backfill), the vault helper only by a per-job grant, the repository setup check in Sources, updating only to an image
-of a merged and checked commit, and the issue's open points.
+**The backfill** (requirement 10). A job queued before this change has no origin, and its issue was never judged.
+Tenant migration 39 (`store/migration-origin-pending.ts`), at the first start of the build that has it, marks every
+queued or held job of a GitHub source (`kind` `github`, `github-account`, `github-app`) with no origin **origin pending**
+(`Job.originPending`). The decider holds such a job before every other judgement (`ORIGIN_PENDING`), and Waiting offers no
+Approve for it, only a link to Sources: approving the job is not approving its issue. At each sync the source judges the
+issue of a job whose origin is pending (`IntakeTrust.originPending`), though it has a job that has not ended. Of a trusted
+origin, or approved, the item is offered; the host's refresh sets the job's `source.origin`, drops the flag
+(`job.origin_judged { key, origin }`), and the job runs as any other. Any other issue is a request card in Sources, and
+its job stays held until a person approves the card or cancels the job. Approving a card whose job already exists makes
+no second job: the next sync gives the job its origin. A running job keeps running; only queued and held jobs wait. A
+job whose source is gone stays held: cancel it. The build before ignores the flag and runs such a job.
+
+**Not in this part** (left to the next parts of #652): the vault helper only by a per-job grant, the repository setup
+check in Sources, updating only to an image of a merged and checked commit, and the issue's open points.
 
 **Residual risk.** Events GitHub cannot be asked for count as done by nobody known: the issue is a request card. An
 `assigned` event through the hopper's app is the user's while the user's log says this hopper assigned the item, even
