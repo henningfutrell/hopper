@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/s
 import { useHopper } from '@/store';
 import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { SECTION_KINDS } from '@/model/sections';
-import { requestsWaiting } from '@/model/intake';
+import { onTheBackburner, requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -48,6 +48,7 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const requests = useHopper((s) => requestsWaiting(s.sources));
+  const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
   const sections = useSectionBadges();
@@ -71,6 +72,12 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
               <span data-slot="nav-badge" data-high={b.high ? b.high : undefined} title={b.title}
                 className={cn('num ml-auto flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold', b.cls, b.high && 'ring-2 ring-warn ring-offset-1 ring-offset-background')}>
                 {b.high ? <ChevronsUp className="size-3" aria-label="high priority" /> : null}{b.n}
+              </span>
+            )}
+            {v === 'not-taken' && backburner > 0 && (
+              <span data-slot="nav-badge-backburner" title={`${backburner} ${backburner === 1 ? 'issue' : 'issues'} on the backburner`}
+                className={cn('num flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-dashed px-1.5 text-[11px] font-semibold text-muted-foreground', !(b && b.n > 0) && 'ml-auto')}>
+                <Flame className="size-3" aria-hidden />{backburner}
               </span>
             )}
           </a>
