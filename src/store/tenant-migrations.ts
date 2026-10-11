@@ -353,6 +353,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   POINTED_JOB_TABLE,
   // 44: GitHub watches (issue #427): each pointed job's last snapshot. A table only: the build before runs on it.
   GITHUB_WATCH_TABLE,
+  // 45: Each job's last event (issue #434), read for the Jobs view's cards. An index only: the build before runs on it.
+  'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
 ];
 
 /** A user schema's version once migrated. */

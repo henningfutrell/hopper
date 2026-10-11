@@ -13841,3 +13841,28 @@ it yet.
 
 **Dependency.** Built on the pointed job record (issue #425, PR #831) and the shared rate limiter's poll schedule (issue
 #436, PR #817), whose commits this change carries: it depends on both, and neither on it.
+
+## The Jobs view (issue #434, 2026-10-11)
+
+Job 10 of the pointed-job architecture (tracking issue #424). Requirement: a board with a card per job — status,
+repository, issue, lane and last event —, live, filterable by status and by repository, quick with 200 jobs and more.
+
+**The record.** The pointed-job record (#425) is not built yet, so a card is the queue's `Job`, as for lanes (#431): its
+issue is `source.repo` and `source.number`. When the record comes, the card reads it the same way.
+
+**What it shows.** `#jobs` (`ui/src/views/jobs.tsx`): every job the job store holds — `/api/queue`'s jobs (not ended, or
+ended in the last 24 hours) and the locked entries —, the latest change (`updatedAt`) first. The filters offer the
+statuses and the repositories the jobs have; they are the viewer's, held in the page, not settings: nothing to keep in the
+database. A job's **last event** comes from `GET /api/jobs/last-events`, read when the view opens: the newest event of
+each job `/api/queue` holds (`EventLog.lastOfJobs`, one `DISTINCT ON (job_id)` query, on the index `events_job (job_id,
+seq)`, tenant migration 45). The UI's own event list is capped at 500, so it alone could not name one for every job.
+Each newer event the stream brings replaces it (`lastEvents` in `ui/src/model/jobs-view.ts`, by `seq`).
+
+**Live, and quick.** Nothing new on the wire: the store already reads `/api/queue` again after each event, so a status
+change reaches its card with no reload. Each refresh replaces every job object, so a card is memoised on what it shows
+(id, `updatedAt`, status, lane, last event `seq`): one job's change renders one card again, not 200. A card shows times as
+a clock, not a ticking age, so no card renders each second.
+
+Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
+job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
+over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).

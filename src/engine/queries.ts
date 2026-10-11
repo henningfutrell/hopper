@@ -17,6 +17,8 @@ export interface QueueView {
   operatorLed: Job[];
   /** Parked jobs (issue #501), oldest first: on no lane, no pane, no agent, until re-queued. */
   parked: Job[];
+  /** Jobs on their own wait (issue #483), the longest waiting first. */
+  waitingOn: Job[];
   /** The locked entries (issue #355): failed jobs that stay in the queue until run again or dismissed, highest priority first, then oldest. */
   locked: Job[];
   /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
