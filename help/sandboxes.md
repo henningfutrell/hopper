@@ -148,6 +148,8 @@ A box of such a template cannot change infrastructure, in two layers:
 
 The check proves both layers: it tries each terraform write through the wrapper, and `apply` past it.
 
+To read a Terraform workspace, ask for read on the workspace and read on the AWS role that its provider and its state are read with, for example `read/terraform-workspace/shop-prod read/aws-role/<account>/hopper-read`. The workspace gets that role's read session. Ask for exactly one AWS role: when there is none, or more than one, the check fails and says why. The read session reads the state, but cannot write it or take its lock.
+
 ## What the hopper does for you
 
 - It checks every box every 10 seconds. It runs the start check again. A box that cannot reach the hopper shows on **Machines** under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and its jobs wait.

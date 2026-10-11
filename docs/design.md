@@ -9167,10 +9167,33 @@ template, since the needs decide the assets and the read policy decides the appr
   the new time; a failure replaces it, and the template takes no box and no job until a person runs it again, as for any
   failed check. A failed check is not run again by the schedule.
 
-**What stays of #715 (part 2 on).** A credential for a `terraform-workspace` need: its check fails today, saying it gets
-no credential, because the hopper does not know which AWS account and role a workspace's provider and state live in.
-That needs a mapping (a workspace to an `aws-role`), a read-only state backend policy (S3 `GetObject`/`ListBucket` only,
-no lock table writes), and `destroy` and `state rm` past the wrapper against the workspace's real state. A pre-baked or
+**Part 2: a terraform workspace's credential (2026-10-11).** Part 1 left a `terraform-workspace` need's check failing,
+as it got no credential: the hopper did not know which AWS account and role a workspace's provider and state live in.
+
+- **The mapping is the template's own** (`workspaceRole`, `src/domain/read-only-check.ts`). A workspace is minted nothing
+  of its own. Its probes run with the AWS read session of the template's one `aws-role` read need — the session Access
+  allowed and the vault minted for that role, under the deny policy (`credentialsFor`, `src/sandbox/check.ts`). No new
+  record, no new setting: the template that asks to read a workspace says which role reads it. A template with no
+  `aws-role` read need, or with more than one, fails the check, saying so, and runs no check box: the hopper does not
+  guess which role a workspace uses. Considered and not built: an `aws-role` in the workspace's name (it changes the
+  name of an asset that Access tuples and saved templates hold) and a mapping record (state a person keeps beside the
+  template, for no case the template's own needs do not cover).
+- **The state backend is read-only under the read session already.** The deny policy matches the S3 backend's writes
+  (`s3:PutObject`, `s3:DeleteObject`) and its DynamoDB lock's (`PutItem`, `DeleteItem`, `UpdateItem`) by name, and leaves
+  what `plan`, `show`, `output` and `state list` read (`s3:GetObject`, `s3:ListBucket`, `dynamodb:GetItem`). No backend
+  policy of its own is needed. `ViewOnlyAccess` does not read S3 objects: a workspace's role takes `ReadOnlyAccess`
+  (`docs/deploy.md`).
+
+Tests: `test/integration/read-only-check-terraform.test.ts` (the real daemon and check: a workspace and a role, one read
+session minted for the role, the terraform probes run with it — `plan` allowed, `apply` past the wrapper reaches the fake
+real binary with the session and is refused by the account —, and the check passes; a workspace with no role, and one
+with two, fail with the reason and run no box), `test/vault/read-session-policy.test.ts` (the deny policy matched as IAM
+matches it: each state and lock write denied, each read left). The fake terraform answers only with the minted session
+now, as the real AWS provider does.
+
+**What stays of #715 (part 3 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
+probes plan and apply a one-resource stack with local state, so the IAM layer is proved for `apply` only; a probe on the
+real backend needs the workspace's backend configuration, which the hopper does not hold. A pre-baked or
 read-only provider cache. Egress limited to the AWS, Kubernetes and GitHub endpoints (the check box and boxes run on the
 hopper's network today). The suite's result as a job artifact: it is on the template and in `template.checked` today.
 

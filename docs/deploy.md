@@ -505,6 +505,14 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   but `hopper-read` (docs/design.md "A read-only infra box"). So a read session cannot write, even when the role can. A
   template that asks for read on `aws-role/<id>/hopper-read` gets these sessions, and its read-only check proves the writes
   fail. The check runs again once a day.
+
+  **A Terraform workspace** (issue #715, part 2). A template reads one with two needs: `read/terraform-workspace/<name>`
+  and `read/aws-role/<id>/hopper-read`, the role its AWS provider and its S3 state backend are read with. The workspace
+  gets no credential of its own: its probes run with that role's read session, and the template must have exactly one
+  `aws-role` read need. The state backend needs no policy of its own: the deny policy refuses `s3:PutObject`,
+  `s3:DeleteObject` and the DynamoDB lock table's `PutItem`, `DeleteItem` and `UpdateItem`, and `ReadOnlyAccess` reads the
+  state. Use `ReadOnlyAccess` for such a role, not `ViewOnlyAccess`: `ViewOnlyAccess` does not read S3 objects, so
+  `terraform plan` cannot read the state. Run `plan` with `-lock=false` (the read-only wrapper adds it), as a lock is a write.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

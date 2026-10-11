@@ -8,10 +8,11 @@
 // account or the cluster. A need it gets none for fails the check with the reason, and no box runs.
 // Issue #715: a passed check runs again once a day (`CHECK_EVERY_MS`), since an account or a cluster can change under a
 // template. While it runs the template keeps the check that passed; a check that fails replaces it and blocks the template.
+// Issue #715, part 2: a terraform workspace's probes run with the AWS read session of the template's aws-role read need.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
-import { currentCheck } from '../domain/read-only-check.ts';
+import { currentCheck, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { checkEnv, checkScript, readResults } from './check-script.ts';
@@ -81,14 +82,25 @@ export function checkCredentialOf(profile: OperationProfile, minted: Minted, rea
   throw new Error(`a ${minted.kind} credential minted with a ${reach.kind} reach`);
 }
 
-/** The read credential of each read need, minted for the check box `name`; the reasons when one is not given. */
+/**
+ * The read credential of each read need, minted for the check box `name`; the reasons when one is not given. A terraform
+ * workspace is minted nothing of its own (issue #715): it takes the AWS read session of the template's one aws-role read
+ * need (`workspaceRole`), which Access allowed and the deny policy keeps read-only, state backend included.
+ */
 async function credentialsFor(c: CheckContext, userId: string, t: Template, name: string, needs: readonly OperationProfile[]): Promise<{ credentials: CheckCredential[] } | { problem: string }> {
   const credentials: CheckCredential[] = [];
   const problems: string[] = [];
-  for (const need of needs) {
+  const noCredential = (need: OperationProfile, why: string): void => { problems.push(`the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${why}`); };
+  for (const need of needs.filter((n) => n.asset.kind !== 'terraform-workspace')) {
     const r = await c.credentials.credential(userId, t.name, name, need);
-    if ('refused' in r) problems.push(`the check box gets no credential for ${need.operation} on ${need.asset.kind} ${need.asset.name}: ${r.refused}`);
+    if ('refused' in r) noCredential(need, r.refused);
     else credentials.push(checkCredentialOf(need, r.minted, r.reach));
+  }
+  for (const workspace of needs.filter((n) => n.asset.kind === 'terraform-workspace')) {
+    const role = workspaceRole(needs);
+    if (typeof role === 'string') noCredential(workspace, role);
+    const session = typeof role === 'string' ? undefined : credentials.find((x) => x.asset.kind === role.asset.kind && x.asset.name === role.asset.name);
+    if (session) credentials.push({ ...session, asset: workspace.asset });
   }
   return problems.length > 0 ? { problem: problems.join('; ') } : { credentials };
 }

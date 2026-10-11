@@ -2,7 +2,7 @@
 // real tools do under a read-only credential (every write refused, in each tool's own words) or a writable one (every
 // write goes through). Each call is logged to `calls`, so a test sees a cleanup run. `runScript` runs a check box's script
 // with them as its tools and the box's environment, as the container runtime double's one-shot containers do.
-// `credentials` (issue #797): aws then answers only with that minted session in its environment, and kubectl and helm only
+// `credentials` (issue #797): aws (and terraform, issue #715) then answers only with that minted session in its environment, and kubectl and helm only
 // with a kubeconfig that holds that token — else each fails as the real tool does with no credential.
 // Issue #715: the read-only terraform wrapper is first on PATH, as in a read-only template's image, with the fake
 // terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out.
@@ -20,7 +20,8 @@ export interface FakeCredentials { awsSessionToken: string; kubeToken: string }
 
 const AWS_CREDENTIAL = `[ "$AWS_SESSION_TOKEN" = "$AWS_WANTS" ] && [ -n "$AWS_ACCESS_KEY_ID" ] || { echo 'Unable to locate credentials. You can configure credentials by running "aws configure".' >&2; exit 253; }`;
 const KUBE_CREDENTIAL = `[ -n "$KUBECONFIG" ] && grep -q "$KUBE_WANTS" "$KUBECONFIG" 2>/dev/null || { echo 'The connection to the server localhost:8080 was refused - did you specify the right host or port?' >&2; exit 1; }`;
-const CHECKS: Record<string, string> = { aws: AWS_CREDENTIAL, kubectl: KUBE_CREDENTIAL, helm: KUBE_CREDENTIAL };
+// terraform's AWS provider and S3 backend read the same AWS CLI variables (issue #715).
+const CHECKS: Record<string, string> = { aws: AWS_CREDENTIAL, terraform: AWS_CREDENTIAL, kubectl: KUBE_CREDENTIAL, helm: KUBE_CREDENTIAL };
 
 const TOOLS: Record<string, string> = {
   aws: `case "$*" in
