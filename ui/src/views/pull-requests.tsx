@@ -1,21 +1,24 @@
 // Pull requests (issue #637): every hopper pull request that waits — a done job's, followed after its end, or one closed
 // without a merge — grouped per job repository, with the repository's yolo mode and, for an admin, a switch that turns
 // it on or off. The header says how many repositories have yolo mode on, and where merging waits. Read from
-// `GET /api/pull-requests`, again every few seconds and after a change.
-import { ExternalLink, GitPullRequest } from 'lucide-react';
+// `GET /api/pull-requests`, again every few seconds and after a change. An open card has Merge now and Close PR for an
+// operator (issue #677), each confirmed once.
+import { ExternalLink, GitMerge, GitPullRequest, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
+import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
+import { Button } from '@/components/ui/button';
 import { StatusBadge, type Tone } from '@/components/status';
 import { Switch } from '@/components/ui/switch';
 import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closesText, hasCards, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
+import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, mergeQuestion, hasCards, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
 import type { PullRequestCard, PullRequestsView } from '@/model/wire';
 import { act } from '@/store';
-import { useCanAdmin } from '@/store/selectors';
+import { useCanAdmin, useCanOperate } from '@/store/selectors';
 
 const POLL_MS = 10_000;
 
@@ -26,7 +29,32 @@ const YoloBadge = ({ on }: { on: boolean }) => (
   <StatusBadge status={on ? 'yolo-on' : 'yolo-off'} label={on ? 'yolo on' : 'yolo off'} tone={on ? 'warn' : 'muted'} />
 );
 
-function Card({ c }: { c: PullRequestCard }) {
+/** Merge now and Close PR (issue #677): an open card with a pull request, for an operator. */
+function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
+  const operator = useCanOperate();
+  const [busy, setBusy] = useState(false);
+  if (!operator || c.state !== 'open' || !c.pullRequest) return null;
+  const run = async (what: 'merge' | 'close') => {
+    setBusy(true);
+    await act(`/ui/api/pull-requests/${what}`, { jobId: c.jobId }, `#${c.pullRequest!.number} ${what === 'merge' ? 'merged' : 'closed'}`);
+    setBusy(false);
+    onChanged();
+  };
+  return (
+    <div data-slot="pr-actions" className="flex flex-wrap gap-2 pt-1">
+      <Confirm title={mergeQuestion(c)} action="Merge" onConfirm={() => void run('merge')}
+        description="The hopper merges it now with a merge commit, whatever yolo mode and its checks say. GitHub still refuses a draft, merge conflicts or a required check.">
+        <Button size="sm" variant="outline" disabled={busy}><GitMerge />Merge now</Button>
+      </Confirm>
+      <Confirm title={closeQuestion(c)} action="Close PR" onConfirm={() => void run('close')}
+        description="The pull request closes without a merge. Its issue gets hopper:pr-closed and is not taken again until a person removes the label.">
+        <Button size="sm" variant="ghost" disabled={busy}><X />Close PR</Button>
+      </Confirm>
+    </div>
+  );
+}
+
+function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   const now = useNow();
   const age = c.openedAt ?? c.since;
   return (
@@ -47,6 +75,7 @@ function Card({ c }: { c: PullRequestCard }) {
         {c.waits && <span data-slot="pr-waits" className={c.waits === 'ready' ? 'text-ok' : ''}>{waitsText(c)}</span>}
       </div>
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
+      <CardActions c={c} onChanged={onChanged} />
     </li>
   );
 }
@@ -70,7 +99,7 @@ function RepoGroup({ group, onChanged }: { group: PullRequestsView['repos'][numb
         </>}>
         <p data-slot="yolo-note" className="border-b px-4 py-2 text-xs text-muted-foreground">{yoloNote(group.yolo)}</p>
         {group.pullRequests.length
-          ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} />)}</ul>
+          ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} onChanged={onChanged} />)}</ul>
           : <Empty>no pull request waits</Empty>}
       </Panel>
     </section>

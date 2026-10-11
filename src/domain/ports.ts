@@ -14,7 +14,7 @@ import type { ItemEdit, ItemText } from './item-snapshots.ts';
 import type { SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests } from './pull-requests.ts';
+import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -641,7 +641,18 @@ export interface SourceRegistry {
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
+  /**
+   * A person's Merge now or Close PR on a finished job's open pull request (issue #677): its source merges it — whatever
+   * yolo mode and its checks say — or closes it without a merge, on the job's report chain, and it is recorded as a
+   * follow-up is, with who pressed it. Refused (not_found, conflict) when the job is gone or has no open pull request,
+   * or GitHub refuses; source: GitHub could not be reached.
+   */
+  pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult>;
 }
+
+export type PullRequestActResult =
+  | { ok: true; outcome: FollowUp['outcome']; pullRequest: string; part: boolean }
+  | { ok: false; reason: 'not_found' | 'conflict' | 'source'; message: string };
 
 export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }

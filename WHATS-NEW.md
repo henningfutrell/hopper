@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Each waiting pull request on the Pull requests page now has Merge now and Close PR buttons, each asking once before it acts. Merge now works whether yolo mode is on or off.
 - A pull request that ships only part of an issue no longer marks the issue done when it merges, so the hopper goes on with the rest. Only a pull request that closes the issue, or the last part, marks it done. Issues that were marked done this way go back to the queue by themselves.
 - The hopper's admin can now share a vault secret with every user's agents, or with chosen users, so each person needs no copy of their own. Every user sees the shared secrets on the Vault page and can add one to a template; a job gets it only from a box of an approved template that names it. Secrets stay each user's own unless the admin shares them.
 - Scripts and agents on the hopper's host can now set vault secrets, save and approve templates and start sandbox boxes from the command line, with no browser sign-in. A secret's value is read from standard input only.

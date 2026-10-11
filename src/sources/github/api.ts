@@ -127,6 +127,8 @@ export interface GitHubApi {
    * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.
    */
   merge(repo: string, number: number): Promise<void>;
+  /** Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR). */
+  closeWithoutMerge(repo: string, number: number): Promise<void>;
 
   /**
    * Open issues with `label` assigned to the user, across every repo the token reaches (`GET /issues`, one

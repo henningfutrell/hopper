@@ -88,6 +88,11 @@ export async function mergePullRequest(req: Request, token: string, repo: string
   await req('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', { ...splitRepo(repo), pull_number: number, merge_method: 'merge', headers: auth(token) });
 }
 
+/** Close pull request `number` without a merge (issue #677, Close PR). */
+export async function closePullRequest(req: Request, token: string, repo: string, number: number): Promise<void> {
+  await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, state: 'closed', headers: auth(token) });
+}
+
 /** Removes each label; one the issue does not carry (404) is fine. */
 export async function removeLabels(req: Request, token: string, repo: string, number: number, labels: string[]): Promise<void> {
   for (const name of labels) {
