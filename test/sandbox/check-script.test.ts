@@ -2,7 +2,7 @@
 // terraform (test/support/fake-cloud-tools.ts) that answer as the real tools do under a read-only or a writable credential.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OperationProfile, Probe } from '../../src/domain/types.ts';
-import { checkScript, readResults } from '../../src/sandbox/check-script.ts';
+import { checkEnv, checkScript, readResults } from '../../src/sandbox/check-script.ts';
 import { HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 
@@ -72,5 +72,33 @@ describe('the read-only check script (issue #716)', () => {
     tools.push(fake);
     const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
     expect(readResults(runs, r.output)).toMatchObject([{ id: 'own.echo', asset: "it's", outcome: 'allowed', passed: true, output: "asset=it's" }]);
+  });
+
+  it('each probe runs with the credential minted for its own asset, and no other (issue #797)', async () => {
+    const fake = createFakeCloudTools('read-only');
+    tools.push(fake);
+    const show: Probe = {
+      id: 'show', title: 'show the credential', kinds: ['aws-role', 'cluster'], tool: 'aws', expect: 'allowed',
+      script: 'printf "%s|%s|%s|%s|%s|" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_SESSION_TOKEN" "$AWS_REGION" "$AWS_ENDPOINT_URL_STS"; [ -n "$KUBECONFIG" ] && cat "$KUBECONFIG"; printf "|%s" "$(env | grep -c HOPPER_CHECK_)"',
+    };
+    const runs = probeCatalog([show]).runsFor([read('aws-role', '1/a'), read('aws-role', '1/b'), read('cluster', 'lab'), read('aws-role', '1/none')]);
+    const credentials = [
+      { asset: { kind: 'aws-role' as const, name: '1/a' }, env: { AWS_ACCESS_KEY_ID: 'ka', AWS_SECRET_ACCESS_KEY: "s'a", AWS_SESSION_TOKEN: 'ta', AWS_REGION: 'eu-west-1', AWS_ENDPOINT_URL_STS: 'http://sts' } },
+      { asset: { kind: 'aws-role' as const, name: '1/b' }, env: { AWS_ACCESS_KEY_ID: 'kb', AWS_SECRET_ACCESS_KEY: 'sb', AWS_SESSION_TOKEN: 'tb' } },
+      { asset: { kind: 'cluster' as const, name: 'lab' }, env: {}, kubeconfig: '{"users":[{"user":{"token":"kube-token"}}]}' },
+    ];
+    const script = checkScript(runs, credentials);
+    const env = checkEnv(credentials);
+    // The credentials are in the box's environment, never in its script.
+    for (const secret of ['ka', "s'a", 'ta', 'kb', 'tb', 'kube-token']) expect(script).not.toContain(secret);
+    expect(Object.values(env)).toEqual(expect.arrayContaining(['ka', "s'a", 'kube-token']));
+    const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script });
+    expect(r.exit).toBe(0);
+    expect(readResults(runs, r.output).map((x) => [x.asset, x.output])).toEqual([
+      ['1/a', "ka|s'a|ta|eu-west-1|http://sts||0"],
+      ['1/b', 'kb|sb|tb|||0'],
+      ['lab', '|||||{"users":[{"user":{"token":"kube-token"}}]}|0'],
+      ['1/none', '||||||0'],
+    ]);
   });
 });
