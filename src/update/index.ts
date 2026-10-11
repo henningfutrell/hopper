@@ -5,3 +5,5 @@ export { restartBlockers } from './blockers.ts';
 export { createInstallScriptBuilder } from './build.ts';
 export { createRestarter, RESTART_EXIT_CODE, restartMode, type RestartMode } from './restart.ts';
 export { renameBoot } from './rename.ts';
+export { createStackDrift, driftLine, startStackDrift } from './drift.ts';
+export { createStackProbe } from './stack-probe.ts';

@@ -4,7 +4,7 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ShippedCompose, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
+import type { ShippedCompose, StackDrift, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, readInstall, tempDir } from '../update/support.ts';
@@ -107,6 +107,23 @@ describe('self-update over HTTP', () => {
     expect(text).toMatch(/^# Update a container hopper/);
     expect(text).toContain('hopper update');
     expect(text).toMatch(/[Nn]ever .*--no-deps hopper/);
+  });
+
+  it('answers how the stack differs from the compose file of this version, with the image the fix is made from (issue #697)', async () => {
+    const w = world();
+    const root = tempDir('jh-update-it-');
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const appDir = createInstall(root, w.up.dir, w.c1, 'beta', 'image');
+    writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices:\n  hopper:\n    environment:\n      HOPPER_OPENFGA_URL: x\n  openfga:\n    image: o\n');
+    const asked: string[] = [];
+    const stackProbe = { resolves: async (name: string) => { asked.push(name); return false; }, vaultCommit: async () => null };
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), restart: async () => {}, stackProbe } } });
+    apps.push(app);
+    const d = await app.api<StackDrift>('GET', '/api/update/drift');
+    expect(d.status).toBe(200);
+    expect(d.body).toMatchObject({ state: 'checked', image: 'ghcr.io/henningfutrell/hopper:beta' });
+    expect(d.body.gaps.map((g) => `${g.kind} ${g.name}`)).toEqual(['service openfga', 'setting HOPPER_OPENFGA_URL']);
+    expect(asked).toContain('openfga');
   });
 
   it('says why when this build ships no compose file (issue #697)', async () => {

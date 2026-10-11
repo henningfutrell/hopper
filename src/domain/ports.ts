@@ -675,6 +675,14 @@ export interface UpdateBuilder {
 /** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
 export type Restarter = () => Promise<void>;
 
+/** What the hopper sees of the stack it runs in (issue #697, "The stack against its compose file"): from inside its container, never the container runtime's. */
+export interface StackProbe {
+  /** Whether `service` has a name on the compose network: compose names each running service's container by it. */
+  resolves(service: string): Promise<boolean>;
+  /** The commit the vault in its own container says it runs; null when it is not reached or does not say. */
+  vaultCommit(): Promise<string | null>;
+}
+
 /** The daemon's self-update: GET /api/update, POST /ui/api/update. */
 export interface Updater {
   status(): UpdateStatus;

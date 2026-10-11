@@ -1,9 +1,10 @@
 // `hopper update` (issue #697, design.md "Self-update"): the one update of a container install, from the image to update
 // to. Needs no database: it is run as `podman run --rm <image> hopper update <tool>` on the host, and prints what the
-// host runs. `carry` is the script's own step: the .env lines that keep an old compose.yaml's own settings.
+// host runs. `carry` and `override` are the script's own steps: the .env lines that keep an old compose.yaml's own
+// settings, and the compose.override.yaml that keeps what .env cannot hold (the install's own one in HOPPER_UPDATE_OVERRIDE).
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
-import { carryLocalSettings } from './update/compose-carry.ts';
+import { carryLocalSettings, carryOverride } from './update/compose-carry.ts';
 import { readInstallInfo } from './update/install.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { COMPOSE_TOOLS, IMAGE_REF, isComposeTool, PUBLISHED_IMAGE, updateScript } from './update/update-script.ts';
@@ -30,6 +31,12 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
     const carried = carryLocalSettings(io.stdin(), read.shipped.compose);
     for (const note of carried.notes) io.err(`hopper update: note: ${note}\n`);
     io.out(carried.env.map((l) => `${l}\n`).join(''));
+    return 0;
+  }
+  if (what === 'override') {
+    const carried = carryOverride(io.stdin(), read.shipped.compose, io.env.HOPPER_UPDATE_OVERRIDE || undefined);
+    for (const note of carried.notes) io.err(`hopper update: ${note}\n`);
+    if (carried.override !== undefined) io.out(carried.override);
     return 0;
   }
   if (!isComposeTool(what)) return fail(`unknown tool ${what}; one of ${COMPOSE_TOOLS.join(', ')}`);

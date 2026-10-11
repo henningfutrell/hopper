@@ -95,20 +95,43 @@ describe('hopper update: the compose file the image ships with, the whole stack 
     expect(env).toEqual(expect.arrayContaining([`HOPPER_MASTER_KEY=${KEY}`, `HOPPER_IMAGE=${IMAGE}`, 'HOPPER_BIND=0.0.0.0', 'HOPPER_LAN_NAMES=hopper,lanbox', 'HOPPER_PUBLIC_URL=https://hopper.example.test']));
     expect(env.filter((l) => l.startsWith('HOPPER_IMAGE='))).toHaveLength(1);
     expect(statSync(join(dir, '.env')).mode & 0o777).toBe(0o600);
-    // What it cannot move, named; and the change, shown.
-    expect(r.out).toMatch(/service whoami .*compose\.override\.yaml/);
+    // What .env cannot hold, moved to compose.override.yaml, named; and the change, shown.
+    expect(r.out).toMatch(/service whoami moved to compose\.override\.yaml/);
+    expect(read(dir, 'compose.override.yaml')).toMatch(/whoami:/);
+    expect(read(dir, 'compose.override.yaml')).toContain('/run/podman/podman.sock:/run/podman/podman.sock');
+    expect(statSync(join(dir, 'compose.override.yaml')).mode & 0o777).toBe(0o600);
+    expect(r.out).toContain('+  whoami:');
     expect(r.out).toContain('+      - "${HOPPER_BIND:-127.0.0.1}:');
     // The whole stack: pulled and started, never the hopper service alone; then health.
     expect(r.calls).toEqual([
       'compose exec -T postgres pg_dump -U hopper -d hopper -Fc',
       `pull ${IMAGE}`,
       `run --rm -i --network none ${IMAGE} hopper update carry`,
+      `run --rm -i --network none -e HOPPER_UPDATE_OVERRIDE ${IMAGE} hopper update override`,
       'compose pull',
       'compose up -d --force-recreate',
       expect.stringMatching(/^compose exec -T hopper node -e .*\/api\/health/),
       expect.stringMatching(/^compose exec -T hopper node -e .*openfga/),
     ]);
     expect(r.calls.join('\n')).not.toContain('--no-deps');
+  });
+
+  it('keeps an existing compose.override.yaml as a backup, adds to it, and leaves it alone when nothing moves', async () => {
+    const dir = install(OLD_LAN, `HOPPER_MASTER_KEY=${KEY}\n`);
+    writeFileSync(join(dir, 'compose.override.yaml'), '# mine\nservices:\n  hopper:\n    group_add: ["1"]\n');
+    const r = await update(dir);
+    expect(r.status, r.out).toBe(0);
+    expect(read(dir, 'compose.override.yaml')).toMatch(/^# mine\n[\s\S]*group_add: \["1"\][\s\S]*whoami:/);
+    const bak = readdirSync(dir).filter((f) => f.startsWith('compose.override.yaml.bak-'));
+    expect(bak).toHaveLength(1);
+    expect(read(dir, bak[0]!)).toBe('# mine\nservices:\n  hopper:\n    group_add: ["1"]\n');
+    expect(r.out).toMatch(/hopper: group_add: compose\.override\.yaml has it already, kept/);
+    expect(r.out).toContain(`backups: `);
+    expect(r.out).toMatch(/backups: .*compose\.override\.yaml\.bak-/);
+
+    const plain = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
+    expect((await update(plain)).status).toBe(0);
+    expect(readdirSync(plain).filter((f) => f.startsWith('compose.override.yaml'))).toEqual([]);
   });
 
   it('stops before it changes anything when .env lacks the master key the running hopper made', async () => {
