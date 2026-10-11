@@ -3,7 +3,7 @@
 // answers it, read from GitHub now.
 import { usage, type Call } from './cli-operator-call.ts';
 
-export const REPO_USAGE = `  hopper repo checks <owner/repo>                    the job repository's checks for pull requests, and the job that adds them when it has none`;
+export const REPO_USAGE = `  hopper repo checks <owner/repo>                    the job repository's checks for pull requests, the job that adds them when it has none, and its setup`;
 
 export function repoCall(args: string[]): Call {
   const [verb, repo, ...extra] = args;

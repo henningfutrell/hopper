@@ -818,6 +818,31 @@ reached `stable`, `main` was moved to it one last time, so a hopper still on an 
 `main`, updates once to it and from then on follows `stable`. Nothing is promoted to `main` after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
 a channel in its Settings, or install again.
 
+## Repository setup
+
+A job pushes only to a branch of its own work, and yolo mode merges only after a check passed. GitHub keeps everyone
+else off the release branches. Sources → **Repository setup** checks each job repository and names what is missing
+(`docs/design.md` "Repository setup"). For the hopper's own repository (https://github.com/henningfutrell/hopper),
+and the same for any job repository:
+
+1. **Protect `dev`, `beta` and `stable`** (the default branch and each release branch the repository has):
+   Settings → Rules → Rulesets → New branch ruleset (https://github.com/henningfutrell/hopper/settings/rules), or
+   Settings → Branches (classic branch protection). Target the three branches. Turn on:
+   - **Require a pull request before merging.** Leave the bypass list empty, or name only the repository admin: then
+     nobody else pushes to the branch directly.
+   - **Require status checks to pass**, and add **`pr / test`** (the PR check, "Local development and tests" below).
+   - **Block force pushes** (a ruleset's "Block force pushes"; classic: leave "Allow force pushes" off).
+   `scripts/promote.sh` moves `beta` and `stable` by a push: run it as the repository admin, on the bypass list.
+2. **Secret scanning and push protection:** Settings → Code security
+   (https://github.com/henningfutrell/hopper/settings/security_analysis) → Secret Protection, and Push protection: on.
+3. **Actions:** the PR check uses `pull_request` with a read-only token and no secrets. Settings → Actions → General
+   (https://github.com/henningfutrell/hopper/settings/actions) → Workflow permissions: **Read repository contents and
+   packages permissions**.
+
+GitHub shows branch protection and the security settings only to a repository admin. Connected as anyone else, Sources
+says which points it could not read (`unknown`), never that they are off. `hopper repo checks <repo>` prints the same as
+JSON.
+
 ## Rename from job-hopper
 
 The product was called job-hopper (issue #112). An install from before keeps its config, secrets and
