@@ -9,9 +9,10 @@
 //   Scenario: a tool the hopper does not add is refused, naming the ones it adds
 //   Scenario: the tools a need's asset kind uses
 //   Scenario: a read-only template's image puts the read-only terraform wrapper first on PATH (issue #715)
+//   Scenario: a read-only template's image holds the AWS provider in a mirror terraform installs only from (issue #715)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
-import { TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
+import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 import { TOOLS_IMAGE, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
@@ -73,5 +74,26 @@ describe('the tools image (issue #716)', () => {
     expect(plain.tag).not.toBe(ro.tag);
     expect(toolsImage(BASE, ['aws'], { readOnly: true }).containerfile).not.toContain('read-only');
     expect(toolsImage(BASE, ['aws'], { readOnly: true }).tag).toBe(toolsImage(BASE, ['aws']).tag);
+  });
+
+  it('a read-only template\'s image holds the AWS provider in a mirror terraform installs only from (issue #715)', () => {
+    const ro = toolsImage(BASE, ['terraform', 'aws'], { readOnly: true });
+    // The provider's own release, pinned and checked by its SHA-256 like each tool, kept in the mirror's packed layout.
+    expect(ro.containerfile).toMatch(/https:\/\/releases\.hashicorp\.com\/terraform-provider-aws\/(\d+\.\d+\.\d+)\/terraform-provider-aws_\1_linux_\$\{a\}\.zip/);
+    expect(ro.containerfile).toMatch(/\/opt\/hopper-tools\/providers\/registry\.terraform\.io\/hashicorp\/aws\/terraform-provider-aws_\d+\.\d+\.\d+_linux_\$a\.zip/);
+    expect(ro.containerfile.match(/sha256sum -c/g)).toHaveLength(3);
+    for (const m of ro.containerfile.matchAll(/(amd64|arm64)\) sum=([0-9a-f]+)/g)) expect(m[2]).toMatch(SHA);
+    // The CLI config names the mirror and no other way to install: no registry, no network mirror.
+    expect(TERRAFORM_CLI_CONFIG).toContain('filesystem_mirror');
+    expect(TERRAFORM_CLI_CONFIG).toContain('path = "/opt/hopper-tools/providers"');
+    expect(TERRAFORM_CLI_CONFIG).not.toMatch(/direct|network_mirror|plugin_cache_dir/);
+    const rc = Buffer.from(TERRAFORM_CLI_CONFIG).toString('base64');
+    expect(ro.containerfile).toContain(`echo ${rc} | base64 -d > /opt/hopper-tools/terraform.rc`);
+    // The real binary reads it too, called past the wrapper.
+    expect(ro.containerfile).toContain('ENV TF_CLI_CONFIG_FILE=/opt/hopper-tools/terraform.rc');
+    // A plain terraform image installs as terraform does by default.
+    const plain = toolsImage(BASE, ['terraform', 'aws']).containerfile;
+    expect(plain).not.toContain('terraform-provider-aws');
+    expect(plain).not.toContain('TF_CLI_CONFIG_FILE');
   });
 });

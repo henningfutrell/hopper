@@ -144,9 +144,10 @@ A passed check runs again once a day, because an account or a cluster can change
 A box of such a template cannot change infrastructure, in two layers:
 
 - **AWS.** Each read session the hopper makes has AWS's `ReadOnlyAccess` policy and a policy that denies every create, delete, put, update and modify action, IAM changes, and the use of another role. A role that can write still gives the session no write.
-- **Terraform.** `terraform` in the box is a wrapper that runs only `init`, `plan`, `show`, `validate`, `output`, `providers`, `version`, `state list`, `state show`, `workspace list` and `workspace show`. It refuses all other commands, such as `apply`, `destroy`, `import` and `state rm`. `plan` takes no state lock. The real binary is in `$HOPPER_TOOLS`. When something calls it directly, AWS refuses the write.
+- **Terraform.** `terraform` in the box is a wrapper that runs only `init`, `plan`, `show`, `validate`, `output`, `providers`, `providers schema`, `version`, `state list`, `state show`, `workspace list` and `workspace show`. It refuses all other commands, such as `apply`, `destroy`, `import` and `state rm`. `plan` takes no state lock. The real binary is in `$HOPPER_TOOLS`. When something calls it directly, AWS refuses the write.
+- **Providers.** Terraform installs providers only from the box's image, which holds the AWS provider. It downloads none. A workspace that needs another provider, or another version of the AWS provider, cannot run `init` in the box.
 
-The check proves both layers: it tries each terraform write through the wrapper, and `apply` past it.
+The check proves these layers: it tries each terraform write through the wrapper, `apply` past it, and the install of a provider the image does not hold.
 
 To read a Terraform workspace, ask for read on the workspace and read on the AWS role that its provider and its state are read with, for example `read/terraform-workspace/shop-prod read/aws-role/<account>/hopper-read`. The workspace gets that role's read session. Ask for exactly one AWS role: when there is none, or more than one, the check fails and says why. The read session reads the state, but cannot write it or take its lock.
 

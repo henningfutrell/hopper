@@ -513,6 +513,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   `s3:DeleteObject` and the DynamoDB lock table's `PutItem`, `DeleteItem` and `UpdateItem`, and `ReadOnlyAccess` reads the
   state. Use `ReadOnlyAccess` for such a role, not `ViewOnlyAccess`: `ViewOnlyAccess` does not read S3 objects, so
   `terraform plan` cannot read the state. Run `plan` with `-lock=false` (the read-only wrapper adds it), as a lock is a write.
+  The box installs providers only from its image (issue #715, part 3): the AWS provider, at the version pinned in
+  `src/sandbox/tools.ts`, and no other. A workspace that needs another provider, or pins another AWS provider version in
+  its `.terraform.lock.hcl` or its version constraint, cannot `init` there.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.

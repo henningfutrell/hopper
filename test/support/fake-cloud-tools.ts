@@ -5,13 +5,14 @@
 // `credentials` (issue #797): aws (and terraform, issue #715) then answers only with that minted session in its environment, and kubectl and helm only
 // with a kubeconfig that holds that token — else each fails as the real tool does with no credential.
 // Issue #715: the read-only terraform wrapper is first on PATH, as in a read-only template's image, with the fake
-// terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out.
+// terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out. With the wrapper, the image's
+// provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only hashicorp/aws, as the real terraform does.
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
-import { TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
+import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 
 export type CloudMode = 'read-only' | 'writable';
 
@@ -42,7 +43,12 @@ esac`,
   install) if [ "$MODE" = read-only ]; then echo 'Error: INSTALLATION FAILED: secrets is forbidden: User cannot create resource' >&2; exit 1; fi ;;
 esac`,
   terraform: `case "$1" in
-  init) mkdir -p .terraform ;;
+  init) if [ -f "\${TF_CLI_CONFIG_FILE:-}" ]; then
+      for s in $(sed -n 's/.*source *= *"\\([^"]*\\)".*/\\1/p' *.tf); do
+        [ -d "$(dirname "$TF_CLI_CONFIG_FILE")/providers/registry.terraform.io/$s" ] || { echo "Error: Failed to query available provider packages: provider registry.terraform.io/$s was not found in any of the search locations" >&2; exit 1; }
+      done
+    fi
+    mkdir -p .terraform ;;
   plan) echo 'Plan: 1 to add, 0 to change, 0 to destroy.' ;;
   apply) if [ "$MODE" = read-only ]; then echo 'Error: creating SSM Parameter: AccessDeniedException: User is not authorized to perform: ssm:PutParameter' >&2; exit 1; fi ;;
 esac`,
@@ -64,6 +70,8 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?
     mkdirSync(join(dir, 'read-only'));
     writeFileSync(join(dir, 'read-only', 'terraform'), TERRAFORM_WRAPPER);
     chmodSync(join(dir, 'read-only', 'terraform'), 0o755);
+    writeFileSync(join(dir, 'terraform.rc'), TERRAFORM_CLI_CONFIG);
+    mkdirSync(join(dir, 'providers', 'registry.terraform.io', 'hashicorp', 'aws'), { recursive: true });
   }
   const log = join(dir, 'calls.log');
   writeFileSync(log, '');
@@ -82,7 +90,7 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?
       const home = mkdtempSync(join(dir, 'box-'));
       // The tools first, then node's and the system's: the check needs sh, coreutils and base64 as a box has them.
       const tools = wrapper ? `${join(dir, 'read-only')}:${dir}` : dir;
-      const env = { ...spec.env, PATH: `${tools}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home };
+      const env = { ...spec.env, PATH: `${tools}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home, ...(wrapper ? { TF_CLI_CONFIG_FILE: join(dir, 'terraform.rc') } : {}) };
       execFile('sh', ['-c', spec.script ?? ''], { env, encoding: 'utf8' }, (err, stdout, stderr) => {
         resolve({ exit: err ? Number((err as { code?: number }).code ?? 1) : 0, output: stdout + stderr });
       });
