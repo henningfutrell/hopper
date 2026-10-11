@@ -107,3 +107,5 @@ export interface WebhooksView {
   /** Only in the answer to the edit that made it (add with no secret typed in, rotate; issue #451): shown once. */
   generatedSecret?: string;
 }
+
+export type { RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
