@@ -3,7 +3,7 @@
 // Log out side by side, small and close, so a tap hit the wrong one. Now the top bar keeps the logo, the
 // version badge with its channel and the connection dot, and one user menu button — the user's initials —
 // opens a menu with the name and role, the theme, the device link and, last and set apart, Sign out, which
-// needs a second tap. Same at every width. Rendered against the store and a fake of the daemon's HTTP. Issue #694: Report a
+// needs a second tap. Same at every width. Issue #782: Help, for every role, opens the help pages. Rendered against the store and a fake of the daemon's HTTP. Issue #694: Report a
 // bug, for an operator or admin, opens the report form.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -98,7 +98,7 @@ describe('the user menu (issue #666)', () => {
     expect(text).toContain('admin');
     const labels = items().map((i) => i.textContent?.trim());
     expect(labels[0]).toMatch(/^(Light|Dark) theme$/);
-    expect(labels.slice(1)).toEqual(['Log in another device', 'Report a bug', 'Sign out']);
+    expect(labels.slice(1)).toEqual(['Help', 'Log in another device', 'Report a bug', 'Sign out']);
     const separators = [...menu()!.querySelectorAll('[role="separator"]')];
     expect(separators.at(-1)?.nextElementSibling).toBe(item(/Sign out/));
     for (const i of items()) expect(i.className).toMatch(/(^|\s)min-h-11(\s|$)/);
@@ -107,14 +107,22 @@ describe('the user menu (issue #666)', () => {
   it('has no device link for a user who is not admin', async () => {
     await render({ ...ADMIN, role: 'operator' });
     await openMenu();
-    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Report a bug', 'Sign out']);
-    expect(items()).toHaveLength(3);
+    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Report a bug', 'Sign out']);
+    expect(items()).toHaveLength(4);
   });
 
   it('has no Report a bug for a viewer, who may not send one', async () => {
     await render({ ...ADMIN, role: 'viewer' });
     await openMenu();
-    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Sign out']);
+    expect(items().map((i) => i.textContent?.trim()).slice(1)).toEqual(['Help', 'Sign out']);
+  });
+
+  it('Help opens the help pages of this version, for every role (issue #782)', async () => {
+    await render({ ...ADMIN, role: 'viewer' });
+    await openMenu();
+    const help = item(/^Help$/)!.closest('a') ?? item(/^Help$/)!.querySelector('a');
+    expect(help?.getAttribute('href')).toBe('/help/');
+    expect(help?.getAttribute('target')).toBe('_blank');
   });
 
   it('Report a bug opens the report form, which asks for its context', async () => {

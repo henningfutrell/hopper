@@ -13,6 +13,7 @@ import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 import { TEMPLATE_SKILL, type TemplateAnswer } from './template-request.ts';
+import { helpForAgent } from '../help/book.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
@@ -131,6 +132,12 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       if (t.status === 202) return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
       record('skill.loaded');
       return { status: 200, text: `${t.text}\n` };
+    }
+    if (name === 'help') {
+      const h = helpForAgent(said);
+      if ('no' in h) return no(404, h.no);
+      record('skill.loaded');
+      return { status: 200, text: `${h.text}\n` };
     }
     const known = skillOf(name);
     // A service the hopper has no skill for: asked in the job's words, or one a person already gave a credential for.

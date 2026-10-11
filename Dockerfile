@@ -50,6 +50,8 @@ COPY src ./src
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./
+# The help pages (issue #782): the daemon serves them at /help/, the version they describe.
+COPY help ./help
 # The compose file of this release (issue #697): `hopper update` puts it in, so an update never keeps an old one.
 COPY compose.yaml ./
 COPY --from=ui /build/ui/dist ./ui/dist

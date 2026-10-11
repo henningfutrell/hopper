@@ -1,12 +1,12 @@
 // The top bar: version (opens the version and update panel, on every screen), connection,
-// router health, uptime, the API reference, and the user menu: who you are, the theme, the device link and Sign out
+// router health, uptime, the help pages (issue #782), the API reference, and the user menu: who you are, the theme, the device link and Sign out
 // behind one button at every width (issue #666). Shown only signed in (issue #213).
 // A GitHub connection that ended asks to connect again here, on every screen (issue #441) — unless the person signed in
 // with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477).
-// On a phone the wordmark and the API reference give way, so the version badge with its channel, the connection dot and
+// On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
-import { BookOpen, KeyRound } from 'lucide-react';
+import { BookOpen, CircleHelp, KeyRound } from 'lucide-react';
 import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,14 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span data-slot="connection" className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>
           </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="max-sm:hidden" asChild>
+                <a href="/help/" target="_blank" rel="noopener" aria-label="Help"><CircleHelp /></a>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Help</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="max-sm:hidden" asChild>

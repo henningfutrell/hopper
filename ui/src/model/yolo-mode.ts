@@ -7,7 +7,7 @@ export interface YoloRow { repo: string; setting: YoloSetting; merges: boolean }
 export interface YoloDraft { on: boolean; repos: Record<string, YoloSetting> }
 export type YoloPatch = { on?: boolean; repos?: Record<string, boolean | null> };
 
-export const YOLO_WARNING = 'With yolo mode on, a job merges its own pull request once the repo\'s checks pass: no person reviews the change first. '
+export const YOLO_WARNING = 'With yolo mode on, the hopper merges a job\'s pull request once the repo\'s checks pass, or two minutes after its last push when the repo has no checks: no person reviews the change first. '
   + 'If the repo has no branch protection, nothing else stops the merge, and a merge to the default branch runs whatever it triggers there — '
   + 'a release, an image build, a deploy. Turn it on only for repos where you accept that. A job is done either way: done is its pull request, ready for review.';
 

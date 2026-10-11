@@ -93,6 +93,12 @@ export const SKILLS: readonly Skill[] = [
     line: 'put a visual (a diagram, a chart, a graph, drawn in SVG) on the hopper for a person to see, and share it',
     text: ARTIFACT_HELP,
   },
+  {
+    // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).
+    name: 'help',
+    line: 'how the hopper works, page by page (PAGE: one; none lists them)',
+    text: 'help: sh "$HOPPER_SKILL" help [PAGE]',
+  },
 ];
 
 export const skillOf = (name: string): Skill | undefined => SKILLS.find((s) => s.name === name);
