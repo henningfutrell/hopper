@@ -4,6 +4,7 @@
 // operation, an asset, and the operation profile that is an operation on an asset. The approvals and the model are the
 // hopper's, rows in its database, pushed to OpenFGA with the tuples of who is live; every decision is recorded.
 import type { TemplateRadius } from './blast-radius.ts';
+import { backendProblem, type StateBackend } from './state-backend.ts';
 
 /** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
 export const OPERATIONS = ['read', 'write', 'sync', 'apply'] as const;
@@ -15,8 +16,11 @@ export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export interface Asset { kind: AssetKind; name: string }
 
-/** An operation on an asset: what an approval lets a template's jobs do (`read/cluster/x`). */
-export interface OperationProfile { operation: Operation; asset: Asset }
+/**
+ * An operation on an asset: what an approval lets a template's jobs do (`read/cluster/x`). `backend` (issue #715): a
+ * terraform workspace's state backend, which the read-only check probes; it is no part of what is approved.
+ */
+export interface OperationProfile { operation: Operation; asset: Asset; backend?: StateBackend }
 
 /** A template's name: lowercase letters, digits, `.`, `_` and `-`. The vault (issue #558) registers templates; here a name is enough. */
 export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -24,11 +28,12 @@ export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
 
 /** Why an operation profile is not one the model can hold, or undefined. */
-export function profileProblem(p: { operation: string; asset: { kind: string; name: string } }): string | undefined {
+export function profileProblem(p: { operation: string; asset: { kind: string; name: string }; backend?: StateBackend }): string | undefined {
   if (!(OPERATIONS as readonly string[]).includes(p.operation)) return `operation ${JSON.stringify(p.operation)} is not one of ${OPERATIONS.join(', ')}`;
   if (!(ASSET_KINDS as readonly string[]).includes(p.asset.kind)) return `asset kind ${JSON.stringify(p.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
   if (!ASSET_NAME.test(p.asset.name)) return `asset name ${JSON.stringify(p.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
-  return undefined;
+  if (p.backend && p.asset.kind !== 'terraform-workspace') return `${p.asset.kind} ${p.asset.name}: only a terraform-workspace need has a state backend`;
+  return p.backend ? backendProblem(p.backend) : undefined;
 }
 
 /** One relationship, as OpenFGA keeps it: `subject` is `relation` of `object` (OpenFGA's user, relation, object). */

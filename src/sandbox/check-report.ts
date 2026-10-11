@@ -40,7 +40,7 @@ function bar(check: ReadOnlyCheck): string {
     + `<rect width="600" height="24" fill="${n === 0 ? '#888' : '#c62828'}"/><rect width="${w}" height="24" fill="#2e7d32"/></svg>`;
 }
 
-const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${p.passed ? 'pass' : 'FAIL'}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
+const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${p.passed ? 'pass' : p.outcome === 'not-run' ? 'NOT RUN' : 'FAIL'}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
   + `<td>${p.expect}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre></td></tr>`;
 
 /** The report of one ended check of the template. Pure. */

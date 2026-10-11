@@ -264,7 +264,7 @@ export function createVaultService(o: {
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
       const was = vault.template(name);
-      const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name } }])).values()] : was?.profiles ?? [];
+      const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name }, ...(p.backend ? { backend: p.backend } : {}) }])).values()] : was?.profiles ?? [];
       // Limits and tools left out keep the ones it has (issues #708, #716).
       const adds = tools ? toolSet(tools) : was?.tools ?? [];
       o.store.tx(() => {

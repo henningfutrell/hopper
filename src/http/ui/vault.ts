@@ -23,6 +23,8 @@ import { identityName } from './sessions.ts';
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
 // The shape only: what the model can hold (an asset name's characters) the vault checks, and says why.
+// A terraform workspace need's state backend (issue #715): the read-only check probes it.
+const stateBackend = z.strictObject({ bucket: z.string().max(63), region: z.string().max(32), keyPrefix: z.string().max(200).optional() });
 const profile = { operation: z.enum(OPERATIONS), asset: z.strictObject({ kind: z.enum(ASSET_KINDS), name: z.string().max(200) }) };
 const mints = z.strictObject({ kind: z.enum(MINTS_FOR_KINDS), name: z.string().max(200) }).nullable().optional();
 
@@ -44,7 +46,7 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('system-in-backend'), name: z.string().max(200), backend: z.string().max(64), reference: z.string().max(VAULT_REFERENCE_MAX) }),
   z.strictObject({
     action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
-    profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(), tools: z.array(z.string().max(32)).max(16).optional(),
+    profiles: z.array(z.strictObject({ ...profile, backend: stateBackend.optional() })).max(256).optional(), limits: templateLimits.optional(), tools: z.array(z.string().max(32)).max(16).optional(),
   }),
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),

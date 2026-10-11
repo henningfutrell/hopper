@@ -49,7 +49,7 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.find((r) => r.id === 'terraform.destroy-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     // The state push to the probe key went through: it fails, and the cleanup deletes that key, and only that key (issue #715).
     expect(results.find((r) => r.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'allowed', passed: false });
-    expect(fake.calls().filter((c) => c.startsWith('aws s3api'))).toEqual([`aws s3api delete-object --bucket shop-state --key ${PROBE_KEY}`]);
+    expect(fake.calls().filter((c) => c.startsWith('aws s3api'))).toEqual([`aws s3api delete-object --bucket shop-state --key ${PROBE_KEY} --region eu-west-1`]);
     // A dry run that would work, and a delete of nothing, fail in their own words: an error, not a refusal.
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false });
     expect(results.find((r) => r.id === 'kube.delete-pod')).toMatchObject({ outcome: 'error', passed: false });

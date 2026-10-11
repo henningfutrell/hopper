@@ -4,6 +4,7 @@
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
+import type { StateBackend } from './domain/state-backend.ts';
 import type { VaultView } from './domain/vault.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
@@ -17,9 +18,10 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
-                    [--tool aws|helm|kubectl|terraform]...
+                    [--tool aws|helm|kubectl|terraform]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...
                                                      save a template; what is left out keeps what it has. A new scope, image,
-                                                     tool or profile waits for approve
+                                                     tool or profile waits for approve. --backend: the S3 state backend
+                                                     of a terraform-workspace profile, which the read-only check probes
   hopper template approve <name>                     approve it as it is: its image, its secrets and its read profiles
   hopper template approve-profile <name> <operation>/<kind>/<asset>
                                                      approve one write, sync or apply profile explicitly
@@ -42,7 +44,7 @@ export const VAULT_USAGE = `  hopper vault                                      
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]...';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..."';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
@@ -72,6 +74,25 @@ export function vaultCall(args: string[], stdin: () => string): Call {
 }
 
 /** `<operation>/<kind>/<asset>`, the key a launch names a profile by; the asset may hold `/` (a namespace, an AWS role). */
+/** `--backend <workspace>=<bucket>[/<key prefix>]@<region>` (issue #715): a terraform workspace's state backend. */
+function backendOf(raw: string): [string, StateBackend] {
+  const m = /^([^=]+)=([^/@]+)(?:\/([^@]*))?@(.+)$/.exec(raw);
+  if (!m) throw new OperatorRefusal(`--backend ${raw}: write <workspace>=<bucket>[/<key prefix>]@<region>, e.g. shop-prod=shop-state/env/prod@eu-west-1`);
+  return [m[1]!, { bucket: m[2]!, region: m[4]!, ...(m[3] ? { keyPrefix: m[3] } : {}) }];
+}
+
+/** The profiles with each workspace's backend: the one `--backend` names, else the one the template has (what is left out keeps what it has). */
+function withBackends(profiles: OperationProfile[], had: readonly OperationProfile[], raw: readonly string[]): OperationProfile[] {
+  const named = new Map(raw.map(backendOf));
+  for (const w of named.keys()) {
+    if (!profiles.some((p) => p.asset.kind === 'terraform-workspace' && p.asset.name === w)) throw new OperatorRefusal(`--backend ${w}: the template has no terraform-workspace profile ${w}`);
+  }
+  return profiles.map((p) => {
+    const backend = p.asset.kind === 'terraform-workspace' ? named.get(p.asset.name) ?? had.find((h) => h.asset.kind === p.asset.kind && h.asset.name === p.asset.name)?.backend : undefined;
+    return backend ? { ...p, backend } : p;
+  });
+}
+
 function profileOf(raw: string): OperationProfile {
   const [operation, kind, ...rest] = raw.split('/');
   const name = rest.join('/');
@@ -112,7 +133,7 @@ const readPolicyOf = (v: unknown) => (v as VaultView).readPolicy ?? [];
 
 export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true },
+    image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true }, backend: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
     tool: { type: 'string', multiple: true }, needs: { type: 'string' },
   } });
@@ -135,15 +156,19 @@ export function templateCall(args: string[]): Call {
     if (!name || rest.length > 0 || !values.image || values.needs !== undefined) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
-    const { image, secret, tool } = values;
+    const { image, secret, tool, backend } = values;
+    backend?.forEach(backendOf);
     return {
       role: 'admin', path: '/ui/api/vault', pick: templatesOf,
-      // The secrets left out keep the ones it has, as its profiles and limits do.
-      body: async (get) => ({
-        action: 'save-template', name, image,
-        secrets: secret ?? templatesOf(await get('/api/vault')).find((x) => x.name === name)?.secrets ?? [],
-        ...(profiles ? { profiles } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
-      }),
+      // The secrets left out keep the ones it has, as its profiles, their backends and limits do.
+      body: async (get) => {
+        const was = templatesOf(await get('/api/vault')).find((x) => x.name === name);
+        const declared = profiles ?? (backend ? was?.profiles ?? [] : undefined);
+        return {
+          action: 'save-template', name, image, secrets: secret ?? was?.secrets ?? [],
+          ...(declared ? { profiles: withBackends(declared, was?.profiles ?? [], backend ?? []) } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
+        };
+      },
     };
   }
   if (!name || flags) throw usage(TEMPLATE_VERBS);

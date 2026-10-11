@@ -137,6 +137,9 @@ export const githubWatchEvents = {
 };
 
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
+// A terraform workspace need's state backend on `template.saved` (issue #715).
+export const stateBackend = strict({ bucket: z.string(), region: z.string(), keyPrefix: z.string().optional() });
+
 export const taskCount = strict({ done: z.number().int().min(0), total: z.number().int().min(1) })
   .refine((t) => t.done <= t.total, { message: 'done must not exceed total' });
 

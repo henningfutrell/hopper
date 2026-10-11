@@ -57,6 +57,25 @@
               "name"
             ],
             "additionalProperties": false
+          },
+          "backend": {
+            "type": "object",
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "keyPrefix": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bucket",
+              "region"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

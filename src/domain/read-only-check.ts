@@ -27,10 +27,18 @@ export interface Probe {
   /** The words of a refusal; absent: the catalog's default. */
   denial?: RegExp;
   cleanup?: string;
+  /**
+   * It writes to the need's state backend (issue #715): it runs with `$HOPPER_STATE_BUCKET`, `$HOPPER_STATE_REGION` and
+   * `$HOPPER_STATE_KEY` (the check's own key), and is not run for a need with no backend.
+   */
+  backend?: true;
 }
 
-/** A probe for one asset: what the check runs. `kind` is the asset's kind: it picks the credential the probe runs with. */
-export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string }
+/**
+ * A probe for one asset: what the check runs. `kind` is the asset's kind: it picks the credential the probe runs with.
+ * `vars`: more of its environment. `notRun`: why it is not run (issue #715); it does not pass then.
+ */
+export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string; vars?: Record<string, string>; notRun?: string }
 
 /**
  * The read credential a check box gets for one need (issue #797), minted for it: the environment its probes on that asset
@@ -41,8 +49,11 @@ export interface CheckCredential { asset: Asset; env: Record<string, string>; ku
 /** The probes for a template's needs. The default is the hopper's catalog; issue #715 passes its own. */
 export interface ProbeCatalog { runsFor(needs: readonly OperationProfile[]): ProbeRun[] }
 
-/** What a probe did: `allowed` (exit 0), `denied` (failed with a refusal), `error` (failed some other way, or did not run). */
-export type ProbeOutcome = 'allowed' | 'denied' | 'error';
+/**
+ * What a probe did: `allowed` (exit 0), `denied` (failed with a refusal), `error` (failed some other way, or did not run),
+ * `not-run` (the check did not run it, as it lacks what it needs: unproven, never passed; issue #715).
+ */
+export type ProbeOutcome = 'allowed' | 'denied' | 'error' | 'not-run';
 
 export interface ProbeResult {
   id: string;

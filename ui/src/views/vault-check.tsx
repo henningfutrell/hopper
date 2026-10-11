@@ -6,11 +6,13 @@ import { Button } from '@/components/ui/button';
 import { checkText } from '@/model/vault';
 import type { TemplateView } from '@/model/wire';
 import type { Send } from './vault';
+import { BackendRows } from './vault-state-backend';
 
 /** The template's gates in its facts: the read-only check (nothing for a template that takes none), then who approved it. */
 export function GateRows({ t }: { t: TemplateView }) {
   const check = checkText(t);
   return <>
+    <BackendRows t={t} />
     {check && <><dt className="text-muted-foreground">Read-only check</dt><dd className={`break-words ${check.waits ? 'text-warn' : ''}`}>{check.text}{check.report && <> · <a className="underline" href={check.report}>Check report</a></>}</dd></>}
     {t.approval && <><dt className="text-muted-foreground">Approved by</dt><dd className="break-words">{t.approval.by} · {new Date(t.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
   </>;
