@@ -89,8 +89,9 @@ describe('a job that waits on a device login', () => {
     expect(JSON.stringify(await a.job(job.id))).not.toContain(CODE);
   });
 
-  it('expiry with no word from the machine fails the job, its reason the expiry; the expired login then ends with it (issue #529)', async () => {
+  it('with onExpiry fail, expiry with no word from the machine fails the job, its reason the expiry; the expired login then ends with it (issue #529)', async () => {
     const a = await start(createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), DONE] }));
+    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'fail' }, { token: await a.login() })).status).toBe(200);
     const job = await a.pull({}, item());
     const failed = await a.waitForStatus(job.id, 'failed', 8000);
     expect(failed.error).toMatch(/the codex login expired at .* before it was completed/);
@@ -101,11 +102,10 @@ describe('a job that waits on a device login', () => {
     expect(types).toEqual(['auth.pending', 'auth.expired', 'auth.failed']);
   });
 
-  it('with onExpiry hold, the expired login waits for a new code, which the same login takes', async () => {
+  it('by default (onExpiry hold, issue #698), the expired login waits for a new code, which the same login takes', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), authTurn({ code: 'QRST-2345', polls: 60 }), DONE] });
     const a = await start(herdr);
     const token = await a.login();
-    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'hold' }, { token })).body).toEqual({ onExpiry: 'hold', warnSec: 60 });
     const job = await a.pull({}, item());
     const login = await pendingLogin(a);
     await waitFor(async () => (await loginsOf(a)).logins[0]!.status === 'expired', { timeoutMs: 8000 });
@@ -120,6 +120,21 @@ describe('a job that waits on a device login', () => {
     await a.waitForStatus(job.id, 'finished', 8000);
     const pending = (await a.events()).filter((e) => e.type === 'auth.pending');
     expect(pending.map((e) => e.data.renewed)).toEqual([undefined, true]);
+  });
+
+  it('the account and the scopes the job names, and the host of the URL, reach a UI session of the user; no event carries the account (issue #698)', async () => {
+    const turn = authTurn();
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ ...turn, output: [...turn.output, '  account: dev-account-7', '  scopes: openid, offline_access'] }, DONE] });
+    const a = await start(herdr);
+    const job = await a.pull({}, item());
+    const login = await pendingLogin(a);
+    expect(login).toMatchObject({ host: 'auth.openai.com', laneId: expect.any(String) });
+    expect(login).not.toHaveProperty('account');
+    const token = await a.login();
+    expect((await loginsOf(a, token)).logins[0]).toMatchObject({ host: 'auth.openai.com', account: 'dev-account-7', scopes: ['openid', 'offline_access'], userCode: CODE });
+    const pending = (await a.events()).find((e) => e.type === 'auth.pending' && e.jobId === job.id)!;
+    expect(pending.data).toMatchObject({ host: 'auth.openai.com' });
+    expect(JSON.stringify(await a.events())).not.toContain('dev-account-7');
   });
 
   it('cancel ends the login and tells the job, which goes on', async () => {

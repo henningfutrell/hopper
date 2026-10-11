@@ -30,7 +30,7 @@ export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth' | 'wait';
 
 /** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
-export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval'] as const;
+export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval', 'account', 'scopes'] as const;
 export type AuthFields = Partial<Record<typeof AUTH_FIELDS[number], string>>;
 
 /** The fields a job names its own wait with, after HOPPER_WAITING (issue #483): `for` is needed, `until` is not. */
@@ -298,6 +298,9 @@ export function afterLoginReport(text: string, anchor: string): string {
   while (k < lines.length && (authField(lines[k]!) || stripGutter(lines[k]!) === '')) k++;
   return lines.slice(k).join('\n');
 }
+
+/** The turn after `anchor`, chrome left out (issue #698): where a device code the job did not report is looked for. Empty when the anchor is not on screen. */
+export const turnText = (text: string, anchor: string): string => { const all = text.split('\n'); const at = anchorLine(all, anchor); return at < 0 ? '' : turnLines(all, at).join('\n'); };
 
 /** Claude Code's suggestion in an empty input box, e.g. `Try "refactor <filepath>"`: not input. */
 const PLACEHOLDER = /^Try "/;

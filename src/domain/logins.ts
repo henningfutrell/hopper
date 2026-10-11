@@ -13,7 +13,10 @@ export type LoginKind = typeof LOGIN_KINDS[number];
 export const LOGIN_STATUSES = ['pending', 'completed', 'expired', 'cancelled', 'failed'] as const;
 export type LoginStatus = typeof LOGIN_STATUSES[number];
 
-/** What a job does when its login expires (issue #476): fail with the reason (the default), or hold for a new code. */
+/**
+ * What a job does when its login expires (issue #476): hold for a new code (the default since issue #698: an expired
+ * code is the user's to renew, never a failed job), or fail with the reason.
+ */
 export const LOGIN_EXPIRY_ACTIONS = ['fail', 'hold'] as const;
 export type LoginExpiryAction = typeof LOGIN_EXPIRY_ACTIONS[number];
 
@@ -26,7 +29,7 @@ export const LOGIN_WARN_SEC = { min: 10, max: 3600 } as const;
  * the code's life when that is longer.
  */
 export interface LoginSettings { onExpiry: LoginExpiryAction; warnSec: number }
-export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'fail', warnSec: 60 };
+export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'hold', warnSec: 60 };
 
 /** A login as its run reports it. The URL and the code are credentials in flight: the hopper keeps them in memory only. */
 export interface LoginReport {
@@ -39,6 +42,10 @@ export interface LoginReport {
   expiresAt: string;
   /** How often the tool polls, when it says. */
   intervalSec?: number;
+  /** The account or host the tool signs in to, when it shows one (issue #698): may name a person, so kept as the code is. */
+  account?: string;
+  /** The scopes the tool asks for, when it shows them (issue #698). */
+  scopes?: string[];
 }
 
 /** What waits on a login: a job (on a lane, on a machine), or a question's escalation run. */
@@ -80,8 +87,13 @@ export interface LoginView extends Login {
   priority?: number;
   high?: boolean;
   codeKept: boolean;
+  /** The host of the URL to open (issue #698): what asks, to anyone who reads the login, while this process holds it. */
+  host?: string;
   verificationUrl?: string;
   userCode?: string;
+  /** The account and the scopes the tool showed (issue #698): with the URL and code only. */
+  account?: string;
+  scopes?: string[];
 }
 
 /**

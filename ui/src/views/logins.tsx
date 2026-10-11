@@ -1,6 +1,7 @@
 // Logins (issue #477): the logins jobs and escalation runs wait on (issue #476), apart from the questions — one
 // card each, the least time left on top. A card names the machine, the tool and what waits on it, and shows the
-// code with copy and open (`DeviceCode`) and a countdown of server time. Under the warning it warns, and a screen
+// code with copy and open (`DeviceCode`) and a countdown of server time. What asks — the tool, the host of its page,
+// the account and the scopes it showed (issue #698) — and the lane are listed under what waits. Under the warning it warns, and a screen
 // reader hears that once; at `expiresAt` the code goes and the card says Expired, on the browser's clock before the
 // server's `auth.expired` arrives, whose word is final. Completed, cancelled and failed say so. Ended logins stay a
 // short while, then go to Earlier logins below. A session whose UI role cannot act (viewer) sees a notice, never
@@ -91,6 +92,14 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
             : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : `the ${l.run} escalation run for a question`}</span>}
           {!job && l.high && l.priority !== undefined && <HighTag priority={l.priority} />}
         </div>
+        {(l.host || l.account || l.scopes?.length || l.laneId) && (
+          <dl data-slot="login-details" className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+            {l.host && <><dt className="text-muted-foreground">Asking:</dt><dd className="min-w-0 truncate">{l.tool} at {l.host}</dd></>}
+            {l.account && <><dt className="text-muted-foreground">Account:</dt><dd className="min-w-0 truncate">{l.account}</dd></>}
+            {l.scopes?.length ? <><dt className="text-muted-foreground">Scopes:</dt><dd className="min-w-0 break-words">{l.scopes.join(', ')}</dd></> : null}
+            {l.laneId && <><dt className="text-muted-foreground">Lane:</dt><dd className="min-w-0 truncate">{l.laneId}</dd></>}
+          </dl>
+        )}
         {open && (
           <div className={cn('text-center text-sm text-muted-foreground', phase === 'expiring' && 'text-base font-semibold text-warn')}>
             The code expires in <span data-countdown className="num">{left}</span>

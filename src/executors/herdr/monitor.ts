@@ -3,11 +3,11 @@
 
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import type { LoginCheck } from '../../domain/types.ts';
-import { hideCodes } from '../../logins/recognise.ts';
+import { hideCodes, recogniseDeviceCode } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
-import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, type AuthFields } from './screen.ts';
+import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
 const OUTPUT_LINES = 120;
@@ -25,8 +25,11 @@ export type Interrupt = { interrupt: 'cancel' | 'park' | 'shutdown' | 'timeout' 
  */
 export type StatusNote = { statusNote: string };
 
-/** The turn ended on a login (issue #476): the executor reports it to the logins; never a question. */
-export type AuthPending = { authPending: AuthFields };
+/**
+ * The turn ended on a login (issue #476): the executor reports it to the logins; never a question. `seen`: the job did
+ * not report it, its screen shows the device code (issue #698).
+ */
+export type AuthPending = { authPending: AuthFields; seen?: true };
 
 /** The user acted on the login the job waits on (issue #476): a new code, a cancel, or the job fails. */
 export type LoginActed = { login: Exclude<LoginCheck, { act: 'wait' } | { act: 'ended' }> };
@@ -85,6 +88,15 @@ export interface TurnWatch {
   login?: LoginWait;
   /** Called with the time the turn's output changed, each time it does (issue #630): a timed-out job's liveness. */
   onOutput?: (at: number) => void;
+  /** The device codes this job already reported or showed (issue #698): one still on screen is not a new login. */
+  knownCodes?: ReadonlySet<string>;
+}
+
+/** A device code the turn shows that the job did not report (issue #698), as the fields a report would have. */
+function seenLogin(w: TurnWatch, recent: string): AuthPending | undefined {
+  const p = recogniseDeviceCode(turnText(recent, w.anchor));
+  if (!p || w.knownCodes?.has(p.userCode)) return undefined;
+  return { authPending: { tool: p.tool, url: p.verificationUrl, code: p.userCode, expires_in: String(p.expiresInSec) }, seen: true };
 }
 
 export function abortReason(signal: AbortSignal): 'cancel' | 'park' | 'shutdown' {
@@ -198,6 +210,9 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       } else if (turn.lastMarker === 'auth') {
         return { authPending: turn.auth ?? {} };
       } else {
+        // A device code on screen with no report (issue #698): to the logins all the same, before any nudge or wait.
+        const seen = login ? undefined : seenLogin(w, recent);
+        if (seen) return seen;
         const work = backgroundWork(recent);
         if (work) {
           idleSince = null;

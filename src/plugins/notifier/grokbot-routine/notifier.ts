@@ -1,12 +1,12 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), and per job end (issue #795: `job.finished`, `job.failed`), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), per job end (issue #795: `job.finished`, `job.failed`), and per login a job waits on (issue #698: `auth.pending`, a new code too, and `auth.expired`, never its URL or code), the URL and key read from the runtime at each use.
 // Issue #795: `hopper.reachable` says where the hopper is reached from outside while its tunnel is up — at start, on a new
 // URL, on recovery, and on a heartbeat — so the receiver never has to poll for it.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
 // configured (a question escalated while it was not is not lost); Send test event and Send open
 // questions are the UI's actions. In memory only: no store row, no event.
 import type { Clock, DomainEvent, Notifier, NotifierActionResult, NotifierEvents, PluginLogger, Question } from '../../sdk.ts';
-import { artifactPayload, intakePayload, jobPayload, questionPayload, reachablePayload, testPayload } from './payload.ts';
+import { artifactPayload, intakePayload, jobPayload, loginPayload, questionPayload, reachablePayload, testPayload } from './payload.ts';
 
 /** The routine's URL and bearer key now, or why there are none. */
 export type Routine = { url: string; key: string } | { problem: string };
@@ -33,6 +33,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created') return true;
   if (e.type === 'job.finished' || e.type === 'job.failed') return true;
+  if (e.type === 'auth.pending' || e.type === 'auth.expired') return true;
   return e.type === 'question.escalated_to_human';
 }
 
@@ -109,6 +110,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     track(new Promise<void>((r) => setImmediate(r)).then(() => {
       const job = e.jobId ? feed?.job(e.jobId) : undefined;
       if (e.type === 'job.finished' || e.type === 'job.failed') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), jobPayload(e, job));
+      if (e.type === 'auth.pending' || e.type === 'auth.expired') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), loginPayload(e, job, clock.now(), feed?.loginsUrl?.()));
       if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
       if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job));
       const q = feed?.question(e.data.questionId as string);

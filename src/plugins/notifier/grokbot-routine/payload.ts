@@ -3,7 +3,7 @@
 // into the hopper: the machine (its id and name) and lane that raised it (issue #485: the question's own
 // snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
 // detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569), led by
-// its TL;DR when it is long.
+// its TL;DR when it is long. A login (issue #698) carries what asks and what waits, never its URL or code.
 import type { DomainEvent, Job, Question } from '../../sdk.ts';
 
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
@@ -86,4 +86,21 @@ export function reachablePayload(url: string, reason: 'start' | 'change' | 'reco
  */
 export function testPayload(at: string): Record<string, unknown> {
   return { source: 'hopper', kind: 'question.escalated_to_human', test: true, at, message: 'Test event from the hopper: the routine URL and key work.' };
+}
+
+/**
+ * A login a job or run waits on (issue #698): `auth.pending` (a new code too) or `auth.expired`. What asks — the tool
+ * and the host of its page —, what waits — the job and its issue, the machine and lane —, and when the code runs out,
+ * with the Logins view's link. Never the URL to open or the code: they stay in the hopper, for a UI session of the user.
+ */
+export function loginPayload(e: DomainEvent, job: Job | undefined, now: Date, loginsUrl: string | undefined): Record<string, unknown> {
+  const d = e.data as { loginId: string; tool: string; host?: string; run?: string; expiresAt: string; renewed?: boolean; questionId?: string; priority?: number; high?: boolean };
+  return {
+    ...base(e.type, e.at, job, e.jobId), loginId: d.loginId, tool: d.tool, ...(d.host ? { host: d.host } : {}), ...(d.run ? { run: d.run } : {}),
+    ...(d.questionId ? { questionId: d.questionId } : {}), ...(d.renewed ? { renewed: true } : {}),
+    machineId: e.machineId ?? null, laneId: e.laneId ?? null, priority: d.priority ?? job?.priority ?? null, high: d.high ?? null,
+    repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null,
+    expiresAt: d.expiresAt, expiresInSeconds: Math.max(0, Math.floor((Date.parse(d.expiresAt) - now.getTime()) / 1000)),
+    ...(loginsUrl ? { loginsUrl } : {}),
+  };
 }

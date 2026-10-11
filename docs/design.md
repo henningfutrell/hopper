@@ -902,7 +902,7 @@ If your work overlaps another job's, sort it out yourself. Either state the assu
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
 When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.
-When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
+When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
@@ -936,7 +936,7 @@ marker still on screen, a marker in backticks or bold. Then:
 | marker line `HOPPER_DONE` is the last marker (whole line, trimmed) and status idle/done | `finished`, result `{ summary: <assistant text of the final turn, ≤ 4000 chars>, paneId }`; a block that opens with a tool call (`● Bash(…)`) is the text after the call's output, never the call (issue #377) |
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
-| last marker `HOPPER_AUTH_PENDING`, nothing after it but its field lines (`tool:`, `url:`, `code:`, `expires_in:`; also `kind:`, `expires_at:`, `interval:`) | a **login** ("Logins", issue #476): no question, no nudge. Reported to the logins; the job stays running and waits, as on background work, until Claude goes on by itself (the login then `completed`), the user acts on it, it expires, or `timeoutMs`. A login the logins cannot take (no code, no URL) is said back to the job, three times at most, then the job fails. Field lines are never progress; output after them means the job went on, and the marker no longer counts |
+| last marker `HOPPER_AUTH_PENDING`, nothing after it but its field lines (`tool:`, `url:`, `code:`, `expires_in:`; also `kind:`, `expires_at:`, `interval:`, and, issue #698, `account:`, `scopes:`) | a **login** ("Logins", issue #476): no question, no nudge. Reported to the logins; the job stays running and waits, as on background work, until Claude goes on by itself (the login then `completed`), the user acts on it, it expires, or `timeoutMs`. A login the logins cannot take (no code, no URL) is said back to the job, three times at most, then the job fails. Field lines are never progress; output after them means the job went on, and the marker no longer counts |
 | last marker `HOPPER_WAITING`, then a `for:` line (and an `until:` line) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000), and no background work in the footer | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again. Further status notes in a row wait 1, 5, 15 and 30 minutes idle before their nudge (`NUDGE_GAPS_MS`, `nudge.ts`, issue #491); the one after that gets none: progress `waiting: N status notes in a row without a marker; no more nudges until claude works again`, and the watch goes on until Claude works again by itself (a background notification, a person in its pane), which begins a new row, or `timeoutMs`. Before each nudge, the check before a nudge (issue #627): work over at the source ends the job done; a person awaited means no nudge |
@@ -2585,7 +2585,10 @@ event; in-memory only.
   `account`, `reason`); `artifact.created` (issue #673: body adds `artifactId`, `title`, `type`, `size`, `issueUrl` and
   `url`, the artifact's stable URL under the user's link base — `NotifierEvents.artifactUrl`); `job.finished` and
   `job.failed` (issue #795, owner 2026-10-11, which replaces "questions only" of issue #3: Grok Bot is woken by a job's
-  end instead of polling; body adds `repo`, `issueNumber`, `priority`, and `result` with `partlyDone?`, or `error`).
+  end instead of polling; body adds `repo`, `issueNumber`, `priority`, and `result` with `partlyDone?`, or `error`); `auth.pending` (a new code
+  too, `renewed: true`) and `auth.expired` (issue #698, "Logins": body adds `loginId`, `tool`, `host`, `run`, `machineId`,
+  `laneId`, `priority`, `high`, `repo`, `issueNumber`, `expiresAt`, `expiresInSeconds` and `loginsUrl`, the Logins view —
+  `NotifierEvents.loginsUrl` —; never the URL to open or the code).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, heartbeatSeconds }`: `url` is `HOPPER_PUBLIC_URL`, `apiTokenUrl` where an agent exchanges
@@ -9268,6 +9271,18 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   `claude -p` — is watched as its output comes (`run-output.ts`): a device code a CLI the hopper knows
   prints (`recognise.ts`: gh, codex; each tested on its real output) is reported while the run waits.
   A client target's herdr job is a herdr job; there is no client-to-hopper message of its own yet.
+- **Seen on screen** (issue #698). A herdr job that ends its turn with no marker while its turn shows a device code
+  — a CLI's output, or the job's own words about it — has it reported all the same, before any nudge or wait: the
+  recognisers read the turn after its anchor (`turnText`), never the prompt above it. Besides gh and codex, **any**
+  CLI's prompt is read by its shape (`recognise.ts` `any`): a code the words call one (`code`, `code:`, six or more
+  letters and digits, with or without dashes) and, within 400 characters, a URL whose host or path names a device page
+  (`device`, `activate`, `verif`, `pair`, `/link`, `/login`, `/auth`); its tool is the page's host, its expiry the
+  "expires in N minutes" near it, else 900 s. The job is then told (`loginSeenNote`) that the user was shown it and to
+  report it with the protocol lines — the same code, so the same login —, so a login signal can end it. A GitHub code
+  is steered to the hopper's GitHub proxy, as a reported one is. The executor keeps each job's codes, reported or seen,
+  in memory (never written) until the job ends: a code still on screen is a new login once. Not while the job already
+  waits on a login. A CLI whose words fit neither is missed, never misread; a print-mode run's output is read the same
+  way.
 - **Never a question.** A login opens no question and reaches no escalation level. An escalation level's
   run that waits on one reports it with the question (`questionId`, the level as `run`); the run ending
   in an error still climbs the question, as any error does.
@@ -9296,24 +9311,35 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   whose question is no longer open (`the question ended`); a pending one past `expiresAt` expires, with or without
   word from the machine.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
-  read at each expiry, so a change applies without a restart): `fail` (default) — the job fails, its error
-  `the <tool> login expired at <time> before it was completed`; `hold` — the job keeps waiting until its
-  own timeout, and a new code may still be asked for. Nothing asks a machine for a new code by itself.
+  read at each expiry, so a change applies without a restart): `hold` (the default since issue #698: an expired code
+  is the user's to renew, and the job stays alive for it) — the job keeps waiting until its own timeout, the card
+  says Expired and offers Request a new code, and the notifier says it expired; `fail` (the default before) — the job
+  fails, its error `the <tool> login expired at <time> before it was completed`. A user who saved `fail` keeps it.
+  Nothing asks a machine for a new code by itself.
 - **Acting** (`POST /ui/api/logins/:id/cancel`, `…/new-code`, operator). Cancel ends the login and types
   into a herdr job's pane that the user cancelled it: stop the command, go on without it or fail. A new
   code types in: stop the command, start the login again, report the new code. A print-mode run takes no
   input, so it cannot be asked for a new code (409); cancel only ends the login there.
 - **Who completes it.** Always the user, at the provider. No agent or other machine completes a login.
 - **Sensitive data.** The URL and the code are credentials in flight. Never stored: the `logins` table
-  and every `auth.*` event carry the login's id, kind, tool, status, times and what waits on it, never
-  them; they live in the daemon's memory while the login is open and are dropped when it ends (a restart
+  and every `auth.*` event carry the login's id, kind, tool, status, times and what waits on it (`auth.pending` also
+  the URL's host, issue #698), never them, nor the account or scopes; they live in the daemon's memory while the login is open and are dropped when it ends (a restart
   drops them: `codeKept: false`; a herdr job still waiting is read back from its screen). Only a UI session
   of the user whose role may act on a login (operator or admin, issue #477) reads them, from `GET /api/logins`
   and `/api/logins/:id`: never a viewer's, never the API door's token, never a loopback read without a session. Wherever a run's output goes on — a job's progress, a question's text
   and recent output, a job's result or error, a login's failure reason — a code its screen or output shows
   is replaced with `[code hidden]`. Webhooks deliver `auth.*` events as any other, without the URL or code.
-- **Notifiers.** No `auth.*` event goes to a notifier: the existing notifier sends questions, and a login
-  is not one. Webhook subscribers may subscribe to `auth.*`. The Logins UI is issue #477.
+- **What asks** (issue #698). A login report may name the `account` (or host) the tool signs in to and the `scopes` it
+  asks for (the protocol's optional field lines `account:`, `scopes:`). An account may name a person, so both are kept
+  as the code is: in memory, answered only with it. The **host** of the URL to open (its host name, never its path or
+  query, which may carry the code) is answered to anyone who reads the login while the code is kept, and is in
+  `auth.pending`. The Logins card lists them, and the lane, under what waits.
+- **Notifiers** (issue #698). The Grok Bot routine notifier posts `auth.pending` (a new code too) and `auth.expired`
+  ("Grok Bot routine webhook"): what asks, what waits — the job, its issue, the machine and lane —, the time left and a
+  link to the Logins view (`NotifierEvents.loginsUrl`, `#logins`). Never the URL to open or the code: a phone or a
+  routine is outside the hopper, and the code is a credential in flight; the person opens the Logins view, signed in,
+  for them. Before issue #698 no `auth.*` event went to a notifier. Webhook subscribers may subscribe to `auth.*`. The
+  Logins UI is issue #477.
 - **Naming.** "Login lane" in the issue is a login kind here: a **lane** is a job slot (`lane.opened`).
 - **The Logins view** (issue #477, `ui/src/views/logins.tsx`, its model `ui/src/model/logins.ts`). A view of its
   own (`#logins`), apart from Questions: no login is ever a question card. One card per login, open ones first
@@ -9336,11 +9362,11 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   code and the actions. The logins settings are a panel there for an admin.
   Taken conservatively, each one place to change: a top-level nav entry, not a tab beside Questions; the
   warning one setting per user (the logins settings are the user's); 5 minutes on a card; no browser
-  notification (no `auth.*` event goes to a notifier, above).
+  notification (the notifiers carry logins since issue #698, above).
 
 Open decisions taken conservatively, each one entry to change: the kinds after `device_code`
 (`LOGIN_KINDS`, `kinds.ts`); who completes a login (the user only); on expiry (`onExpiry`, default
-`fail`); notifiers (none by default).
+`hold` since issue #698); notifiers (the Grok Bot routine since issue #698, never with the URL or code).
 
 ## Failure assessment (issue #509, 2026-10-08)
 
