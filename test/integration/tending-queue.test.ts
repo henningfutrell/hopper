@@ -100,6 +100,7 @@ describe('the tending queue (issue #796)', () => {
     await tendDone(app, second!.job.id);
     await app.sync();
     expect((await tends(app)).map(([id]) => id)).toEqual([first!.job.id, second!.job.id, third!.job.id]);
+    await tendDone(app, third!.job.id);
   });
 
   it('yolo on: the head is rebased and merged before the next is rebased against the new base', async () => {
@@ -127,6 +128,7 @@ describe('the tending queue (issue #796)', () => {
     await waitFor(() => gh.issue(REPO, first!.issue).state === 'closed', { what: 'the head merged' });
     await waitFor(async () => (await tends(app)).length === 2, { what: 'the next one tended' });
     expect(await tends(app)).toEqual([[first!.job.id, 'rebase'], [second!.job.id, 'rebase']]);
+    await tendDone(app, second!.job.id);
   });
 
   it('each repository has its own queue', async () => {
@@ -138,6 +140,8 @@ describe('the tending queue (issue #796)', () => {
     gh.setConflicting(other!.url, true);
     await app.sync();
     expect((await tends(app)).map(([id]) => id).sort()).toEqual([mine!.job.id, other!.job.id].sort());
+    await tendDone(app, mine!.job.id);
+    await tendDone(app, other!.job.id);
   });
 });
 
@@ -159,6 +163,7 @@ describe('merge-order: Jev picks the head of the tending queue (issue #796)', ()
     expect(ask.options.map((o) => o.id)).toEqual(waiting.map((w) => w.job.id));
     const picked = (await app.events('types=minor_decision.picked')).find((e) => (e.data as { point: string }).point === 'merge-order')!;
     expect(picked.data).toMatchObject({ point: 'merge-order', pick: newest, applied: true });
+    await tendDone(app, newest);
   });
 
   it('shadow: the rules\' head is tended, and Jev\'s pick is compared with it', async () => {
@@ -175,6 +180,7 @@ describe('merge-order: Jev picks the head of the tending queue (issue #796)', ()
     expect(picked.data).toMatchObject({ point: 'merge-order', pick: newest, applied: false, notApplied: 'shadow' });
     const compared = await waitFor(async () => (await app.events('types=minor_decision.compared')).find((e) => (e.data as { point: string }).point === 'merge-order'), { what: 'compared' });
     expect(compared.data).toMatchObject({ point: 'merge-order', pick: newest, actual: waiting[0]!.job.id, agreed: false, decidedBy: 'rules' });
+    await tendDone(app, waiting[0]!.job.id);
   });
 
   it('one pull request to tend: Jev is not asked', async () => {
@@ -186,6 +192,7 @@ describe('merge-order: Jev picks the head of the tending queue (issue #796)', ()
     await app.sync();
     expect(await tends(app)).toEqual([[only!.job.id, 'rebase']]);
     expect(jev.asks.filter((x) => x.point === 'merge-order')).toEqual([]);
+    await tendDone(app, only!.job.id);
   });
 });
 
