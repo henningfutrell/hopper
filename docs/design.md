@@ -5000,7 +5000,10 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   type that the UI does not subscribe to fails the UI typecheck.
 - **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
-  Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
+  Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. The job view (`#job/<id>`, issue #433, no nav entry) is where every
+  timeline entry about a job links: lane timeline bars and question waits, and event lines with a job; it reads the job
+  store, else `GET /api/jobs/:id`, and shows the job's events from the log the UI holds. Tested through the rendered app:
+  `test/ui/job-links.test.ts`. Charts read `/api/events?types=…&limit=5000`
   (`HISTORY_TYPES`): lane spans are derived client-side, no new API; ended-per-hour counts the job store's ended jobs.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode (removed by issue #211),
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.

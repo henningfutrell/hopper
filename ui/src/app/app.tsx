@@ -12,6 +12,7 @@ import { Artifacts } from '@/views/artifacts';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
+import { JobView } from '@/views/job';
 import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
 import { NotTaken } from '@/views/not-taken';
@@ -32,7 +33,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, 'not-taken': NotTaken, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  overview: Overview, queue: Queue, 'not-taken': NotTaken, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings, job: JobView,
 };
 
 function Loading() {
