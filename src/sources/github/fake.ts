@@ -303,20 +303,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
     openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
     openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, 'A change.'),
-    setChecks(url, checks) {
-      const p = pull(url);
-      if (checks) p.checks = checks;
-      else delete p.checks;
-    },
+    setChecks(url, checks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; },
-    pushToPullRequest(url, at, o = {}) {
-      const p = pull(url);
-      p.headCommittedAt = at;
-      p.conflicting = o.conflicting ?? false;
-    },
+    pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);
       Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });
