@@ -9807,10 +9807,16 @@ waiting one), with `job.reprioritized`, so a label change moves it everywhere at
 - A high-priority job goes to the machine holding the best free priority lane, and takes it — an idle one, or opens it
   (`StartPlan.opens`: with `laneId` null, the lane the engine opens; `LaneRepository.open(machineId, id)`). With every
   priority lane busy it takes any other free lane: it never waits for one.
-- `whenIdle: keep-free` (default): a job that is not high priority leaves the free priority lanes — its room on the
-  machine is its room less them — and waits with `waiting for a lane: machine m keeps priority lane m/lane-1 free for
-  high-priority jobs, the other K are in use`; the lane plan's idle reason says the same. `share`: a default job takes a
-  priority lane only when no other lane of the machine (up to its lane count) is free; a low job (below 50) never does.
+- A priority lane is held **on demand** (issue #788). Before each job is placed, every machine counts the high-priority
+  jobs after it in the order (`LaneSlots.wanted`) that could run there (eligible, with room for their executor). A job
+  that is not high priority leaves that many free priority lanes, at most the free ones — its room on the machine is
+  its room less them — and waits with `waiting for a lane: machine m holds priority lane m/lane-1 for high-priority jobs
+  still to be placed, the other K are in use`. `whenIdle: keep-free` (default): every job that is not high priority
+  leaves them; `share`: only a low job (below 50) does. With no high-priority job to place, any job takes a priority
+  lane, but only when no other lane of the machine (up to its lane count) is free. A lane is never owned: when its
+  high-priority job ends it is an idle lane like any other. So marking every lane a priority lane never starves the
+  default jobs. Before #788 `keep-free` held the free priority lanes empty whenever any job waited, and a low job never
+  took one: an idle machine with all its lanes marked ran only high-priority jobs.
 - Nothing is preempted: a running job is never stopped or parked for a high-priority one (owner decision D2 left open;
   the hopper never preempts, "Usage pacing"). A job on a non-priority lane opens the lowest number not a priority lane.
 
@@ -9842,16 +9848,18 @@ day, rank and why, the priority lanes marked; an admin edits the settings, ticks
 by reliability. Overview: the Lanes panel marks the priority lanes and names those not open.
 
 **Owner decisions taken as defaults** (all settings, changed live on Machines): D1 a fixed count, 1; D2 keep-free, with
-share as the other choice — no park-and-yield; D3 a low job never takes a priority lane, and lanes are not otherwise
-handed out by reliability; D4 14 days, 5 runs.
+share as the other choice — no park-and-yield; D3 a low job never takes a priority lane (revised by #788: it leaves one only while a high-priority job waits
+for it), and lanes are not otherwise handed out by reliability; D4 14 days, 5 runs.
 
-**Verification:** `test/decider/priority-lanes.test.ts` (keep-free and its wait reason; a high job ahead of an older
+**Verification:** `test/decider/priority-lanes.test.ts` (keep-free with no high job waiting; every lane a priority lane with only
+default and low jobs; a priority lane back in the pool; a lane held for a high job later in the queue order, and its
+wait reason; as many held as high jobs; a high job ahead of an older
 default job; an idle priority lane; the machine holding it; busy priority lanes; share; a low job; drain order under
 a usage limit), `test/reliability/measure.test.ts`, `test/reliability/rank.test.ts` (best lanes, minimum runs, offline,
 no flapping on one fault, a lane better by more than the margin, an admin's choice), `test/integration/high-priority.test.ts`
 (question and login first and tagged in the API and events, failure and hand-off tags, a label change re-sorts a job on a
-question at the next sync), `test/integration/priority-lanes.test.ts` (the API, reliability choice and its event, a high
-job takes the free priority lane ahead of waiting default jobs, share, bounds, roles, restart),
+question at the next sync), `test/integration/priority-lanes.test.ts` (the API, reliability choice and its event, a default job takes the priority lane, a high job
+takes it next, then it is back in the pool, bounds, roles, restart),
 `test/ui/high-priority.test.ts`, `test/ui/high-priority-views.test.ts`, `test/plugins/grokbot-payload.test.ts`.
 
 ## Proposals (issue #537, 2026-10-09)

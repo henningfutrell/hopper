@@ -1,8 +1,8 @@
 // Issue #535: priority lanes through the real daemon, store and HTTP server. The hopper measures each lane from its
 // own history and makes the most reliable ones priority lanes; GET /api/priority-lanes shows the figures and why;
 // an admin's settings (the threshold, the count, keep-free or share, the window, the minimum runs, a manual choice)
-// are stored and apply to the next Decision without a restart; a high-priority job takes a free priority lane
-// ahead of the default jobs waiting.
+// are stored and apply to the next Decision without a restart; a priority lane is held only while a high-priority
+// job needs it (issue #788).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PriorityLanesView } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -54,26 +54,22 @@ describe('priority lanes', () => {
     expect((await a.events('types=priority_lanes.settings_changed')).map((e) => e.data.to)).toEqual([expect.objectContaining({ minRuns: 3 })]);
   });
 
-  it('a high-priority job takes the free priority lane ahead of the default jobs waiting; they keep off it', async () => {
+  it('keep-free: a default job takes the priority lane while no high-priority job needs it, a high-priority job takes it next, then it is back in the pool', async () => {
     const a = await boot();
     const admin = await a.login();
     expect((await a.ui('/ui/api/priority-lanes/settings', { manual: ['local/lane-2'] }, { token: admin })).status).toBe(200);
-    expect(await view(a)).toMatchObject({ chosen: ['local/lane-2'], by: 'manual' });
+    expect(await view(a)).toMatchObject({ chosen: ['local/lane-2'], by: 'manual', settings: expect.objectContaining({ whenIdle: 'keep-free' }) });
 
     const busy = await a.pull({ op: 'sleep', ms: 30_000 });
     expect((await a.waitForStatus(busy.id, 'running')).laneId).toBe('local/lane-1');
     const plain = await a.pull({ op: 'echo' });
-    const waiting = await waitFor(async () => { const j = await a.job(plain.id); return j.waitReason ? j : undefined; });
-    expect(waiting.waitReason).toBe('waiting for a lane: machine local keeps priority lane local/lane-2 free for high-priority jobs, the other 1 are in use');
+    expect((await a.waitForStatus(plain.id, 'finished')).laneId).toBe('local/lane-2');
 
     const urgent = await a.pull({ op: 'echo' }, HIGH);
-    const done = await a.waitForStatus(urgent.id, 'finished');
-    expect(done.laneId).toBe('local/lane-2');
-    expect((await a.job(plain.id)).status).toBe('queued');
+    expect((await a.waitForStatus(urgent.id, 'finished')).laneId).toBe('local/lane-2');
 
-    // share: the default job takes the priority lane once nothing else is free.
-    expect((await a.ui('/ui/api/priority-lanes/settings', { whenIdle: 'share' }, { token: admin })).status).toBe(200);
-    await a.waitForStatus(plain.id, 'finished');
+    const after = await a.pull({ op: 'echo' });
+    expect((await a.waitForStatus(after.id, 'finished')).laneId).toBe('local/lane-2');
   });
 
   it('settings outside their bounds are refused, and are not a viewer\'s to set', async () => {
