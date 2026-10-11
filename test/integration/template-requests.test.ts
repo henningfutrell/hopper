@@ -11,7 +11,8 @@
 //     And a job running on the hopper's machine
 //     When the job runs `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012"`
 //     Then the answer is 200: the template, approved by the read policy, and the skills its box loads
-//     And the vault holds the template: the box image, no secret, the two read profiles, approved, nothing pending
+//     And the vault holds the template: the box image, the tools its needs use (issue #716, item 2), no secret, the two
+//       read profiles, approved, nothing pending
 //     And Access allows read on cluster lab for it
 //     And a second job that asks for the same needs gets the same template, and no second one is made
 //   Scenario: a write need waits for a person, and the job's wait ends when the person approves it
@@ -111,7 +112,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012']);
     expect(r.code, r.stdout).toBe(0);
     const [t] = await asked(a, token);
-    expect(t).toMatchObject({ image: BOX, secrets: [], profiles: [LAB_READ, AWS_READ], approval: { image: BOX, by: 'the read policy' }, pending: { secrets: [], image: false, profiles: [] } });
+    expect(t).toMatchObject({ image: BOX, tools: ['aws', 'helm', 'kubectl'], secrets: [], profiles: [LAB_READ, AWS_READ], approval: { image: BOX, tools: ['aws', 'helm', 'kubectl'], by: 'the read policy' }, pending: { secrets: [], image: false, profiles: [] } });
     expect(t!.savedBy).toMatch(/^job /);
     expect(r.stdout).toContain(`template ${t!.name} is ready`);
     expect(r.stdout).toContain('approved by the read policy');

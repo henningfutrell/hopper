@@ -4,6 +4,7 @@
 // Feature: the hopper drives Docker through the Docker Engine API
 //   Scenario: create sends the sandbox flags, the limits, the labels, the user and the home volume, by name
 //   Scenario: pull pulls only a missing image, and answers the user the image runs as
+//   Scenario: build sends the Containerfile in a tar, only when the image is not there yet; a stream error fails it (issue #716)
 //   Scenario: inspect and list read Docker's names without the leading slash
 //   Scenario: stop, remove and volumes: gone is no error, and removing keeps the volumes
 //   Scenario: a rootful Docker is a problem: the hopper launches boxes only through a rootless runtime
@@ -50,6 +51,28 @@ describe('the Docker container runtime', () => {
   it('a pull whose stream carries an error fails with it', async () => {
     api = await startFakeRuntimeApi([on('POST', `${API}/images/create`, { status: 200, text: '{"error":"manifest unknown"}\n' })]);
     await expect(createDockerRuntime(api.socket).pull(spec.image)).rejects.toThrow(`docker could not pull ${spec.image}: manifest unknown`);
+  });
+
+  it('build sends the Containerfile in a tar, only when the image is not there yet; a stream error fails it (issue #716)', async () => {
+    const tag = 'localhost/hopper-box-tools:0123456789abcdef';
+    let present = false;
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/images/${encodeURIComponent(tag)}/json`, () => (present ? { status: 200, body: { Config: {} } } : { status: 404, body: { message: 'no such image' } })),
+      on('POST', `${API}/build`, (r) => {
+        if (r.query.get('t') !== tag) return { status: 200, text: '{"errorDetail":{"message":"no match"},"error":"no match"}\n' };
+        present = true;
+        return { status: 200, text: '{"stream":"Step 1/4"}\n' };
+      }),
+    ]);
+    const rt = createDockerRuntime(api.socket);
+    await rt.build(tag, 'FROM example.org/kube-box:1\n');
+    const build = api.seen.find((r) => r.path === `${API}/build`)!;
+    expect(build.query.get('dockerfile')).toBe('Containerfile');
+    expect(String(build.body)).toContain('FROM example.org/kube-box:1\n');
+    api.seen.length = 0;
+    await rt.build(tag, 'FROM example.org/kube-box:1\n');
+    expect(api.seen.map((r) => r.method)).toEqual(['GET']);
+    await expect(rt.build('localhost/x:1', 'FROM x\n')).rejects.toThrow('docker could not build localhost/x:1: no match');
   });
 
   it('inspect and list read Docker\'s names without the leading slash', async () => {

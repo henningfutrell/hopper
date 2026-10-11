@@ -6,6 +6,8 @@
 //   Scenario: create sends the sandbox flags, the limits, the labels, the user and the home volume
 //   Scenario: pull pulls only a missing image, and answers the user the image runs as
 //   Scenario: a pull whose stream carries an error fails with it
+//   Scenario: build sends the Containerfile in a tar, only when the image is not there yet (issue #716)
+//   Scenario: a build whose stream carries an error fails with it
 //   Scenario: inspect, list, start, stop and remove use the container id; gone is no error
 //   Scenario: volumes are made and removed by name; one that exists or is gone is no error
 //   Scenario: a rootful Podman is a problem; a reachable rootless one is none
@@ -125,6 +127,32 @@ describe('the Podman container runtime', () => {
     await rt.removeVolume('gone');
     expect(api.seen[0]!.body).toEqual({ Name: 'home', Label: { 'io.hopper.box': 'i-1' } });
     expect(api.seen[2]!.query.get('force')).toBe('true');
+  });
+
+  it('build sends the Containerfile in a tar, only when the image is not there yet (issue #716)', async () => {
+    const tag = 'localhost/hopper-box-tools:0123456789abcdef';
+    let present = false;
+    api = await startFakeRuntimeApi([
+      on('GET', `${API}/images/${encodeURIComponent(tag)}/exists`, () => ({ status: present ? 204 : 404 })),
+      on('POST', `${API}/build`, () => { present = true; return { status: 200, text: '{"stream":"STEP 1/4"}\n{"stream":"COMMIT"}\n' }; }),
+    ]);
+    const rt = createPodmanRuntime(api.socket);
+    await rt.build(tag, 'FROM example.org/kube-box:1\n');
+    const build = api.seen.find((r) => r.path === `${API}/build`)!;
+    expect(build.query.get('t')).toBe(tag);
+    expect(build.query.get('dockerfile')).toBe('Containerfile');
+    expect(String(build.body)).toContain('Containerfile');
+    expect(String(build.body)).toContain('FROM example.org/kube-box:1\n');
+    api.seen.length = 0;
+    await rt.build(tag, 'FROM example.org/kube-box:1\n');
+    expect(api.seen.map((r) => r.method)).toEqual(['GET']);
+  });
+
+  it('a build whose stream carries an error fails with it', async () => {
+    api = await startFakeRuntimeApi([
+      on('POST', `${API}/build`, { status: 200, text: '{"stream":"STEP 2/4"}\n{"error":"sha256sum: WARNING: 1 computed checksum did NOT match"}\n' }),
+    ]);
+    await expect(createPodmanRuntime(api.socket).build('localhost/x:1', 'FROM x\n')).rejects.toThrow('podman could not build localhost/x:1: sha256sum: WARNING: 1 computed checksum did NOT match');
   });
 
   it('a rootful Podman is a problem; a reachable rootless one is none', async () => {
