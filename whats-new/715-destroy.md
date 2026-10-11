@@ -1,0 +1,1 @@
+- The read-only check of a box that reads Terraform now also proves that the cloud account refuses a destroy that goes around the box's Terraform guard.
