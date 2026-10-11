@@ -358,7 +358,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
-    sources: jobSources(), host: engine.sourceHost, clock,
+    sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.

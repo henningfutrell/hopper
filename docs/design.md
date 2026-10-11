@@ -1905,6 +1905,18 @@ three good rebases, and nothing tended them again. A refusal because a newer job
 the item exists is no failure; any other refusal is kept as the source's retry and asked again next sync. No setting turns
 it off: a job repository whose pull requests the hopper follows is one whose jobs it runs.
 
+**The tending queue** (issue #796, `src/domain/tending-queue.ts`). Each merge moves its base, so tending every conflicting
+pull request of a repository at once made each merge break the other rebases again (one merge re-conflicted six pull
+requests). The tends of one job repository are a queue: after all the follows of a sync, at most one tend starts per
+repository, and none while its **head** holds it (`queueHead`): a tend job at work on a pull request (not ended, or finished
+and not following it again yet), or a pull request on its way to the hopper's merge — followed, yolo mode on for its
+repository (`JobSource.mergesOnReady`), of a trusted or approved origin, and as last seen no draft, no merge conflicts, no
+failing checks and no refused merge (checks pending, or not seen yet, hold it). Once the head is merged, closed, or waits on
+a person (yolo mode off, a failed tend, failing checks past the cap, a refused merge), the next is tended against the new
+base: one rebase per merge. The next is the rules' first (`tendOrder`: the highest priority, then the oldest pull request,
+then the job), or Jev's applied pick at the `merge-order` decision point ("Decider calls"). Yolo mode off, nothing is merged
+by the hopper, so a tend holds the queue only while its job works. Each repository has its own queue.
+
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
 to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
 (Send back for rework), the operator CLI (`hopper job rework <id> --notes <text>`) or `POST /ui/api/jobs/:id/rework`
@@ -10262,10 +10274,17 @@ setting), edited in Settings → Decider (admin), read at every decision:
 | `failure-assessment` | a failure the rules hand to a person with no known cause, not superseded, not stale, within the retry limit — after the rules | `retry`, `person` | `retry`: the job runs again by the assessor (`job.rerun`, `by: assessor`; its record `retried`, note `run again: Jev picked it`); its hand-off, opened by the rules, closes as for any run again |
 | `lane-count` | a machine's lane recommendation by the rules changed, when it is recorded (issue #688, "Lane tuning") | the lanes the rules allow (`laneCountOptions`) | the machine's lane recommendation, `decidedBy: jev`; an admin still applies it |
 | `job-machine` | a waiting job that two or more machines online, with its executor and not kept by the blast-radius gate, can take; once per waiting spell (issue #688) | those machines | a placement pick: in step 7 the job goes there first |
+| `intake-order` | one sync of a job source finds two or more new items — no job follows them — (issue #796, `src/sources/intake-order.ts`) | the first 10 new items, in the source's order | the picked item is offered first: its job is queued first, and goes first among jobs of its priority; the rest follow in the source's order |
+| `merge-order` | a repository's tending queue is free and two or more of its waiting pull requests need tending (issue #796, "The tending queue", `src/sources/tend-order.ts`) | the first 10, in the rules' order | the picked pull request is tended next |
 
 Grouping stays the rules' own (a problem needs failures on several items), so it is not an option. The other decider
 calls the issue names — the queue gate and pre-sort, priority, phase shifts, stale cleanup, client repair — are not
 decision points yet; each one is a new row here. Lane choice is two rows (`lane-count`, `job-machine`, issue #688).
+Ordering is two (`intake-order`, `merge-order`, issue #796): each picks the first of a set, never a whole order, so each
+is one bounded choice; the rest keep the rules' order. Neither deletes, sends or publishes anything: never consequential.
+Each gives the rules' own pick (`MinorDecisionInput.rules`), so a pick not applied is compared with it at once
+(`decidedBy: rules`). Only facts go to Jev: an item's title, priority, labels, repository and number, never its author
+or its text; a pull request's number, step, title, priority, when it was opened, its base and checks.
 
 **Modes.** `off`: Jev is not asked. `shadow` (the default for every point): Jev's pick is recorded next to what was
 decided, and nothing else changes. `active`: a pick whose confidence is at or above the point's `threshold` (default

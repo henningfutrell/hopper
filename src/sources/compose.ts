@@ -157,6 +157,8 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.unfollowedPullRequests ? s.unfollowedPullRequests(jobs) : Promise.reject(new SourceError(why(), false));
     },
+    // Unconnected, nothing is merged (issue #796).
+    mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));

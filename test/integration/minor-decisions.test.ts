@@ -234,6 +234,7 @@ describe('overrides and the view', () => {
     const v = await view(a);
     expect(v.points.map((p) => [p.point, p.mode, p.threshold])).toEqual([
       ['question-answer', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85], ['lane-count', 'shadow', 0.85], ['job-machine', 'shadow', 0.85],
+      ['intake-order', 'shadow', 0.85], ['merge-order', 'shadow', 0.85],
     ]);
   });
 
