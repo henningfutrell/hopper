@@ -17,6 +17,7 @@
 //   Scenario: a box it cannot remove is shown with the reason, until it goes
 //   Scenario: a box that does not start leaves nothing: no container, no volume, no record
 //   Scenario: a create that fails on a name taken meanwhile leaves that container alone
+//   Scenario: a create whose answer was lost is the box its sandbox label names
 //   Scenario: an image that runs as root does not start
 //   Scenario: the line Add machine shows carries the same sandbox flags
 //   Scenario: without a runtime, or with a rootful one, Add machine says why and starts nothing
@@ -27,7 +28,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { joinHopper } from '../../src/client/join.ts';
 import { runFlags } from '../../src/sandbox/flags.ts';
 import { DEFAULT_LIMITS } from '../../src/sandbox/params.ts';
-import { BOX_LABEL, USER_LABEL } from '../../src/sandbox/service.ts';
+import { BOX_LABEL, SANDBOX_LABEL, USER_LABEL } from '../../src/sandbox/service.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { KEY } from '../support/webhooks.ts';
@@ -315,6 +316,20 @@ describe('sandbox boxes the hopper starts', () => {
     expect((await launch(a, session, {})).status).toBe(502);
     expect(runtime.boxes.get('hopper-sandbox-claude')?.spec.image).toBe('someone/else:1');
     expect((await view(a, session)).boxes).toEqual([]);
+  });
+
+  it('a create whose answer was lost is the box its sandbox label names', async () => {
+    const runtime = createFakeContainerRuntime();
+    const { a, session } = await boot(runtime);
+    // The runtime made the container, but its answer did not come back (a link that dropped mid-call).
+    const create = runtime.create;
+    runtime.create = async (spec) => { await create(spec); throw new Error('no answer within 35000 ms, or its link closed'); };
+    expect((await launch(a, session, {})).status).toBe(200);
+    const record = a.app.instance.sandboxes.list()[0]!;
+    const box = runtime.boxes.get('hopper-sandbox-claude')!;
+    expect(box.spec.labels[SANDBOX_LABEL]).toBe(record.id);
+    expect(record.containerId).toBe(box.id);
+    expect(box.state).toBe('running');
   });
 
   it('an image that runs as root does not start', async () => {
