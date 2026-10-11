@@ -1,15 +1,16 @@
 // @vitest-environment happy-dom
 // Issue #201: the Queue view rendered in happy-dom inside the whole app against a fake of the daemon's
 // HTTP surface. The Queue nav entry carries a badge while jobs wait on the pre-sort, and the Queue view
-// names the queue sorter and links to where it is set up (#settings/routing).
+// names the queue sorter and links to where it is set up (#settings/routing). Issue #737: its job cards are collapsed by
+// default — the issue, state, lane, pull request and the repository's yolo mode —, open one by one, or all at once.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const job = (id: string, accepted: boolean) => ({
+const job = (id: string, accepted: boolean, o: Record<string, unknown> = {}) => ({
   id, spec: { executor: 'test', payload: {}, goal: `goal ${id}` }, priority: 50, status: 'queued', approved: false, accepted,
-  createdAt: '2026-10-03T10:00:00Z', updatedAt: '2026-10-03T10:00:00Z', attempts: 0,
+  createdAt: '2026-10-03T10:00:00Z', updatedAt: '2026-10-03T10:00:00Z', attempts: 0, ...o,
 });
 
 function fakeDaemon(waiting: ReturnType<typeof job>[]) {
@@ -24,6 +25,7 @@ function fakeDaemon(waiting: ReturnType<typeof job>[]) {
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
+    '/api/yolo-mode': { on: false, repos: { 'owner/a': true }, choices: { repos: ['owner/a', 'owner/b'] } },
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string) => {
@@ -86,5 +88,48 @@ describe('Where the sorter is set up', () => {
     expect(link.getAttribute('href')).toBe('#settings/routing');
     expect(link.textContent).toContain('Set up the sorter');
     expect(document.querySelector('[data-slot="queue-sorter"]')!.textContent).toContain('oldest-first');
+  });
+});
+
+describe('Collapsed job cards (issue #737)', () => {
+  const fromIssue = (id: string, repo: string, n: number, o: Record<string, unknown> = {}) =>
+    job(id, true, { source: { source: 'gh', key: `${repo}#${n}`, repo, number: n, url: `https://github.com/${repo}/issues/${n}` }, ...o });
+  const card = (id: string) => document.querySelector(`[data-job-id="${id}"]`)!;
+  const toggleAll = () => document.querySelector<HTMLButtonElement>('[data-slot="cards-toggle-all"]')!;
+
+  it('each card starts collapsed and shows the essentials: issue, state, lane, yolo mode of its repository', async () => {
+    await boot([fromIssue('a1', 'owner/a', 7, { laneId: 'desk/lane-2' }), fromIssue('b1', 'owner/b', 9)]);
+    await vi.waitFor(() => expect(card('a1').querySelector('[data-slot="card-yolo"]')?.textContent).toBe('yolo on'));
+    expect(card('a1').getAttribute('data-expanded')).toBe('false');
+    expect(card('a1').textContent).toContain('goal a1');
+    expect(card('a1').textContent).toContain('a#7');
+    expect(card('a1').querySelector('[data-slot="card-state"]')!.textContent).toBe('queued');
+    expect(card('a1').querySelector('[data-slot="card-lane"]')!.textContent).toBe('desk · lane-2');
+    expect(card('b1').querySelector('[data-slot="card-lane"]')!.textContent).toBe('no lane yet');
+    expect(card('b1').querySelector('[data-slot="card-yolo"]')!.textContent).toBe('yolo off');
+    expect(card('a1').textContent).not.toContain('prio 50');
+  });
+
+  it('a click opens one card for its detail; the others stay collapsed', async () => {
+    await boot([job('a1', true), job('a2', true)]);
+    const toggle = await vi.waitFor(() => { const b = card('a1')?.querySelector<HTMLButtonElement>('[data-slot="card-toggle"]'); expect(b).toBeTruthy(); return b!; });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => toggle.click());
+    expect(card('a1').getAttribute('data-expanded')).toBe('true');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(card('a1').textContent).toContain('prio 50');
+    expect(card('a2').getAttribute('data-expanded')).toBe('false');
+    await act(async () => toggle.click());
+    expect(card('a1').getAttribute('data-expanded')).toBe('false');
+  });
+
+  it('Expand all opens every card, in both columns; Collapse all closes them again', async () => {
+    await boot([job('a1', true), job('n1', false)]);
+    await vi.waitFor(() => expect(toggleAll()?.textContent).toContain('Expand all'));
+    await act(async () => toggleAll().click());
+    expect(['a1', 'n1'].map((id) => card(id).getAttribute('data-expanded'))).toEqual(['true', 'true']);
+    expect(toggleAll().textContent).toContain('Collapse all');
+    await act(async () => toggleAll().click());
+    expect(['a1', 'n1'].map((id) => card(id).getAttribute('data-expanded'))).toEqual(['false', 'false']);
   });
 });
