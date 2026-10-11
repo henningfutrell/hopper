@@ -11,33 +11,34 @@
 // (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
 // what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>. The read
 // policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for.
-// The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659).
-import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2, X } from 'lucide-react';
+// The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659). A template's form, with the limits a
+// launch of it may ask for (issue #708): vault-template-form.tsx.
+import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
-import { FIELD } from '@/components/plugin-form';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, toolsText } from '@/model/vault';
-import type { Asset, AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, toolsText } from '@/model/vault';
+import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
 import { AskedFor, VaultGrants } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
-import { ToolsInput } from './vault-tools';
+import { sameProfile, TemplateForm } from './vault-template-form';
+import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
 import { MasterKeyRotation } from '@/app/master-key';
 import { CheckAgain, GateRows } from './vault-check';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[] } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -134,91 +135,6 @@ function SecretItem({ s, backends, local, can, busy, send }: { s: VaultSecret; b
   );
 }
 
-const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
-const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
-const sameProfile = (a: OperationProfile, b: OperationProfile) => profileText(a) === profileText(b);
-
-/** The operation profiles a template's boxes may ask for: each removable, and one more added from an operation, an asset kind and a name. */
-function ProfilesInput({ profiles, busy, onChange }: { profiles: OperationProfile[]; busy: boolean; onChange: (p: OperationProfile[]) => void }) {
-  const [operation, setOperation] = useState<Operation>('read');
-  const [kind, setKind] = useState<AssetKind>('cluster');
-  const [asset, setAsset] = useState('');
-  const add = () => {
-    const p = { operation, asset: { kind, name: asset.trim() } };
-    if (!profiles.some((x) => sameProfile(x, p))) onChange([...profiles, p]);
-    setAsset('');
-  };
-  return (
-    <div className="space-y-1"><Label>Operation profiles its boxes may ask for — write, sync and apply each need their own approval</Label>
-      {profiles.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5" aria-label="Operation profiles">
-          {profiles.map((p) => (
-            <li key={profileText(p)} className={`flex min-h-8 items-center gap-1 rounded-md border px-2 font-mono text-xs ${highRadius(p) ? 'border-warn' : ''}`}>
-              {profileText(p)}
-              <button type="button" aria-label={`Remove ${profileText(p)}`} disabled={busy} onClick={() => onChange(profiles.filter((x) => !sameProfile(x, p)))}><X className="size-3" /></button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-wrap items-end gap-2">
-        <select aria-label="Operation" className={`${FIELD} w-24`} value={operation} disabled={busy} onChange={(e) => setOperation(e.target.value as Operation)}>
-          {OPERATIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <select aria-label="Asset kind" className={`${FIELD} w-44`} value={kind} disabled={busy} onChange={(e) => setKind(e.target.value as AssetKind)}>
-          {ASSET_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-        </select>
-        <Input aria-label="Asset" className="h-8 w-40 font-mono text-xs" value={asset} placeholder="lab" maxLength={200} disabled={busy} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          onChange={(e) => setAsset(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (asset.trim()) add(); } }} />
-        <Button type="button" size="sm" variant="outline" disabled={busy || !asset.trim()} onClick={add}><Plus />Add profile</Button>
-      </div>
-    </div>
-  );
-}
-
-/** A template's form: its name (fixed once saved), its image, the vault secrets and the operation profiles its boxes may ask for. */
-function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone }: { t?: TemplateView; secrets: VaultSecret[]; shared?: SharedSecretView[]; busy: boolean; send: Send; onDone: () => void }) {
-  // A minting credential is never given to a box: no template's scope lists it. A shared secret may be (issue #718).
-  const secrets = [...all.filter((s) => !s.mints).map((s) => ({ key: s.id, name: s.name })), ...shared.map((s) => ({ key: s.name, name: s.name }))];
-  const [name, setName] = useState(t?.name ?? '');
-  const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
-  const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
-  const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
-  const [tools, setTools] = useState<string[]>(t?.tools ?? []);
-  const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
-  return (
-    <form className="space-y-3" onSubmit={async (e) => {
-      e.preventDefault();
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools }, `${name.trim()}: saved`)) onDone();
-    }}>
-      {!t && (
-        <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
-          <Input className="h-9 font-mono text-sm" value={name} required maxLength={64} pattern="[a-z0-9][a-z0-9._\-]*" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder="kube" onChange={(e) => setName(e.target.value)} /></label>
-      )}
-      <label className="block space-y-1"><Label>Image — what its boxes run</Label>
-        <Input className="h-9 font-mono text-sm" value={image} required maxLength={300} autoCapitalize="off" autoCorrect="off" spellCheck={false} onChange={(e) => setImage(e.target.value)} /></label>
-      <div className="space-y-1"><Label>Secrets its boxes may ask for</Label>
-        {secrets.length === 0 ? <div className="text-xs text-muted-foreground">Add a secret above first.</div> : (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Secrets">
-            {secrets.map((s) => {
-              const on = scope.includes(s.name);
-              return <button key={s.key} type="button" aria-pressed={on} disabled={busy} onClick={() => toggle(s.name)}
-                className={`min-h-8 rounded-md border px-2 font-mono text-xs transition-colors ${on ? 'border-primary bg-primary text-primary-foreground' : 'border-input text-muted-foreground hover:bg-muted'}`}>{s.name}</button>;
-            })}
-          </div>
-        )}
-      </div>
-      <ToolsInput tools={tools} busy={busy} onChange={setTools} />
-      <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
-      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools or a new profile waits for your approval before any box gets it. A profile you remove loses its approval.</p>
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !name.trim() || !image.trim()}>Save template</Button>
-        <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
-      </div>
-    </form>
-  );
-}
-
 function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; shared: SharedSecretView[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
   const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.some((p) => !highRadius(p));
@@ -237,6 +153,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <dt className="text-muted-foreground">Tools</dt><dd className="font-mono break-words">{toolsText(t)}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
+        <dt className="text-muted-foreground">Limits</dt><dd className="break-words">{limitsText(t.limits)}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
         <GateRows t={t} />
       </dl>
