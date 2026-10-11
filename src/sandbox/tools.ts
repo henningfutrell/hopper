@@ -3,13 +3,14 @@
 // starts from the box's image, fetches each tool in a separate Debian stage from the tool's own release — pinned, and
 // checked by its SHA-256 before it is kept —, and copies only the result into /opt/hopper-tools. The tag is a hash of
 // the Containerfile and the base image's id, so the same tools on the same base build once. A read-only template's image
-// (issue #715) also puts the read-only terraform wrapper first on PATH, in front of the real binary.
+// (issue #715) also puts the read-only terraform wrapper first on PATH, in front of the real binary, and holds the
+// providers terraform may install in a mirror it installs from alone: a box downloads no provider.
 //
 // The versions and sums are pinned by hand: a new release is a change here, read and reviewed like any other.
 import { createHash } from 'node:crypto';
 import type { AssetKind, OperationProfile } from '../domain/access.ts';
 import { toolSet, type BoxTool } from '../domain/sandboxes.ts';
-import { TERRAFORM_WRAPPER } from './terraform-wrapper.ts';
+import { PROVIDER_MIRROR, TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from './terraform-wrapper.ts';
 
 /** The repository the hopper tags the images it builds in. Local: it is never pushed. */
 export const TOOLS_IMAGE = 'localhost/hopper-box-tools';
@@ -18,6 +19,8 @@ const FETCH_BASE = 'docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee
 const DIR = '/opt/hopper-tools';
 /** Where a read-only image keeps its wrappers: first on PATH, in front of `${DIR}/bin`. */
 const READ_ONLY_DIR = `${DIR}/read-only`;
+/** A read-only image's terraform CLI config: providers from the mirror only. */
+const CLI_CONFIG = `${DIR}/terraform.rc`;
 
 /** One tool: its release for each architecture (`a`: the release's own word for it), and how the download `$f` is installed. */
 interface Recipe { version: string; arch: Record<'amd64' | 'arm64', { a: string; sum: string }>; url: string; install: string }
@@ -61,26 +64,45 @@ const RECIPES: Record<BoxTool, Recipe> = {
   },
 };
 
+/**
+ * The one provider a read-only image holds in its mirror (issue #715), and so the only one terraform installs there: the
+ * AWS provider, as the hopper reads a terraform workspace with an AWS read session. Kept in the mirror's packed layout:
+ * the release's zip, as published, under its registry address.
+ */
+const AWS_PROVIDER_DIR = `${PROVIDER_MIRROR}/registry.terraform.io/hashicorp/aws`;
+const AWS_PROVIDER: Recipe = {
+  version: '6.68.0',
+  arch: {
+    amd64: { a: 'amd64', sum: 'b2511842cb6b23036c72babbaf12b4984835bb2824f938882330b51c68bdaecd' },
+    arm64: { a: 'arm64', sum: 'abd449fbf38cf828b8b17bc8540752733dd861160504a45b411e72e1792c758c' },
+  },
+  url: 'https://releases.hashicorp.com/terraform-provider-aws/6.68.0/terraform-provider-aws_6.68.0_linux_${a}.zip',
+  install: `mkdir -p ${AWS_PROVIDER_DIR} && mv "$f" ${AWS_PROVIDER_DIR}/terraform-provider-aws_6.68.0_linux_$a.zip`,
+};
+
 /** One RUN per tool: a layer each, so a tool fetched for one image is not fetched again for another. */
-const step = (tool: BoxTool): string => {
-  const r = RECIPES[tool];
+const step = (name: string, r: Recipe): string => {
   const arches = Object.entries(r.arch).map(([arch, x]) => `${arch}) sum=${x.sum} a=${x.a} ;;`).join(' ');
-  return `# ${tool} ${r.version}
-RUN set -eu; case "$(dpkg --print-architecture)" in ${arches} *) echo "${tool}: no release for this architecture" >&2; exit 1 ;; esac; \\
-    f=/tmp/${tool}.download; curl -fsSL "${r.url}" -o "$f"; echo "$sum  $f" | sha256sum -c -; \\
+  return `# ${name} ${r.version}
+RUN set -eu; case "$(dpkg --print-architecture)" in ${arches} *) echo "${name}: no release for this architecture" >&2; exit 1 ;; esac; \\
+    f=/tmp/${name}.download; curl -fsSL "${r.url}" -o "$f"; echo "$sum  $f" | sha256sum -c -; \\
     ${r.install}; rm -rf /tmp/*`;
 };
 
+const b64 = (text: string): string => Buffer.from(text).toString('base64');
+
 /**
- * The wrapper step of a read-only image (issue #715): the script in base64, so the Containerfile needs no build context
- * and no heredoc, which not every builder takes.
+ * The read-only steps of an image with terraform (issue #715): the provider of its mirror, then the wrapper and the CLI
+ * config, each in base64, so the Containerfile needs no build context and no heredoc, which not every builder takes.
  */
-const wrapperStep = (): string => `# the read-only terraform wrapper (issue #715)
-RUN mkdir -p ${READ_ONLY_DIR} && echo ${Buffer.from(TERRAFORM_WRAPPER).toString('base64')} | base64 -d > ${READ_ONLY_DIR}/terraform && chmod 755 ${READ_ONLY_DIR}/terraform`;
+const readOnlySteps = (): string => `${step('terraform-provider-aws', AWS_PROVIDER)}
+# the read-only terraform wrapper and its CLI config: providers from the mirror only (issue #715)
+RUN mkdir -p ${READ_ONLY_DIR} && echo ${b64(TERRAFORM_WRAPPER)} | base64 -d > ${READ_ONLY_DIR}/terraform && chmod 755 ${READ_ONLY_DIR}/terraform \\
+    && echo ${b64(TERRAFORM_CLI_CONFIG)} | base64 -d > ${CLI_CONFIG}`;
 
 /**
  * The image of `base` with `tools` added: its tag and its Containerfile. `readOnly` (a read-only template's boxes, issue
- * #715): terraform runs through the read-only wrapper.
+ * #715): terraform runs through the read-only wrapper, and installs providers only from the image's mirror.
  */
 export function toolsImage(base: { image: string; id?: string | undefined }, tools: readonly string[], o: { readOnly?: boolean | undefined } = {}): { tag: string; containerfile: string } {
   const set = toolSet(tools);
@@ -88,11 +110,11 @@ export function toolsImage(base: { image: string; id?: string | undefined }, too
   const containerfile = `# Made by the hopper (issue #716): ${base.image} with ${set.join(', ')}. Each download is pinned and checked by its SHA-256.
 FROM ${FETCH_BASE} AS fetch
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
-${set.map(step).join('\n')}${wrapped ? `\n${wrapperStep()}` : ''}
+${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}
 
 FROM ${base.image}
 COPY --from=fetch ${DIR}/ ${DIR}/
-ENV PATH=${wrapped ? `${READ_ONLY_DIR}:` : ''}${DIR}/bin:\${PATH}
+ENV PATH=${wrapped ? `${READ_ONLY_DIR}:` : ''}${DIR}/bin:\${PATH}${wrapped ? `\nENV TF_CLI_CONFIG_FILE=${CLI_CONFIG}` : ''}
 LABEL io.hopper.tools="${set.join(' ')}"
 `;
   const hash = createHash('sha256').update(`${base.id ?? ''}\n${containerfile}`).digest('hex').slice(0, 16);
