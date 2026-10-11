@@ -20,7 +20,7 @@ import {
   type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock, type WorkState,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS } from './assess.ts';
-import { BUILTIN_CAUSES, matchCause, namedCause } from './causes.ts';
+import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { askJev, type JevCase } from './jev.ts';
 import { attemptOf, recentOf, timeoutInputOf } from './chain.ts';
@@ -241,7 +241,7 @@ export function createFailures(o: FailuresOptions): Failures {
     for (const p of open) {
       const m = machines.find((x) => x.id === p.scope.machineId);
       if (!m) continue;
-      const present = CHECK_OF.get(p.causeId!) === 'online' ? !m.online : m.disk?.low === true;
+      const present = causePresent(CHECK_OF.get(p.causeId!)!, m);
       if (present && !p.checkSawCause) store.problems.update(p.id, { checkSawCause: true });
       else if (!present && p.checkSawCause) resolveAs(p.id, 'check');
     }

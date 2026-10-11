@@ -53,13 +53,15 @@ export interface SshTransport {
 export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
 
 /**
- * How a command finds herdr on an ssh target (issue #311): by name, from the PATH its shell has, then
- * `~/.local/bin`, where herdr installs. Never a path the person names. The shell that runs an ssh command
+ * How a command finds herdr on an ssh target (issue #311): by name, from `~/.local/bin`, where herdr installs
+ * itself and updates, then the PATH its shell has. `~/.local/bin` comes first (issue #741): an older herdr on the
+ * PATH (one an image baked into /usr/local/bin) cannot talk to the session server the newer one runs, and every
+ * job start there failed on the protocol. Never a path the person names. The shell that runs an ssh command
  * is not a login shell, so `~/.local/bin` is often not on its PATH; and it is named here, not read
  * from a shell's env file, which a new pane's shell may be rewriting at that moment (seen live: `zsh:1:
  * command not found: herdr`).
  */
-export const REMOTE_PATH = 'PATH="$PATH:$HOME/.local/bin"';
+export const REMOTE_PATH = 'PATH="$HOME/.local/bin:$PATH"';
 
 /** The user's ssh config, or none: never /etc/ssh (under the unit those files look foreign-owned). */
 export function userSshConfig(home = homedir()): string {

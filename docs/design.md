@@ -3313,7 +3313,7 @@ machines:
 | `session` | `hopper` | hopper's herdr session there; never `default` |
 | `hostKey` | — | the **pinned host key**, `<type> <base64>`; absent → the hopper does not connect ("Target authentication") |
 | `herdr` | `true` | it runs herdr. `false` (issue #142, "Cursor executor and machine defaults"): online while it answers over ssh (`true` there), herdr-claude refuses it; `session` unused |
-| — | — | **no herdr binary** (issue #311): every call runs `PATH="$PATH:$HOME/.local/bin" exec herdr …` there (`REMOTE_PATH`, `src/executors/ssh.ts`). An ssh command's shell is not a login shell, so `~/.local/bin` (where herdr installs) is often not on its PATH; naming it in the command also survives the race that once lost a call its PATH (the shell env file a new pane's shell rewrites; `zsh:1: command not found: herdr`, exit 127, seen live). `herdrBin` is refused |
+| — | — | **no herdr binary** (issue #311): every call runs `PATH="$HOME/.local/bin:$PATH" exec herdr …` there (`REMOTE_PATH`, `src/executors/ssh.ts`; `~/.local/bin` first since issue #741). An ssh command's shell is not a login shell, so `~/.local/bin` (where herdr installs) is often not on its PATH; naming it in the command also survives the race that once lost a call its PATH (the shell env file a new pane's shell rewrites; `zsh:1: command not found: herdr`, exit 127, seen live). `herdrBin` is refused |
 
 **Reaching it** (authentication: "Target authentication" below; the argv here predates it). `createHerdrCliClient({ ssh: { target, controlDir } })` runs the same herdr argv as
 `ssh -F ~/.ssh/config -o BatchMode=yes -o ConnectTimeout=10 -o ControlMaster=auto -o ControlPath=<dataDir>/ssh/<16 hex>
@@ -3329,7 +3329,8 @@ user's data dir (`<work dir>/users/<id>/ssh/`: every ssh machine offline with "t
 socket", issue #295), so the socket is 16 hex of a hash of `user@host:port`; a control dir too long even
 for that shares no connection rather than fail.
 
-**Online.** `herdr --session <session> status server` over ssh says `status: running`. Probed in the
+**Online.** `herdr --session <session> status server` over ssh says `status: running` (its herdr client and server
+versions, and a **herdr problem**: "herdr client and server on an ssh target" below, issue #741). Probed in the
 background at most every 30 s; `list()` never waits, so a machine that is off or asleep never stalls
 a Decision (every Decision awaits every machine source). Offline until
 the first probe answers. Transitions are logged once per reason (`hopper: attached machine
@@ -4013,12 +4014,12 @@ Owner, on the Machines view's Edit form, which asked for a "herdr binary" holdin
 the person should not set a path; use `PATH`, just call the tool.
 
 - **No `herdrBin`.** The `ssh` machine-source plugin has no such option (its schema refuses it); the Edit
-  form and the machine card show no herdr path. `MachineSnapshot.herdr` is `{ session }`; a herdr-claude
+  form and the machine card show no herdr path. `MachineSnapshot.herdr` is `{ session }`, with the herdr client and server versions its probe read (issue #741); a herdr-claude
   pane state records `ssh` and `session` only (an older one's `herdrBin` is read past, not used).
-- **How a call finds herdr there**: `PATH="$PATH:$HOME/.local/bin" exec 'herdr' '--session' …`
-  (`REMOTE_PATH` in `src/executors/ssh.ts`, used by the herdr CLI client over ssh). The machine's own
-  PATH first, then `~/.local/bin`, where herdr installs and where `systemd/hopper-herdr.service` runs it
-  from. This replaces the absolute path that was resolved once at attach because each call's shell could
+- **How a call finds herdr there**: `PATH="$HOME/.local/bin:$PATH" exec 'herdr' '--session' …`
+  (`REMOTE_PATH` in `src/executors/ssh.ts`, used by the herdr CLI client over ssh). `~/.local/bin` first, where
+  herdr installs and updates itself and where `systemd/hopper-herdr.service` runs the session server from, then the
+  machine's own PATH (issue #741: the PATH came first, and an older herdr an image baked into `/usr/local/bin` won). This replaces the absolute path that was resolved once at attach because each call's shell could
   lose its PATH (row `herdr` above); the fallback is named in the command, so that race cannot hide it.
 - **Adding a machine** checks, over the same connection, that `command -v herdr` answers with that PATH
   (else 409, "herdr not found: not on its PATH, not in ~/.local/bin"), and stores nothing of where.
@@ -11906,3 +11907,42 @@ on a client: reached, a name not resolved, 421, 502, no curl), `test/integration
 client: the job is given the door, checked first, and `hopper-skill` works through it),
 `test/integration/github-proxy.test.ts` (a job whose machine cannot reach the hopper fails at its start, with the
 action), `test/herdr/executor-login.test.ts` (a GitHub login reported again fails the job).
+
+## herdr client and server on an ssh target (issue #741, 2026-10-10)
+
+Two seats each had two herdrs: an old one an image baked into `/usr/local/bin` (protocol 17) and herdr's own install in
+`~/.local/bin` (protocol 22), which ran the session server. The hopper's ssh calls put `~/.local/bin` after the PATH, so
+the old client won, and every job start failed with `client protocol 17 is older than server protocol 22`. The machines
+still answered `status: running`, so they showed online and took jobs, and nothing named the cause.
+
+**`~/.local/bin` first.** `REMOTE_PATH` is `PATH="$HOME/.local/bin:$PATH"`: the herdr that installs and updates itself
+there, and that `systemd/hopper-herdr.service` runs the session server from, is the one every call finds. A machine
+whose only herdr is on its PATH (an agent box's `/usr/local/bin/herdr`) still finds it. `scripts/attach-machine.sh` and
+the Add machine check look it up the same way.
+
+**The probe reads both versions** (`probeHerdrOverSsh`, `src/machines/herdr-version.ts`): after `status server`, it asks
+`status client` over the same connection, and keeps `version`, `protocol` and the client's `binary` in
+`MachineSnapshot.herdr` (`{ session, client?, server? }`). A **herdr problem** (`MachineSnapshot.herdrProblem`) is named
+when the server says `compatible: no`, or (a herdr that does not say) the client's protocol is older than the server's,
+or `status server` itself fails with herdr's protocol error: then the machine is online, not offline. A `status client`
+that fails says no client version, nothing more.
+
+**A machine with a herdr problem takes no new job** (`herdrHolds`, `src/decider/assign.ts`), as with a work tree or an
+address problem: its jobs go to another machine or are held with the reason (`no machine running executor <x> has a
+working herdr: <m>: …`, `pinned machine <m>: …`); a job resuming there returns to its pane. The log says it once
+(`… online (ssh <m>), takes no new job: <problem>`); Machines shows a `herdr outdated` badge, the versions, and the
+problem.
+
+**A job start that fails on the protocol** is the known cause `herdr-outdated` (shared, redirect, scoped to the machine):
+its first failure opens the problem `Herdr outdated on <m>`, not a recurrence later. Its check is the machine's herdr
+problem: once a probe finds it gone, the problem resolves by itself (`causePresent`, `src/failures/causes.ts`).
+
+**Not built (carried in the issue).** A hopper-owned, versioned herdr path per target that the update and connect flow
+installs and updates, and the same for seat images; the client release mechanism still updates only the hopper's own
+client files.
+
+Tests: `test/machines/herdr-version.test.ts` (the parse), `test/adapters/ssh-machine-herdr.test.ts` (the probe over the
+fake ssh, the snapshot and the log), `test/herdr/cli-client-ssh.test.ts` (`~/.local/bin` wins over the PATH),
+`test/decider/herdr-problem.test.ts` (the hold), `test/failures/signature.test.ts`, `test/failures/assess.test.ts` and
+`test/failures/cause-check.test.ts` (the cause, its problem, its check), `test/ui/machine-herdr.test.ts` (the versions on
+Machines).

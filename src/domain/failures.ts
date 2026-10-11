@@ -122,6 +122,9 @@ export interface Problem {
 /** What the decider reads of an open problem. */
 export interface ProblemBlock { id: string; title: string; machineId?: string; executor?: string }
 
+/** What a check reads of a problem's machine: online, its disk, its herdr (issue #741). */
+export type CauseCheck = 'online' | 'disk' | 'herdr';
+
 /** A known cause: built in, matched by its text, or named by a person for a signature. */
 export interface KnownCause {
   id: string;
@@ -131,8 +134,8 @@ export interface KnownCause {
   decision: FailureDecision;
   /** Where its problem applies: the job's machine, its executor on that machine, or every machine. */
   scope: 'machine' | 'executor' | 'all';
-  /** The check that resolves its problem by itself. */
-  check?: 'online' | 'disk';
+  /** The check that resolves its problem by itself: the machine online, its disk not low, its herdr working (issue #741). */
+  check?: CauseCheck;
   builtin: boolean;
 }
 
