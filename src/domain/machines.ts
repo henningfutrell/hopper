@@ -50,6 +50,8 @@ interface AttachedBase {
   sweep?: SweepSettings;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
+  /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
+  elbowIns?: number;
 }
 
 export interface SshMachine extends AttachedBase {

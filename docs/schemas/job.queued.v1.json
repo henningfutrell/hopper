@@ -75,6 +75,10 @@
         "research": {
           "type": "boolean",
           "const": true
+        },
+        "specialty": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

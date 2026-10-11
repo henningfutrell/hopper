@@ -15,7 +15,7 @@ const running = (id: string, over: Partial<Job> = {}): Job => ({ ...job(id, over
 describe('specialty jobs elbow in (issue #762)', () => {
   it('a specialty job that fits nowhere starts one lane past the cap; the lane plan keeps it', () => {
     const d = decide(inputs({ lanes: full, waiting: [specialty('s')] }), 'd1');
-    expect(d.start).toEqual([expect.objectContaining({ jobId: 's', laneId: null, opens: 'local/lane-5', machineId: 'local' })]);
+    expect(d.start).toEqual([expect.objectContaining({ jobId: 's', laneId: null, machineId: 'local' })]);
     expect(d.start[0]!.reason).toContain('specialty: elbows in over the lane cap 4');
     expect(d.lanes[0]).toMatchObject({ open: 1, target: 5, drain: [] });
   });

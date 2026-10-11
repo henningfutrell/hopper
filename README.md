@@ -260,6 +260,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
    `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
    proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
+   `hopper:specialty` lets a job elbow in: when every lane is full, it may start one lane past a machine's lane cap
+   (one per machine by default, the machine's `elbowIns` option); no other job does.
    A job is done when its pull request is open and ready for review; you review and merge it, and the
    merge closes the issue. To let jobs merge their own pull requests once the checks pass, turn on
    yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read

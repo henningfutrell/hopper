@@ -182,6 +182,28 @@ stays pure — every time it compares is `inputs.at`.
 
 Decisions stored before issue #373 carry no `pacing`: all three are off for them.
 
+### Specialty jobs elbow in (issue #762)
+
+A **specialty job** (`spec.specialty: true`, set at intake when its item carries the label `hopper:specialty`) may
+**elbow in**: start a lane past a machine's lane cap. It is the only way a job designated by a person goes past the cap;
+an ordinary job never does, whatever its priority (critical priority, above, is the policy's own rule, not a designation).
+
+- **Only when it fits nowhere.** Step 7 first places it like any job, inside the caps. Only when no machine fits does it
+  look for one to elbow in on: eligible for the job (online, its executor, its pin, its home known, no low disk, no
+  work-tree, address, herdr or template problem, no problem block, not kept by the gate), with neither the machine nor
+  the executor at its usage hard limit, no resource pressure in the machine's last reading (CPU at least 95% busy or
+  memory at least 90% used: lane tuning's `RESOURCE_PRESSURE`), and lanes in use below the cap plus its elbow-ins. Of
+  those it takes the better one as usual. Elbow-in comes before critical priority's squeeze.
+- **Bounded per machine.** The machine option `elbowIns` (every machine source; default 1, 0: none) is how many lanes
+  may be past its lane cap at once. A machine already that far past it takes no more.
+- **The overflow clears.** The start reason says `specialty: elbows in over the lane cap N` (or, inside the machine's
+  cap, `… past the executor's lane cap or the reserved lanes`); step 8 counts the lane in `target`. From the next
+  Decision on, the machine is past its cap: step 8 drains the specialty job's lane before any other busy lane, so it
+  closes when that job ends and the machine is back at its cap. Nothing is preempted.
+- **Shown.** The lanes panel marks the lane `elbow-in · over the cap` and names each machine with more lanes in use
+  than its lanes (`7/6 lanes in use · 1 over the cap`); the Lanes count reads the same way.
+- The designation is read at intake: a label added to an item whose job is already queued takes effect on its next job.
+
 ## The engine
 
 - **Triggers:** interval tick (`HOPPER_TICK_MS`, default 2000) plus the events

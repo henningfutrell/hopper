@@ -38,6 +38,12 @@ export const reservedLanesOption = (z: typeof Z) => z.number().int().min(0, 'res
   .meta({ description: 'lanes kept for jobs pinned to this machine; jobs that could run anywhere do not take them' });
 
 /**
+ * How many lanes specialty jobs may elbow in past the machine's lane cap at once (issue #762). Absent: 1; 0: none.
+ */
+export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns must not be negative').optional()
+  .meta({ description: 'lanes a job labelled hopper:specialty may start past this machine\'s lane cap at once (default 1); 0: none' });
+
+/**
  * When a machine's disk is low (issue #410): below either threshold it takes no new job. Plain options,
  * read at every list, so a change applies at the next Decision. Not on a container target, whose disk is not read.
  */
@@ -81,12 +87,13 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
     // 0 rests it (issue #365): it stays a machine, online, and takes no job.
     lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 rests it' }),
     reservedLanes: reservedLanesOption(z),
+    elbowIns: elbowInsOption(z),
     executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
   };
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -95,7 +102,8 @@ export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
   const sweep = sweepOf(o);
   return {
-    name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), executors: [...o.executors],
+    name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
+    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), executors: [...o.executors],
     ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };

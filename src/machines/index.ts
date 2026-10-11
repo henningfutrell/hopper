@@ -16,6 +16,8 @@ export function createLocalMachineSource(o: {
   maxLanes: number;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
+  /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
+  elbowIns?: number;
   /** The executors registered now; asked on every list(). */
   executors: () => string[];
   id?: string;
@@ -86,6 +88,7 @@ export function createLocalMachineSource(o: {
           label: o.label ?? hostname(),
           maxLanes: o.maxLanes,
           ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
+          ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}),
           online: true,
           executors: [...o.executors()],
           ...(o.session ? { herdr: { session: o.session } } : {}),
