@@ -70,7 +70,7 @@ export const PROTOCOL_LINES: readonly string[] = [
   GITHUB_PROXY_LINE,
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
-  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
+  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
   // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
   TASKS_LINE,
   // A job's own wait (issue #483): blocked on a person or the outside world, it says so; never a question only to wait.

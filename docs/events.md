@@ -1191,13 +1191,14 @@ Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origin
 
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
 | `kind` | `device_code` | yes |
 | `tool` | string | yes |
+| `host` | string | no |
 | `expiresAt` | string | yes |
 | `intervalSec` | integer | no |
 | `run` | string | yes |
@@ -1211,6 +1212,7 @@ Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (
   "loginId": "l1",
   "kind": "device_code",
   "tool": "gh",
+  "host": "github.com",
   "expiresAt": "2026-10-08T18:15:00.000Z",
   "run": "herdr-claude"
 }
@@ -1236,7 +1238,7 @@ Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the
 
 ## `auth.expired`
 
-Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then fails with the reason (the default) or holds for a new code.
+Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then holds for a new code (the default since issue #698) or fails with the reason. The Grok Bot routine notifier posts it.
 
 | field | type | required |
 |---|---|---|

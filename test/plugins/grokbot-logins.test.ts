@@ -44,7 +44,7 @@ describe('Grok Bot routine: logins (issue #698)', () => {
     });
     const send = (e: DomainEvent) => { for (const l of listeners) l(e); };
     send(event('auth.pending', { loginId: 'l1', kind: 'device_code', tool: 'aws sso login', host: 'device.sso.eu-west-1.amazonaws.com', expiresAt: '2026-10-10T12:10:00.000Z', run: 'herdr-claude', priority: 75, high: true }));
-    send(event('auth.expired', { loginId: 'l1', kind: 'device_code', tool: 'aws sso login', expiresAt: '2026-10-10T12:10:00.000Z' }));
+    send(event('auth.expired', { loginId: 'l1', kind: 'device_code', tool: 'aws sso login', expiresAt: AT }));
     await waitFor(() => r.hits.length === 2, { what: 'two posts' });
     await n.stop();
     const pending = r.hits.find((h) => h.kind === 'auth.pending')!;

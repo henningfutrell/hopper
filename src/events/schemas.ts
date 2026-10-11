@@ -219,7 +219,8 @@ export const EVENT_SCHEMAS = {
   // Intake (issues #440, #652): src/events/intake-schemas.ts.
   ...INTAKE_EVENT_SCHEMAS,
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
-  'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
+  // `host` (issue #698): the host of the URL to open, never its path or query.
+  'auth.pending': strict({ ...login, host: z.string().optional(), expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime() }),
   'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),

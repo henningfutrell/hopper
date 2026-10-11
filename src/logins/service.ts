@@ -9,6 +9,9 @@ import {
 } from '../domain/types.ts';
 import { LOGIN_KIND_HANDLERS } from './kinds.ts';
 
+/** The host of a login's URL (issue #698): what asks, with no path or query, which may carry the code. */
+const hostOf = (url: string): string => new URL(url).hostname;
+
 /** Statuses a login is still open in: the user may still act on it. */
 const OPEN: readonly LoginStatus[] = ['pending', 'expired'];
 
@@ -54,8 +57,8 @@ export interface LoginsOptions {
 
 export function createLogins(o: LoginsOptions): Logins {
   const { store, clock } = o;
-  /** The URL and code of each open login: never written anywhere. */
-  const secrets = new Map<string, { verificationUrl: string; userCode?: string }>();
+  /** The URL and code of each open login, and the account and scopes the tool showed (issue #698): never written anywhere. */
+  const secrets = new Map<string, { verificationUrl: string; userCode?: string; account?: string; scopes?: string[] }>();
   /** What the user asked of a login, until its run reads it. */
   const asked = new Map<string, LoginCheck>();
   const now = (): string => clock.now().toISOString();
@@ -118,7 +121,10 @@ export function createLogins(o: LoginsOptions): Logins {
     report(r, blocks, restore = false) {
       const problem = LOGIN_KIND_HANDLERS[r.kind].problem(r);
       if (problem) throw new Error(problem);
-      const secret = { verificationUrl: r.verificationUrl, ...(r.userCode ? { userCode: r.userCode } : {}) };
+      const secret = {
+        verificationUrl: r.verificationUrl, ...(r.userCode ? { userCode: r.userCode } : {}), ...(r.account ? { account: r.account } : {}), ...(r.scopes?.length ? { scopes: r.scopes } : {}),
+      };
+      const host = hostOf(r.verificationUrl);
       // The same prompt (issue #567): a script that polls, or a job that reports it again, under the same tool, or
       // another name for it with the same code or URL. Only this process holds the codes: after a restart, the tool.
       const same = store.logins.list({ status: [...OPEN], ...(blocks.jobId ? { jobId: blocks.jobId } : { questionId: blocks.questionId ?? '' }) })
@@ -137,7 +143,7 @@ export function createLogins(o: LoginsOptions): Logins {
         secrets.set(same.id, secret);
         return store.tx(() => {
           const next = store.logins.update(same.id, { ...blocks, ...fields, status: 'pending', newCodeAskedAt: undefined });
-          emit('auth.pending', next, { expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true, ...tagOf(next) });
+          emit('auth.pending', next, { host, expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true, ...tagOf(next) });
           return next;
         });
       }
@@ -145,7 +151,7 @@ export function createLogins(o: LoginsOptions): Logins {
       return store.tx(() => {
         const l = store.logins.create({ ...blocks, kind: r.kind, tool: r.tool, ...fields });
         secrets.set(l.id, secret);
-        emit('auth.pending', l, { expiresAt: l.expiresAt, ...(l.intervalSec ? { intervalSec: l.intervalSec } : {}), run: l.run, ...(l.questionId ? { questionId: l.questionId } : {}), ...tagOf(l) });
+        emit('auth.pending', l, { host, expiresAt: l.expiresAt, ...(l.intervalSec ? { intervalSec: l.intervalSec } : {}), run: l.run, ...(l.questionId ? { questionId: l.questionId } : {}), ...tagOf(l) });
         return l;
       });
     },
@@ -211,7 +217,7 @@ export function createLogins(o: LoginsOptions): Logins {
 
     view(login, withSecrets) {
       const secret = OPEN.includes(login.status) ? secrets.get(login.id) : undefined;
-      return { ...login, ...tagOf(login), codeKept: secret !== undefined, ...(withSecrets && secret ? secret : {}) };
+      return { ...login, ...tagOf(login), codeKept: secret !== undefined, ...(secret ? { host: hostOf(secret.verificationUrl) } : {}), ...(withSecrets && secret ? secret : {}) };
     },
 
     settings,
