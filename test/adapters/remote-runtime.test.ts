@@ -53,6 +53,10 @@ describe('the remote container runtime', () => {
     expect(await rt.inspect(id)).toBeUndefined();
     await rt.removeVolume(spec.volume);
     expect(libpod.volumes.size).toBe(0);
+    // A tools image (issue #716) is not built on a machine yet: it says so, and asks the client nothing.
+    const seen = api.seen.length;
+    await expect(rt.build('hopper-tools:x', 'FROM x')).rejects.toThrow('studio: a box with tools starts only beside the hopper for now');
+    expect(api.seen.length).toBe(seen);
   });
 
   it('a machine with no runtime, or one not dialled in, is a problem, not an error', async () => {

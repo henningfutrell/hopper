@@ -4515,7 +4515,8 @@ deleted the home volume.
 - **Not built yet:** the launch's `secrets` and `profile` narrowing what the vault and Access give the box (kept on the
   record now, not enforced past the template's own scope); the inspected local address; the template limits and the
   launch parameters in the UI (the API takes them; Add machine launches with the template's defaults); the start check
-  run from inside the box on every health check (the field review on the issue).
+  run from inside the box on every health check (the field review on the issue); a box with tools (issue #716) on a
+  client target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
 
 ### The remote runtime (issue #708 part 2, 2026-10-10)
 
