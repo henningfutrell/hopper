@@ -108,7 +108,7 @@ describe('a system secret kept in a vault backend (issue #658, requirement 6)', 
     expect(again.open('typesafe-api-key')).toBe(VALUE);
 
     first.setBackends([]);
-    expect(await first.s.refresh()).toEqual([{ name: 'typesafe-api-key', problem: expect.stringMatching(/no vault backend my-vault/) }]);
+    expect(await first.s.refresh()).toEqual([{ name: 'typesafe-api-key', problem: expect.stringMatching(/vault backend my-vault at jev#key: it is not in the plugins config/) }]);
     expect(() => first.s.open('typesafe-api-key')).toThrow(SecretUnreadable);
   });
 

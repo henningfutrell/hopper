@@ -14,8 +14,8 @@ const AUDITED: readonly EventType[] = ['vault.secret_set', 'vault.secret_removed
 
 /** What an audit entry says beyond its type: never a value. */
 function detailOf(e: DomainEvent): string | undefined {
-  const d = e.data as { replaced?: boolean; rotated?: boolean; purpose?: string; from?: string; reason?: string; job?: string };
-  if (e.type === 'vault.secret_set') return d.rotated ? 'rotated' : d.replaced ? 'replaced' : 'set';
+  const d = e.data as { replaced?: boolean; rotated?: boolean; backend?: string; purpose?: string; from?: string; reason?: string; job?: string };
+  if (e.type === 'vault.secret_set') return d.backend ? `kept in vault backend ${d.backend}` : d.rotated ? 'rotated' : d.replaced ? 'replaced' : 'set';
   if (e.type === 'vault.secret_read') return d.purpose;
   if (e.type === 'vault.secret_migrated') return d.from ? `moved from ${d.from}` : undefined;
   if (e.type === 'vault.refused') return `a job's ask refused${d.job ? ` (job ${d.job})` : ''}: ${d.reason ?? ''}`;
@@ -37,7 +37,11 @@ export function systemScopeView(o: { system: SystemSecrets; instance?: SystemSec
   return { secrets: [...o.system.list(), ...(o.instance?.list() ?? [])], audit: systemAudit(o.events) };
 }
 
-/** The vault, its view carrying the system scope. */
+/** The vault, its view carrying the system scope; a user's system secret kept in a vault backend set through it (issue #658, requirement 6). */
 export function withSystemScope(v: Vault, o: { system: SystemSecrets; instance?: SystemSecrets; events: Pick<EventLog, 'recent'> }): Vault {
-  return { ...v, view: () => ({ ...v.view(), system: systemScopeView(o) }) };
+  return {
+    ...v,
+    view: () => ({ ...v.view(), system: systemScopeView(o) }),
+    systemInBackend: (name, backend, reference, who) => o.system.keepInBackend(name, backend, reference, who),
+  };
 }

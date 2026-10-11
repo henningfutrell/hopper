@@ -85,6 +85,8 @@ export function createWebhooksEditor(o: {
       return { ok: true };
     }
     if (e.action === 'replace' || e.action === 'rotate') {
+      const elsewhere = e.action === 'rotate' ? o.secrets.rotateRefusal(current.id) : undefined;
+      if (elsewhere) return refuse('conflict', `webhook "${current.name}": ${elsewhere}`);
       const secret = secretOf(e.action === 'replace' ? e.secret : undefined);
       if ('ok' in secret) return secret;
       return keep(current.id, current.name, secret, e.action === 'replace' ? 'replaced' : 'rotated', by);

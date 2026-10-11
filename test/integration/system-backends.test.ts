@@ -15,6 +15,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VaultView } from '../../src/domain/vault.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { writeWebhooks } from '../support/files.ts';
 import { startTestVault, type TestVault } from '../support/hashicorp-vault.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
@@ -57,7 +58,7 @@ async function boot(vaultToken: string, dbPath?: string): Promise<{ a: TestApp; 
     writeWebhooks(path, [{ name: 'rx', url: rx.url, events: ['job.finished'] }]);
   }
   t = await startTestApp({
-    dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY, VAULT_TOKEN: vaultToken },
+    dbPath: path, secrets: { HOPPER_MASTER_KEY: KEY, VAULT_TOKEN: vaultToken }, seams: { authorizationServer: createFakeAuthorizationServer() },
     ...(dbPath ? {} : { plugins: { executors: [{ name: 'test', plugin: 'test' }], vaultBackends: [BACKEND(vault.addr)] } }),
   });
   return { a: t, token: await t.login() };

@@ -1,12 +1,13 @@
 // The vault as the hopper's parts reach it (issue #586): in the hopper's own process, or with its secrets in a container
 // of its own (src/vault/remote.ts); the credential requests (issue #583) over either; and the view every answer carries.
 import type { Clock, UserStore } from '../domain/ports.ts';
-import type { VaultView } from '../domain/vault.ts';
+import type { SystemSecretName, VaultView } from '../domain/vault.ts';
 import type { MintAsk } from './mint.ts';
 import type { MintTestAnswer } from './mint-test.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 import type { SetSecret, VaultResult, VaultService } from './service.ts';
 import type { SharedSecrets } from './shared.ts';
+import type { SystemChanger, SystemResult } from './system.ts';
 
 /**
  * The vault as the hopper's parts reach it (issue #586): in the hopper (`localVault`), or with its secrets in a container
@@ -19,6 +20,8 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
   status(): Promise<string | undefined>;
   set(s: SetSecret, by: string): Promise<VaultResult>;
+  /** Keeps the user's system secret `name` in a vault backend (issue #658, requirement 6); absent where the system scope is not wired. */
+  systemInBackend?(name: SystemSecretName, backend: string, reference: string, who: SystemChanger): Promise<SystemResult>;
   remove(name: string, by: string): Promise<VaultResult>;
   deliver(ask: { name: string; token: string }, machineKey: string): Promise<{ value: string } | { refused: string }>;
   mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
