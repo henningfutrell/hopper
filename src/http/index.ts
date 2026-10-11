@@ -54,6 +54,7 @@ import { vaultRoutes } from './vault.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
+export { watchTunnel, type TunnelWatch } from './tunnel.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */

@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createServer } from './http/index.ts';
+import { createServer, watchTunnel } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -197,14 +197,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
   });
   // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. It reads each box's launch
-  // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database.
-  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes);
+  // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database. The
+  // tunnel watch (issue #795): whether HOPPER_PUBLIC_URL is up, so each user's Grok Bot routine is told where the hopper is.
+  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), tunnel = watchTunnel({ api: config.tunnelApi, publicUrl: config.publicUrl, logger });
   // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase, reach: tunnel.url,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -346,7 +347,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
-        await Promise.all([server.close(), passes]);
+        await Promise.all([server.close(), passes, tunnel.stop()]);
         await runtimes.stop();
         instance.close();
       })();

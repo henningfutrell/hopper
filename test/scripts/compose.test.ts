@@ -58,7 +58,8 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   it('makes its own network, named hopper_default whatever the project is called, and every service is on it', () => {
     expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
     expect(r.networks?.default?.external).toBeFalsy();
-    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }), name).toEqual(['default']);
+    // The hopper is on the tunnel's network too (issue #795): no other service, and no box, reaches the tunnel agent.
+    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(name === 'hopper' ? ['default', 'tunnel'] : ['default']);
     expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
 

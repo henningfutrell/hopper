@@ -1,10 +1,12 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), and per new artifact (issue #673: `artifact.created`, with its link), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), and per job end (issue #795: `job.finished`, `job.failed`), the URL and key read from the runtime at each use.
+// Issue #795: `hopper.reachable` says where the hopper is reached from outside while its tunnel is up — at start, on a new
+// URL, on recovery, and on a heartbeat — so the receiver never has to poll for it.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
 // configured (a question escalated while it was not is not lost); Send test event and Send open
 // questions are the UI's actions. In memory only: no store row, no event.
 import type { Clock, DomainEvent, Notifier, NotifierActionResult, NotifierEvents, PluginLogger, Question } from '../../sdk.ts';
-import { artifactPayload, intakePayload, questionPayload, testPayload } from './payload.ts';
+import { artifactPayload, intakePayload, jobPayload, questionPayload, reachablePayload, testPayload } from './payload.ts';
 
 /** The routine's URL and bearer key now, or why there are none. */
 export type Routine = { url: string; key: string } | { problem: string };
@@ -17,8 +19,10 @@ export interface GrokBotNotifierOptions {
   /** First retry delay; doubles per attempt. Default 1000. */
   baseMs?: number;
   timeoutMs?: number;
-  /** How often to check whether the routine became configured. Default 5000. */
+  /** How often to check whether the routine became configured, and where the hopper is reached. Default 5000. */
   watchMs?: number;
+  /** How often `hopper.reachable` is sent again while nothing changed. Default 5 minutes. */
+  heartbeatMs?: number;
 }
 
 const MAX_ATTEMPTS = 3;
@@ -28,6 +32,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created') return true;
+  if (e.type === 'job.finished' || e.type === 'job.failed') return true;
   return e.type === 'question.escalated_to_human';
 }
 
@@ -36,6 +41,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   const baseMs = o.baseMs ?? 1000;
   const timeoutMs = o.timeoutMs ?? 10_000;
   const watchMs = o.watchMs ?? 5000;
+  const heartbeatMs = o.heartbeatMs ?? 5 * 60_000;
   let feed: NotifierEvents | undefined;
   const inFlight = new Set<Promise<unknown>>();
   /** Questions sent (or being sent) by this process: an offer skips them. */
@@ -43,6 +49,8 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
   let unsubscribe: (() => void) | undefined;
   let timer: NodeJS.Timeout | undefined;
   let configured = false;
+  /** The URL last announced (undefined: none since start, or the hopper was not reached since), when, and whether it was down between. */
+  const reach: { url?: string | undefined; at: number; down: boolean; sending: boolean } = { at: 0, down: false, sending: false };
 
   const routine = (): Routine => {
     try { return o.routine(); } catch (e) { return { problem: message(e) }; }
@@ -100,6 +108,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
     // Listeners must not re-enter synchronously (ports.ts): defer the work.
     track(new Promise<void>((r) => setImmediate(r)).then(() => {
       const job = e.jobId ? feed?.job(e.jobId) : undefined;
+      if (e.type === 'job.finished' || e.type === 'job.failed') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), jobPayload(e, job));
       if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
       if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job));
       const q = feed?.question(e.data.questionId as string);
@@ -128,6 +137,23 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
       track(sendOpen(false), 'open questions');
     }
     configured = now;
+    if (now) announce();
+  }
+
+  /** Where the hopper is reached, when it is new, back, or due again (issue #795). A failed send waits for the heartbeat. */
+  function announce(): void {
+    let url: string | undefined;
+    try { url = feed?.reach?.(); } catch { url = undefined; }
+    if (!url) {
+      if (reach.url) reach.down = true;
+      reach.url = undefined;
+      return;
+    }
+    const due = Date.now() - reach.at >= heartbeatMs;
+    if (reach.sending || (url === reach.url && !due)) return;
+    const reason = url === reach.url ? 'heartbeat' : reach.down ? 'recovery' : reach.at === 0 ? 'start' : 'change';
+    Object.assign(reach, { url, at: Date.now(), down: false, sending: true });
+    track(deliver(`grokbot: hopper.reachable (${reason})`, reachablePayload(url, reason, clock.now().toISOString(), heartbeatMs)).finally(() => { reach.sending = false; }), 'hopper.reachable');
   }
 
   return {
@@ -137,6 +163,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
       unsubscribe ??= events.subscribe(onEvent);
       // Configured at start: its open questions went out before (a restart sends nothing again).
       configured = !('problem' in routine());
+      if (configured) announce();
       timer ??= setInterval(watch, watchMs);
       timer.unref();
     },

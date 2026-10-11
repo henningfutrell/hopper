@@ -62,6 +62,24 @@ export function artifactPayload(e: DomainEvent, job: Job | undefined, url: strin
   };
 }
 
+/** A job's end (issue #795): what it came to, so Grok Bot is woken by it instead of polling. */
+export function jobPayload(e: DomainEvent, job: Job | undefined): Record<string, unknown> {
+  const d = e.data as { result?: unknown; partlyDone?: string; error?: string };
+  return {
+    ...base(e.type, e.at, job, e.jobId), repo: job?.source?.repo ?? null, issueNumber: job?.source?.number ?? null, priority: job?.priority ?? null,
+    ...(e.type === 'job.failed' ? { error: d.error ?? null } : { result: d.result ?? null, ...(d.partlyDone ? { partlyDone: d.partlyDone } : {}) }),
+  };
+}
+
+/**
+ * Where the hopper is reached from outside (issue #795): its public URL while the tunnel is up, and where an agent exchanges
+ * its sign-in for an API token there. `reason`: start, change (a new URL), recovery (up again after down), heartbeat. Sent
+ * again every `heartbeatSeconds`: a receiver that hears none for longer holds the URL as stale.
+ */
+export function reachablePayload(url: string, reason: 'start' | 'change' | 'recovery' | 'heartbeat', at: string, heartbeatMs: number): Record<string, unknown> {
+  return { source: 'hopper', kind: 'hopper.reachable', at, reason, url, apiTokenUrl: `${url}/ui/auth/api-token`, heartbeatSeconds: heartbeatMs / 1000 };
+}
+
 /**
  * Send test event (issue #378): marked `test: true`, so a receiver can tell it from a question. Its kind is a
  * question's (issue #481), so the receiver's routing takes the same path as for a real one.

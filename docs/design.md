@@ -70,7 +70,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the public URL is up through the tunnel (`tunnel.ts`, issue #795); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -2550,15 +2550,26 @@ main.ts seams                    AppSeams.githubApp?: GitHubApi (tests) beside .
 
 The built-in notifier plugin `grokbot-routine` (`src/plugins/notifier/grokbot-routine/`, since
 phase 5 slice 5) POSTs to a Grok Bot routine (https://cursor.com/help/grok-bot/routines) when a
-question reaches the owner (questions never go onto the issue), and when intake stops (issue #358). Not a
-**Webhook subscription**: no store row, no schema change, no domain event; in-memory only.
+question reaches the owner (questions never go onto the issue), when intake stops (issue #358), when a job ends, and to
+say where the hopper is reached (issue #795). Not a **Webhook subscription**: no store row, no schema change, no domain
+event; in-memory only.
 
 - Events: `question.escalated_to_human` (issue #481: once per question that reaches the human; never a level
   hop or a re-notification, so never `question.escalated`, which other consumers keep); `source.stalled`
   (body adds `sourceName`, `error`, `since`) and `connected_account.expired` (body adds `provider`,
   `account`, `reason`); `artifact.created` (issue #673: body adds `artifactId`, `title`, `type`, `size`, `issueUrl` and
-  `url`, the artifact's stable URL under the user's link base — `NotifierEvents.artifactUrl`). Never `job.finished` or
-  `job.failed`.
+  `url`, the artifact's stable URL under the user's link base — `NotifierEvents.artifactUrl`); `job.finished` and
+  `job.failed` (issue #795, owner 2026-10-11, which replaces "questions only" of issue #3: Grok Bot is woken by a job's
+  end instead of polling; body adds `repo`, `issueNumber`, `priority`, and `result` with `partlyDone?`, or `error`).
+- `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
+  (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
+  reason, url, apiTokenUrl, heartbeatSeconds }`: `url` is `HOPPER_PUBLIC_URL`, `apiTokenUrl` where an agent exchanges
+  its sign-in for an API token. Sent when the routine is configured and the URL is known: at start (`start`), on another
+  URL (`change`), when the tunnel is up again after it was down (`recovery`), and again every 5 minutes while nothing
+  changed (`heartbeat`, `heartbeatMs`), so a missed one heals; checked with the routine every 5 s. Nothing is sent while
+  the tunnel is down: a receiver that hears no heartbeat for longer than `heartbeatSeconds` holds the URL as stale, and
+  the newest one wins. Not a domain event: a heartbeat in the event log would grow it without bound. Authenticated as
+  every post is, by the routine's bearer key.
   A Grok Bot routine reached through a **Webhook subscription** instead subscribes to
   `question.escalated_to_human` only, by name, for the same one post per question.
 - Config (issue #378): the instance's options `urlEnv` and `keyEnv` (default `GROKBOT_WEBHOOK_URL`,
@@ -6192,6 +6203,33 @@ change at the provider (user disabled, group removed) until it expires or the da
 session token in its query (`EventSource` sends no headers), so a proxy's access log holds tokens
 unless it skips that path (`docs/sign-in.md`). A `usernames` rule is only as stable as the provider's
 usernames: GitHub logins can be renamed and re-registered, so the guide grants by `subjects`.
+
+### The tunnel (issue #795, 2026-10-11)
+
+Owner decisions on the issue: the box's link to the hopper is already durable (`hopper-client.service`, "Joining a
+machine"), so no new box tunnel; what was missing is reach to the hopper's API from outside the LAN. The tunnel is a
+**sidecar**, the compose service `tunnel` behind its profile (docs/deploy.md "The tunnel"): an ngrok agent, never
+`@ngrok/ngrok` in the hopper's process. Grok Bot is told the URL by `hopper.reachable` ("Grok Bot routine webhook").
+
+- **Its network.** The service is on `hopper_tunnel` alone, which the hopper joins too, and forwards to
+  `http://hopper:<port>`. Never `network_mode: service:hopper` nor a forward to `127.0.0.1`: every internet request would
+  then be a local one and read `GET /api/*` with no session. Its requests come from a LAN peer with the public URL's
+  Host: **public requests**. No box joins `hopper_tunnel`, so none reaches the agent's local API, which can start
+  tunnels.
+- **Its edge** (ngrok traffic policy, written by the service's command): `404` for every path but `/api/`, `/ui/api/` and
+  `/ui/auth/api-token`, and for `/api/events/stream` (its session is in the query); per caller address, 120 requests and
+  5 API-token exchanges a minute.
+- **The URL is fixed.** `--url` is `HOPPER_PUBLIC_URL`, one value for both ends. The Host guard takes `HOPPER_PUBLIC_URL`
+  only, never a URL the agent reports: a random per-start URL would make the guard follow a value from a container.
+- **The tunnel watch** (`src/http/tunnel.ts`): with `HOPPER_TUNNEL_API` (the agent's local API, `http://tunnel:4040`;
+  config refuses it without `HOPPER_PUBLIC_URL`), the hopper asks `GET /api/tunnels` every 10 s (5 s timeout). Up: an
+  endpoint's `public_url` has the public URL's origin. Down: no answer, not 2xx, no endpoint, or only endpoints at other
+  URLs — logged once per change, with why. `url()` is the public URL while up; each user's runtime passes it to its
+  notifiers as `NotifierEvents.reach`. Stopped, and its ask in flight settled, with the server.
+- **Residual risk, stated.** `trustProxy` stays off: every tunnel caller shares one address for the sign-in rate limit
+  (`SIGN_IN_RATE`, 20 a minute), so callers from many addresses can delay an agent's token exchange; the edge limit is
+  per address. Whether the API token alone may drive actions that run on a box, or a second factor is needed, is still
+  open on the issue.
 
 ## Self-update (issue #44, 2026-10-04)
 
