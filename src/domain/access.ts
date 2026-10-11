@@ -174,6 +174,16 @@ export interface SharedSecretAsk {
   readers?: readonly string[];
 }
 
+/**
+ * What a running job may do for its user through the job door (issue #718): set a secret in the user's vault, save a
+ * template there, launch a sandbox box of one. Never approve: a person approves.
+ */
+export const VAULT_ACTIONS = ['set-secret', 'save-template', 'launch-box'] as const;
+export type VaultAction = (typeof VAULT_ACTIONS)[number];
+
+/** An ask about a job's vault action (issue #718): the job's user, as the one who acts and the vault's owner. */
+export interface VaultActionAsk { userId: string; action: VaultAction }
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;

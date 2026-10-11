@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type VaultAction, type VaultActionAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -78,6 +78,18 @@ export function sharedSecretCheck(ask: SharedSecretAsk): { tuple: RelationshipTu
       ...(ask.admin ? [{ subject, relation: 'admin', object }] : []),
     ],
   };
+}
+/** A user's vault, as a job's vault action names it (issue #718). */
+export const vaultObject = (userId: string): string => `vault:${userId}`;
+const VAULT_RELATION: Record<VaultAction, string> = { 'set-secret': 'can_set_secret', 'save-template': 'can_save_template', 'launch-box': 'can_launch_box' };
+/** How a refusal says each action. */
+export const VAULT_ACTION_TEXT: Record<VaultAction, string> = { 'set-secret': 'set a secret in', 'save-template': 'save a template in', 'launch-box': 'launch a box of' };
+
+/** The check for a job's vault action (issue #718): the relation of the job's user, told as the vault's owner for this check only. */
+export function vaultActionCheck(ask: VaultActionAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = vaultObject(ask.userId);
+  const subject = userObject(ask.userId);
+  return { tuple: { subject, relation: VAULT_RELATION[ask.action], object }, contextual: [{ subject, relation: 'owner', object }] };
 }
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 

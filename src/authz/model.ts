@@ -80,6 +80,16 @@ type shared_secret
     define can_change: admin
     define can_read: reader
 
+# A user's vault and sandbox boxes, as a running job acts on them for that user through the job door (issue #718): set a
+# secret, save a template, launch a box of an approved one. At each ask the hopper tells the job's user as the owner.
+# No job approves a template: a person does, in Settings → Vault or from the operator CLI.
+type vault
+  relations
+    define owner: [user]
+    define can_set_secret: owner
+    define can_save_template: owner
+    define can_launch_box: owner
+
 # A source item jobs run (issue #662): a GitHub issue. The hopper tells, at each check, the user whose hopper takes it as its
 # owner. Only who may accept new text replaces the text the item's jobs run.
 type item
@@ -126,6 +136,10 @@ const SYSTEM_SECRET_ASKED: readonly [type: string, relation: string][] = [['syst
 const SHARED_SECRET_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['shared_secret', 'admin', 'user'], ['shared_secret', 'reader', 'user']];
 const SHARED_SECRET_ASKED: readonly [type: string, relation: string][] = [['shared_secret', 'can_change'], ['shared_secret', 'can_read']];
 
+/** What the hopper tells and asks for a job's vault actions (issue #718): apart, so a model edited before them still decides mints. */
+const VAULT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['vault', 'owner', 'user']];
+const VAULT_ASKED: readonly [type: string, relation: string][] = [['vault', 'can_set_secret'], ['vault', 'can_save_template'], ['vault', 'can_launch_box']];
+
 /** Each relation the hopper needs that the model lacks (`type#relation`) or no longer lets it write (`… accepts type`); empty: none. */
 export function modelGaps(model: ModelJson): string[] {
   return gapsIn(model, WRITTEN, ASKED);
@@ -144,6 +158,11 @@ export function systemSecretGaps(model: ModelJson): string[] {
 /** What the model lacks for shared secrets (issue #718); empty: they are decided. A gap here denies every change and read, never a mint. */
 export function sharedSecretGaps(model: ModelJson): string[] {
   return gapsIn(model, SHARED_SECRET_WRITTEN, SHARED_SECRET_ASKED);
+}
+
+/** What the model lacks for a job's vault actions (issue #718); empty: they are decided. A gap here denies each of them, never a mint. */
+export function vaultActionGaps(model: ModelJson): string[] {
+  return gapsIn(model, VAULT_WRITTEN, VAULT_ASKED);
 }
 
 /** What the model lacks for items (issue #662); empty: accepting new text is decided. A gap here denies every acceptance, never a mint. */

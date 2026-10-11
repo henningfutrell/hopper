@@ -23,6 +23,7 @@ import { jobGitRoutes } from './job-git.ts';
 import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
 import { jobStreamRoutes } from './job-stream.ts';
+import { jobVaultRoutes } from './job-vault.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -151,6 +152,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // served off /api/ under the policy of its kind, by a signed URL or a public link.
   const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
+  // Its vault and sandbox boxes (issue #718): a running job sets a secret, saves a template, launches a box; Access decides.
+  jobVaultRoutes(app, { tenants: o.tenants, access: o.access, sandboxes: o.sandboxes });
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));

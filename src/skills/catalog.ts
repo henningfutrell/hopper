@@ -55,6 +55,20 @@ The hopper gives the key pair just in time, through the vault's helper ($HOPPER_
 3. Read only: describe, list, get. Do not change anything in the account.
 If AWS refuses, the keys or their policy are wrong. Say so; do not look for another credential.`;
 
+const SANDBOX_TEXT = `sandbox: set a vault secret, save a template, and launch a sandbox box of it, through the hopper (the job door).
+
+Ask with curl and your own token. Each answer is JSON; a refusal is {"error": "<why>"}.
+  T="Authorization: Bearer $(cat "$HOPPER_TOKEN_FILE")"
+  curl -fsS -H "$T" "$HOPPER_URL/job/vault"            your user's vault: secrets and templates, never a value
+  curl -fsS -H "$T" "$HOPPER_URL/job/sandbox"          your user's sandbox boxes
+1. A secret: write {"action":"set","name":"NAME","value":"VALUE","scope":"what it reaches"} to a file in your scratch dir (mode 600).
+   Send it, then remove the file: curl -sS -H "$T" -H 'content-type: application/json' --data-binary @FILE "$HOPPER_URL/job/vault"
+   Never put a value in a command line. Send every POST below the same way.
+2. A template: POST /job/vault {"action":"save-template","name":"diag","image":"IMAGE","secrets":["NAME"],"profiles":[{"operation":"read","asset":{"kind":"cluster","name":"prod"}}]}
+   A new template, image, secret or profile waits until a person approves it, in Settings → Vault. You cannot approve.
+3. A box of an approved template: POST /job/sandbox {"template":"diag","params":{"cpus":1,"ttlMinutes":60}}
+Access decides each change for your user. A 403 says why. Do not look for another way.`;
+
 export const SKILLS: readonly Skill[] = [
   {
     name: 'github',
@@ -86,6 +100,12 @@ export const SKILLS: readonly Skill[] = [
     name: 'artifacts',
     line: 'put a visual (a diagram, a chart, a graph, drawn in SVG) on the hopper for a person to see, and share it',
     text: ARTIFACT_HELP,
+  },
+  {
+    // Issue #718: what a job sets up for itself with no UI session. Needs no access of a link: Access decides each change.
+    name: 'sandbox',
+    line: 'set a vault secret, save a template, launch a sandbox box of an approved one',
+    text: SANDBOX_TEXT,
   },
 ];
 

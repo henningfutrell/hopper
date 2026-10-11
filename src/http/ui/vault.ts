@@ -26,16 +26,21 @@ const templateLimits = z.strictObject({
   keepHome: z.boolean().optional(),
 });
 
+/** A secret's value set (issue #558); also what a running job may set through the job door (issue #718, job-vault.ts). */
+export const setSecretEdit = z.strictObject({ action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX), mints });
+/** A template saved (issue #558); also what a running job may save through the job door (issue #718). */
+export const saveTemplateEdit = z.strictObject({
+  action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
+  profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(),
+});
+
 export const vaultEditBody = z.discriminatedUnion('action', [
   // A value, or (issue #585) the vault backend that keeps it and where: one of the two, never both. `mints` (issue #580):
   // the account or cluster it is a minting credential for; null makes it a plain secret again.
-  z.strictObject({ action: z.literal('set'), name: z.string().max(64), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX), mints }),
+  setSecretEdit,
   z.strictObject({ action: z.literal('set-in-backend'), name: z.string().max(64), scope: z.string().max(200).optional(), backend: z.string().max(64), reference: z.string().max(VAULT_REFERENCE_MAX), mints }),
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
-  z.strictObject({
-    action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
-    profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(),
-  }),
+  saveTemplateEdit,
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('revoke-template'), name: z.string().max(64) }),
@@ -48,7 +53,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('decline-credential'), request: z.string().max(64), reason: z.string().max(CREDENTIAL_NOTE_MAX) }),
 ]);
 
-const STATUS = { invalid: 400, not_found: 404, conflict: 409, unavailable: 503 } as const;
+/** A vault result's code as an HTTP status. */
+export const VAULT_STATUS = { invalid: 400, not_found: 404, conflict: 409, unavailable: 503 } as const;
 
 type GiveEdit = Extract<z.infer<typeof vaultEditBody>, { action: 'give-credential' }>;
 /** The person's answer to a credential request: an empty value is none (the secret named is one the vault holds). */
@@ -76,7 +82,7 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
                 : edit.action === 'approve-profile' ? await vault.approveProfile(edit.name, { operation: edit.operation, asset: edit.asset }, by)
                   : edit.action === 'give-credential' ? await vault.give(edit.request, giveOf(edit), by)
                     : vault.decline(edit.request, edit.reason, by);
-    if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
+    if (!r.ok) throw new HttpError(VAULT_STATUS[r.code], r.error);
     return await vaultView(vault);
   });
 }

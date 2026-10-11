@@ -56,7 +56,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   job's artifacts (issue #624, `docs/design.md` "Artifacts"): `/job/artifacts`, with the job's proxy token, puts, shares, revokes
   and removes that user's artifacts, each an event on the job's timeline; it changes no job, question, webhook or setting. Their
   content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
-  (a public link), under a sandbox policy; they change nothing. Every other mutation is the UI's
+  (a public link), under a sandbox policy; they change nothing. A running job's vault and sandbox boxes (issue #718,
+  `docs/design.md` "The vault and sandbox boxes through the job door"): `/job/vault` and `/job/sandbox`, with the job's proxy
+  token, set a secret in that job's user's vault, save a template there and launch a box of an approved one, each decided by
+  Access (OpenFGA `vault#can_set_secret`, `#can_save_template`, `#can_launch_box`) and each the vault's or the sandbox
+  module's own event; a job never approves, revokes, removes or gives — that stays a person's. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
   nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and

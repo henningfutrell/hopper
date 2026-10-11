@@ -8270,7 +8270,8 @@ holds the database's credentials, the daemon's own trust, so acting from it wide
 was already true of `config set` and of the database itself.
 
 **Not built.** A mutating API token (see above); cancel, approve, operator-led and dismiss of a locked entry
-from the CLI — no caller yet.
+from the CLI — no caller yet. A running job sets up its own vault and sandbox boxes through the job door instead
+(issue #718, "The vault and sandbox boxes through the job door"): its proxy token, not a token of the API door.
 
 ## Failures from the operator CLI (issue #623, 2026-10-10)
 
@@ -8333,8 +8334,8 @@ running daemon, under a session the CLI mints for the one call and drops after i
 
 **Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
 inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
-first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
-token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
+first use. A token-scoped API for agents is built as the job door (issue #718, "The vault and sandbox boxes through
+the job door"), not as a mutating API token. Shared secrets (issue #718, item 3) are
 built: `vault set <name> --shared` ("Shared secrets").
 
 ## Reserved lanes (issue #372, 2026-10-07)
@@ -9900,15 +9901,70 @@ each user's own template approval is the gate, as for that user's own secrets. T
 against the users the hopper has: an id of no user matches no one.
 
 **Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy (item 1); tools assembled per run (item 2); a token-scoped mutating API so an agent does
-all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
-first use (item 5), which waits on #715's suite.
+inside a standing read policy (item 1); tools assembled per run (item 2); and the read-only negative suite run before a
+new template's first use (item 5), which waits on #715's suite. Item 4 is built: "The vault and sandbox boxes through
+the job door".
 
 Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
 for every user, sealed in the instance's vault, refused to an admin of their own user only; given to a job only once the
 template naming it is approved; refused when the readers leave the job's user out, and after removal; the CLI's
 `--shared`), `test/authz/shared-secrets.test.ts` (every user reads with no readers named, only the named ones else, only
 an admin changes; a model without the type denies and names the gap), `test/ui/vault-shared.test.ts`.
+
+## The vault and sandbox boxes through the job door (issue #718, part 2, 2026-10-10)
+
+Item 4 of the issue: an agent with no UI session sets a vault secret, saves a template and launches a sandbox box over
+the API, as the operator CLI does (issue #716). The issue asked to decide the way in. "Operator actions from the CLI"
+refused a mutating API token as a second door beside the UI session.
+
+**Decision: the job door, not an API token.** A running job already holds a credential the hopper honours: its proxy
+token (issue #563), an HMAC of its user and job, never stored, honoured only while the job is at work. The job door
+(`/job/*`) already takes it for GitHub, git, skills, the job stream and artifacts, and each of those routes says what it
+may change. Two routes join them. So no new credential is minted, kept, rotated or revoked: the token is short-lived
+because the job is, and it dies with the job. An API token of the API door stays reads only.
+
+- **Routes** (`src/http/job-vault.ts`), behind the Host guard, `Authorization: Bearer <the job's proxy token>`, JSON:
+
+| Route | Does | Answers |
+|---|---|---|
+| `GET /job/vault` | the job's user's vault view, as `GET /api/vault` | secrets and templates, never a value |
+| `POST /job/vault` `{ action: 'set', name, value, scope?, mints? }` | sets a secret in the user's vault (`vault.set`) | the vault view |
+| `POST /job/vault` `{ action: 'save-template', name, image, secrets, profiles?, limits? }` | saves a template (`vault.saveTemplate`) | the vault view |
+| `GET /job/sandbox` | the user's sandbox boxes, as `GET /api/sandboxes` | the boxes |
+| `POST /job/sandbox` `{ template, agent?, params? }` | launches a box of the template (`sandboxes.launch`) | `{ container }` |
+
+  The bodies are the UI's own (`setSecretEdit`, `saveTemplateEdit`, `machineSandboxBody`): one schema, one set of checks.
+  A launch must name a template; a box of the bare agent image is the UI's or the CLI's.
+- **A job never approves.** Approve, approve a profile, revoke, remove a secret or a template, and give or decline a
+  credential are not job-door actions (400): they stay a person's, in Settings → Vault or from the operator CLI. A template a
+  job saves is a template like any other: its image, secrets and profiles wait for a person ("Templates"). A launch of a
+  template not approved is refused (409), as from the UI.
+- **Access decides each change.** New OpenFGA type `vault` (`owner`, `can_set_secret`, `can_save_template`,
+  `can_launch_box`; each `owner` by default). At each ask the hopper tells the job's user as the owner of `vault:<user id>`
+  and asks the action's relation of `user:<user id>` (`decideVaultAction`). The owner turns an action off by editing the
+  model in Settings → Access, e.g. `define can_launch_box: [user]` (no tuple is written, so none is allowed): the job gets a
+  403 that names the relation. Its relations are checked apart (`vaultActionGaps`): a model edited before this change
+  denies every job-door vault action, naming the gap, and still decides mints. The hopper replaces a model it wrote
+  itself with this build's default. OpenFGA not reachable: 503.
+- **Who acted.** Each change is the vault's or the sandbox module's own event (`vault.secret_set`, `template.saved`,
+  …) with `by: job <id>`, as artifacts name a job. Never a value.
+- **The `sandbox` skill.** `sh "$HOPPER_SKILL" sandbox` gives a job the routes and the curl lines to use them, a value
+  only through a file, never on a command line.
+
+**Residual risk, stated.** A job may write its user's vault: a secret set by a job replaces one of the same name, and a
+box a job launches runs the user's work until its time to live. The gates that stand: the person's approval of each
+template, image and profile; the template's limits; Access, per action, which the owner may narrow. A job that is not
+at work, or a token of another hopper, gets 401.
+
+**Not built.** Shared secrets through the job door (`shared/<name>` is the hopper's admin's, decided by a session's
+instance-admin role, which a job does not have); the rest of issue #718 (items 1, 2 and 5).
+
+Tests: `test/integration/job-vault-sandbox.test.ts` (the real daemon, a joined machine, a job at work: a secret set and
+read back with no value; a template saved that waits for a person, its launch refused until a person approves, then
+launched and listed; approve, revoke, remove and give refused; a launch with no template, an unknown one, or parameters
+outside its limits refused; a token of no job, or of a job no longer at work, refused; a model that gives no
+`can_set_secret`, or has no `vault` type, refuses with why), `test/authz/vault-actions.test.ts`,
+`test/skills/credentials.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
