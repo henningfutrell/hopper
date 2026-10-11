@@ -2,6 +2,7 @@
 // (legacy.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
+import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 
 const strict = z.strictObject;
@@ -109,6 +110,13 @@ export const vaultGrantEvents = {
 const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
+};
+
+// Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.
+const pointedJobStatus = z.enum(POINTED_JOB_STATUSES);
+export const pointedJobEvents = {
+  'pointed_job.created': strict({ id: z.string(), repo: z.string(), pointer: strict({ kind: z.enum(POINTER_KINDS), number: z.number().int(), url: z.string() }), source: z.string(), by: z.string() }),
+  'pointed_job.status_changed': strict({ id: z.string(), from: pointedJobStatus, to: pointedJobStatus, lane: z.string().optional(), by: z.string() }),
 };
 
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */

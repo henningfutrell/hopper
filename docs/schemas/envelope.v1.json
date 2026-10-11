@@ -205,6 +205,8 @@
         "repo_checks.dismissed",
         "job.child_issue_filed",
         "contribution.changed",
+        "pointed_job.created",
+        "pointed_job.status_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

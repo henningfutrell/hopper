@@ -6,6 +6,8 @@ synonyms. Rename here first, in the same commit as everything else.
 | term | meaning | not |
 |------|---------|-----|
 | **Job** | One unit of work pushed through the API: an executor name, a payload, a priority. | task, run |
+| **Pointed job** | A record that points at work in any GitHub repository, owned or not (issue #425, tracking issue #424): its **repository** (`owner/name`), its **pointer** — an issue or a pull request, by number and URL —, its **directive** (what to do there), the lane that works it, a **pointed job status** and the **source** that made it (`api`, or a job source). A job the hopper already has, whose item names a repository and an issue, reads as one, its status from the job (`pointedJobOf`). A record only: nothing runs one yet. `src/domain/pointed-jobs.ts`. | target job, tracked job |
+| **Pointed job status** | `queued` → `running` → `awaiting_review` → `merged` \| `abandoned`. Only the allowed transitions (`TRANSITIONS`): running back to queued, awaiting review back to running, anything but an end to abandoned; merged and abandoned are ends. Each move is a `pointed_job.status_changed`. | state, phase |
 | **Priority** | `0..100` on the job, higher first. Default 50. | rank |
 | **Backburner** | The `hopper:backburner` label on an issue: the GitHub sources never pick it up while it is set, and cancel a waiting job whose issue gets it. Not a priority. **Take off the backburner** (Not taken, Sources; issue #798) removes the label, `source.backburner_lifted`. An issue on it is never shown as gone (issue #808): its intake outcome says since when and by whom (`backburner`, the label's newest `labeled` event), and the Not taken nav entry and the Queue count them. | paused (*parked* is a job a person took out of its lane) |
 | **Effective priority** | Priority after the router's boost (cheap advice), which applies only in active mode, or the resume boost of a job resuming with an answer. The decider's notion (`effectivePriority`, `src/decider/assign.ts`); the queue sorter is given it. | score |
@@ -618,3 +620,5 @@ synonyms. Rename here first, in the same commit as everything else.
 | BugReportFiled (a person filed a bug report, or added it to a similar open one) | `bug_report.filed` |
 | BugReportFailed (a bug report was not filed: GitHub refused it for good) | `bug_report.failed` |
 | BugReportKept (a bug report kept to send later: no GitHub connection, or GitHub could not take it now) | `bug_report.kept` |
+| PointedJobCreated (a person made a pointed job through the API) | `pointed_job.created` |
+| PointedJobStatusChanged (a pointed job moved along an allowed transition) | `pointed_job.status_changed` |

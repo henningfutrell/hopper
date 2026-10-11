@@ -10,6 +10,7 @@ export { VALID_DATA };
 export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> = {
   'job.queued': { priority: 60 },
   'job.prioritized': { advice, statusAtAdvice: 'sideways' },
+  'pointed_job.status_changed': { id: 'p1', from: 'queued', to: 'sideways', by: 'octocat' },
   'job.held': {},
   'job.claimed': { attempts: '1' },
   'job.started': {},

@@ -4141,3 +4141,51 @@ Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contrib
   "by": "owner"
 }
 ```
+
+## `pointed_job.created`
+
+Version 1 (`docs/schemas/pointed_job.created.v1.json`). A person made a pointed job through the API (issue #425): `id`, on the issue or pull request `pointer` (`kind`, `number`, `url`) of the GitHub repository `repo`; `source` what made it (`api`), `by` who. It starts `queued`. Never its directive.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `repo` | string | yes |
+| `pointer` | object | yes |
+| `source` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "id": "p1",
+  "repo": "octo-org/hello",
+  "pointer": {
+    "kind": "issue",
+    "number": 7,
+    "url": "https://github.com/octo-org/hello/issues/7"
+  },
+  "source": "api",
+  "by": "octocat"
+}
+```
+
+## `pointed_job.status_changed`
+
+Version 1 (`docs/schemas/pointed_job.status_changed.v1.json`). A pointed job moved from status `from` to `to` (issue #425), along the allowed transitions: queued → running | abandoned; running → awaiting_review | queued | abandoned; awaiting_review → merged | running | abandoned. `lane`: the lane that works it, when it moved to running. `by` who moved it. A refused move records nothing.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `from` | `queued` \| `running` \| `awaiting_review` \| `merged` \| `abandoned` | yes |
+| `to` | `queued` \| `running` \| `awaiting_review` \| `merged` \| `abandoned` | yes |
+| `lane` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "id": "p1",
+  "from": "queued",
+  "to": "running",
+  "lane": "local/lane-1",
+  "by": "octocat"
+}
+```

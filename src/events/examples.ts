@@ -241,4 +241,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'repo_checks.job_queued': { repo: 'owner/repo', number: 41, url: 'https://github.com/owner/repo/issues/41', existing: false, by: 'octocat' },
   'repo_checks.dismissed': { repo: 'owner/repo', dismissed: true, by: 'octocat' },
   'job.child_issue_filed': { requestId: 'r1', parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' }, required: true, subIssue: true },
+  'pointed_job.created': { id: 'p1', repo: 'octo-org/hello', pointer: { kind: 'issue', number: 7, url: 'https://github.com/octo-org/hello/issues/7' }, source: 'api', by: 'octocat' },
+  'pointed_job.status_changed': { id: 'p1', from: 'queued', to: 'running', lane: 'local/lane-1', by: 'octocat' },
 };

@@ -18,6 +18,7 @@ import { createItemSnapshotRepository } from './item-snapshots.ts';
 import { createIssueGraphRepository } from './issue-graph.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
+import { createPointedJobRepository } from './pointed-jobs.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
@@ -71,6 +72,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     vaultGrants: createVaultGrantRepository(ctx),
     bugReports: createBugReportRepository(ctx),
     issueGraph: createIssueGraphRepository(ctx),
+    pointedJobs: createPointedJobRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

@@ -26,6 +26,7 @@ import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
+import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
 import { originPendingBackfill } from './migration-origin-pending.ts';
@@ -353,6 +354,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   BUG_REPORT_TABLE,
   // 42: The issue graph (issue #437): issues, repositories, owners, Projects and their links. Tables only: the build before runs on it.
   ISSUE_GRAPH_TABLES,
+  // 43: Pointed jobs (issue #425): a table only; the jobs a store has read as pointed jobs. The build before runs on it.
+  POINTED_JOB_TABLE,
 ];
 
 /** A user schema's version once migrated. */
