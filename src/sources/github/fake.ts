@@ -38,6 +38,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const self: FakeActor = o.app ? { login: o.app.botLogin, type: 'Bot', viaApp: FAKE_HOPPER_APP } : { login: o.login ?? 'owner', viaApp: FAKE_HOPPER_APP };
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
+  const subIssues = new Map<string, string[]>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
   const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string; headRef: string; base?: string })[] = [];
   const addPull = (repo: string, issue: string, o: PullRequestInput, closes: boolean, body: string): OpenPullRequest => {
@@ -83,7 +84,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     if (!i) throw notFound(`${repo}#${n}`);
     return i;
   };
-  const copy = (i: GitHubIssue): GitHubIssue => ({ ...i, assignees: [...i.assignees], labels: [...i.labels] });
+  /** Its sub-issues as GitHub counts them (issue #729): only those that still exist. */
+  const subsOf = (i: GitHubIssue, c = (subIssues.get(key(i.repo, i.number)) ?? []).flatMap((k) => issues.get(k) ?? [])) =>
+    c.length ? { subIssues: { total: c.length, closed: c.filter((x) => x.state === 'closed').length } } : {};
+  const copy = (i: GitHubIssue): GitHubIssue => ({ ...i, assignees: [...i.assignees], labels: [...i.labels], ...subsOf(i) });
   const enter = (method: Method, args: unknown[]) => {
     calls.push({ method, args });
     const err = failures.get(method)?.shift();
@@ -236,7 +240,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ...api,
     setInstalledRepos(repos) { installed = [...repos]; },
     calls,
-    createIssue({ repo, title, body, author, assignees, labels: ls, labelledBy, assignedBy }) {
+    createIssue({ repo, title, body, author, assignees, labels: ls, labelledBy, assignedBy, parent }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;
       for (const l of ls ?? []) repoLabels(repo).add(l);
       const issue: GitHubIssue = {
@@ -244,6 +248,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
         body: body ?? `Do thing ${number}.`, author: author ?? human, assignees: [...(assignees ?? [human])], labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
       };
       issues.set(key(repo, number), issue);
+      if (parent !== undefined) subIssues.set(key(repo, parent), [...(subIssues.get(key(repo, parent)) ?? []), key(repo, number)]);
       assigned.set(key(repo, number), issue.assignees.map((login) => ({ login, at: issue.updatedAt })));
       for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? issue.author, issue.updatedAt);
       for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? issue.author, issue.updatedAt);

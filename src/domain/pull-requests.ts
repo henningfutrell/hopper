@@ -39,6 +39,8 @@ export interface FollowsPullRequests {
    * yolo mode and its checks say, or closed without a merge; GitHub's refusal throws, and nothing is kept of it.
    */
   follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
+  /** Whether the hopper merges a ready pull request of `repo` (yolo mode): its tending queue waits for that merge (issue #796). Absent: never. */
+  mergesOnReady?(repo: string): boolean;
   /**
    * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
    * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked

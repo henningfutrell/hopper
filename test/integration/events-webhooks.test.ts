@@ -15,7 +15,7 @@ let sse: SseClient | undefined;
 const receivers: Receiver[] = [];
 
 /** The runtime's secrets every subscription here names (issue #56). */
-const SECRETS = { WH_ONE: 'abc', WH_R: 'k3y', WH_R1: 's1', WH_R2: 's2' };
+const SECRETS = { WH_ONE: 'whsecret-one-zq', WH_R: 'k3y', WH_R1: 's1', WH_R2: 's2' };
 
 async function start(before?: (dbPath: string) => void): Promise<TestApp> {
   const db = tempDbPath();
@@ -110,7 +110,7 @@ describe('webhook subscriptions', () => {
     const body = (await a.api('GET', '/api/webhooks')).body;
     expect(body.subscriptions).toEqual([expect.objectContaining({ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], active: true })]);
     for (const s of body.subscriptions) expect(s).not.toHaveProperty('secret');
-    expect(JSON.stringify(body)).not.toContain('abc');
+    expect(JSON.stringify(body)).not.toContain(SECRETS.WH_ONE);
     expect(Object.keys(body)).toEqual(['subscriptions']);
   });
 

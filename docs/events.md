@@ -2173,12 +2173,12 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`, `lane-count`, `job-machine`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -2219,12 +2219,12 @@ Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a de
 
 ## `minor_decision.compared`
 
-Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, or `person` for a failed job), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
+Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, `person` for a failed job, or `rules` for an ordering the rules made without Jev, issue #796), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -2248,7 +2248,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -2267,7 +2267,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 
@@ -3789,7 +3789,7 @@ Version 1 (`docs/schemas/lanes.dismissed.v1.json`). An admin dismissed a machine
 
 ## `bug_report.filed`
 
-Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. Never its text.
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. `later`: a report kept while GitHub could not take it (`bug_report.kept`), sent now; `id` is its report. Never its text.
 
 | field | type | required |
 |---|---|---|
@@ -3800,6 +3800,8 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 | `jobId` | string | no |
 | `by` | string | yes |
 | `fromJob` | boolean | no |
+| `id` | string | no |
+| `later` | boolean | no |
 
 ```json
 {
@@ -3814,7 +3816,7 @@ Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report
 
 ## `bug_report.failed`
 
-Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): no GitHub connection, or GitHub refused it. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): GitHub refused it for good. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
 
 | field | type | required |
 |---|---|---|
@@ -3828,6 +3830,28 @@ Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed
 {
   "repo": "henningfutrell/hopper",
   "error": "your GitHub is not connected: connect it in Sources → Connect GitHub",
+  "by": "octocat"
+}
+```
+
+## `bug_report.kept`
+
+Version 1 (`docs/schemas/bug_report.kept.v1.json`). A bug report was kept to send later (issue #694): no GitHub connection, or GitHub could not take it now (no answer, no access to the repository, a rate limit, its own failure). `problem` says why; `id` is the report in Your reports. The hopper sends it later (`bug_report.filed` with `later`). `jobId`, `by` and `fromJob` as in `bug_report.filed`. Never its text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `id` | string | yes |
+| `problem` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+| `fromJob` | boolean | no |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "id": "c2a7e9d1",
+  "problem": "your GitHub is not connected: connect it in Sources → Connect GitHub",
   "by": "octocat"
 }
 ```
