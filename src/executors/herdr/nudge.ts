@@ -24,12 +24,12 @@ export interface NoteAt { statusNote: string; paneId: string }
  */
 export async function afterStatusNote(notes: { count: number; quiet?: boolean }, ctx: Pick<ExecutionContext, 'beforeNudge' | 'progress'>, note: NoteAt): Promise<{ nudges: number } | { quiet: true } | { ended: ExecutionOutcome }> {
   const count = notes.quiet ? 0 : notes.count;
-  const quiet = (why: string): { quiet: true } => { ctx.progress(0, why); return { quiet: true }; };
+  const quiet = (why: string): { quiet: true } => { ctx.progress(why); return { quiet: true }; };
   if (count > NUDGE_GAPS_MS.length) return quiet(`waiting: ${count + 1} status notes in a row without a marker; no more nudges until claude works again`);
   const check = await checked(ctx);
   if ('waiting' in check) return quiet(`waiting on a person (${check.waiting}): no nudge`);
   if (!('done' in check)) return { nudges: count + 1 };
-  ctx.progress(0, `ended done, not nudged: ${check.done}`);
+  ctx.progress(`ended done, not nudged: ${check.done}`);
   return { ended: { kind: 'finished', result: { summary: note.statusNote.slice(0, SUMMARY_CHARS), paneId: note.paneId, endedBy: check.done } } };
 }
 
@@ -37,7 +37,7 @@ async function checked(ctx: Pick<ExecutionContext, 'beforeNudge' | 'progress'>):
   try {
     return await ctx.beforeNudge?.() ?? { nudge: true };
   } catch (e) {
-    ctx.progress(0, `could not read the source state before the nudge: ${(e as Error).message}`);
+    ctx.progress(`could not read the source state before the nudge: ${(e as Error).message}`);
     return { nudge: true };
   }
 }

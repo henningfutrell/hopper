@@ -82,7 +82,7 @@ export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, 
   // Reported again right after it was steered (issue #695): never taken to the user; the job fails.
   if (!('problem' in report) && steered && isGitHubLogin(report)) return { failed: GITHUB_LOGIN_AGAIN };
   if (!('problem' in report) && !steered && !waitsOn && isGitHubLogin(report)) {
-    ctx.progress(0, `the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
+    ctx.progress(`the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
     return { say: githubLoginNote(report.tool), steered: true };
   }
   let problem = 'problem' in report ? report.problem : ctx.logins ? undefined : 'this hopper takes no logins';
@@ -91,7 +91,7 @@ export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, 
       const id = ctx.logins!.report(report, { renewable: true });
       if (id === waitsOn?.id) return { login: waitsOn };
       const login = { id, tool: report.tool };
-      ctx.progress(0, `waiting for the ${login.tool} login: the user completes it (Logins)`);
+      ctx.progress(`waiting for the ${login.tool} login: the user completes it (Logins)`);
       return { login };
     } catch (e) { problem = (e as Error).message; }
   }
@@ -109,13 +109,13 @@ export function loginWait(ctx: ExecutionContext, login: LoginRef, cleared: () =>
     signal: (s: LoginSignal) => {
       if (s === 'expired') {
         ctx.logins?.expired(login.id);
-        ctx.progress(0, `the ${login.tool} code expired before the login was completed`);
+        ctx.progress(`the ${login.tool} code expired before the login was completed`);
         return;
       }
       if (s === 'completed') ctx.logins?.completed(login.id);
       else ctx.logins?.failed(login.id, `the ${login.tool} login was denied at the provider`);
       cleared();
-      ctx.progress(0, s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
+      ctx.progress(s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
     },
   };
 }

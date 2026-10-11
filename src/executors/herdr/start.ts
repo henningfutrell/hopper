@@ -262,7 +262,7 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  * the first one made and enters it.
  */
 async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
-  if (repo) ctx.progress(0, `fetching or cloning ${repo} in the work tree`);
+  if (repo) ctx.progress(`fetching or cloning ${repo} in the work tree`);
   const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees });
   for (let typed = 1; ; typed++) {
     await d.herdr.runInPane(s.paneId, command);
@@ -271,7 +271,7 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
     if (typed >= JOB_WORKTREE_TYPINGS) {
       return { startTimedOut: `pane ${s.paneId} never ran the job worktree command (typed ${typed} times): ${tail(running.screen, 10)}` };
     }
-    ctx.progress(0, `the shell did not run the job worktree command; typing it again (${typed + 1} of ${JOB_WORKTREE_TYPINGS})`);
+    ctx.progress(`the shell did not run the job worktree command; typing it again (${typed + 1} of ${JOB_WORKTREE_TYPINGS})`);
     await d.herdr.sendKeys(s.paneId, ['ctrl+c']);
   }
   if (ctx.signal.aborted) return null;
@@ -295,7 +295,7 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
  * on: a failed install is the job's to redo. Only a shell that never answers fails it.
  */
 async function shareDependencies(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
-  ctx.progress(0, 'sharing dependencies with the repository\'s other jobs');
+  ctx.progress('sharing dependencies with the repository\'s other jobs');
   await d.herdr.runInPane(s.paneId, shareDepsCommand(s.cwd, s.jobWorktree!, ctx.machine.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS));
   const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, DEPS_MARK, depsOutcome, DEPS_WAIT_MS);
   if (ctx.signal.aborted) return null;
@@ -304,7 +304,7 @@ async function shareDependencies(d: StartDeps, ctx: ExecutionContext, s: PaneSta
     s.sharedDependencies = true;
     ctx.saveState({ ...s });
   }
-  ctx.progress(0, `dependencies: ${outcome ?? 'unknown'}`);
+  ctx.progress(`dependencies: ${outcome ?? 'unknown'}`);
   return null;
 }
 
@@ -401,7 +401,7 @@ export async function startInPane(d: StartDeps, ctx: ExecutionContext, p: Claude
     if (!('startTimedOut' in failed)) return failed;
     if (attempt >= START_ATTEMPTS) return { kind: 'failed', error: `claude did not start in ${attempt} attempts: ${failed.startTimedOut}` };
     const pause = Math.round(START_PAUSES_MS[attempt - 1]! * (1 + START_PAUSE_SPREAD * h.random()));
-    ctx.progress(0, `claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
+    ctx.progress(`claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
     await d.sleep(pause, ctx.signal);
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
   }

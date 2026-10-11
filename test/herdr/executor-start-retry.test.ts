@@ -59,7 +59,7 @@ describe('herdr-claude executor: a start that times out is tried again (issue #4
   it('a cancel during the pause ends the job without another pane', async () => {
     const { herdr, executor } = setup({ turns: [DONE], startupTimeouts: 1 });
     const { ctx, ac } = contextFor(jobWith({ prompt: 'go' }));
-    const run = executor.run({ ...ctx, progress: (_f, m) => { if (m?.includes('did not start')) ac.abort('cancel'); } });
+    const run = executor.run({ ...ctx, progress: (m) => { if (m?.includes('did not start')) ac.abort('cancel'); } });
     const out = await run;
     expect(out.kind).toBe('failed');
     expect(herdr.calls.filter((c) => c.method === 'createTab')).toHaveLength(1);

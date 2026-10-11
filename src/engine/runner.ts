@@ -4,6 +4,7 @@
 // one whose machine did not answer at recovery is asked again until it does (issue #368).
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { ExecutionContext, ExecutionOutcome, Executor } from '../domain/ports.ts';
+import type { TaskCount } from '../domain/task-count.ts';
 import { finishBrief, MAX_FINISH_BRIEFS, type Job, type LaneId, type MachineSnapshot, type UnfinishedPullRequest } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
@@ -18,6 +19,8 @@ import { forkResume } from './phase-shifts.ts';
 import { nudgeCheck } from './nudge-check.ts';
 
 const PROGRESS_EVERY_MS = 500;
+
+interface Progress { message?: string | undefined; tasks?: TaskCount | undefined }
 /** How often a job waiting for its machine after a restart asks again whether its work is alive. */
 const REACHABLE_EVERY_MS = 1000;
 
@@ -91,22 +94,24 @@ async function completeOrFailed(c: EngineContext, job: Job, outcome: ExecutionOu
 export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
   const running = new Map<string, Running>();
 
+  /** A report leaves out what it does not change (issue #794): a message alone keeps the job's task count. */
   function progressReporter(jobId: string, laneId: LaneId) {
     let lastAt = -Infinity;
-    let pending: { fraction: number; message?: string } | undefined;
-    const emit = (p: { fraction: number; message?: string }): void => {
+    let pending: Progress | undefined;
+    const emit = (p: Progress): void => {
       lastAt = c.clock.now().getTime();
       pending = undefined;
-      const masked = p.message !== undefined ? maskGitHubTokens(p.message) : undefined;
+      const message = p.message !== undefined ? maskGitHubTokens(p.message) : undefined;
+      const data = { ...(message !== undefined ? { message } : {}), ...(p.tasks ? { tasks: p.tasks } : {}) };
       c.store.tx(() => {
-        c.store.jobs.update(jobId, { progress: p.fraction, progressMessage: masked });
-        c.store.events.append({ type: 'job.progressed', jobId, laneId, data: { progress: p.fraction, message: masked } });
+        c.store.jobs.update(jobId, { ...(message !== undefined ? { progressMessage: message } : {}), ...(p.tasks ? { tasks: p.tasks } : {}) });
+        c.store.events.append({ type: 'job.progressed', jobId, laneId, data });
       });
     };
     return {
-      report(fraction: number, message?: string): void {
-        if (c.stopping()) return;
-        const p = { fraction: Math.max(0, Math.min(1, fraction)), ...(message !== undefined ? { message } : {}) };
+      report(message?: string, tasks?: TaskCount): void {
+        if (c.stopping() || (message === undefined && !tasks)) return;
+        const p = { message: message ?? pending?.message, tasks: tasks ?? pending?.tasks };
         if (c.clock.now().getTime() - lastAt >= PROGRESS_EVERY_MS) emit(p);
         else pending = p;
       },
@@ -166,8 +171,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       // A login the job waits on (issue #476) goes to the logins, never into a question.
       logins: c.logins.forRun({ jobId: job.id, laneId: claim.laneId, machineId: m.id, run: job.spec.executor }, () => !c.stopping()),
       // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).
-      credentials: (scratch, make = false) => placeCredentials(c, started, m, executor?.machineShell?.(m), scratch, make, (line) => progress.report(0, line)),
-      progress: (f, msg) => progress.report(f, msg),
+      credentials: (scratch, make = false) => placeCredentials(c, started, m, executor?.machineShell?.(m), scratch, make, (line) => progress.report(line)),
+      progress: (msg, tasks) => progress.report(msg, tasks),
       // Before a nudge (issue #627): the job's source, then what it waits on a person for.
       beforeNudge: () => nudgeCheck(c, j),
       saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },

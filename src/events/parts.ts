@@ -87,3 +87,7 @@ export const vaultGrantEvents = {
   'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string() }),
   'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string() }),
 };
+
+/** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
+export const taskCount = strict({ done: z.number().int().min(0), total: z.number().int().min(1) })
+  .refine((t) => t.done <= t.total, { message: 'done must not exceed total' });

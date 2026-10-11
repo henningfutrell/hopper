@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 const decisionPoint = z.enum(DECISION_POINTS);
@@ -120,7 +120,8 @@ export const EVENT_SCHEMAS = {
   'job.approved': strict({}),
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
   'job.started': strict({ attempts: z.number().int() }),
-  'job.progressed': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
+  // v2 (issue #794): the job's task count, never a fraction of time; a message, a count, or both.
+  'job.progressed': strict({ message: z.string().optional(), tasks: taskCount.optional() }),
   // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
   'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),

@@ -15,6 +15,7 @@ import type { SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
+import type { TaskCount } from './task-count.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -33,8 +34,11 @@ export interface ExecutionContext {
    * returns promptly and leaves external work (a herdr pane) as it is: `park` then releases it.
    */
   signal: AbortSignal;
-  /** Report progress 0..1 with an optional message. Emits job.progressed. */
-  progress(fraction: number, message?: string): void;
+  /**
+   * Report progress (issue #794): a progress message, the job's task count, or both. What is left out keeps what the
+   * job has. Emits job.progressed.
+   */
+  progress(message?: string, tasks?: TaskCount): void;
   /**
    * Persist executor-owned state on the job (`job.executorState`) as soon as it exists — e.g.
    * the herdr pane a job runs in — so restart recovery and resume can find it.
