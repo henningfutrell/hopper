@@ -183,7 +183,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
   // hopper's own (issue #657), kept in the vault's system scope.
   // The hopper's own secrets are in the vault's system scope (issue #658): the old copies moved in at this start.
-  const { system, keys } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
+  const { system, keys, readBackends } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
   const { jev, typesafeKey, secret } = userTypesafeKey({
     user, store, env: o.env, runtime: userSecrets(o.env, user), system,
     ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
@@ -277,7 +277,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       localMachine: config.localMachine,
     },
   });
-  await host.start();
+  // Then the system secrets kept in a vault backend are read (issue #658, requirement 6), and read again from then on.
+  const stopBackendReads = await host.start().then(() => readBackends(() => host.vaultBackends()));
   // The pinned host keys follow the plugins config: rewritten when it changes, each problem logged once.
   const pinProblems = new Set<string>();
   const pinned = (machines: AttachedMachine[]): AttachedMachine[] => {
@@ -410,7 +411,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await dispatcher.stop();
         await host.stopNotifiers();
         stopFailureLog();
-        host.stop();
+        host.stop(); stopBackendReads();
         store.close();
       })();
       return stopped;

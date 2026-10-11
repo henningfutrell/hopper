@@ -28,6 +28,8 @@ export interface WebhookSecrets {
   unavailable(): string | undefined;
   /** Keeps `value` as `id`'s secret in the vault; `rotated`: the hopper made it in place of one. False when there is no key or no such subscription. */
   store(id: string, value: string, by: string, rotated?: boolean): boolean;
+  /** Why the hopper cannot rotate `id`'s secret: a vault backend keeps it (issue #658, requirement 6). Undefined when it can. */
+  rotateRefusal(id: string): string | undefined;
   /** The subscription's secret goes with it. */
   forget(id: string, by: string): void;
 }
@@ -72,6 +74,10 @@ export function createWebhookSecrets(o: {
         if (!o.system.keep(signingSecretName(id), value, by, rotated ? { rotated } : {}).ok) return false;
         return webhooks.secretKept(id) !== undefined;
       });
+    },
+    rotateRefusal(id) {
+      const at = o.system.keptIn(signingSecretName(id));
+      return at ? `the signing secret is kept in vault backend ${at.name} at ${at.reference}: rotate it there, or replace it here to keep it in the hopper again` : undefined;
     },
     forget(id, by) {
       o.system.drop(signingSecretName(id), by);

@@ -4,7 +4,9 @@
 // #658 in their own rows moved into it once; and the start check. The move reads each old copy, keeps it in the vault,
 // opens it again, and only then removes the old copy: one `vault.secret_migrated` event per secret, never a value. A start
 // that finds nothing left to move changes nothing. An old copy that cannot be opened (its key is missing) stays where it
-// is, and the start check names the key.
+// is, and the start check names the key. Once the plugin host runs, the ones kept in a vault backend are read (issue #658,
+// requirement 6): one that cannot be read is named with its backend by the start check, then read again every
+// BACKEND_READ_EVERY_MS.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, type User, type VaultAccess } from '../domain/types.ts';
@@ -12,7 +14,8 @@ import { accessTokenName, PROVIDER_NAME, refreshTokenName } from '../connected-a
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf, type SealerState } from '../secrets/sealer.ts';
 import { createTokenBox, isSealed, PREVIOUS_KEYS_VARIABLE, MASTER_KEY_VARIABLE, type TokenBox } from '../secrets/token-box.ts';
-import { createSystemSecrets, type SystemSecrets } from '../vault/system.ts';
+import type { ConfiguredBackend } from '../domain/vault.ts';
+import { BACKEND_READ_EVERY_MS, createSystemSecrets, type SystemSecrets } from '../vault/system.ts';
 import { secretContext, signingSecretName } from '../webhooks/index.ts';
 
 interface Logger { info(line: string): void; warn(line: string): void }
@@ -31,7 +34,7 @@ export function moveWebhookSecrets(o: { store: Pick<UserStore, 'webhooks' | 'tx'
     const old = o.store.webhooks.legacySecret(sub.id);
     if (old === undefined) continue;
     const name = signingSecretName(sub.id);
-    if (o.system.stored(name) !== undefined) { o.store.webhooks.secretKept(sub.id, sub.secretChangedAt); continue; }
+    if (o.system.meta(name) !== undefined) { o.store.webhooks.secretKept(sub.id, sub.secretChangedAt); continue; }
     let value: string;
     try {
       if (!o.keys.sealer) throw new Error(o.keys.problem);
@@ -98,15 +101,24 @@ export function moveConnectedAccountTokens(o: { store: Pick<UserStore, 'connecte
 /** The user's system secrets at start: sealed again where an older key sealed them, the old copies moved in, checked. */
 export function openUserSystemSecrets(o: {
   user: User; store: UserStore; env: Record<string, string | undefined>; access?: VaultAccess; clock: Clock; logger: Logger;
-}): { system: SystemSecrets; keys: SealerState } {
+}): { system: SystemSecrets; keys: SealerState; readBackends: (backends: () => ConfiguredBackend[]) => Promise<() => void> } {
   const keys = sealerOf(runtimeSecrets(o.env));
+  let backends = (): ConfiguredBackend[] => [];
   if (keys.problem) o.logger.warn(`hopper: ${keys.problem}: the hopper's own secrets in the vault are neither opened nor kept, and none kept before is moved there`);
-  const system = createSystemSecrets({ store: o.store, keys, userId: o.user.id, ...(o.access ? { access: o.access } : {}), clock: o.clock, idGen: randomUUID, logger: o.logger });
+  const system = createSystemSecrets({ store: o.store, keys, userId: o.user.id, ...(o.access ? { access: o.access } : {}), backends: () => backends(), clock: o.clock, idGen: randomUUID, logger: o.logger });
   const moved = moveWebhookSecrets({ store: o.store, system, keys, logger: o.logger })
     + moveConnectedAccountTokens({ store: o.store, system, box: legacyBox(o.env), logger: o.logger });
   if (moved > 0) o.logger.info(`hopper: ${moved} of the hopper's own secret(s) moved into the vault's system scope`);
   const resealed = system.resealAll();
   if (resealed > 0) o.logger.info(`hopper: ${resealed} system secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
   for (const c of system.check()) o.logger.warn(`hopper: start check: system secret ${c.name} ${c.problem}`);
-  return { system, keys };
+  /** Reads the ones kept in a vault backend now (the start check), then every BACKEND_READ_EVERY_MS; answers the stop. */
+  async function readBackends(from: () => ConfiguredBackend[]): Promise<() => void> {
+    backends = from;
+    for (const c of await system.refresh()) o.logger.warn(`hopper: start check: system secret ${c.name} ${c.problem}`);
+    const timer = setInterval(() => { void system.refresh().catch((e: unknown) => o.logger.warn(`hopper: system secrets in vault backends: ${(e as Error).message}`)); }, BACKEND_READ_EVERY_MS);
+    timer.unref();
+    return () => clearInterval(timer);
+  }
+  return { system, keys, readBackends };
 }

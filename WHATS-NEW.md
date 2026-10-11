@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Your TypeSafe API key (for Jev) and your webhook signing secrets can now stay in your own secret manager (HashiCorp Vault, 1Password or Bitwarden). On the Vault page, choose Keep in a vault backend. The hopper reads the secret there when it starts and every 5 minutes, and keeps no copy on disk.
 - The hopper now has help pages for each feature, for the version you run. Open Help in the user menu. Agents and jobs can read the same pages too.
 - The hopper now keeps every open pull request its jobs made up to date with its base until it is merged or closed: it rebases it each time the base moves, not only three times, also when its job failed or its issue was closed as completed. A pull request that only mentions an issue while it does the work of another one no longer closes that issue when it merges.
 - You can now test an AWS minting credential from the command line: the hopper takes on the role for a short read-only session and shows the role and session name AWS says it has, or why AWS said no.

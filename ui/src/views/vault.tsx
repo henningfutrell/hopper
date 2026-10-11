@@ -37,7 +37,7 @@ import { CheckAgain, GateRows } from './vault-check';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
-  | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
+  | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null } | { action: 'system-in-backend'; name: string; backend: string; reference: string }
   | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
@@ -240,7 +240,7 @@ export function Vault() {
       </Panel>
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
-      {view && <SystemSecrets system={view.system} />}
+      {view && <SystemSecrets system={view.system} backends={backends} can={can} busy={busy} send={send} />}
       {view && <MasterKeyRotation />}
     </div>
   );

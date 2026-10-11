@@ -2,7 +2,7 @@
 // for, its last 4 characters, who set it and when, how it is kept and where it is changed; each audit entry says what
 // happened to which secret and by whom. Nothing on the page is a value.
 import { describe, expect, it } from 'vitest';
-import { auditLine, systemSecretLine, systemSecretTitle, systemSecretWhere } from '../../ui/src/model/vault-system.ts';
+import { auditLine, mayKeepInBackend, systemSecretLine, systemSecretTitle, systemSecretWhere } from '../../ui/src/model/vault-system.ts';
 import type { SystemSecretView } from '../../ui/src/model/wire.ts';
 
 const AT = '2026-10-10T12:00:00Z';
@@ -31,5 +31,15 @@ describe('a system secret on the page (issue #658)', () => {
     expect(auditLine({ seq: 2, at: AT, type: 'vault.secret_read', name: 'connected-account.github.access-token', by: 'hopper', detail: 'GitHub' })).toMatch(/ · read by the hopper \(GitHub\)$/);
     expect(auditLine({ seq: 3, at: AT, type: 'vault.secret_migrated', name: 'sign-in.corp.clientSecret', detail: 'moved from sign-in' })).toMatch(/ · moved into the vault$/);
     expect(auditLine({ seq: 4, at: AT, type: 'vault.refused', name: 'typesafe-api-key', detail: "a job's ask refused (job j1): no" })).toMatch(/refused to a job — a job's ask refused \(job j1\): no$/);
+  });
+
+  it('one kept in a vault backend says where, and that the hopper holds it in memory only; only a user\'s TypeSafe key and webhook secrets may be', () => {
+    const kept = secret('typesafe-api-key', 'typesafe', { last4: 'ABCD', setBy: 'Ada', backend: { name: 'my-vault', reference: 'jev#key' } });
+    expect(systemSecretLine(kept)).toMatch(/ · kept in vault backend my-vault at jev#key, held in memory only$/);
+    expect(mayKeepInBackend(kept)).toBe(true);
+    expect(mayKeepInBackend(secret('webhook.3f2c.signing-secret', 'webhook'))).toBe(true);
+    for (const s of [secret('connected-account.github.access-token', 'connected-account'), secret('artifact-content-key', 'artifact'), secret('sign-in.corp.clientSecret', 'sign-in', { scope: 'instance' })]) {
+      expect(mayKeepInBackend(s)).toBe(false);
+    }
   });
 });

@@ -10400,9 +10400,7 @@ goes through the hopper, which reads the token through the vault at each call.
   the system scope stays in the hopper under the master key. The master key's start check counts the system secrets
   of every user's vault and of the instance's (`keptSecrets`).
 
-**Not built here, carried (issue #658, requirement 6):** a system secret kept in a vault backend (HashiCorp Vault,
-1Password, Bitwarden). A backend reads at the moment of use and asynchronously, and the hopper only reads from one;
-the GitHub tokens are written at each renewal, and the sign-in config and a webhook's signature read synchronously.
+**A system secret in a vault backend** (requirement 6): "System secrets in a vault backend" below.
 
 **A build before this one on a moved store** (`docs/deploy.md` "Update channels and promotion"): it finds no GitHub
 tokens in `connected_accounts` (the connection reads unreadable: reconnect), no webhook secret (replace it), and no
@@ -10416,6 +10414,60 @@ hour, nothing kept without the master key, a new key sealing again, the start ch
 denies a job, its machine and its box every kind), `test/vault/system-scope.test.ts` (every kind refused to a job),
 `test/connected-accounts/rotation.test.ts` (a renewal through the vault keeps exactly one refresh token),
 `test/auth/sealed-secrets.test.ts` (the sign-in config over the vault), `test/ui/vault-system.test.ts`.
+
+### System secrets in a vault backend (issue #658, part 2, 2026-10-10)
+
+Requirement 6: the vault backends (issue #585) cover system secrets too, when the owner turns that on; the default stays
+the hopper's own vault, with no outside system. Two facts shape it. A backend only reads, and reads asynchronously. The
+hopper reads its own secrets synchronously (`SystemSecrets.open`: the webhook signature, Jev, the sign-in config).
+
+**Owner decision on the issue (option 1), with its reasons.**
+
+- **Which.** Only a secret a person gives, of one user: the **TypeSafe API key** and a **webhook's signing secret**
+  (`systemBackendRefusal`, `src/domain/vault.ts`). These stay in the hopper's own vault, each refused (400) with why:
+  - the GitHub connection's access and refresh tokens: the hopper writes them at each renewal, and a backend only reads;
+  - the artifact content key (issue #673): the hopper makes it;
+  - each sign-in realm's secret: it is the whole hopper's (the instance's vault), and a vault backend is one user's
+    plugin, so the instance has none.
+- **Held in memory: the keeps-no-copy rule, relaxed for the hopper's own use.** "Vault backends" says the hopper reads a
+  backend's value at the moment of use and keeps no copy, not even in a cache. That stays true for a vault secret
+  delivered to a box. For a system secret kept in a backend, the hopper reads the value at start, when a person sets it,
+  and every 5 minutes (`BACKEND_READ_EVERY_MS`), and holds it in its own process memory, so each synchronous read finds
+  it. Never in the database, an event, a log line or an answer: the row keeps only `backend: { name, reference }` and an
+  empty sealed value. The process already holds the master key, which opens every sealed secret, so the copy in memory
+  adds no reach. A value changed in the backend applies within 5 minutes; a restart reads it at once.
+- **No stale or local copy.** A read that fails (the backend gone from the plugins config, unable to run, unreachable, or
+  without the reference) drops the value held: the secret cannot be opened until a read succeeds. A webhook then has no
+  secret to sign with (`secretProblem`), Jev is off. One warning per new reason, naming the secret, the backend and the
+  reference; Settings → Vault shows the same as its `problem`. Before its first read (the start), it cannot be opened
+  either: "not read from vault backend … yet".
+- **The start check** (requirement 7's shape). Once the plugin host runs, each one kept in a backend is read; each that
+  cannot be read logs `start check: system secret <name> cannot be read from vault backend <backend> at <reference>:
+  <why>`. A sealed one's start check (`check`) passes over it, and so does the reseal: there is nothing sealed.
+- **Set** (`POST /ui/api/vault` `system-in-backend`: `name`, `backend`, `reference`; admin, then Access
+  `system_secret#can_change`). Refused (400) for another system secret, a backend the plugins config does not name, a
+  reference its `check` refuses, or a value the backend cannot read now; 404 for a webhook that is not there. It is read
+  once, and only then kept: `vault.secret_set` with `backend`, never a value. Settings → Vault, panel **Hopper's own
+  secrets**: such a secret shows "kept in vault backend X at R, held in memory only" and its last 4 characters (from the
+  value held), and a person changes or sets it with **Keep in a vault backend**.
+- **Rotation.** The hopper cannot rotate one a backend keeps: Webhooks → Rotate answers 409, "the signing secret is
+  kept in vault backend X at R: rotate it there, or replace it here to keep it in the hopper again"; `keep` with
+  `rotated` refuses it the same way. A value a person gives on its own page (Webhooks → Replace, the Jev page) keeps it
+  in the hopper again, sealed, as `set` does for a vault secret.
+- **Persisted state.** No migration: a row with an empty sealed value and `backend` is the shape tenant migration 31
+  already allows. The build before reads such a row as a system secret it cannot open: the webhook has no secret to sign
+  with, and Jev is off, until it is replaced or this build runs.
+
+**Not built:** a backend that writes (it would let the GitHub tokens and the artifact key go there); vault backends of the
+whole hopper (for the sign-in realms' secrets); a TypeSafe check of a key kept in a backend (the Jev page's check runs on
+a key typed in; a wrong key in the backend shows at Jev's next pick).
+
+Tests: `test/vault/system-backends.test.ts` (with a fake at the `VaultBackend` port: set, the read once, no value in the
+store, an event or a log line; a refresh reads the new value and a failed read drops the held one; a fresh start before
+its read and a backend gone: none can be opened; rotation refused, a value given keeps it in the hopper again; the
+refusals; the reseal and the start check pass over it), `test/integration/system-backends.test.ts` (the real daemon and a
+real HashiCorp Vault: a webhook signed with the value Vault holds, no value in the database; rotate refused; a start
+that cannot read names the secret and the backend; a GitHub token refused), `test/ui/vault-system.test.ts`.
 
 ## Shared secrets (issue #718, part 1, 2026-10-10)
 
@@ -11429,7 +11481,8 @@ config: `vaultBackends` is absent until a person adds one, so a build from befor
 any other: a template's approved scope names it, a box's job asks for it with its proxy token, the client's link signs
 the ask, and the answer is sealed to that one request ("Delivery to the box"). Only where the value comes from
 changes: the vault service (`deliver`) reads it from the backend after every check has passed, at the moment of use,
-and keeps no copy — not in the database, an event, a log line or a cache. `vault.delivered` and `vault.refused` name
+and keeps no copy — not in the database, an event, a log line or a cache. (A system secret kept in a backend is
+held in the hopper's memory: "System secrets in a vault backend".) `vault.delivered` and `vault.refused` name
 the backend (`backend`); a backend that is gone, cannot run or cannot read the reference refuses the ask, saying why
 (`vault.refused`, a warning in the log naming the backend and the secret).
 

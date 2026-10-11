@@ -74,6 +74,20 @@ export const systemSecretKind = (name: string): SystemSecretKind =>
   name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in'
     : name === 'artifact-content-key' ? 'artifact' : 'typesafe';
 
+/**
+ * Why a system secret may not be kept in a vault backend (issue #658, requirement 6), or undefined when it may. The
+ * backends only read: a secret the hopper writes itself (the GitHub connection's tokens at each renewal, the artifact
+ * key it makes) stays in the hopper. The backends are a user's plugins: the whole hopper's (the sign-in realms') stays in
+ * the hopper too. What may: the TypeSafe API key and a webhook's signing secret, each a value a person gives.
+ */
+export function systemBackendRefusal(name: string): string | undefined {
+  if (name === 'typesafe-api-key' || /^webhook\.[^.]+\.signing-secret$/.test(name)) return undefined;
+  const kind = systemSecretKind(name);
+  if (kind === 'typesafe' || kind === 'webhook') return `${name} is no system secret`;
+  const why = kind === 'sign-in' ? 'it is the whole hopper\'s, and a vault backend is one user\'s plugin' : 'the hopper writes it itself, and a vault backend only reads';
+  return `${name} stays in the hopper: ${why}`;
+}
+
 /** A system secret as Settings → Vault shows it (issue #658): never its value. */
 export interface SystemSecretView {
   name: string;
@@ -84,8 +98,10 @@ export interface SystemSecretView {
   last4?: string;
   setBy: string;
   setAt: string;
-  /** Why it cannot be opened now (the start check): the key it was sealed under is missing. */
+  /** Why it cannot be opened now (the start check): the key it was sealed under is missing, or its backend cannot read it. */
   problem?: string;
+  /** Where a vault backend keeps it (issue #658, requirement 6): the hopper holds its value in memory only. Absent: in the hopper, sealed. */
+  backend?: { name: string; reference: string };
 }
 
 /** One entry of the system scope's audit trail (issue #658): an event naming the secret, never its value. */
