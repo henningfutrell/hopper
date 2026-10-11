@@ -14,6 +14,9 @@
 // (`mergeChecked`), and one that did not close the issue loses `hopper:done`. A throw is asked again on a later sync.
 // A person's Merge now or Close PR (issue #677) takes the same path: merged whatever yolo mode and its checks say — GitHub
 // still refuses a draft, merge conflicts or a required check —, or closed without a merge; a refusal throws to the person.
+// Closing finishes the loop (issue #677): after the hopper's own merge — yolo mode or Merge now — of a pull request that
+// did not close the issue and ships no part ("Part of #N"), the hopper closes the issue as completed, with one comment
+// that links the pull request, and the item is done. A merge a person made on GitHub stays as issue #721 has it.
 
 import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
@@ -102,6 +105,23 @@ async function closedByMerge(api: GitHubApi, repo: string, number: number, url: 
   return pr !== undefined && !isPartOf(pr, repo, number) && closesByKeyword(pr.body, repo, number);
 }
 
+/** What the hopper says on the issue it closes after its own merge (issue #677): neutral, the pull request's link only. */
+export const closedAfterMergeComment = (url: string): string =>
+  `Closed after the merge of ${url}. The pull request had no closing keyword for this issue.`;
+
+/**
+ * After the hopper's own merge of pull request `url` that did not close the issue (issue #677): a part ("Part of #N") stays
+ * a part; else the hopper closes the issue as completed and comments with its link. Whether it closed the issue.
+ */
+async function closeAfterMerge(api: GitHubApi, repo: string, number: number, url: string): Promise<boolean> {
+  const pr = (await api.referencingPullRequests(repo, number)).find((p) => p.url === url);
+  if (pr && isPartOf(pr, repo, number)) return false;
+  // Closed first: a sync after a failed comment finds it closed as completed, the item done.
+  await api.closeAsCompleted(repo, number);
+  await api.postComment(repo, number, closedAfterMergeComment(url));
+  return true;
+}
+
 /**
  * A merge recorded as the whole item before issue #721, checked once: closed by it, it is marked checked; else it was a
  * part — `hopper:done` comes off, so the issue is offered again and its next part runs.
@@ -133,6 +153,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (!now) return undefined;
     const part = s.part === true;
     let byHopper = false;
+    let mergedHere = false;
     if (now.state === 'open') {
       const w = await waiting(ctx, repo, now.url, s.seen, act);
       if ('seen' in w) {
@@ -141,9 +162,12 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       }
       now = { state: w.ended, url: now.url };
       byHopper = !act;
+      mergedHere = w.ended === 'merged';
     }
-    // A merge that did not close the issue is a part (issue #721), whatever the report took it for.
-    const whole = now.state === 'merged' && !part && await closedByMerge(ctx.api, repo, number, now.url);
+    // A merge that did not close the issue is a part (issue #721), whatever the report took it for — unless the hopper
+    // merged it and it ships no part: then the hopper closes the issue (issue #677).
+    const whole = now.state === 'merged' && !part && (await closedByMerge(ctx.api, repo, number, now.url)
+      || (mergedHere && await closeAfterMerge(ctx.api, repo, number, now.url)));
     const shipsPart = part || (now.state === 'merged' && !whole);
     await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE]);
     const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart ? undefined : LABEL_DONE;

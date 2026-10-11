@@ -3,7 +3,8 @@
 // comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished — only a job
 // whose work is done or partly done is finished (completion.ts, issues #171, #187, #579) — → `hopper:pr-ready` while its
 // pull request waits for review, `hopper:partly-done` for a part, `hopper:done` once the issue is closed as complete; the
-// merge of its pull request closes the issue, never the hopper, and `follow.ts` follows it after; failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
+// merge of its pull request closes the issue, never report(), and `follow.ts` follows it after (and closes it only after the
+// hopper's own merge of a pull request with no closing keyword, issue #677); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
 // away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
