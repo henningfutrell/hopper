@@ -12007,6 +12007,20 @@ memory used and CPU busy between the fewest and the most lanes seen, per lane; t
 (`LANE_TARGET`); at most 2 more (`MAX_LANE_STEP`), so the hopper learns a step at a time. A lane whose cost reads as
 nothing leaves room for the 2. With one lane count only, no cost is known, and the headroom is that count.
 
+**Lane progress and slow progress** (`laneProgress`, `src/decider/lane-tuning.ts`, pure; part 5 of the issue). The job
+runs of the lane tuning window (`jobRuns`, as for the job cost profiles) that ended `finished` or `failed`, per machine and
+lane count: a run's average lanes in use, rounded, at least 1; a run with no sample has none. A cancelled, re-queued or
+parked run is a person's act or a recovery, not the machine's, and does not count. A lane count shows **slow progress**
+when 4 runs or more ended there (`MIN_PROGRESS_RUNS`), 4 or more ended at fewer lanes (1 or more), and the share that
+failed is more than 25 points above the share at fewer lanes (`FAILURE_RISE`). The comparison is what makes it the load's
+and not the jobs': a job that fails at one lane fails for its own reasons. The headroom is then one less than the first
+lane count with resource pressure or slow progress; at the same count, slow progress is the reason given
+(`slow progress at 3 lanes in use (3 of 4 runs failed; 0 of 6 at fewer lanes): 2 lanes run without it`). Its confidence
+stands on the samples of the highest lane count below it. The issue names stalls, timeouts and out-of-memory kills: the
+hopper keeps no event or field for any of them on its own (a job's own timeout, the agent's death and a kill all end the
+run as `job.failed`), so each counts as the failed run it ends in. The engine reads the runs once per plan, beside the
+lane load.
+
 **Lane recommendation** (`recommendLanes`). Usage is the machine's own used fraction, as the decider reads it (its
 least limited executor, `laneEffect`, `src/decider/usage.ts`, so a week window in its burn window does not count), against
 the usage limits the decider uses (`policyOf`).
@@ -12105,15 +12119,15 @@ the machine and usage samples (both kept for the history retention).
 
 **Not built yet** (left for the next parts of issue #688):
 - **Placement by expected cost**: the job cost profile of a job's group as an input to the machine it goes to.
-- **Slow progress** in the headroom: stalls, timeouts, OOM kills and the failure rate per lane count.
 - **The Decider** (issue #550) as a decision point for the lane count and the job's machine, with these rules as its
   fallback, and lane reliability (issue #535) among its inputs.
 - **The graph** on Machines that overlays resources, running lanes and usage over time.
 
 Tests: `test/decider/lane-tuning.test.ts` (headroom: none without history, pressure and its resource, a few pressured
 samples, the room past the most seen, one lane count; the recommendation: free, near, soft, hard, bounds, off, offline,
-no history; what an admin can do: apply, nothing to apply, dismissed until it moves, undo while the lanes are its
-lanes), `test/integration/lane-tuning.test.ts` (the real daemon: the plan from samples, near the soft limit, settings
+no history; slow progress: lane progress per machine and lane count, the failure rise over fewer lanes, too few runs or
+too small a rise, resource pressure first at fewer lanes, only the machine's own runs; what an admin can do: apply, nothing to apply, dismissed until it moves, undo while the lanes are its
+lanes), `test/integration/lane-tuning.test.ts` (the real daemon: the plan from samples, slow progress from seeded runs, near the soft limit, settings
 and refusals, the record once per change after a resource record and no lanes changed by it, Apply as the machine's
 lanes in the plugins config, the decider and the usage report, its refusals, Dismiss until the recommendation moves,
 Undo and its refusals after a hand edit, `hopper lanes plan`, `tune`, `apply`, `dismiss`, `undo`),
