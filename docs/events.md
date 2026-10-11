@@ -1105,6 +1105,69 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
 }
 ```
 
+## `source.request_approved`
+
+Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it, and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` | no |
+| `actors` | object[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "stranger",
+  "person": "octocat",
+  "via": "ui",
+  "actors": [
+    {
+      "role": "author",
+      "login": "stranger",
+      "trusted": false
+    },
+    {
+      "role": "labelled",
+      "login": "octocat",
+      "trusted": true
+    },
+    {
+      "role": "assigned",
+      "login": "octocat",
+      "trusted": true
+    }
+  ]
+}
+```
+
+## `intake.actors_changed`
+
+Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted actors changed in Settings → Intake (issue #652): the GitHub logins whose issues, labels and assignments start the user's jobs. `from` and `to` the logins named (empty: the connected login only), `by` who changed them.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "octocat",
+    "teammate"
+  ],
+  "by": "octocat"
+}
+```
+
 ## `auth.pending`
 
 Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
@@ -3348,7 +3411,7 @@ Version 1 (`docs/schemas/item.snapshot_recorded.v1.json`). An item's approved te
 |---|---|---|
 | `key` | string | yes |
 | `hash` | string | yes |
-| `reason` | `intake` \| `backfill` \| `accepted` | yes |
+| `reason` | `intake` \| `backfill` \| `accepted` \| `approved` | yes |
 
 ```json
 {

@@ -1,6 +1,7 @@
 // Payload building blocks shared by the current schemas (schemas.ts) and the superseded ones
 // (legacy.ts).
 import { z } from 'zod';
+import { JOB_ORIGINS } from '../domain/intake-origin.ts';
 
 const strict = z.strictObject;
 
@@ -9,6 +10,8 @@ export const jobSourceRef = strict({
   url: z.string().optional(), title: z.string().optional(), repo: z.string().optional(),
   number: z.number().int().optional(), author: z.string().optional(), assignee: z.string().optional(),
   labels: z.array(z.string()).optional(),
+  // Issue #652: a trusted origin, or an approved request card.
+  origin: z.enum(JOB_ORIGINS).optional(),
 });
 
 export const jobSpec = strict({

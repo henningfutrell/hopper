@@ -218,6 +218,12 @@ export const EVENT_SCHEMAS = {
   'source.claim_released': strict({ source: z.string(), key: z.string(), by: z.enum(['hopper', 'migration', 'user']), reason: z.string() }),
   'source.intake_migrated': strict({ source: z.string(), changes: z.array(strict({ key: z.string(), change: z.string() })) }),
   'source.issues_assigned': strict({ source: z.string(), keys: z.array(z.string()), assignee: z.string() }),
+  // Trusted origin (issue #652): a person approved a request card's text; the user's trusted actors changed.
+  'source.request_approved': strict({
+    source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(), ...actingIfPerson,
+    actors: z.array(strict({ role: z.enum(['author', 'labelled', 'assigned']), login: z.string().optional(), app: z.string().optional(), trusted: z.boolean() })),
+  }),
+  'intake.actors_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
   'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),

@@ -13,6 +13,7 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'no pull request': 'no pull request found yet', tending: 'a job works on it now', 'tend failed': 'the job that worked on it failed: waiting for a person',
   'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
+  'untrusted origin': 'waiting for a person to merge: its issue was not of a trusted origin',
   'checks pending': 'waiting for checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   ready: 'ready, merging',
 };

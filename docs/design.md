@@ -12358,3 +12358,66 @@ fake ssh, the snapshot and the log), `test/machines/herdr-owned.test.ts` (the sw
 `test/decider/herdr-problem.test.ts` (the hold), `test/failures/signature.test.ts`, `test/failures/assess.test.ts` and
 `test/failures/cause-check.test.ts` (the cause, its problem, its check), `test/ui/machine-herdr.test.ts` (the versions on
 Machines).
+
+## Trusted origin and request cards (issue #652, 2026-10-10)
+
+Owner requirement (the 2026-10-10 intake security review, paths A + C; path F was the first part, "Git through the
+hopper"): the hopper took an open issue with the source label assigned to the user, whoever wrote it, labelled it or
+assigned it. The repository is public, so a stranger's text — or an issue a job filed — could become a job. Now **an issue
+is a job only from a trusted origin, or from a request card a person approved**, and the job runs the approved text.
+
+**Trusted origin** (`src/domain/intake-origin.ts`, `src/sources/github/origin.ts`). At each sync, for each issue the
+source would take and that has no job that has not ended, the source reads the issue's events (`GitHubApi.issueEvents`,
+REST `GET /repos/{o}/{r}/issues/{n}/events`, `labeled` and `assigned` only) and names three acts: who wrote it, who added
+the source label (the newest `labeled` event of that label), and who assigned it to the user (the newest `assigned`
+event of the connected login). Each counts only when a **trusted actor** did it:
+
+- an app or a bot never is one: an actor of GitHub type `Bot`, a `name[bot]` login, or an act `performed_via_github_app`;
+- this hopper's own **Assign to me** (issue #440) goes through the hopper's app as the user: it is the user's act when the
+  user's event log holds `source.issues_assigned` for the item (`IntakeTrust.assignedHere`);
+- a login is asked of **Access**: OpenFGA `intake#can_start_jobs` for `github_login:<login>`, the user's trusted actors
+  told at the check as `trusted_actor` tuples (`intakeActorCheck`) — those named in **Settings → Intake**, else the
+  user's connected login only. One check per distinct login per sync. No OpenFGA, OpenFGA not reached, or a model without
+  `intake` (`intakeGaps`; the hopper's own unedited model is upgraded) trusts nobody: every issue is then a request card,
+  and its card says why.
+
+An issue whose body carries the hopper's note under an issue a job filed (`FILED_BY_JOB`, the proxy's `filedNote`) is
+never of a trusted origin, though the hopper's connection wrote it: a job cannot make work for itself (requirement 6;
+the proxy already adds no label or assignee).
+
+**Request cards.** An issue not of a trusted origin is no item: its intake outcome is the request (`IntakeOutcome`
+`action: 'approve'`, `request`: the SHA-256 of its title and body, both as read, its author, the three acts and whether
+each is trusted, and why). Sources shows it first, as a card (`ui/src/components/request-card.tsx`): the reasons, who
+wrote, labelled and assigned it, the title and the body as plain text, and **Approve**. Approve —
+`POST /ui/api/sources/:name/intake` `{ kind: 'approve', keys: [key], hash }` — is a person's act: a UI session signed in
+(a job's routes reach no `/ui/api/`), the operator role, and Access's `item#can_accept_text` for the signed-in user (as
+for accepting new text, issue #662; 403 denied, 503 when OpenFGA cannot be asked). The source reads the issue again; only
+when its title and body still hash as the person read them is its text — with the assignee's comments the job would see —
+recorded as the item's snapshot, reason `approved` (`IntakeTrust.approve`), with `source.request_approved` (the hash,
+the actors, who; never the text). The source syncs at once.
+
+**Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
+— a snapshot of reason `approved`, or `accepted` (Accept the new text) — is taken, origin `approved`. Its first job runs
+the snapshot (issue #662 `gateItem`), and a change since holds it as a text change. An edit after the approval and before
+its job is made shows the card again, with the approved text and the change line by line.
+
+**The job's origin.** `SourceItem.origin` → `JobSourceRef.origin`: `trusted` or `approved`. Run again and Rework keep the
+origin of the job they follow. A job of a source that does not judge origins, or one taken before this change, has none.
+
+**Yolo mode** (requirement 7) merges only a job with an origin: a job with none waits for a person (`untrusted origin` on
+the Pull requests card). Its checks rule stays as issue #677 set it: no checks, settled, is ready — the owner's later
+decision over the issue's "no checks does not count".
+
+**Settings → Intake** (`/api/intake-actors`, `POST /ui/api/intake-actors`, admin): the whole list of GitHub logins,
+lowercased; empty: the connected login only. A bot's login is refused. `intake.actors_changed { from, to, by }`. Kept in
+the user's settings (`intakeActors`), told to OpenFGA at each check: the role lives in the model (`intake#trusted_actor`),
+so an edited model can widen or narrow who it admits.
+
+**Not in this part** (left to the next parts of #652): holding queued jobs that fail requirement 1 at the first start
+(the backfill), the vault helper only by a per-job grant, the repository setup check in Sources, updating only to an image
+of a merged and checked commit, and the issue's open points.
+
+**Residual risk.** Events GitHub cannot be asked for count as done by nobody known: the issue is a request card. An
+`assigned` event through the hopper's app is the user's while the user's log says this hopper assigned the item, even
+when a later bot assigned it again. A person with write access to the repository who removes the hopper's note from a
+job-filed issue makes it read as the author's.

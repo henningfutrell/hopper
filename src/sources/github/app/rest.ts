@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the App adapter, each with an installation token for the
 // issue's repo. REST shapes mapped onto the GitHubApi port's types.
 
-import type { GitHubComment, GitHubIssue } from '../api.ts';
+import type { GitHubComment, GitHubIssue, IssueEvent } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -49,12 +49,30 @@ export async function listComments(req: Request, token: string, repo: string, nu
   return comments.map(commentFrom).sort((a, b) => a.id - b.id);
 }
 
-interface RestIssueEvent { event: string; created_at: string; assignee?: { login?: string } | null }
+interface RestIssueEvent {
+  event: string; created_at: string; assignee?: { login?: string } | null;
+  actor?: { login?: string; type?: string } | null; label?: { name?: string } | null; performed_via_github_app?: { slug?: string } | null;
+}
+
+const listEvents = (req: Request, token: string, repo: string, number: number): Promise<RestIssueEvent[]> =>
+  paginate(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/events', { ...splitRepo(repo), issue_number: number, per_page: 100 }, `token ${token}`, (d) => d as RestIssueEvent[]);
+
+/** The issue's `labeled` and `assigned` events, oldest first (issue #652). */
+export async function issueEvents(req: Request, token: string, repo: string, number: number): Promise<IssueEvent[]> {
+  return (await listEvents(req, token, repo, number)).flatMap((e): IssueEvent[] => {
+    if (e.event !== 'labeled' && e.event !== 'assigned') return [];
+    return [{
+      event: e.event, at: e.created_at, actor: e.actor?.login ?? '', ...(e.actor?.type ? { actorType: e.actor.type } : {}),
+      ...(e.performed_via_github_app?.slug ? { viaApp: e.performed_via_github_app.slug } : {}),
+      ...(e.event === 'labeled' && e.label?.name ? { label: e.label.name } : {}),
+      ...(e.event === 'assigned' && e.assignee?.login ? { assignee: e.assignee.login } : {}),
+    }];
+  }).sort((a, b) => a.at.localeCompare(b.at));
+}
 
 /** The newest `assigned` event naming `login` (GitHub logins compare without case), or undefined. */
 export async function assignedAt(req: Request, token: string, repo: string, number: number, login: string): Promise<string | undefined> {
-  const events = await paginate(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/events',
-    { ...splitRepo(repo), issue_number: number, per_page: 100 }, `token ${token}`, (d) => d as RestIssueEvent[]);
+  const events = await listEvents(req, token, repo, number);
   const wanted = login.toLowerCase();
   return events.filter((e) => e.event === 'assigned' && e.assignee?.login?.toLowerCase() === wanted)
     .map((e) => e.created_at).sort().at(-1);

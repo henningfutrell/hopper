@@ -12,6 +12,7 @@ import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './fa
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
+import type { JobOrigin } from './intake-origin.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
@@ -219,13 +220,15 @@ export interface JobSourceRef {
   labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
   /** The item's declared parts and how many are done, at intake (issue #729); absent: it declares none. */
   parts?: Parts;
+  /**
+   * Where the item came from (issue #652): a trusted origin, or a request card a person approved. Absent: neither — a job
+   * of a source that does not judge origins, or one taken before origins were judged. Yolo mode merges only jobs with one.
+   */
+  origin?: JobOrigin;
 }
 
 /** An item's declared parts (issue #729): how many there are, and how many are done. */
-export interface Parts {
-  done: number;
-  total: number;
-}
+export interface Parts { done: number; total: number }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
 export type AdviceAction =

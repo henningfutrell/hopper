@@ -4,7 +4,7 @@
 // `hopper:partly-done` only comes off, so the issue is offered again and its next part runs. Closed without a merge:
 // flagged, → `hopper:pr-closed`, which keeps the issue out until a person removes it. Still open (PR waiting, issue #637):
 // what is seen of it — a draft, merge conflicts, its checks — is kept for the Pull requests list; and with yolo mode on for
-// its repository, the hopper merges it once it is ready: not a draft, no merge conflicts, and its checks passed — or it
+// its repository and its job's item of a trusted origin or an approved request (issue #652), the hopper merges it once it is ready: not a draft, no merge conflicts, and its checks passed — or it
 // has none, and none started within a grace window after its last push (issue #677; issue #652 had it wait for ever). A
 // refused merge is kept on it (`mergeError`) and asked again next sync: it never fails the job. A pull request the
 // report could not name is looked for again each sync, and named once found (issue #677). A merge marks the item done
@@ -71,7 +71,8 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
  * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge. A person's act (issue
  * #677): merged or closed now, GitHub's refusal thrown.
  */
-async function waiting(ctx: FollowContext, repo: string, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct): Promise<{ ended: 'merged' | 'closed' } | { seen: PullRequestSeen }> {
+async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct): Promise<{ ended: 'merged' | 'closed' } | { seen: PullRequestSeen }> {
+  const repo = job.source!.repo!;
   if (act === 'close') {
     await ctx.api.closeWithoutMerge(repo, numberOf(url));
     return { ended: 'closed' };
@@ -87,7 +88,8 @@ async function waiting(ctx: FollowContext, repo: string, url: string, before: Pu
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
   };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
-  if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
+  // Yolo mode merges only a job whose item was of a trusted origin or an approved request (issue #652).
+  if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || job.source?.origin === undefined || !readyToMerge(seen, now)) return { seen };
   try {
     await ctx.api.merge(repo, numberOf(url));
     return { ended: 'merged' };
@@ -157,7 +159,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     let byHopper = false;
     let mergedHere = false;
     if (now.state === 'open') {
-      const w = await waiting(ctx, repo, now.url, s.seen, act);
+      const w = await waiting(ctx, job, now.url, s.seen, act);
       if ('seen' in w) {
         if (JSON.stringify(w.seen) === JSON.stringify(s.seen)) return undefined;
         return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen } };

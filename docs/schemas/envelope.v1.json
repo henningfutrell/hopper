@@ -78,6 +78,8 @@
         "source.claim_released",
         "source.intake_migrated",
         "source.issues_assigned",
+        "source.request_approved",
+        "intake.actors_changed",
         "auth.pending",
         "auth.completed",
         "auth.expired",

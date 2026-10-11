@@ -84,6 +84,25 @@ export interface GitHubComment {
   url: string;
 }
 
+/**
+ * A label or an assignment on an issue, from its events (issue #652): who did it, and through which app. What the trust
+ * check of an issue's origin reads.
+ */
+export interface IssueEvent {
+  event: 'labeled' | 'assigned';
+  at: string;
+  /** Who did it; empty when GitHub did not say. */
+  actor: string;
+  /** GitHub's type of the actor (`User`, `Bot`, …); absent when GitHub did not say. */
+  actorType?: string;
+  /** The app it was done through (`performed_via_github_app`), by its slug; absent: none. */
+  viaApp?: string;
+  /** `labeled`: the label's name. */
+  label?: string;
+  /** `assigned`: the login assigned. */
+  assignee?: string;
+}
+
 export interface GitHubProjectItem {
   /** The issue url. */
   url: string;
@@ -107,6 +126,8 @@ export interface GitHubApi {
   removeLabels(repo: string, number: number, labels: string[]): Promise<void>;
   /** When the issue was last assigned to `login` (its newest `assigned` event), or undefined when never (issue #387). */
   assignedAt(repo: string, number: number, login: string): Promise<string | undefined>;
+  /** The issue's `labeled` and `assigned` events, oldest first (issue #652: who added the label and the assignment). */
+  issueEvents(repo: string, number: number): Promise<IssueEvent[]>;
   /** Add assignees to an issue (Assign to me in Sources, issue #440): the user's own act, never the hopper's. */
   addAssignees(repo: string, number: number, logins: string[]): Promise<void>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */

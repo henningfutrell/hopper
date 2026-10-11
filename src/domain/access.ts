@@ -189,6 +189,11 @@ export interface VaultAccess extends TemplateApprovals {
   decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
 }
 
+/** What intake asks of access (issue #652): whether a GitHub login may start a user's jobs, the user's trusted actors told. */
+export interface IntakeAccess {
+  decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
+}
+
 /** Access's answer to one check. `unavailable`: OpenFGA could not be asked (not set up, not reached), so it is a deny by outage, not a refusal (issue #696). */
 export interface AccessAnswer { allowed: boolean; reason: string; unavailable?: true }
 

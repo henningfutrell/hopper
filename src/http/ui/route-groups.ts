@@ -17,8 +17,9 @@ import { registerPullRequestActRoutes } from './pull-request-acts.ts';
 import { registerPhaseShiftRoutes } from './phase-shifts.ts';
 import { registerReviewRoutes } from './reviews.ts';
 import { registerSourceIntakeRoutes } from './source-intake.ts';
+import { registerIntakeActorRoutes } from './intake-actors.ts';
 import { registerTldrRoutes } from './tldr.ts';
 import { registerVaultRoutes } from './vault.ts';
 import { registerYoloModeRoutes } from './yolo-mode.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerYoloModeRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerYoloModeRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes] as const;

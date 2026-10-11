@@ -12,7 +12,7 @@ import type { Job } from '@/model/wire';
 import { Since } from './job';
 
 /** The body's change, line by line: removed lines, then added ones, in place. */
-function BodyDiff({ from, to }: { from: string; to: string }) {
+export function BodyDiff({ from, to }: { from: string; to: string }) {
   const parts = useMemo(() => diffLines(from, to), [from, to]);
   return (
     <pre data-slot="body-diff" className="max-h-64 overflow-auto rounded border bg-muted/30 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap">

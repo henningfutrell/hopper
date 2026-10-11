@@ -1,11 +1,12 @@
 // What a job source's intake did with each open labelled issue it listed (issue #440): taken, or the one reason
 // it was not, with Assign to me and Release claim where the source offers them (a GitHub write the user makes);
 // what the intake migration changed, once; and the repos outside the job repositories with issues for the user,
-// each offered to add, never added by itself.
+// each offered to add, never added by itself. An issue not of a trusted origin is a request card (issue #652) with Approve.
 import { Hand, Plus, Unlock } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
+import { RequestCard } from '@/components/request-card';
 import type { IntakeMigration, IntakeOutcome, OutsideRepo } from '../../../src/domain/intake.ts';
 import type { SourceStatus } from '@/model/wire';
 import { act } from '@/store';
@@ -28,6 +29,7 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
       {canOperate && x.action === 'release' && (
         <Button size="xs" variant="outline" title="Removes hopper:claimed and its holder label: no job here holds it, and the next sync takes it" onClick={() => void send('release', 'Claim released')}><Unlock />Release claim</Button>
       )}
+      {x.action === 'approve' && x.request && <RequestCard request={x.request} source={source} itemKey={x.key} canOperate={canOperate} />}
     </li>
   );
 }
@@ -74,8 +76,8 @@ export function SourceIntake({ s, addRepository }: { s: SourceStatus; addReposit
   const migration = d.intakeMigration as IntakeMigration | undefined;
   if (!Array.isArray(d.intake) && !migration && outside.length === 0) return null;
   const taken = items.filter((x) => x.reason === undefined);
-  // Not taken first: they are what may need the user.
-  const shown = [...items.filter((x) => x.reason !== undefined), ...taken];
+  // Requests first, then the others not taken: they are what may need the user.
+  const shown = [...items.filter((x) => x.action === 'approve'), ...items.filter((x) => x.reason !== undefined && x.action !== 'approve'), ...taken];
   const assignable = items.filter((x) => x.action === 'assign').map((x) => x.key);
   return (
     <div data-intake={s.name} className="space-y-2 text-xs">
@@ -89,7 +91,7 @@ export function SourceIntake({ s, addRepository }: { s: SourceStatus; addReposit
             </Button>
           )}
         </div>
-        {shown.length > 0 && <ul className="max-h-64 space-y-1 overflow-y-auto">{shown.map((x) => <Item key={x.key} x={x} source={s.name} canOperate={canOperate} />)}</ul>}
+        {shown.length > 0 && <ul className="max-h-[32rem] space-y-1 overflow-y-auto">{shown.map((x) => <Item key={x.key} x={x} source={s.name} canOperate={canOperate} />)}</ul>}
       </>}
       {typeof d.outsideError === 'string' && <div className="text-warn">could not list issues outside the job repositories: {d.outsideError}</div>}
       {outside.length > 0 && <Outside repos={outside} addRepository={addRepository} />}

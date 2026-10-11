@@ -106,7 +106,12 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     return { status: 200, body: p.items, headers: p.headers };
   }
   if (req.method === 'GET' && sub === '/events') {
-    const p = paginate(ctx, req, issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, assignee: { login } })));
+    // Its labels and assignments, each by its author (issue #652: who added them is what intake trusts).
+    const actor = { login: issue.author, type: 'User' };
+    const p = paginate(ctx, req, [
+      ...issue.labels.map((name) => ({ event: 'labeled', created_at: issue.updatedAt, actor, label: { name } })),
+      ...issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, actor, assignee: { login } })),
+    ]);
     return { status: 200, body: p.items, headers: p.headers };
   }
   if (req.method === 'POST' && sub === '/labels') {

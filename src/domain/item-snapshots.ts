@@ -9,8 +9,12 @@ export interface ItemComment { author: string; at: string; body: string }
 /** An item's text: what its job runs. */
 export interface ItemText { title: string; body: string; comments: ItemComment[] }
 
-/** How a snapshot came to be: at the item's first job, from its first job's spec by the migration, or a person accepted new text. */
-export const SNAPSHOT_REASONS = ['intake', 'backfill', 'accepted'] as const;
+/**
+ * How a snapshot came to be: at the item's first job, from its first job's spec by the migration, a person accepted new
+ * text, or a person approved the item's request card (issue #652). The last two are a person's approval of the text.
+ */
+export const SNAPSHOT_REASONS = ['intake', 'backfill', 'accepted', 'approved'] as const;
+export const APPROVED_BY_A_PERSON: readonly SnapshotReason[] = ['accepted', 'approved'];
 export type SnapshotReason = typeof SNAPSHOT_REASONS[number];
 
 /** The approved text of one source item, by its key. */

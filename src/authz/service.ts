@@ -7,16 +7,14 @@
 import { randomUUID } from 'node:crypto';
 import { isRefusal, type AccessRepository, type AuthorizationServer, type Clock, type RelationshipTuple, type StoredTuple } from '../domain/ports.ts';
 import type { AccessAnswer, JobStatus, LiveRequesters } from '../domain/types.ts';
-import { rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
+import { templateRadius, type TemplateScope } from '../blast-radius/template.ts';
 import type { Access, LiveShare } from './access-port.ts';
 import {
-  DEFAULT_BLAST_RADIUS_SETTINGS, profileProblem, RADIUS_LEVELS, TEMPLATE_NAME,
-  type RadiusRules, type TemplateRadius,
-  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest,
-  type OperationProfile, type RevokedApproval, type Asset,
+  profileProblem, TEMPLATE_NAME, type RadiusRules,
+  type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, type ModelJson } from './model.ts';
-import { apiTokenCheck, approvalTuples, artifactObject, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, userObject } from './objects.ts';
+import { apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, type ModelJson } from './model.ts';
+import { apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, userObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -67,7 +65,6 @@ const plain = (t: StoredTuple): RelationshipTuple => ({ subject: t.subject, rela
 const describeAsset = (t: Asset) => `${t.kind} ${t.name}`;
 const keyOf = (ts: RelationshipTuple[]): string => ts.map(tupleKey).sort().join('\n');
 const gapsOf = (dsl: string): string[] => modelGaps(compileAccessModel(dsl));
-const rank = (r: TemplateRadius): number => RADIUS_LEVELS.indexOf(r.level);
 
 /** Why a request names no template, operation or asset the model can hold, or undefined. */
 export function requestProblem(r: { template: string; operation: string; asset: { kind: string; name: string } }): string | undefined {
@@ -95,6 +92,7 @@ export function createAccess(o: AccessOptions): Access {
   const itemGapsOf = gapsMemo(itemGaps);
   const sharedGapsOf = gapsMemo(sharedSecretGaps);
   const apiTokenGapsOf = gapsMemo(apiTokenGaps);
+  const intakeGapsOf = gapsMemo(intakeGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -103,7 +101,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -209,13 +207,6 @@ export function createAccess(o: AccessOptions): Access {
   const approvals = (): Approval[] =>
     o.repo.liveTuples().filter((t) => t.relation === 'approved_for').map(approvalOf).filter((a): a is Approval => a !== undefined);
 
-  /** A template's rating: from its approvals and each vault template of its name; the highest when users' templates share it. */
-  const radiusOf = (template: string, approved: OperationProfile[], scopes: { name: string; scope: TemplateScope; rules: RadiusRules }[]): TemplateRadius => {
-    const mine = scopes.filter((s) => s.name === template);
-    const rated = mine.length ? mine.map((s) => rateTemplate(s.scope, approved, s.rules)) : [rateTemplate({ secrets: [], profiles: [] }, approved, DEFAULT_BLAST_RADIUS_SETTINGS.rules)];
-    return rated.reduce((a, b) => (rank(b) > rank(a) ? b : a));
-  };
-
   /** OpenFGA's answer to one check apart from mints (an artifact, a system secret), once everything is pushed; a deny when it cannot be had, marked `unavailable` (issue #696). Not recorded. */
   const checkOnce = async (what: string, gaps: string[], tuple: RelationshipTuple, contextual: RelationshipTuple[], why: (allowed: boolean) => string): Promise<AccessAnswer> => {
     const server = o.server;
@@ -250,6 +241,10 @@ export function createAccess(o: AccessOptions): Access {
       const object = itemObject(item);
       return checkOnce('accepting new text', itemGapsOf(model().dsl), { subject: userObject(userId), relation: 'can_accept_text', object },
         [{ subject: userObject(item.ownerId), relation: 'owner', object }], (allowed) => (allowed ? 'they own the item' : 'only the item\'s owner may accept its new text'));
+    },
+    decideIntakeActor(userId, login, actors) {
+      const { tuple, contextual } = intakeActorCheck(userId, login, actors);
+      return checkOnce('intake', intakeGapsOf(model().dsl), tuple, contextual, (allowed) => `${login} is${allowed ? '' : ' not'} a trusted actor`);
     },
     approvedProfiles: (template) => approvals().filter((a) => a.template === template).map((a) => a.profile),
     async revokeProfile(template, profile, by) {
@@ -318,7 +313,7 @@ export function createAccess(o: AccessOptions): Access {
       const scopes = o.templates?.() ?? [];
       const templates = [...new Set([...all.map((a) => a.template), ...scopes.map((s) => s.name)])].sort().map((template) => {
         const mine = all.filter((a) => a.template === template);
-        return { template, approvals: mine, radius: radiusOf(template, mine.map((a) => a.profile), scopes) };
+        return { template, approvals: mine, radius: templateRadius(template, mine.map((a) => a.profile), scopes) };
       });
       const revoked = o.repo.revoked('approved_for', REVOKED_SHOWN).flatMap((t): RevokedApproval[] => {
         const a = approvalOf(t);

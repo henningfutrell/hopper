@@ -35,6 +35,18 @@ export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTu
 export const artifactObject = (a: { userId: string; id: string }): string => `artifact:${a.userId}/${a.id}`;
 /** A source item (issue #662), by its owner and the SHA-256 of its key: a key is a URL, which an object id cannot carry. */
 export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
+/** A GitHub login (issue #652), lowercased: GitHub logins compare without case. */
+export const githubLoginObject = (login: string): string => `github_login:${encodeURIComponent(login.toLowerCase())}`;
+/** A user's intake (issue #652). */
+export const intakeObject = (userId: string): string => `intake:${userId}`;
+/** The check whether `login` may start the user's jobs (issue #652): the user's trusted actors told for this check only. */
+export function intakeActorCheck(userId: string, login: string, actors: readonly string[]): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = intakeObject(userId);
+  return {
+    tuple: { subject: githubLoginObject(login), relation: 'can_start_jobs', object },
+    contextual: [...new Set(actors.map((a) => githubLoginObject(a)))].map((subject) => ({ subject, relation: 'trusted_actor', object })),
+  };
+}
 export const linkObject = (l: { userId: string; shareId: string }): string => `link:${l.userId}/${l.shareId}`;
 export function shareTuples(shares: readonly { ownerId: string; artifactId: string; shareId: string; userId?: string }[]): RelationshipTuple[] {
   return shares.map((s) => ({

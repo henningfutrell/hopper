@@ -74,6 +74,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   kind uses an established library for its protocol or hash (openid-client, jose, @node-saml/node-saml,
   ldapts, @octokit/oauth-methods for GitHub's device flow, openid-client for its web flow); no hand-rolled protocol or password code. The hopper keeps no password accounts of its own (issue #237). A realm change from the UI is loaded
   before it is stored and never ends the acting admin's own admin session. No sign-in (`none`) is only ever explicit.
+- **Jobs come only from a trusted origin** (issue #652, `docs/design.md` "Trusted origin and request cards"): an issue
+  becomes a job only when the user's trusted actors — Access decides (OpenFGA `intake#can_start_jobs`) — wrote, labelled
+  and assigned it, not through an app or as a bot, and no job filed it; any other is a request card a person approves, and
+  its job runs the approved text. Approve is a person's act through the UI session, never a job's. Yolo mode merges only
+  a job with a trusted or approved origin. No OpenFGA trusts nobody.
 - **GitHub text is neutral.** Text the hopper or a job writes to GitHub names no person and
   carries no personal or machine details. The hopper writes only labels to issues, never closes
   one (the merge of a job's pull request does), and posts no comments. Seven exceptions, each the user's own act or setting: with

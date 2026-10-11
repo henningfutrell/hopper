@@ -27,8 +27,12 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
     labels: [...item.labels],
     ...(item.parts ? { parts: { ...item.parts } } : {}),
+    ...(item.origin ? { origin: item.origin } : {}),
   };
 }
+
+/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows. */
+const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !job.source?.origin ? item : { ...item, origin: job.source.origin });
 
 /**
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
@@ -259,9 +263,10 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
 
     rerun(jobId, item, source, by = 'user', brief, acting) {
       return store.tx(() => {
-        if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
+        const ended = store.jobs.get(jobId);
+        if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
-        const job = ingest(item, source, brief) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = ingest(originFrom(item, ended), source, brief) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
         return job;
       });
@@ -273,7 +278,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
         // It no longer follows its pull request: the new job does, once it ends done (issue #724).
         store.jobs.update(jobId, { sourceState: { ...ended.sourceState, source: rework.state } });
-        const made = ingest(item, source, reworkBrief(rework.pullRequest, rework.notes)) ?? store.jobs.getBySourceKey(item.key)!;
+        const made = ingest(originFrom(item, ended), source, reworkBrief(rework.pullRequest, rework.notes)) ?? store.jobs.getBySourceKey(item.key)!;
         const job = store.jobs.update(made.id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: nowIso(c), ...acting } });
         store.events.append({ type: 'job.rework_requested', jobId, data: { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id, ...acting } });
         return job;
