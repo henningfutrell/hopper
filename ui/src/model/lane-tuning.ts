@@ -1,12 +1,12 @@
 // Lane tuning in the UI (issue #688), pure: the line that compares a machine's recommended lanes with its configured
-// lanes — and in active mode the lanes in use —, the confidence, a line per change in the history, and the change a save
-// of its settings sends.
-import type { LaneChange, LaneRecommendation, LaneTuning, LaneTuningMode } from './wire.ts';
+// lanes, the confidence, a line per change in the history, a dismissed recommendation, and the change a save of its
+// settings sends.
+import type { LaneChange, LaneRecommendation, LaneTuning } from './wire.ts';
 
 /** The most lanes a bound may name, as the daemon allows it. */
 const MAX_LANES = 64;
 
-export interface LaneTuningDraft { autoTune: boolean; minLanes: string; maxLanes: string; mode: LaneTuningMode }
+export interface LaneTuningDraft { autoTune: boolean; minLanes: string; maxLanes: string }
 export type LaneTuningPatch = Partial<LaneTuning>;
 
 const lanes = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
@@ -14,16 +14,16 @@ const lanes = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
 /** The recommended lanes next to the configured lanes, in one line. */
 export function recommendationLine(r: LaneRecommendation): string {
   if (!r.tuning.autoTune) return `Auto-tune is off: ${lanes(r.configured)} configured`;
-  if (r.tuning.mode === 'active') {
-    return r.lanes === r.inUse ? `${lanes(r.inUse)} in use, as recommended; configured ${r.configured}` : `Recommends ${lanes(r.lanes)}; ${r.inUse} in use, configured ${r.configured}`;
-  }
   if (r.lanes === r.configured) return `Recommends the configured ${lanes(r.configured)}`;
   const d = r.lanes - r.configured;
   return `Recommends ${lanes(r.lanes)}; configured ${r.configured}: ${Math.abs(d)} ${d > 0 ? 'more' : 'fewer'}`;
 }
 
-/** A change in the history, in one line: the lanes before and after, and why. */
-export const changeLine = (c: LaneChange): string => `${c.from} → ${lanes(c.to)}: ${c.kind === 'applied' ? c.reason : `undone by ${c.by}`}`;
+/** A change in the history, in one line: the lanes before and after, who, and why. An applied change with no `by`: the hopper applied it itself. */
+export const changeLine = (c: LaneChange): string => `${c.from} → ${lanes(c.to)}: ${c.kind === 'undone' ? `undone by ${c.by}` : `${c.by === undefined ? '' : `applied by ${c.by}: `}${c.reason}`}`;
+
+/** Who dismissed the recommendation, in one line; undefined when none did. */
+export const dismissedLine = (r: LaneRecommendation): string | undefined => (r.dismissed ? `Dismissed by ${r.dismissed.by}; shown again when the recommendation moves` : undefined);
 
 export const confidenceText = (r: LaneRecommendation): string => (r.confidence > 0 ? `confidence ${Math.round(r.confidence * 100)}%` : 'no history yet');
 
@@ -44,7 +44,6 @@ export function laneTuningPatch(t: LaneTuning, d: LaneTuningDraft): { ok: true; 
     ...(d.autoTune === t.autoTune ? {} : { autoTune: d.autoTune }),
     ...(min.value === t.minLanes ? {} : { minLanes: min.value }),
     ...(max.value === t.maxLanes ? {} : { maxLanes: max.value }),
-    ...(d.mode === t.mode ? {} : { mode: d.mode }),
   };
   return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
 }

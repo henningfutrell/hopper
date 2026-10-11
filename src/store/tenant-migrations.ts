@@ -26,6 +26,7 @@ import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
+import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -345,6 +346,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   ARTIFACT_REVISION_TABLES,
   // 37: A comment holds no job (issue #747): a text change whose title and body are the snapshot's is dropped.
   commentHoldsReleased,
+  // 38: Lane tuning recommends, an admin applies (issue #688): the lanes active mode applied become configured lanes.
+  laneRecommendationsOnly,
 ];
 
 /** A user schema's version once migrated. */

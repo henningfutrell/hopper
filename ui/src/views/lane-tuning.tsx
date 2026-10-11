@@ -1,8 +1,9 @@
 // Lane tuning (issue #688), on Machines: each machine's lane recommendation — the lanes it can run from its resource
-// history and the usage it burns — next to its configured lanes, with the reason and the confidence. Shadow mode changes
-// nothing; active mode applies the recommendation within the bounds, and the history lists each change with its reason.
-// An admin turns auto-tune on or off per machine, sets the least and most lanes it may recommend and the mode, and undoes
-// the last change. Read from GET /api/lanes/plan (`hopper lanes plan` reads the same), again as new machine samples come in.
+// history and the usage it burns — next to its configured lanes, with the reason and the confidence. The hopper applies
+// none by itself: an admin applies one (the machine's configured lanes) or dismisses it, and undoes the last one applied;
+// the history lists each change with its reason. An admin turns auto-tune on or off per machine and sets the least and
+// most lanes it may recommend. Read from GET /api/lanes/plan (`hopper lanes plan` reads the same), again as new machine
+// samples come in.
 import { Gauge } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -11,14 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { changeLine, confidenceText, laneTuningPatch, recommendationLine, type LaneTuningDraft } from '@/model/lane-tuning';
+import { changeLine, confidenceText, dismissedLine, laneTuningPatch, recommendationLine, type LaneTuningDraft } from '@/model/lane-tuning';
 import type { LaneChange, LaneRecommendation, LaneTuningPlan } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
 function TuningForm({ r, onSaved }: { r: LaneRecommendation; onSaved: (p: LaneTuningPlan) => void }) {
   const t = r.tuning;
-  const [draft, setDraft] = useState<LaneTuningDraft>({ autoTune: t.autoTune, minLanes: String(t.minLanes), maxLanes: String(t.maxLanes), mode: t.mode });
+  const [draft, setDraft] = useState<LaneTuningDraft>({ autoTune: t.autoTune, minLanes: String(t.minLanes), maxLanes: String(t.maxLanes) });
   const [busy, setBusy] = useState(false);
   const checked = laneTuningPatch(t, draft);
   const save = async () => {
@@ -39,9 +40,6 @@ function TuningForm({ r, onSaved }: { r: LaneRecommendation; onSaved: (p: LaneTu
       <label className="flex items-center gap-2">
         <Switch checked={draft.autoTune} disabled={busy} aria-label={`Auto-tune ${name}`} onCheckedChange={(autoTune) => setDraft({ ...draft, autoTune })} />Auto-tune
       </label>
-      <label className="flex items-center gap-2">
-        <Switch checked={draft.mode === 'active'} disabled={busy} aria-label={`Active mode for ${name}`} onCheckedChange={(on) => setDraft({ ...draft, mode: on ? 'active' : 'shadow' })} />Active
-      </label>
       <label className="flex items-center gap-1.5">Least
         <Input className="h-7 w-14" inputMode="numeric" aria-label={`Least lanes for ${name}`} disabled={busy} value={draft.minLanes} onChange={(e) => setDraft({ ...draft, minLanes: e.target.value })} />
       </label>
@@ -54,20 +52,40 @@ function TuningForm({ r, onSaved }: { r: LaneRecommendation; onSaved: (p: LaneTu
   );
 }
 
-function Undo({ r, to, onSaved }: { r: LaneRecommendation; to: number; onSaved: (p: LaneTuningPlan) => void }) {
+/** One admin action on a machine's recommendation: posts it, and shows the plan after it. */
+function Action({ r, path, body, label, done, refused, variant = 'outline', onSaved }: {
+  r: LaneRecommendation; path: string; body: Record<string, unknown>; label: string; done: string; refused: string;
+  variant?: 'default' | 'outline'; onSaved: (p: LaneTuningPlan) => void;
+}) {
   const [busy, setBusy] = useState(false);
-  const undo = async () => {
+  const act = async () => {
     setBusy(true);
     try {
-      onSaved(await post<LaneTuningPlan>('/ui/api/lanes/undo', { machineId: r.machineId }));
-      toast.success(`Lane change undone for ${r.label || r.machineId}`);
+      onSaved(await post<LaneTuningPlan>(path, { machineId: r.machineId, ...body }));
+      toast.success(`${done} for ${r.label || r.machineId}`);
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
-      toast.error(e instanceof RoleRefused ? 'Only an admin undoes a lane change' : (e as Error).message);
+      toast.error(e instanceof RoleRefused ? refused : (e as Error).message);
     }
     setBusy(false);
   };
-  return <Button size="sm" variant="outline" disabled={busy} onClick={() => void undo()}>Undo: back to {to}</Button>;
+  return <Button size="sm" variant={variant} disabled={busy} onClick={() => void act()}>{label}</Button>;
+}
+
+function Actions({ r, onSaved }: { r: LaneRecommendation; onSaved: (p: LaneTuningPlan) => void }) {
+  if (!r.apply && !r.undo) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {r.apply && (
+        <>
+          <Action r={r} path="/ui/api/lanes/apply" body={{ lanes: r.apply.to }} label={`Apply: ${r.apply.to} lane${r.apply.to === 1 ? '' : 's'}`} variant="default"
+            done="Lane recommendation applied" refused="Only an admin applies a lane recommendation" onSaved={onSaved} />
+          <Action r={r} path="/ui/api/lanes/dismiss" body={{}} label="Dismiss" done="Lane recommendation dismissed" refused="Only an admin dismisses a lane recommendation" onSaved={onSaved} />
+        </>
+      )}
+      {r.undo && <Action r={r} path="/ui/api/lanes/undo" body={{}} label={`Undo: back to ${r.undo.to}`} done="Lane change undone" refused="Only an admin undoes a lane change" onSaved={onSaved} />}
+    </div>
+  );
 }
 
 function Row({ r, admin, changes, onSaved }: { r: LaneRecommendation; admin: boolean; changes: LaneChange[]; onSaved: (p: LaneTuningPlan) => void }) {
@@ -78,6 +96,7 @@ function Row({ r, admin, changes, onSaved }: { r: LaneRecommendation; admin: boo
         <span data-slot="lane-recommendation-line" className="num">{recommendationLine(r)}</span>
       </div>
       <p className="text-xs text-muted-foreground">{r.reason} <span className="whitespace-nowrap">({confidenceText(r)})</span></p>
+      {r.dismissed && <p data-slot="lane-dismissed" className="text-xs text-muted-foreground">{dismissedLine(r)}</p>}
       {changes.length > 0 && (
         <ul className="grid gap-0.5 text-xs text-muted-foreground">
           {changes.map((c) => (
@@ -85,7 +104,7 @@ function Row({ r, admin, changes, onSaved }: { r: LaneRecommendation; admin: boo
           ))}
         </ul>
       )}
-      {admin && r.undo && <div><Undo r={r} to={r.undo.to} onSaved={onSaved} /></div>}
+      {admin && <Actions r={r} onSaved={onSaved} />}
       {admin && <TuningForm key={JSON.stringify(r.tuning)} r={r} onSaved={onSaved} />}
     </li>
   );
@@ -101,8 +120,8 @@ export function LaneTuningPanel() {
     <Panel title="Lane tuning" icon={Gauge}>
       <div className="grid gap-3">
         <p className="text-xs text-muted-foreground">
-          The lanes each machine can run, from its resources over the last {plan?.windowDays ?? 7} days and the usage it burns. Shadow mode: the
-          hopper shows and records each recommendation, and keeps the configured lanes. Active mode: the hopper applies it within the bounds.
+          The lanes each machine can run, from its resources over the last {plan?.windowDays ?? 7} days and the usage it burns. The hopper
+          recommends and changes no lanes: an admin applies a recommendation, which sets the machine's lanes, or dismisses it.
         </p>
         {plan ? (
           <ul className="grid gap-3">{plan.machines.map((r) => <Row key={r.machineId} r={r} admin={admin} changes={plan.changes.filter((c) => c.machineId === r.machineId).slice(0, 5)} onSaved={setPlan} />)}</ul>

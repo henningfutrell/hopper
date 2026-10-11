@@ -1,15 +1,14 @@
 // Lane tuning (issue #688, design.md "Lane tuning"): every machine's lane recommendation from its lane load over the
 // lane tuning window, the usage it burns now and the usage limits, by the decider's rules (src/decider/lane-tuning.ts).
-// Shadow mode: a recommendation that changes is recorded as `lanes.recommended`, and the decider keeps the configured
-// lanes. Active mode: a recommendation is applied — the machine's applied lanes, `lanes.applied` with its reason —, the
-// engine lists the machine with them (`tunedMachines`), and an admin undoes the last change (`lanes.undone`). Each
-// machine's settings — auto-tune, the bounds, the mode — are the user's, in the database.
+// A recommendation that changes is recorded as `lanes.recommended`. The hopper applies none by itself: an admin applies
+// one — the machine's configured lanes set through `machineLanes`, the path an edit of the machine takes, and
+// `lanes.applied` with its reason —, dismisses it until it moves (`lanes.dismissed`), or undoes the last one applied
+// (`lanes.undone`). Each machine's settings — auto-tune and the bounds — are the user's, in the database.
 import { laneEffect } from '../decider/usage.ts';
-import { laneChange, lanesInUse, recommendLanes } from '../decider/lane-tuning.ts';
-import type { MachineSource, UserStore } from '../domain/ports.ts';
+import { laneActions, recommendLanes } from '../decider/lane-tuning.ts';
+import type { UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LANE_TUNING, LANE_TUNING_WINDOW_DAYS, MAX_TUNED_LANES, RESOURCE_PRESSURE, type AppliedLanes, type LaneChange, type LaneRecommendation,
-  type LaneTuning, type LaneTuningPlan,
+  DEFAULT_LANE_TUNING, LANE_TUNING_WINDOW_DAYS, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneChange, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
 } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -17,6 +16,8 @@ import { EngineError } from './errors.ts';
 const DAY_MS = 86_400_000;
 /** The plan lists this many latest changes. */
 const CHANGES_SHOWN = 20;
+/** How far back a machine's last change is looked for. */
+const CHANGES_READ = 500;
 
 /** A change to one machine's lane tuning settings: a field left out keeps its value. */
 export type LaneTuningPatch = Partial<LaneTuning>;
@@ -24,37 +25,27 @@ export type LaneTuningPatch = Partial<LaneTuning>;
 export interface LaneTuningService {
   /** Every machine's lane recommendation now: `GET /api/lanes/plan` and `hopper lanes plan`. */
   plan(): Promise<LaneTuningPlan>;
-  /**
-   * Shadow: record `lanes.recommended` for each tuned machine with a known headroom whose recommended or configured lanes
-   * changed. Active: apply each recommendation `laneChange` allows. How many events.
-   */
+  /** Record `lanes.recommended` for each tuned machine with a known headroom whose recommended or configured lanes changed. How many events. */
   record(): Promise<number>;
   /** Change one machine's settings; `by` names who. The plan after it. */
   set(machineId: string, patch: LaneTuningPatch, by: string): Promise<LaneTuningPlan>;
-  /** Undo the last change active mode applied to one machine; `by` names who. The plan after it. */
+  /** Apply one machine's recommendation; `lanes`: the lanes the admin saw, refused when it moved since. The plan after it. */
+  apply(machineId: string, by: string, lanes?: number): Promise<LaneTuningPlan>;
+  /** Dismiss one machine's recommendation until it moves. The plan after it. */
+  dismiss(machineId: string, by: string): Promise<LaneTuningPlan>;
+  /** Undo the last recommendation applied to one machine. The plan after it. */
   undo(machineId: string, by: string): Promise<LaneTuningPlan>;
 }
 
 const tuningOf = (store: UserStore, machineId: string): LaneTuning => store.settings.getLaneTuning()[machineId] ?? DEFAULT_LANE_TUNING;
-
-/** The machines with their lanes in use as `maxLanes` (and `configuredLanes` when lane tuning applied others): what the engine reads. */
-export function tunedMachines(store: UserStore, source: MachineSource): MachineSource {
-  return {
-    async list() {
-      const machines = await source.list();
-      const applied = store.settings.getAppliedLanes();
-      return machines.map((m) => {
-        const lanes = lanesInUse(m.maxLanes, tuningOf(store, m.id), applied[m.id]);
-        return lanes === m.maxLanes ? m : { ...m, maxLanes: lanes, configuredLanes: m.maxLanes };
-      });
-    },
-  };
-}
+const lanesText = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
 
 function changeOf(e: { at: string; type: string; data: unknown }): LaneChange {
   const d = e.data as { machineId: string; from: number; to: number; reason?: string; by?: string };
   const base = { at: e.at, machineId: d.machineId, from: d.from, to: d.to };
-  return e.type === 'lanes.applied' ? { ...base, kind: 'applied', reason: d.reason ?? '' } : { ...base, kind: 'undone', by: d.by ?? '' };
+  return e.type === 'lanes.applied'
+    ? { ...base, kind: 'applied', reason: d.reason ?? '', ...(d.by === undefined ? {} : { by: d.by }) }
+    : { ...base, kind: 'undone', by: d.by ?? '' };
 }
 
 export function createLaneTuning(c: EngineContext): LaneTuningService {
@@ -69,9 +60,9 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
     }
     return last;
   };
-  const setApplied = (machineId: string, a: AppliedLanes | undefined): void => {
-    const { [machineId]: _, ...rest } = c.store.settings.getAppliedLanes();
-    c.store.settings.setAppliedLanes(a ? { ...rest, [machineId]: a } : rest);
+  const setDismissal = (machineId: string, d: { lanes: number; configured: number; at: string; by: string } | undefined): void => {
+    const { [machineId]: _, ...rest } = c.store.settings.getLaneDismissals();
+    c.store.settings.setLaneDismissals(d ? { ...rest, [machineId]: d } : rest);
   };
 
   const plan = async (): Promise<LaneTuningPlan> => {
@@ -79,48 +70,36 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
     const now = c.clock.now();
     const at = now.toISOString();
     const policy = policyOf(c);
-    const applied = c.store.settings.getAppliedLanes();
+    const dismissals = c.store.settings.getLaneDismissals();
+    const changes = c.store.events.recent(CHANGES_READ, ['lanes.applied', 'lanes.undone']).map(changeOf);
     const loads = c.store.machineHistory.laneLoad({ from: new Date(now.getTime() - LANE_TUNING_WINDOW_DAYS * DAY_MS), to: now, pressure: RESOURCE_PRESSURE });
     const machinesOut: LaneRecommendation[] = machines.map((m) => {
-      const tuning = tuningOf(c.store, m.id);
       const r = recommendLanes({
-        machine: { ...m, maxLanes: m.configuredLanes ?? m.maxLanes }, inUse: m.maxLanes, loads,
-        usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: policy.softLimit, hard: policy.hardLimit, tuning,
+        machine: m, loads, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: policy.softLimit, hard: policy.hardLimit, tuning: tuningOf(c.store, m.id),
       });
-      const a = applied[m.id];
-      return a && !a.undone && tuning.mode === 'active' && tuning.autoTune ? { ...r, undo: { to: a.from } } : r;
+      return { ...r, ...laneActions(r, dismissals[m.id], changes.find((x) => x.machineId === m.id)) };
     });
-    const changes = c.store.events.recent(CHANGES_SHOWN, ['lanes.applied', 'lanes.undone']).map(changeOf);
-    return { at, windowDays: LANE_TUNING_WINDOW_DAYS, machines: machinesOut, changes };
+    return { at, windowDays: LANE_TUNING_WINDOW_DAYS, machines: machinesOut, changes: changes.slice(0, CHANGES_SHOWN) };
   };
 
-  const recordShadow = (r: LaneRecommendation): boolean => {
+  const recordOne = (r: LaneRecommendation): boolean => {
     if (!r.tuning.autoTune || !r.online || r.headroom === undefined) return false;
     const seen = lastRecorded();
     const was = seen.get(r.machineId);
     if (was && was.lanes === r.lanes && was.configured === r.configured) return false;
     c.store.events.append({
       type: 'lanes.recommended',
-      data: {
-        machineId: r.machineId, lanes: r.lanes, configured: r.configured, headroom: r.headroom,
-        reason: r.reason, confidence: r.confidence, usage: r.usage, mode: 'shadow',
-      },
+      data: { machineId: r.machineId, lanes: r.lanes, configured: r.configured, headroom: r.headroom, reason: r.reason, confidence: r.confidence, usage: r.usage },
     });
     seen.set(r.machineId, { lanes: r.lanes, configured: r.configured });
     return true;
   };
 
-  const apply = (r: LaneRecommendation, at: string): boolean => {
-    const change = laneChange(r, c.store.settings.getAppliedLanes()[r.machineId]);
-    if (!change) return false;
-    c.store.tx(() => {
-      setApplied(r.machineId, { lanes: change.to, from: change.from, at, reason: r.reason });
-      c.store.events.append({
-        type: 'lanes.applied', machineId: r.machineId,
-        data: { machineId: r.machineId, from: change.from, to: change.to, configured: r.configured, reason: r.reason, confidence: r.confidence },
-      });
-    });
-    return true;
+  /** The machine's recommendation now; 404 for a machine not listed. */
+  const recommendationOf = async (machineId: string): Promise<LaneRecommendation> => {
+    const r = (await plan()).machines.find((m) => m.machineId === machineId);
+    if (!r) throw new EngineError('not_found', `no machine ${machineId}`);
+    return r;
   };
 
   return {
@@ -129,36 +108,51 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
       if (c.stopping()) return 0;
       const p = await plan();
       if (c.stopping()) return 0;
-      return p.machines.filter((r) => (r.tuning.mode === 'active' ? apply(r, p.at) : recordShadow(r))).length;
+      return p.machines.filter(recordOne).length;
     },
     async set(machineId, patch, by) {
       if (!(await c.machines.list()).some((m) => m.id === machineId)) throw new EngineError('not_found', `no machine ${machineId}`);
       const from = tuningOf(c.store, machineId);
-      const to: LaneTuning = {
-        autoTune: patch.autoTune ?? from.autoTune, minLanes: patch.minLanes ?? from.minLanes, maxLanes: patch.maxLanes ?? from.maxLanes, mode: patch.mode ?? from.mode,
-      };
+      const to: LaneTuning = { autoTune: patch.autoTune ?? from.autoTune, minLanes: patch.minLanes ?? from.minLanes, maxLanes: patch.maxLanes ?? from.maxLanes };
       if (!(Number.isInteger(to.minLanes) && Number.isInteger(to.maxLanes) && to.minLanes >= 0 && to.maxLanes <= MAX_TUNED_LANES && to.minLanes <= to.maxLanes)) {
         throw new EngineError('invalid', `the bounds must be whole numbers from 0 to ${MAX_TUNED_LANES}, the least lanes at most the most lanes`);
       }
-      if (from.autoTune !== to.autoTune || from.minLanes !== to.minLanes || from.maxLanes !== to.maxLanes || from.mode !== to.mode) {
+      if (from.autoTune !== to.autoTune || from.minLanes !== to.minLanes || from.maxLanes !== to.maxLanes) {
         c.store.tx(() => {
           c.store.settings.setLaneTuning({ ...c.store.settings.getLaneTuning(), [machineId]: to });
-          // Out of active mode, or auto-tune off: the configured lanes again, and active mode starts from them next time.
-          if (to.mode !== 'active' || !to.autoTune) setApplied(machineId, undefined);
           c.store.events.append({ type: 'lanes.tuning_changed', machineId, data: { machineId, from, to, by } });
         });
       }
       return plan();
     },
-    async undo(machineId, by) {
-      if (!(await c.machines.list()).some((m) => m.id === machineId)) throw new EngineError('not_found', `no machine ${machineId}`);
-      const a = c.store.settings.getAppliedLanes()[machineId];
-      const tuning = tuningOf(c.store, machineId);
-      if (!a || a.undone || tuning.mode !== 'active' || !tuning.autoTune) throw new EngineError('conflict', `no lane change to undo on ${machineId}`);
+    async apply(machineId, by, lanes) {
+      const r = await recommendationOf(machineId);
+      if (!r.apply) throw new EngineError('conflict', `no lane recommendation to apply on ${machineId}: ${r.dismissed ? `dismissed by ${r.dismissed.by}` : r.reason}`);
+      if (lanes !== undefined && lanes !== r.apply.to) throw new EngineError('conflict', `the recommendation moved: ${machineId} now recommends ${lanesText(r.apply.to)}`);
+      await c.machineLanes(machineId, r.apply.to);
       c.store.tx(() => {
-        setApplied(machineId, { lanes: a.from, from: a.lanes, at: c.clock.now().toISOString(), reason: `undone by ${by}`, undone: true });
-        c.store.events.append({ type: 'lanes.undone', machineId, data: { machineId, from: a.lanes, to: a.from, by } });
+        setDismissal(machineId, undefined);
+        c.store.events.append({
+          type: 'lanes.applied', machineId,
+          data: { machineId, from: r.configured, to: r.apply!.to, reason: r.reason, confidence: r.confidence, by },
+        });
       });
+      return plan();
+    },
+    async dismiss(machineId, by) {
+      const r = await recommendationOf(machineId);
+      if (!r.apply) throw new EngineError('conflict', `no lane recommendation to dismiss on ${machineId}`);
+      c.store.tx(() => {
+        setDismissal(machineId, { lanes: r.lanes, configured: r.configured, at: c.clock.now().toISOString(), by });
+        c.store.events.append({ type: 'lanes.dismissed', machineId, data: { machineId, lanes: r.lanes, configured: r.configured, reason: r.reason, by } });
+      });
+      return plan();
+    },
+    async undo(machineId, by) {
+      const r = await recommendationOf(machineId);
+      if (!r.undo) throw new EngineError('conflict', `no applied lane recommendation to undo on ${machineId}`);
+      await c.machineLanes(machineId, r.undo.to);
+      c.store.events.append({ type: 'lanes.undone', machineId, data: { machineId, from: r.configured, to: r.undo.to, by } });
       return plan();
     },
   };

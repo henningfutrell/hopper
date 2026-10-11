@@ -55,6 +55,11 @@ export interface EngineOptions {
   boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
   problems: () => ProblemBlock[];
+  /**
+   * Set a machine's configured lanes as an admin's edit of the machine sets them (issue #688): an applied lane
+   * recommendation and its undo. Throws an EngineError when refused. Absent: refused.
+   */
+  machineLanes?: (machineId: string, lanes: number) => Promise<void>;
 }
 
 /** What the engine's modules share. */
