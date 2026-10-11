@@ -37,7 +37,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { createSandboxes, hopperAddress, hopperNetwork, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -202,7 +202,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access),
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(instance.sandboxes.list(), userId),
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.

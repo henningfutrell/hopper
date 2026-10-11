@@ -47,7 +47,7 @@ import { installations, whoIs } from '../connected-accounts/identity.ts';
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
-import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
+import { approvalWait, clientTargets as vaultTargets, openUserVault, type LaunchScope, type Vault, withLaunch } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
 import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
@@ -114,6 +114,8 @@ export interface UserRuntimeOptions {
   access?: VaultAccess & IntakeAccess; minter?: CredentialMinter;
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
+  /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. */
+  launchScopes?(userId: string): Map<string, LaunchScope>;
 }
 
 
@@ -325,7 +327,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => withLaunch(vaultTargets(host.targets()), o.launchScopes?.(user.id)), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },

@@ -11,8 +11,10 @@
 //   Scenario: a box of no template may name any tool the hopper adds
 //   Scenario: a box of no template gets the hopper's defaults
 //   Scenario: a template's limits must have each default within its max
+//   Scenario: a record's launch scope is its resolved secrets and its one profile; a box of no template has none
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LIMITS, limitsProblem, resolveParams } from '../../src/sandbox/params.ts';
+import type { SandboxRecord } from '../../src/domain/sandboxes.ts';
+import { DEFAULT_LIMITS, launchScopeOf, limitsProblem, resolveParams } from '../../src/sandbox/params.ts';
 
 const kube = {
   name: 'kube', gives: ['KUBE_TOKEN', 'AWS_KEY'], profiles: ['read/cluster/prod'],
@@ -92,5 +94,19 @@ describe('launch parameters', () => {
     expect(limitsProblem({ memoryMb: { default: 0, max: 2 } })).toBe('memoryMb: the default must be more than 0');
     expect(limitsProblem({ ttlMinutes: { default: 600, max: 60 } })).toBe('ttlMinutes: the default 600 is more than the max 60');
     expect(limitsProblem({ ttlMinutes: { max: 60 } })).toBeUndefined();
+  });
+
+  it('a record\'s launch scope is its resolved secrets and its one profile; a box of no template has none', () => {
+    const record = (o: Partial<SandboxRecord>): SandboxRecord => ({
+      id: 'r1', userId: 'u', name: 'hopper-sandbox-kube', agent: 'claude', image: 'example.org/kube:1', params: { secrets: ['KUBE_TOKEN'], cpus: 1, memoryMb: 1024 },
+      runtime: 'podman', machine: 'local', containerId: 'c1', volume: 'v', keepHome: true, state: 'ready', createdAt: '2026-10-11T00:00:00Z', address: 'http://hopper:1', ...o,
+    });
+    const template = { name: 'kube', version: '1' };
+    expect(launchScopeOf(record({ template }))).toEqual({ secrets: ['KUBE_TOKEN'] });
+    expect(launchScopeOf(record({ template, params: { secrets: [], cpus: 1, memoryMb: 1, profile: 'read/namespace/lab/web' } })))
+      .toEqual({ secrets: [], profile: { operation: 'read', asset: { kind: 'namespace', name: 'lab/web' } } });
+    // A box taken on from before the records has no template: its template, if it joined with one, decides alone.
+    expect(launchScopeOf(record({}))).toBeUndefined();
+    expect(launchScopeOf(undefined)).toBeUndefined();
   });
 });

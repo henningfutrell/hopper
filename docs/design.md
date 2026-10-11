@@ -4512,8 +4512,7 @@ deleted the home volume.
   each launch from what the runtime says of the hopper (`address.ts`), and the box's start check proves it before the
   launch answers. A box on a client target dials the URL that machine's client dialled in on (#695): an address the
   machine proved it reaches.
-- **Not built yet:** the launch's `secrets` and `profile` narrowing what the vault and Access give the box (kept on the
-  record now, not enforced past the template's own scope); the template limits and the launch parameters in the UI
+- **Not built yet:** the template limits and the launch parameters in the UI
   (the API takes them; Add machine launches with the template's defaults); a box with tools (issue #716) on a client
   target — the remote runtime refuses the build, since the client carries only JSON calls and a build's body is a tar.
 
@@ -4561,6 +4560,31 @@ carried, only on a box of the hopper's, and only its four fields. `test/integrat
 is `unreachable` until it passes again. `test/ui/sandbox-reach.test.ts`. Real rootless Podman
 (`podman-sandbox.test.ts`): the check in `inspect`, passed at launch, through the client on a machine too; a box on a
 bridge network the hopper is not on fails the launch with curl's own words, and leaves no container, volume or record.
+
+### A launch's scope: what the vault gives a launched box (issue #708 part 4, 2026-10-11)
+
+Before it, the launch's `secrets` and `profile` were kept on the sandbox record and nothing read them: a box got all
+its template's approved scope. Now the record is the box's scope, and the vault reads it:
+
+- **The launch scope** (`launchScopeOf`, `src/sandbox/params.ts`, pure): the record's resolved `secrets` and its one
+  `profile`, read as an operation profile (`operation/kind/name`, the name may hold `/`). A record of no template —
+  a box taken on from before the records among them — has none: its template alone decides, as before.
+- **Wiring.** The composition root gives each user runtime `launchScopes(userId)`: the user's records, by box name, read
+  once per ask (`launchScopes`, `src/sandbox/service.ts`). The user runtime puts each on its client target
+  (`ClientTarget.launch`), so the vault learns it where it learns the template: the sandbox module knows nothing of the
+  vault, and the vault nothing of the records.
+- **A delivery** (`POST /client/vault`, `src/vault/service.ts`, and a shared secret's, `shared-delivery.ts`): a secret
+  outside the launch's `secrets` is refused, `<box> was launched with <secrets> only: <name> is not given to it`,
+  before the template's scope is read; the refusal is a `vault.refused` like any other. `scopeOf` — what a skill
+  request (#583) is told the box has — is the template's approved scope narrowed the same way. With the vault in a
+  container of its own (#586) the hopper sends the scope with the machine (`wire.ts` `deliver.machine.launch`), and the
+  vault container refuses the same way.
+- **A mint** (`mint.ts`): a box launched for one profile is minted that one only. Any other is refused, `<box> was
+  launched for <profile> only`, **before** Access is asked, so no decision is recorded for it. The one it was launched for
+  still goes to Access (`decideMint`), at every mint and every renewal, as before.
+- **The launch fixes the set.** A launch that names no `secrets` resolves to what the template gives at that moment; a
+  secret added to the template later reaches new boxes, not the running one. A narrowing or a revoke of the template
+  still applies at once: a delivery needs both the launch and the template's approved scope now.
 
 ### The remote runtime (issue #708 part 2, 2026-10-10)
 
