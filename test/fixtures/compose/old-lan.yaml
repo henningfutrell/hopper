@@ -1,5 +1,6 @@
 # A container install's compose.yaml from before OpenFGA (issue #559), edited in place for a LAN install: the
-# published port on every interface, a LAN name, a public URL and a service of its own (issue #697's test fixture).
+# published port on every interface, a LAN name, a public URL, the container socket mounted into the hopper, and a
+# service of its own with its own volume (issue #697's test fixture).
 name: hopper
 
 services:
@@ -61,14 +62,20 @@ services:
       - secrets:/run/hopper-secrets:ro
       # Its home: the claude sign-in.
       - home:/home/node
+      # The container socket, for boxes.
+      - /run/podman/podman.sock:/run/podman/podman.sock
+    group_add: ["0"]
     ports:
       - "0.0.0.0:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
 
   whoami:
     image: docker.io/traefik/whoami:v1.10
     restart: unless-stopped
+    volumes:
+      - whoami-data:/data
 
 volumes:
   secrets:
   postgres:
   home:
+  whoami-data:

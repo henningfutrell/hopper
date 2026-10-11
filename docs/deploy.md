@@ -247,24 +247,38 @@ Without it, a new container on the same database is limited ("The master key" ab
        `compose.yaml.bak-<commit>`) and `.env`;
     3. pulls the image;
     4. moves the install's own settings from the old `compose.yaml` to `.env` — the published port's address
-       (`HOPPER_BIND`), the port, and `HOPPER_*` settings written into the file — and names what it cannot move
-       (a service of the install's own: move it to `compose.override.yaml`); sets `HOPPER_IMAGE` to the image;
+       (`HOPPER_BIND`), the port, and `HOPPER_*` settings written into the file —; sets `HOPPER_IMAGE` to the image;
+       and moves what `.env` cannot hold to `compose.override.yaml`: a service of the install's own with the volumes it
+       names, a host folder mounted into a service, a key of a service the hopper never sets, and the project name when
+       the install gave its own (another one would start the stack on new, empty volumes). It adds to an existing
+       `compose.override.yaml` (kept as `compose.override.yaml.bak-<commit>`), keeps its comments, replaces nothing it
+       has, and shows the change. A service the hopper once shipped and no longer does is dropped, and said so;
     5. puts in the image's `compose.yaml`, stamped `# hopper version: <branch> <commit>`, and shows the change;
     6. pulls the images of the whole stack and recreates it (`up -d --force-recreate`, never `--no-deps hopper`);
     7. checks that the hopper and OpenFGA answer.
 
-    It stops at the first step that fails and says how to go back: put back `compose.yaml.bak-<commit>` and
-    `.env.bak-<commit>`, then `podman compose up -d --force-recreate`.
+    It stops at the first step that fails and says how to go back: put back `compose.yaml.bak-<commit>`,
+    `.env.bak-<commit>` and `compose.override.yaml.bak-<commit>` (or remove a `compose.override.yaml` it made), then
+    `podman compose up -d --force-recreate`.
   - **Never update the hopper's container alone** (`pull hopper`, `up -d --no-deps hopper`). It keeps the old
     compose file: a version that adds a required service (OpenFGA, issue #559) or a setting never gets it, and
     features fail. **Never edit `compose.yaml`**: each update replaces it whole. Put your own settings in `.env`
     (`HOPPER_IMAGE`, `HOPPER_MASTER_KEY`, `HOPPER_BIND`, `HOPPER_PORT`, `HOPPER_LAN_NAMES`, `HOPPER_PUBLIC_URL`, …) or in
     `compose.override.yaml`, which compose reads beside it.
+  - **The hopper checks its stack** (issue #697). At start, and each minute while the UI is open, a container hopper
+    compares the stack it runs in with the compose file of its own version: each service that must run (no profile,
+    or one `COMPOSE_PROFILES` in `.env` turns on), by its name on the compose network; the settings that file gives the
+    hopper's container; and the version `hopper-vault` runs. A gap is logged at start and shown in a banner over every
+    view: what is missing, what is off until then, and the fix — the update script made from the image the hopper runs.
+    `GET /api/update/drift` answers the same (`StackDrift`). It sees only from inside its container: a service of the
+    install's own, and the versions of OpenFGA and Postgres, are not compared.
   - **An agent that updates a hopper** follows the update skill: `GET /api/update/skill` on the running hopper, or
     `podman run --rm <image> hopper update skill`. `GET /api/update/compose` answers the compose file the running
     build ships with, and its version.
   - **From a beta install on an old compose file** (one without `openfga`): run the update above once. It keeps
-    a LAN install's `0.0.0.0` as `HOPPER_BIND=0.0.0.0` in `.env`, adds OpenFGA, and keeps the old file as the backup.
+    a LAN install's `0.0.0.0` as `HOPPER_BIND=0.0.0.0` in `.env`, moves its own services and mounts (a container
+    socket for boxes, say) to `compose.override.yaml`, adds OpenFGA, and keeps the old files as the backups. Until then
+    the stack banner names the gaps.
     An image from before this change has no `hopper update`: make the script from the new image, as above.
   - **Optionally, remove the image it replaced:** `podman image prune -f --filter label=org.opencontainers.image.title=hopper`
     (`docker image prune …` the same). It removes only untagged hopper images, so repeated upgrades do not

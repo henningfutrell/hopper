@@ -13,6 +13,10 @@
     },
     "by": {
       "type": "string"
+    },
+    "fromJob": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

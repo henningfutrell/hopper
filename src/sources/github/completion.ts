@@ -10,6 +10,8 @@
 // pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
 // not complete, and not failed either. A job whose own open pull request has merge conflicts, or is a draft, is not
 // complete either, but one fixed step finishes it (`unfinishedPullRequest`, issue #626): rebase it, or mark it ready.
+// A job that reworks a pull request a person sent back (`job.rework`, issue #724) counts that pull request only once it
+// pushed to it: ready for review again with no push since is not done, and it is the job's own for a part and a finish step.
 
 import type { Job, UnfinishedPullRequest, WorkPullRequest, WorkState } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
@@ -66,6 +68,12 @@ export const isClosedAsCompleted = (issue: GitHubIssue, closer: ClosingPullReque
 
 /** Ready for review (issue #637): open, not a draft, free of merge conflicts. */
 const isReady = (pr: { isDraft: boolean; conflicting: boolean }): boolean => !pr.isDraft && !pr.conflicting;
+
+/** The pull request the job reworks (issue #724), with no push from the job since: it does not count as done yet. */
+const reworkUnpushed = (pr: { url: string; headCommittedAt?: string }, job: Job): boolean => job.rework?.pullRequest === pr.url && !isUpdatedBy(pr, job);
+
+/** The job's own pull request (opened by it), or the one it reworks (issue #724). */
+const isOwnOrReworked = (pr: { url: string; createdAt: string }, job: Job): boolean => job.rework?.pullRequest === pr.url || isOwnPullRequest(pr, job);
 
 /** Merged at or after the job was created: on an issue still open, an older merge is work the job was asked to redo. */
 const mergedSince = (pr: { mergedAt?: string }, job: Job): boolean => pr.mergedAt !== undefined && Date.parse(pr.mergedAt) >= Date.parse(job.createdAt);
@@ -137,28 +145,37 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
   const artifact = isArtifactDeliverable(issue) ? await artifactMissing(api, job, artifacts) : undefined;
   if (artifact === '') return undefined;
   const found = new Map<string, { url: string; state: 'open' | 'closed' | 'merged'; isDraft: boolean; conflicting: boolean }>();
+  let unpushed: string | undefined;
+  // Ready, and not the reworked pull request with no push since (issue #724).
+  const counts = (pr: { url: string; isDraft: boolean; conflicting: boolean; headCommittedAt?: string }): boolean => {
+    if (!isReady(pr)) return false;
+    if (!reworkUnpushed(pr, job)) return true;
+    unpushed = pr.url;
+    return false;
+  };
   for (const pr of await api.openClosingPullRequests(repo, number)) {
-    if (isReady(pr)) return undefined;
+    if (counts(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
   const parts = new Set<string>();
   for (const pr of await api.referencingPullRequests(repo, number)) {
     if (pr.repo.toLowerCase() !== repo.toLowerCase()) continue;
     if (isPartOf(pr, repo, number)) { parts.add(pr.url); continue; }
-    if (pr.state === 'open' ? isReady(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
+    if (pr.state === 'open' ? counts(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
     if (!found.has(pr.url)) found.set(pr.url, pr);
   }
   // A pull request that names the issue only on its branch (issue #637): no cross-reference shows it. A part on such a
   // branch is still a part (issue #721).
   for (const pr of await api.openPullRequests(repo)) {
     if (!namesIssue(pr.headRef, number) || found.has(pr.url) || parts.has(pr.url)) continue;
-    if (isReady(pr)) return undefined;
+    if (counts(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
   const lines = [issue.state === 'open' ? `the issue ${url ?? `${repo}#${number}`} is open`
     : `the issue ${url ?? `${repo}#${number}`} is ${issue.stateReason === 'not_planned' ? 'closed as not planned' : 'closed, not as completed'}`];
   lines.push(found.size === 0 ? `no pull request in ${repo} closes or references it`
     : `no pull request in ${repo} that closes or references it is ready for review or merged since the job began: ${[...found.values()].map(described).join(', ')}`);
+  if (unpushed !== undefined) lines.push(`the pull request sent back for rework, #${numberOf(unpushed)}, has no push since the rework`);
   if (artifact !== undefined) lines.push(artifact);
   if (asksToUpdate(issue)) {
     const named: NumberedPullRequest[] = [];
@@ -174,14 +191,15 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
 
 /**
  * The job's own open pull request that one fixed step finishes (issue #626): one that closes the issue or ships part
- * of it, with merge conflicts (rebase it first) or a draft (mark it ready). The newest first; undefined: none.
+ * of it, with merge conflicts (rebase it first) or a draft (mark it ready). The one it reworks counts as its own (issue
+ * #724). The newest first; undefined: none.
  */
 export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<UnfinishedPullRequest | undefined> {
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   const parts = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && isPartOf(pr, repo, number));
   const own = [...await api.openClosingPullRequests(repo, number), ...parts]
-    .filter((pr) => isOwnPullRequest(pr, job) && (pr.conflicting || pr.isDraft))
+    .filter((pr) => isOwnOrReworked(pr, job) && (pr.conflicting || pr.isDraft))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   return own && { pullRequest: own.url, step: own.conflicting ? 'rebase' : 'mark_ready' };
 }
@@ -208,7 +226,8 @@ export async function partlyDone(api: GitHubApi, job: Job): Promise<string | und
   const { repo, number } = job.source ?? {};
   if (!repo || !number) return undefined;
   const parts = (await api.referencingPullRequests(repo, number))
-    .filter((pr) => isPartOf(pr, repo, number) && isOwnPullRequest(pr, job) && (pr.state === 'merged' || (pr.state === 'open' && !pr.isDraft && !pr.conflicting)));
+    .filter((pr) => isPartOf(pr, repo, number) && isOwnOrReworked(pr, job) && !reworkUnpushed(pr, job)
+      && (pr.state === 'merged' || (pr.state === 'open' && !pr.isDraft && !pr.conflicting)));
   return parts.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.url;
 }
 

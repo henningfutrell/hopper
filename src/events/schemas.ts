@@ -195,6 +195,8 @@ export const EVENT_SCHEMAS = {
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
   'job.rerun': strict({ by: z.enum(['user', 'assessor']), ...actingIfPerson }),
+  // A person sent the job's open pull request back for rework (issue #724): the new job reworks it, told the notes.
+  'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
@@ -318,6 +320,7 @@ export const EVENT_SCHEMAS = {
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
   'vault.revoked': strict({ template: z.string(), by: z.string() }),
+  'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
@@ -353,8 +356,8 @@ export const EVENT_SCHEMAS = {
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   // Report a bug (issue #694): what was filed, never its text.
-  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string() }),
-  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string() }),
+  'bug_report.filed': strict({ repo: z.string(), kind: z.enum(['issue', 'comment']), number: z.number().int(), url: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
+  'bug_report.failed': strict({ repo: z.string(), error: z.string(), jobId: z.string().optional(), by: z.string(), fromJob: z.literal(true).optional() }),
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

@@ -88,3 +88,25 @@ export interface ShippedCompose {
   commit?: string;
   compose: string;
 }
+
+/** One way the stack a container hopper runs in differs from the compose file of its version (issue #697). */
+export interface StackGap {
+  /** `service`: a service that must run does not; `setting`: the hopper's container lacks settings the file gives it; `version`: a service runs another version. */
+  kind: 'service' | 'setting' | 'version';
+  /** The service, or the settings, by name. */
+  name: string;
+  /** The gap, in words for a person. */
+  what: string;
+  /** What does not work until it is fixed. */
+  off?: string;
+}
+
+/** GET /api/update/drift (issue #697): how the stack differs from the compose file of this version; one fix for every gap, the update script made from `image`. */
+export interface StackDrift {
+  /** `unchecked`: not a container install, or a build that ships no compose file (`reason`). */
+  state: 'checked' | 'unchecked';
+  reason?: string;
+  gaps: StackGap[];
+  /** The image the hopper runs, the update script is made from. */
+  image?: string;
+}

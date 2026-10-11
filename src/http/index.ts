@@ -12,6 +12,7 @@ import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
+import type { StackDrift } from '../domain/types.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
@@ -64,6 +65,8 @@ export interface ServerOptions {
   updater: Updater;
   /** The build's directory, whose compose.yaml GET /api/update/compose serves (issue #697); default this build's. */
   buildDir?: string;
+  /** How the stack differs from the compose file of this version (issue #697): GET /api/update/drift. */
+  stackDrift?: () => Promise<StackDrift>;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
@@ -139,7 +142,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
-  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
+  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);

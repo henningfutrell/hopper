@@ -1,5 +1,5 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject or run a job again, order the queue, set the queue gate, list the open questions with why each came to a
+// accept, reject, run a job again or send its pull request back for rework (issue #724), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
@@ -29,6 +29,7 @@ export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handof
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job rerun <id>                              run a failed, finished or rejected job again; it runs its item's approved text
+  hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
@@ -89,10 +90,16 @@ const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operato
 
 
 function jobCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
+  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
+  if (verb === 'rework') {
+    if (values.notes === undefined || values.reason !== undefined) throw usage('job rework <id> --notes <text>');
+    const notes = values.notes;
+    return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
+  }
+  if (values.notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
@@ -104,7 +111,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
+  throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
 }
 
 function perHour(raw: string): number | null {

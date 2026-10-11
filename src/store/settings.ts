@@ -106,6 +106,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setPriorityLaneChoice(lanes) {
       write('priorityLaneChoice', JSON.stringify([...lanes]));
     },
+    getReadPolicy() {
+      const text = read('readPolicy');
+      return text === undefined ? undefined : { assets: (JSON.parse(text) as { assets: string[] }).assets };
+    },
+    setReadPolicy(p) {
+      write('readPolicy', JSON.stringify({ assets: [...p.assets] }));
+    },
     getBlastRadius() {
       const text = read('blastRadius');
       return text === undefined ? undefined : JSON.parse(text) as BlastRadiusSettings;

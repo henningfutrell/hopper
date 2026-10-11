@@ -179,6 +179,30 @@ describe('Pull requests view', () => {
     expect([...cardOf('j1').querySelectorAll('button')].map((b) => b.textContent)).toEqual([]);
   });
 
+  it('an operator sends an open pull request back for rework with notes (issue #724); no notes, no send', async () => {
+    const daemon = await boot(fixture);
+    const rework = () => cardOf('j1').querySelector<HTMLButtonElement>('[data-slot="pr-rework"]')!;
+    // Only an open card with its pull request found offers it.
+    expect(cardOf('j2').querySelector('[data-slot="pr-rework"]')).toBeNull();
+    expect(cardOf('j4').querySelector('[data-slot="pr-rework"]')).toBeNull();
+    await act(async () => { rework().click(); });
+    const notes = cardOf('j1').querySelector<HTMLTextAreaElement>('[data-slot="pr-rework-notes"]')!;
+    const send = () => cardOf('j1').querySelector<HTMLButtonElement>('[data-slot="pr-rework-send"]')!;
+    expect(send().disabled).toBe(true);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(notes, '  Rename the flag.  ');
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(send().disabled).toBe(false);
+    await act(async () => { send().click(); });
+    await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/jobs/j1/rework', body: { notes: 'Rename the flag.' } }]));
+  });
+
+  it('a viewer is not offered rework', async () => {
+    await boot(fixture, 'viewer');
+    expect(cardOf('j1').querySelector('[data-slot="pr-rework"]')).toBeNull();
+  });
+
   it('no card in any repo: the view says no pull request waits', async () => {
     await boot({ yolo: { on: 0, total: 1 }, waiting: [], repos: [{ repo: 'owner/a', yolo: false, pullRequests: [] }] });
     expect(text('[data-slot="pr-empty"]')).toBe('No pull request waits.');

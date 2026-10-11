@@ -3,7 +3,9 @@
 // own pull request ships part of its item ("Part of #N"); else not, with why — and, when the job's own pull request is
 // left with merge conflicts or as a draft, the fixed step that finishes it (issue #626): the job goes on with its brief
 // in place of a hand-off. And what a source tells the sync loop when it follows an ended job's pull request: merged, or
-// closed without a merge. Pure but for the source it asks.
+// closed without a merge. And rework (issue #724): a person sends a done job's open pull request back with notes, and the
+// brief its new job is told. Pure but for the source it asks.
+import type { ActingPerson } from './failures.ts';
 import type { Job } from './types.ts';
 
 /** A person's act on a followed pull request (issue #677): Merge now, or Close PR without a merge. */
@@ -113,6 +115,32 @@ export function finishBrief(f: UnfinishedPullRequest): string {
 }
 
 /**
+ * Set on the job that reworks a pull request (issue #724): the pull request a person sent back, their notes, when, and who
+ * and the way. The job is done only when it pushed to that pull request after it was created and marked it ready.
+ */
+export interface JobRework extends Partial<ActingPerson> {
+  pullRequest: string;
+  notes: string;
+  at: string;
+}
+
+/** The most characters of rework notes (issue #724). */
+export const MAX_REWORK_NOTES = 8_000;
+
+/** What the job that reworks a pull request is told after its item's prompt (issue #724): fixed text and the notes. */
+export function reworkBrief(pullRequest: string, notes: string): string {
+  return [
+    `Your pull request ${pullRequest} was sent back for rework. It is a draft now. It is not done.`,
+    'The rework notes:', ...notes.trim().split('\n').map((l) => `> ${l}`), '',
+    'Check out the branch of that pull request. Do not open a new pull request.',
+    'Make the changes the notes ask for. Keep the intent of the issue.',
+    'Run the repo\'s checks.', 'Push to the same branch.',
+    `Mark the pull request ready for review: sh "$HOPPER_GH" pr ready ${numberOf(pullRequest)} --repo ${repoOf(pullRequest)}.`,
+    'Then end the job as done.',
+  ].join('\n');
+}
+
+/**
  * Done, partly done (the part's pull request), or not, with why — and the step that finishes the job's own pull
  * request, when one fixed step does (issue #626).
  */
@@ -149,7 +177,7 @@ export async function doneAtSource(source: { notComplete?: NotComplete } | undef
   return source?.notComplete ? (await source.notComplete(job)) === undefined : false;
 }
 
-/** A source state that names an ended job's pull request still to follow (issue #579). */
+/** A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
 
 /**

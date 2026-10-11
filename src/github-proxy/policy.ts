@@ -30,6 +30,18 @@ export const proxyRequest = z.discriminatedUnion('op', [
 ]);
 export type ProxyRequest = z.infer<typeof proxyRequest>;
 
+/**
+ * A job's bug report on the hopper itself (issue #694, design.md "Report a bug"): not an act of the hopper's connection
+ * but of the job's own user's, by Report a bug's own path; so it has no repository of its own to check — it always goes
+ * to the hopper's. `commentOn` adds it to a similar open report; `force` files it even with one.
+ */
+export const REPORT_OP = 'report.bug';
+export const reportRequest = z.strictObject({
+  op: z.literal(REPORT_OP), title: text(200), body: text(10_000), commentOn: number.optional(),
+  force: z.union([z.literal('true'), z.literal(true)]).transform(() => true as const).optional(),
+});
+export type ReportRequest = z.infer<typeof reportRequest>;
+
 /** Who asks: the job, whether it is the hopper's own user's, and the repository it came from. */
 export interface ProxyAsker {
   jobId: string;

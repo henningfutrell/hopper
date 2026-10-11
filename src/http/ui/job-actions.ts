@@ -1,11 +1,11 @@
-// The UI session's actions on one job: cancel, approve, operator-led, reject, run again, park and re-queue
+// The UI session's actions on one job: cancel, approve, operator-led, reject, run again, rework (issue #724), park and re-queue
 // (issue #501), end its own wait (issue #483), dismiss, mark cleaned up; for a job held because its item changed since
 // the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides. Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { endWaitBody, rejectBody, requeueBody } from './job-bodies.ts';
+import { endWaitBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -29,6 +29,13 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/jobs/:id/reject', o.operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id, parseWith(rejectBody, req.body ?? {}).reason));
   app.post('/ui/api/jobs/:id/rerun', o.operator, async (req) => {
     const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
+    if (r.ok) return r.job;
+    throw new HttpError(RERUN_STATUS[r.reason], r.message);
+  });
+  app.post('/ui/api/jobs/:id/rework', o.operator, async (req) => {
+    const { notes } = parseWith(reworkBody, req.body ?? {});
+    const s = signedInOf(req);
+    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s.identity) : undefined);
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });

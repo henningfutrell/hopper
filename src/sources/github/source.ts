@@ -17,6 +17,7 @@ import { checkJobs } from './check.ts';
 import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
 import { declaredParts, partsOf } from './parts.ts';
+import { sendBack } from './rework.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
@@ -313,6 +314,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const bot = await botLogin();
       const projects = await readProjects(api, config, [issue]);
       return toItem(issue, new Set(), new Set(), priorityOf(issue, config, projects.views.get(issue.repo)), bot, o.assignee());
+    },
+    async rework(job) {
+      const back = await sendBack({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, config.label, job, o.assignee());
+      const bot = await botLogin();
+      const projects = await readProjects(api, config, [back.issue]);
+      const item = await toItem(back.issue, new Set(), new Set(), priorityOf(back.issue, config, projects.views.get(back.issue.repo)), bot, o.assignee());
+      return { item, pullRequest: back.pullRequest, state: back.state };
     },
     withText(item, text) {
       return { ...item, ...promptWithText(item, text, config.recentComments, mode) };

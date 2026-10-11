@@ -121,6 +121,12 @@ export function createWorld(): World {
       emit('job.rerun', id, { by: 'user' });
       return job;
     },
+    rework(id, it, source, rework) {
+      patchJob(id, { sourceState: { ...jobs.get(id)!.sourceState, source: rework.state } });
+      const job = patchJob((host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!).id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: iso() } });
+      emit('job.rework_requested', id, { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id });
+      return job;
+    },
     continueJob(id, brief, by) {
       if (jobs.get(id)?.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${id} is not failed` };
       const job = patchJob(id, { status: 'queued', pendingAnswer: brief, continued: { at: iso(), ...by } });
