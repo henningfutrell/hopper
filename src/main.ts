@@ -37,7 +37,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -196,13 +196,14 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       })));
     },
   });
-  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it.
-  const minter = createCredentialMinter();
+  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. It reads each box's launch
+  // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database.
+  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes);
   // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(instance.sandboxes.list(), userId),
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
@@ -269,7 +270,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // network, reaching it on loopback.
   const sandboxes = createSandboxes({
     runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
-    repo: instance.sandboxes, instanceId: instance.settings.instanceId(),
+    repo: sandboxRecords, instanceId: instance.settings.instanceId(),
     network: hopperNetwork(config),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
     address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
@@ -345,7 +346,6 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
-        // A sandbox pass waiting on a machine's link ends once the link is closed; the database is closed after it.
         await Promise.all([server.close(), passes]);
         await runtimes.stop();
         instance.close();

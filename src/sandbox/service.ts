@@ -19,6 +19,7 @@ import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runti
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
 export { hopperAddress, ownContainer } from './address.ts';
+export { cachedSandboxes } from './records.ts';
 
 /** What each of the user's boxes was launched with, by its name (issue #708): the vault gives a box's jobs nothing else. */
 export function launchScopes(records: SandboxRecord[], userId: string): Map<string, { secrets: string[]; profile?: LaunchedProfile }> {
@@ -82,7 +83,10 @@ export interface Sandboxes {
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
   check(): Promise<void>;
   start(): void;
-  /** Ends the timer, then waits for a reconcile or check pass in flight: the hopper closes its database after this. */
+  /**
+   * Ends the timer, then waits for a reconcile or check pass in flight: the hopper closes its database after this. A pass
+   * that waits on a machine's link ends once the hopper closes its links.
+   */
   stop(): Promise<void>;
 }
 
