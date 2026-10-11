@@ -20,6 +20,8 @@
 //   Scenario: after a revoke in Settings → Access, the next renewal is denied
 //   Scenario: a minting credential is never given out, and a profile the template does not declare is refused
 //   Scenario: with the vault in a container of its own (issue #586), Access decides in the hopper and the vault mints
+//   Scenario: a minting credential that names a session name (issue #781) assumes the role with that name, still 900 s
+//     and read only, so a trust policy that allows one session name only lets the hopper in
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -217,7 +219,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
   it('mints a read-only AWS role session through STS; after a revoke in Settings → Access the next renewal is denied', async () => {
     const { a, session, sts } = await boot();
     await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
-    const { dir, token } = await boxWithJob(a, session);
+    const { dir, job, token } = await boxWithJob(a, session);
 
     const first = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token);
     expect(first.code).toBe(0);
@@ -225,6 +227,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     const asked = new URLSearchParams(sts.seen[0]!.body);
     expect(asked.get('Action')).toBe('AssumeRole');
     expect(asked.get('RoleArn')).toBe(`arn:aws:iam::${ACCOUNT}:role/diag`);
+    expect(asked.get('RoleSessionName')).toBe(`hopper-${job}`);
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
     expect(sts.seen[0]!.authorization).toContain('Credential=AKIAMINTING/');
@@ -283,6 +286,28 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(revoked.code).not.toBe(0);
     expect(revoked.stderr).toMatch(/waits for a person's approval/);
     expect(kube.seen).toHaveLength(1);
+    mintingCredentialsNowhere(a, dir);
+  });
+
+  it('assumes the role with the session name the minting credential names, through the vault in a container of its own (issue #781)', async () => {
+    const { a, session, sts } = await boot({ container: true });
+    const value = { AccessKeyId: 'AKIAMINTING', SecretAccessKey: AWS_MINTING_SECRET, Region: 'us-east-1', Endpoint: sts.url, SessionName: 'p2zapwin' };
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(value) }, { token: session })).status).toBe(200);
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
+    const { dir, token } = await boxWithJob(a, session);
+
+    expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
+    const asked = new URLSearchParams(sts.seen[0]!.body);
+    expect(asked.get('RoleSessionName')).toBe('p2zapwin');
+    expect(asked.get('DurationSeconds')).toBe('900');
+    expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
+
+    const bad = { ...value, SessionName: 'not a session name' };
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session })).status).toBe(200);
+    const refused = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token);
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toMatch(/SessionName/);
+    expect(sts.seen).toHaveLength(1);
     mintingCredentialsNowhere(a, dir);
   });
 });
