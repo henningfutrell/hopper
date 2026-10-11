@@ -7,6 +7,8 @@ import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts
 import { rejectionOf } from '../domain/rejection.ts';
 import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 
+const EPOCH = '1970-01-01T00:00:00.000Z';
+
 export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: string[]) => Set<string>) | undefined, decideActor: DecideIntakeActor | undefined): Omit<JobSourceContext, 'connectedAccounts'> {
   return {
     knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
@@ -18,6 +20,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       migration: () => store.settings.getIntakeMigration(name),
       migrated: (m) => store.settings.setIntakeMigration(name, m),
       record: (type, data) => { store.events.append({ type, data }); },
+      requestOpened: (key, hash) => store.events.between(['source.request_opened'], EPOCH).some((e) => e.data.source === name && e.data.key === key && e.data.hash === hash),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),

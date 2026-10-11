@@ -1,20 +1,23 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-import { ChevronsUp, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+// Not taken (issue #798) is badged with the request cards waiting for approval.
+import { ChevronsUp, CircleDashed, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { SECTION_KINDS } from '@/model/sections';
+import { requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'queue', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 export type View = (typeof VIEWS)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   queue: { label: 'Queue', icon: ListOrdered },
+  'not-taken': { label: 'Not taken', icon: CircleDashed },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   proposals: { label: 'Proposals', icon: FileCheck },
   research: { label: 'Research', icon: Telescope },
@@ -40,11 +43,13 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
+  const requests = useHopper((s) => requestsWaiting(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
   const sections = useSectionBadges();
   const badge: Partial<Record<View, { n: number; cls: string; title?: string; high?: number }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
+    'not-taken': { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
     ...sections,
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };

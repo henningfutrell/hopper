@@ -68,6 +68,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     source: 'github-account', key: 'https://github.com/octocat/hello/issues/8', hash: 'a'.repeat(64), author: 'stranger', person: 'octocat', via: 'ui',
     actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octocat', trusted: true }, { role: 'assigned', login: 'octocat', trusted: true }],
   },
+  'source.request_opened': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8', hash: 'a'.repeat(64), author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'] },
+  'source.backburner_lifted': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/9' },
   'intake.actors_changed': { from: [], to: ['octocat', 'teammate'], by: 'octocat' },
   'job.origin_judged': { key: 'https://github.com/octo-org/hello/issues/7', origin: 'approved' },
   'source.issues_assigned': { source: 'github-account', keys: ['https://github.com/octocat/hello/issues/7'], assignee: 'octocat' },
