@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -102,6 +102,24 @@ describe('laneRows', () => {
     expect(over.map((r) => [r.job?.id, r.elbowIn ?? false])).toEqual([['a', false], ['s', true]]);
     const inside = laneRows([machine([lane('lane-1', 'busy', 's')], 2)], [s]);
     expect(inside.map((r) => r.elbowIn ?? false)).toEqual([false, false]);
+  });
+});
+
+describe('lane job (issue #432)', () => {
+  it('a lane names its job by id whatever its status: a waiting job still on its lane shows there', () => {
+    const w = job('w', { status: 'waiting_answer', laneId: 'm1/lane-1' });
+    const rows = laneRows([machine([lane('lane-1', 'busy', 'w')], 1)], [], new Map([['w', w]]));
+    expect(rows.map((r) => r.job?.id)).toEqual(['w']);
+  });
+  it('an ended or parked job a stale lane still names does not show on it', () => {
+    const jobs = new Map([['f', job('f', { status: 'finished' })], ['p', job('p', { status: 'parked' })]]);
+    const rows = laneRows([machine([lane('lane-1', 'busy', 'f'), lane('lane-2', 'busy', 'p')], 2)], [], jobs);
+    expect(rows.map((r) => r.job)).toEqual([undefined, undefined]);
+  });
+  it('a claimed job is starting, a running one busy, any other still on a lane waiting', () => {
+    expect(STATUSES.map((status) => [status, laneJobState(job(status, { status }))]).filter(([, s]) => s !== 'waiting')).toEqual([
+      ['claimed', 'starting'], ['running', 'busy'],
+    ]);
   });
 });
 

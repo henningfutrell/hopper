@@ -12,6 +12,12 @@ export function issueRef(job: Job): string | null {
   return s.repo && s.number != null ? `${s.repo.split('/').pop()}#${s.number}` : (s.title ?? s.key);
 }
 
+/** The issue a job points at, as owner/repo#number with its URL (issue #432); null when it has no repo or number. */
+export function issuePointer(job: Job): { label: string; url: string | undefined } | null {
+  const s = job.source;
+  return s?.repo && s.number != null ? { label: `${s.repo}#${s.number}`, url: s.url } : null;
+}
+
 /** The parts done of a job's issue (issue #729): as followed after its part merged, else as offered. */
 export interface PartsShown { done: number; total: number; label: string }
 
