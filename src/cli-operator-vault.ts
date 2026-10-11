@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
-// (issue #716, item 1), tests an AWS minting credential (issue #781), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// (issue #716, item 1), tests an AWS minting credential (issue #781), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -27,6 +27,9 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper template remove <name>                      remove it (refused while a box of it is attached)
   hopper template check <name>                       run its read-only check again (a template a job asked for with
                                                      read needs only): its boxes wait until it passed
+  hopper template request --needs "<operation>/<kind>/<asset> ..."
+                                                     ask for the template the needs name, as a job does: approved with no
+                                                     person only when each need is a read the read policy holds
   hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
                                                      the read policy: the assets read is approved on with no person, for a
                                                      template a job asks for; set replaces it, set with none clears it
@@ -40,7 +43,8 @@ const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user i
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]...';
-const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
+const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..."';
+const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
@@ -110,7 +114,7 @@ export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
-    tool: { type: 'string', multiple: true },
+    tool: { type: 'string', multiple: true }, needs: { type: 'string' },
   } });
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -121,8 +125,14 @@ export function templateCall(args: string[]): Call {
     if (name === 'set') return { ...edit({ action: 'set-read-policy', assets: rest }), pick: readPolicyOf };
     throw usage(TEMPLATE_VERBS);
   }
+  // A template request (issue #718): what the hopper answers about it, the template's name and whether it is ready.
+  if (verb === 'request') {
+    const { needs, ...other } = values;
+    if (name !== undefined || needs === undefined || Object.keys(other).length > 0) throw usage(TEMPLATE_REQUEST);
+    return { ...edit({ action: 'request-template', needs }), pick: (v) => (v as { request: unknown }).request };
+  }
   if (verb === 'save') {
-    if (!name || rest.length > 0 || !values.image) throw usage(TEMPLATE_SAVE);
+    if (!name || rest.length > 0 || !values.image || values.needs !== undefined) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
     const { image, secret, tool } = values;

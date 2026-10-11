@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- An assistant with an API token can now ask the hopper for the sandbox template some work needs, the same way a job asks. The hopper makes it, and approves it by itself only when the work only reads what your read policy allows. You can also ask from the command line.
 - A running job's bar now shows how many of its tasks are done, for example 2/5, and moves on when a task is done. It no longer fills with time. Before the job has made its task list, the bar only shows that the job works.
 - Through the tunnel, each caller now has its own sign-in limit, so a stranger can no longer use up the limit your agent needs to get its API token.
 - The read-only check of a template a job asked for now runs with real read access: the hopper makes a short read-only AWS session or Kubernetes token for each thing the template reads, after Access allows it. Reads can now pass, and a write is refused by AWS or the cluster itself. When the hopper cannot make one, the check fails and says what to add.
