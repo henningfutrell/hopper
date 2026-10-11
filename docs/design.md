@@ -8492,8 +8492,8 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Built since.** The read-only check before a new template's first use ("The read-only check"; its
-real-environment part is carried on #715), with `template check`. The token-scoped API for agents is built, after the owner's decision: "API tokens" (issue #718). Shared secrets (issue #718, item 3) are
+**Not built (carried on issue #718).** The read-only negative suite (#715) run before a new template's first use. The
+token-scoped API for agents is built, after the owner's decision: "API tokens" (issue #718). Shared secrets (issue #718, item 3) are
 built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
 policy, is built ("Templates on request"); so is `template read-policy`. Tools assembled per run are built, with
 `template save --tool` and `sandbox launch --tool` ("Tools assembled per run").
@@ -10252,8 +10252,8 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Built since.** The read-only check before a new template's first use (item 5): "The read-only check"; its
-real-environment part is carried on #715. The token-scoped API (item 4): "API tokens".
+**Not built (carried on issue #718).** The read-only negative suite run before a new template's first use (item 5),
+which waits on #715's suite. The token-scoped API (item 4) is built: "API tokens".
 
 Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
 for every user, sealed in the instance's vault, refused to an admin of their own user only; given to a job only once the
