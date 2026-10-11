@@ -141,7 +141,11 @@ export function finishBrief(f: UnfinishedPullRequest): string {
 export const TEND_STEPS = ['rebase', 'fix_checks'] as const satisfies readonly FinishStep[];
 export type TendStep = (typeof TEND_STEPS)[number];
 
-/** The most tends in a row of one pull request (issue #736): then it waits on a person, as it did before tending. */
+/**
+ * The most `fix_checks` tends in a row of one pull request (issue #736): then it waits on a person, as it did before tending.
+ * A rebase is never capped (issue #786): each is made needed by a new merge on the base, and a rebase that fails ends the
+ * row by itself.
+ */
 export const MAX_TENDS = 3;
 
 /** The step that tends a waiting pull request as last seen (issue #736): merge conflicts first, then failing checks. */
@@ -226,29 +230,43 @@ export async function doneAtSource(source: { notComplete?: NotComplete } | undef
 }
 
 /**
- * How many tends in a row brought pull request `url` to job `job` (issue #736): the jobs it runs again (`rerunOf`), back to
- * the first that did not tend `url`.
+ * How many `fix_checks` tends in a row of pull request `url` brought it to job `job` (issues #736, #786): the jobs it runs
+ * again (`rerunOf`), back to the first that did not tend `url` to fix its checks. A rebase tend ends the row.
  */
 export function tendsInRow(job: Job, url: string, get: (id: string) => Job | undefined): number {
   let n = 0;
   for (let j = job.rerunOf ? get(job.rerunOf) : undefined; j; j = j.rerunOf ? get(j.rerunOf) : undefined) {
-    if ((j.sourceState?.source as { tended?: Tended } | undefined)?.tended?.pullRequest !== url) break;
+    const t = (j.sourceState?.source as { tended?: Tended } | undefined)?.tended;
+    if (t?.pullRequest !== url || t.step !== 'fix_checks') break;
     n += 1;
   }
   return n;
 }
 
+/**
+ * A tend job that failed (issue #786): the job it runs again handed its pull request to it (`tended`). It waits on a person
+ * ("tend failed"); reconciling never follows its pull request again.
+ */
+export const failedTend = (job: Job, get: (id: string) => Job | undefined): boolean =>
+  job.status === 'failed' && job.rerunOf !== undefined
+  && (get(job.rerunOf)?.sourceState?.source as { tended?: Tended } | undefined)?.tended?.nextJobId === job.id;
+
+/** An end after which a job's pull request is followed (issues #579, #786): finished, or failed. */
+export const followsWhenEnded = (job: Job): boolean => job.status === 'finished' || job.status === 'failed';
+
 /** A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
 
 /**
- * A done job that may follow its item's open pull request when reconciled with its source (issue #763): finished, and
- * following none — it ended before the hopper followed pull requests, or its follow ended. Not one that a tend handed on
- * (`tended`) or a rework (`reworked`), nor one whose merge is still to check again. The caller checks it is the newest job of its item.
+ * An ended job that may follow its item's open pull request when reconciled with its source (issue #763): finished — or
+ * failed (issue #786): a pull request is followed to its end, whatever its job's end —, and following none — it ended
+ * before the hopper followed pull requests, or its follow ended. Not one that a tend handed on (`tended`) or a rework
+ * (`reworked`), nor one whose merge is still to check again. The caller checks it is the newest job of its item, and no
+ * failed tend (`failedTend`).
  */
 export const reconcilable = (job: Job): boolean => {
   const f = (job.sourceState?.source as { follow?: unknown } | undefined)?.follow;
-  return job.status === 'finished' && f !== 'open' && f !== 'tended' && f !== 'reworked' && !rechecksMerge(job);
+  return followsWhenEnded(job) && f !== 'open' && f !== 'tended' && f !== 'reworked' && !rechecksMerge(job);
 };
 
 /**

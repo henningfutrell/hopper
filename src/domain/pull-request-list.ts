@@ -5,7 +5,7 @@
 // jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
 // no-checks grace window, issue #677).
 import type { Job } from './types.ts';
-import { noChecksSettled, readyToMerge, type PullRequestSeen, type Tended } from './pull-requests.ts';
+import { followsWhenEnded, noChecksSettled, readyToMerge, type PullRequestSeen, type Tended } from './pull-requests.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
@@ -78,12 +78,12 @@ function tendJobOf(job: Job, newest: (key: string) => Job | undefined): Job | un
 }
 
 /**
- * A finished job that waits on its pull request (PR waiting), or one closed without a merge: the newest of its item. Or one
+ * A finished or failed job (issue #786) that waits on its pull request (PR waiting), or one closed without a merge: the newest of its item. Or one
  * whose pull request its item's tend job works on (issue #763).
  */
 export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | undefined): boolean {
   const f = followedOf(job).follow;
-  if (job.status !== 'finished' || job.source?.repo === undefined || job.source.number === undefined) return false;
+  if (!followsWhenEnded(job) || job.source?.repo === undefined || job.source.number === undefined) return false;
   return ((f === 'open' || f === 'closed') && newest(job.source.key)?.id === job.id) || tendJobOf(job, newest) !== undefined;
 }
 

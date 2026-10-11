@@ -17,10 +17,12 @@
 // the newest of its item is matched to its item's open pull request on the source (`unfollowedPullRequests`); one found is
 // followed from now on (`follow: open`, `job.pull_request_followed`), on the job's report chain: a job that ended before the
 // hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
+// A pull request is followed to its end (issue #786): a failed job's is reconciled, followed and tended as a done job's —
+// but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
-  following, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
   type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type PullRequestAct, type PullRequestSeen, type Tended,
 } from '../domain/types.ts';
 
@@ -105,11 +107,11 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /** Its followed pull request needs tending (issue #736), and it may be: the step, and its URL; else undefined. */
   function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string } | undefined {
-    if (!job || job.status !== 'finished' || !following(job)) return undefined;
+    if (!job || !followsWhenEnded(job) || !following(job)) return undefined;
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
     const step = tendStep(s?.seen);
     if (!step || !s?.pullRequest) return undefined;
-    if (tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) >= MAX_TENDS) return undefined;
+    if (step === 'fix_checks' && tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) >= MAX_TENDS) return undefined;
     return { step, url: s.pullRequest };
   }
 
@@ -129,10 +131,13 @@ export function createAfterDone(c: AfterDoneContext) {
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 
-  /** Follow the open pull request found for a done job that follows none (issue #763), if it still follows none. */
+  /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */
+  const adoptable = (j: Job) => reconcilable(j) && newestOfItem(j) && !failedTend(j, (id) => store.jobs.get(id));
+
+  /** Follow the open pull request found for an ended job that follows none (issue #763), if it still follows none. */
   function adopt(f: FoundPullRequest): void {
     const job = store.jobs.get(f.jobId);
-    if (!job || !reconcilable(job) || !newestOfItem(job)) return;
+    if (!job || !adoptable(job)) return;
     const { part: _p, seen: _s, parts: _ps, mergeChecked: _m, ...rest } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
     c.setSource(job.id, { ...rest, pullRequest: f.pullRequest, follow: 'open', ...(f.part ? { part: true } : {}) });
     store.events.append({ type: 'job.pull_request_followed', jobId: job.id, data: { pullRequest: f.pullRequest, part: f.part } });
@@ -140,7 +145,7 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /** Reconcile the source's done jobs that follow no pull request with it (issue #763); not while it is paused. */
   async function reconcile(source: JobSource, jobs: Job[]): Promise<void> {
-    const candidates = jobs.filter((j) => reconcilable(j) && c.finalReported(j) && newestOfItem(j));
+    const candidates = jobs.filter((j) => adoptable(j) && c.finalReported(j));
     if (!source.unfollowedPullRequests || candidates.length === 0 || source.paused?.() !== undefined) return;
     try {
       const found = await source.unfollowedPullRequests(candidates);
@@ -161,8 +166,15 @@ export function createAfterDone(c: AfterDoneContext) {
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
       // A tend runs after the follow, off the report chain: Run again takes that chain itself.
-      await Promise.all(jobs.filter((j) => c.finalReported(j)).flatMap((j) =>
-        (j.status === 'finished' && source.follow && (following(j) || rechecks(j)) ? [run(j, follow).then(() => tendIfDue(j.id).catch((e: unknown) => { c.failed(j.id, e); }))] : waitsOnPerson(j) ? [run(j, judgeAgain)] : [])));
+      const followThenTend = async (id: string): Promise<void> => {
+        const j = store.jobs.get(id);
+        if (!j || !followsWhenEnded(j) || !source.follow || !(following(j) || rechecks(j))) return;
+        await run(j, follow);
+        await tendIfDue(id).catch((e: unknown) => { c.failed(id, e); });
+      };
+      // A failed job that waits on a person is judged again first (issue #786: it may follow its pull request too).
+      await Promise.all(jobs.filter((j) => c.finalReported(j)).map((j) =>
+        (waitsOnPerson(j) ? run(j, judgeAgain).then(() => followThenTend(j.id)) : followThenTend(j.id))));
     },
   };
 }

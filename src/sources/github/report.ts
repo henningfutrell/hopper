@@ -23,7 +23,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
-import { isPartOf, namesIssue } from './completion.ts';
+import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
 
 export interface ReportContext {
@@ -90,7 +90,8 @@ async function readyPullRequest(api: GitHubApi, repo: string, number: number): P
     prs.filter((pr) => !pr.isDraft && !pr.conflicting).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const closing = ready(await api.openClosingPullRequests(repo, number));
   if (closing) return closing;
-  const mentions = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase());
+  const mentions = (await api.referencingPullRequests(repo, number))
+    .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number));
   const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
   return ready(mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url)))
     ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
