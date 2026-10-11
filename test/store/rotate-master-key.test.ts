@@ -3,6 +3,7 @@
 // left as it is; one an old key sealed that does not open is counted, and left. Anything that fails changes nothing.
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { ADMIN_ID } from '../../src/domain/types.ts';
 import { fingerprintOf } from '../../src/secrets/master-key.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { createTokenBox } from '../../src/secrets/token-box.ts';
@@ -64,8 +65,11 @@ const fingerprint = (url: string): string | undefined => {
   try { return db.get("SELECT value FROM settings WHERE key = 'masterKeyFingerprint'")?.value as string | undefined; } finally { db.close(); }
 };
 
+/** The instance store, with the admin's schema made (as their runtime's start makes it). */
 function store(url: string) {
-  return openInstanceStore({ url: installFromBefore(url), clock: { now: () => new Date('2026-10-10T12:00:00.000Z') } });
+  const s = openInstanceStore({ url: installFromBefore(url), clock: { now: () => new Date('2026-10-10T12:00:00.000Z') } });
+  s.userStore(s.users.get(ADMIN_ID)!).close();
+  return s;
 }
 
 describe('InstanceStore.rotateMasterKey', () => {
