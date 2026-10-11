@@ -1,7 +1,7 @@
 // The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -95,6 +95,21 @@ describe('laneRows', () => {
     const rows = laneRows([machine([lane('lane-1', 'draining', 'a')], 1)], [job('a'), job('b', { laneId: 'm9/lane-4' })]);
     expect(rows.map((r) => [r.state, r.job?.id])).toEqual([['draining', 'a'], ['busy', 'b']]);
     expect(rows[1]?.machine.id).toBe('m9');
+  });
+  it('a specialty job\'s lane past the machine\'s lanes is an elbow-in (issue #762); one inside them is not', () => {
+    const s = job('s', { spec: { executor: 'test', payload: {}, specialty: true } });
+    const over = laneRows([machine([lane('lane-1', 'busy', 'a'), lane('lane-2', 'busy', 's')], 1)], [job('a'), s]);
+    expect(over.map((r) => [r.job?.id, r.elbowIn ?? false])).toEqual([['a', false], ['s', true]]);
+    const inside = laneRows([machine([lane('lane-1', 'busy', 's')], 2)], [s]);
+    expect(inside.map((r) => r.elbowIn ?? false)).toEqual([false, false]);
+  });
+});
+
+describe('overCap (issue #762)', () => {
+  it('a machine with more lanes in use than its lanes reads in use over its lanes; one back at its lanes drops out', () => {
+    const lanes = [lane('lane-1', 'busy', 'a'), lane('lane-2', 'draining', 's'), lane('lane-3', 'busy', 'b')];
+    expect(overCap([machine(lanes, 2)])).toEqual([{ machineId: 'm1', inUse: 3, lanes: 2 }]);
+    expect(overCap([machine(lanes.slice(0, 2), 2)])).toEqual([]);
   });
 });
 
