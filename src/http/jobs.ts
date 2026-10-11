@@ -30,6 +30,14 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     return { jobs: o.tenant(req).store.jobs.list({ ...(q.status ? { status: q.status } : {}), limit: q.limit }).map(withPhase) };
   });
 
+  // The newest event of each job /api/queue holds (issue #434): each Jobs view card's last event.
+  app.get('/api/jobs/last-events', async (req) => {
+    const { store, engine } = o.tenant(req);
+    const q = engine.getQueue();
+    const ids = [...q.waiting, ...q.running, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.waitingOn, ...q.ended, ...q.locked].map((j) => j.id);
+    return { events: store.events.lastOfJobs([...new Set(ids)]) };
+  });
+
   app.get('/api/jobs/:id', async (req) => {
     const { id } = parseWith(idParams, req.params);
     const job = o.tenant(req).store.jobs.get(id);

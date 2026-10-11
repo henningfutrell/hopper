@@ -350,6 +350,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   VAULT_GRANT_TABLE,
   // 41: Bug reports (issue #694): a person's reports, filed or kept to send later. A table only: the build before runs on it.
   BUG_REPORT_TABLE,
+  // 42: Each job's last event (issue #434), read for the Jobs view's cards. An index only: the build before runs on it.
+  'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
 ];
 
 /** A user schema's version once migrated. */

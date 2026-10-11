@@ -107,7 +107,7 @@ describe('the Jobs view (issue #434)', () => {
     expect(running.dataset.status).toBe('running');
     expect(slot(running, 'card-issue')).toBe('acme/site#1');
     expect(running.querySelector<HTMLAnchorElement>('[data-slot="card-issue"] a')?.href).toBe('https://github.com/acme/site/issues/1');
-    expect(slot(running, 'card-lane')).toBe('box · lane-1');
+    expect(slot(running, 'card-lane')).toBe('box (m1) · lane-1');
     await vi.waitFor(() => expect(slot(running, 'card-last-event')).toContain('job.queued'));
     expect(slot(card('job-2'), 'card-lane')).toBe('no lane');
     expect(running.querySelector<HTMLAnchorElement>('a[href="#job/job-1"]')).not.toBeNull();
@@ -135,7 +135,7 @@ describe('the Jobs view (issue #434)', () => {
     await act(async () => { FakeEventSource.last!.send(event(1000, 'job-0', 'job.started')); });
     await vi.waitFor(() => expect(card('job-0').dataset.status).toBe('running'));
     expect(slot(card('job-0'), 'card-last-event')).toContain('job.started');
-    expect(slot(card('job-0'), 'card-lane')).toBe('box · lane-0');
+    expect(slot(card('job-0'), 'card-lane')).toBe('box (m1) · lane-0');
     expect(cards()).toHaveLength(250);
   });
 });

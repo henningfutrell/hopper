@@ -74,6 +74,8 @@ export interface EventLog {
   recent(limit?: number, types?: EventType[]): DomainEvent[];
   /** Events of these types at or after `since` (ISO), oldest first (issue #535: lane reliability). */
   between(types: readonly EventType[], since: string): DomainEvent[];
+  /** The newest event of each of these jobs that has one, one per job (issue #434: the Jobs view's last event). */
+  lastOfJobs(jobIds: readonly string[]): DomainEvent[];
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 

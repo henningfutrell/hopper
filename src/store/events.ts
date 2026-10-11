@@ -57,6 +57,10 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
       if (types.length === 0) return [];
       return c.db.all(`SELECT * FROM events WHERE type IN (${types.map(() => '?').join(',')}) AND at >= ? ORDER BY seq`, ...types, since).map(toEvent);
     },
+    lastOfJobs(jobIds) {
+      if (jobIds.length === 0) return [];
+      return c.db.all(`SELECT DISTINCT ON (job_id) * FROM events WHERE job_id IN (${jobIds.map(() => '?').join(',')}) ORDER BY job_id, seq DESC`, ...jobIds).map(toEvent);
+    },
     subscribe(l) {
       listeners.add(l);
       return () => { listeners.delete(l); };
