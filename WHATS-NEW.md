@@ -8,7 +8,6 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
-- A machine that loses touch with the hopper for 30 minutes stops the jobs it was running, so work does not go on there without the hopper's checks. Its work stays on the machine, and the hopper's log says which jobs it stopped once the machine is back.
 - A source's next sync time on Sources is now the time it really syncs. While a sync runs, the card says it is syncing, and after it the countdown starts again from the true next time.
 - Click a bar or a question on the lane timeline, or a job's line in Live activity or Events, to open that job's own page: its state, lane, times, error and what happened to it.
 - Issues on the backburner no longer look gone: the Not taken menu entry and the Queue show how many there are, and each one shows its issue number, how long it has been on the backburner and who put it there.

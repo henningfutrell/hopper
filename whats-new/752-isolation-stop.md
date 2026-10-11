@@ -1,0 +1,1 @@
+- A machine that loses touch with the hopper for 30 minutes stops the jobs it was running, so work does not go on there without the hopper's checks. Its work stays on the machine, and the hopper's log says which jobs it stopped once the machine is back.
