@@ -3,9 +3,10 @@
 // online machine with readings, with its lanes in use; an offline machine adds nothing, which the graph shows
 // as a gap; GET /api/machines/:id/history and GET /api/machines/history answer the resource graph per graph
 // step; new samples are pushed as machine.recorded; the history retention prunes them with the usage samples.
+// One machine's graph also carries the usage that limits it and its lane changes (issue #688, lane tuning's graph).
 // The probe is the seam: no ssh here.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { MachineHistory, MachineSample, ResourceReading } from '../../src/domain/types.ts';
+import type { MachineHistory, MachineSample, ResourceReading, UsageSample } from '../../src/domain/types.ts';
 import type { MachineProbe } from '../../src/machines/index.ts';
 import { startTestApp, tempDbPath, writePlugins, type TestApp } from '../support/app.ts';
 import { openSse, type SseClient } from '../support/sse.ts';
@@ -131,5 +132,43 @@ describe('machine resources over time', () => {
     const cpu = r.body.series.find((s) => s.resource === 'cpu')!.points.map((p) => p.usedFrac);
     expect(cpu).toContain(0.2);
     expect(cpu).not.toContain(0.1);
+  });
+});
+
+describe('lanes and usage on one machine\'s graph (issue #688)', () => {
+  const reading = (at: number, used: number, over: Partial<UsageSample> = {}): UsageSample =>
+    ({ source: 'claude', machineId: 'laptop', window: 'session', used, limit: 100, unit: '%', at: new Date(at).toISOString(), ...over });
+
+  it('one machine\'s graph carries the usage that limits it — its own readings and a budget every machine shares — and its lane changes in range', async () => {
+    const a = await boot();
+    const now = Date.now();
+    const store = a.user().store;
+    store.machineHistory.record([sample(now - HOUR, 0.5, { lanesBusy: 2 })]);
+    store.usageHistory.record([
+      reading(now - HOUR, 40), reading(now - HOUR + 5 * MIN, 60),
+      reading(now - HOUR, 90, { machineId: 'desk' }),
+      { source: 'claude', window: 'week', used: 30, limit: 100, unit: '%', at: new Date(now - HOUR).toISOString() },
+    ]);
+    const applied = { machineId: 'laptop', from: 2, to: 4, reason: '4 lanes run without pressure', confidence: 1, by: 'admin' };
+    store.events.append({ type: 'lanes.applied', at: new Date(now - 2 * DAY).toISOString(), data: { ...applied, from: 1, to: 2 } });
+    store.events.append({ type: 'lanes.applied', at: new Date(now - 30 * MIN).toISOString(), data: applied });
+    store.events.append({ type: 'lanes.applied', at: new Date(now - 25 * MIN).toISOString(), data: { ...applied, machineId: 'desk' } });
+    store.events.append({ type: 'lanes.undone', at: new Date(now - 20 * MIN).toISOString(), data: { machineId: 'laptop', from: 4, to: 2, by: 'admin' } });
+
+    const r = await history(a, '/api/machines/laptop/history?range=24h');
+    expect(r.status).toBe(200);
+    const usage = r.body.usage!;
+    expect(usage.map((s) => [s.account, s.window])).toEqual([['claude', 'session'], ['claude', 'week']]);
+    expect(Math.max(...usage[0]!.points.map((p) => p.usedFrac))).toBeCloseTo(0.6);
+    expect(usage[1]!.points.map((p) => p.usedFrac)).toEqual([0.3]);
+    expect(r.body.laneChanges!.map((c) => [c.kind, c.from, c.to])).toEqual([['applied', 2, 4], ['undone', 4, 2]]);
+    expect(r.body.laneChanges![0]).toMatchObject({ machineId: 'laptop', reason: '4 lanes run without pressure', by: 'admin' });
+
+    const all = await history(a, '/api/machines/history?range=24h');
+    expect(all.body).not.toHaveProperty('usage');
+    expect(all.body).not.toHaveProperty('laneChanges');
+    const none = await history(a, '/api/machines/nowhere/history?range=24h');
+    expect(none.body.usage!.map((s) => s.window)).toEqual(['week']);
+    expect(none.body.laneChanges).toEqual([]);
   });
 });

@@ -1,9 +1,9 @@
 // The resource graph's model (issue #560): a machine's lines — CPU, memory, swap, disk and its lanes in use —
 // one colour each, on the Machines view; every machine's lines at once on the Usage page, one colour per machine
 // and a dash per resource, swap and lanes hidden until shown; a machine row's CPU sparkline; and the resource
-// facts its card says now. Pure.
+// facts its card says now; on one machine's graph, the usage that limits it and its lane changes (issue #688). Pure.
 import { describe, expect, it } from 'vitest';
-import type { ResourceSeries } from '../../src/domain/types.ts';
+import type { LaneChange, ResourceSeries, UsageSeries } from '../../src/domain/types.ts';
 import { allMachineLines, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
 
 const GIB = 1e9;
@@ -21,6 +21,39 @@ describe('a machine\'s resource graph', () => {
     expect(lines.every((l) => l.shownByDefault)).toBe(true);
     expect(lines.find((l) => l.label === 'lanes in use')!.dash).toBe('dashed');
     expect(lines[0]!.series.points).toEqual([{ at: at(0), usedFrac: 0.1 }]);
+  });
+});
+
+describe('lanes and usage on a machine\'s graph (issue #688)', () => {
+  const usage = (window: string, informational = false): UsageSeries =>
+    ({ account: 'claude', window, informational, unit: '%', points: [{ at: at(0), usedFrac: 0.4 }], gaps: [], resets: [at(1)] });
+
+  it('after the resources, a line per usage window that limits it, in one colour of its own: a week dashed, an informational one dotted and hidden', () => {
+    const lines = machineLines(ALL.map((r) => series('desk', r, 0.1)), [usage('session'), usage('week'), usage('week (Fable)', true)]);
+    expect(lines.map((l) => l.label)).toEqual(['CPU', 'memory', 'swap', 'disk', 'lanes in use', 'usage · claude · session', 'usage · claude · week', 'usage · claude · week (Fable)']);
+    const used = lines.slice(5);
+    expect(new Set(used.map((l) => l.key)).size).toBe(3);
+    expect(new Set(used.map((l) => l.color)).size).toBe(1);
+    expect(lines.slice(0, 5).map((l) => l.color)).not.toContain(used[0]!.color);
+    expect(used.map((l) => l.dash)).toEqual(['solid', 'dashed', 'dotted']);
+    expect(used.map((l) => l.shownByDefault)).toEqual([true, true, false]);
+    expect(used[0]!.series.resets).toEqual([at(1)]);
+  });
+
+  it('each lane change is a mark on the lanes in use line, as people read it; no lanes line, no marks', () => {
+    const changes: LaneChange[] = [
+      { at: at(1), machineId: 'desk', from: 2, to: 4, kind: 'applied', reason: '4 lanes run without pressure', by: 'admin' },
+      { at: at(2), machineId: 'desk', from: 4, to: 2, kind: 'undone', by: 'admin' },
+      { at: at(3), machineId: 'desk', from: 1, to: 2, kind: 'applied', reason: 'room for 1 more' },
+    ];
+    const lines = machineLines(ALL.map((r) => series('desk', r, 0.1)), [], changes);
+    expect(lines.find((l) => l.key === 'lanes')!.marks).toEqual([
+      { at: at(1), label: 'Applied: 2 → 4 lanes, by admin. 4 lanes run without pressure' },
+      { at: at(2), label: 'Undone: 4 → 2 lanes, by admin' },
+      { at: at(3), label: 'Applied: 1 → 2 lanes. room for 1 more' },
+    ]);
+    expect(lines.filter((l) => l.marks !== undefined).map((l) => l.key)).toEqual(['lanes']);
+    expect(machineLines([series('desk', 'cpu', 0.1)], [], changes).some((l) => l.marks !== undefined)).toBe(false);
   });
 });
 
