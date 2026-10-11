@@ -1,7 +1,7 @@
 // Job sources: where jobs come from, when each last synced, and what is wrong with it. The GitHub
 // sources are one section (issue #160): the GitHub connection first (issue #214), with its source's
 // sync inside it: the one way the hopper reads GitHub as the user (issue #359). Beside it, a GitHub App
-// an admin set up, and why it is paused.
+// an admin set up, and why it is paused. Below it, each job repository's setup (issue #652).
 import { Inbox } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -9,6 +9,7 @@ import { sourcesView, type GitHubConnection, type SourceUse } from '@/model/sour
 import type { SourceStatus } from '@/model/wire';
 import { useHopper } from '@/store';
 import { ConnectedAccountPanel } from './connected-account';
+import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
 
 const USE: Record<SourceUse, { label: string; tone: 'ok' | 'warn' | 'muted' }> = {
@@ -43,6 +44,7 @@ export function Sources() {
           {v.github.map((c) => <SourceCard key={c.source.name} s={c.source} c={c} />)}
         </div>
       </section>
+      <RepoSetupSection />
       {v.others.length > 0 && (
         <section className="grid gap-3 lg:grid-cols-2">{v.others.map((s) => <SourceCard key={s.name} s={s} />)}</section>
       )}

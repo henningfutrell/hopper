@@ -4,6 +4,9 @@
 // no checks, and the hopper recommends the job that adds them, "Add PR checks to <repo>", until checks run or the person
 // dismisses it for that repository. Pure.
 import { parse } from 'yaml';
+import type { RepoSetup, RepoSetupFound } from './repo-setup.ts';
+
+export * from './repo-setup.ts';
 
 /** `unknown`: GitHub could not be read (or was not read yet); never taken as no checks. */
 export type RepoChecksState = 'checks' | 'no checks' | 'unknown';
@@ -16,6 +19,8 @@ export interface RepoChecksFound {
   workflows: string[];
   /** Its newest pull requests read, and how many of them had checks (check runs or commit statuses). */
   pullRequests: { read: number; withChecks: number };
+  /** Its setup (issue #652): the guarded branches' protection, secret scanning and push protection. */
+  setup?: RepoSetupFound;
 }
 
 /** The recommended job, while a repository has no checks and the person did not dismiss it. */
@@ -39,6 +44,8 @@ export interface RepoChecks {
   /** The person dismissed the recommendation for this repository. */
   dismissed: boolean;
   recommendation?: RepoChecksRecommendation;
+  /** Its setup (issue #652, design.md "Repository setup"): what is missing, and what GitHub did not show. */
+  setup: RepoSetup;
 }
 
 export interface RepoChecksView { repos: RepoChecks[] }

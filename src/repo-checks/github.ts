@@ -2,10 +2,12 @@
 // "Add PR checks" job filed as their own issue. Required checks: the default branch's protection and its rulesets.
 // Workflows: the files in `.github/workflows` (the contents permission the hopper's app has; the Actions API needs
 // one it does not ask for). Recent checks: the status check rollup of the newest pull requests, through GraphQL, as the
-// GitHub source reads it. The same `@octokit/request` binding and token renewal as Report a bug.
+// GitHub source reads it. The same `@octokit/request` binding and token renewal as Report a bug. The repository's setup
+// (issue #652) is read beside them (setup.ts); its default branch's required checks are the ones read there.
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
 import { runsOnPullRequests, type RepoChecksFound } from '../domain/types.ts';
+import { createSetupReader, type RepoAnswer } from './setup.ts';
 
 /** The newest pull requests read for their checks. */
 export const RECENT_PULL_REQUESTS = 5;
@@ -34,10 +36,10 @@ const ROLLUPS = `query($owner: String!, $name: String!, $n: Int!) {
 }`;
 
 interface Rollups { repository?: { pullRequests?: { nodes?: ({ commits?: { nodes?: ({ commit?: { statusCheckRollup?: unknown } } | null)[] } } | null)[] } } | null }
-interface Rule { type?: string; parameters?: { required_status_checks?: { context?: string }[] } }
 
 export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): RepoChecksGitHub {
   const req = makeRequest(o.apiUrl);
+  const setup = createSetupReader(req);
   const withToken = tokenCaller(o);
   const failed = (what: string) => (err: unknown): Error => {
     const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
@@ -54,14 +56,6 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
       throw err;
     }
   };
-
-  async function required(token: string, repo: string, branch: string): Promise<string[]> {
-    const at = { ...splitRepo(repo), branch, headers: headers(token) };
-    const b = (await req('GET /repos/{owner}/{repo}/branches/{branch}', at)).data as { protection?: { required_status_checks?: { contexts?: string[] } } };
-    const rules = await orNone(req('GET /repos/{owner}/{repo}/rules/branches/{branch}', at).then((r) => r.data as Rule[]), []);
-    const fromRules = rules.filter((r) => r.type === 'required_status_checks').flatMap((r) => r.parameters?.required_status_checks ?? []).map((c) => c.context ?? '');
-    return [...new Set([...(b.protection?.required_status_checks?.contexts ?? []), ...fromRules].filter((c) => c !== ''))];
-  }
 
   async function workflows(token: string, repo: string, branch: string): Promise<string[]> {
     const at = { ...splitRepo(repo), ref: branch, headers: headers(token) };
@@ -84,9 +78,11 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
 
   return {
     found: (repo) => withToken(async (token) => {
-      const branch = ((await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as { default_branch: string }).default_branch;
-      const [r, w, p] = await Promise.all([required(token, repo, branch), workflows(token, repo, branch), pullRequests(token, repo)]);
-      return { required: r, workflows: w, pullRequests: p };
+      const answer = (await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as RepoAnswer;
+      const branch = answer.default_branch;
+      const [s, w, p] = await Promise.all([setup.read(token, repo, answer), workflows(token, repo, branch), pullRequests(token, repo)]);
+      // The default branch is read first: its required checks are the repository's.
+      return { required: s.branches[0]?.checks ?? [], workflows: w, pullRequests: p, setup: s.setup };
     }, failed(`the checks of ${repo}`)),
     openIssue: (repo, label, title) => withToken(async (token) => {
       const d = (await req('GET /repos/{owner}/{repo}/issues', { ...splitRepo(repo), state: 'open', labels: label, per_page: 100, headers: headers(token) })).data as { number: number; title: string; html_url: string; pull_request?: unknown }[];

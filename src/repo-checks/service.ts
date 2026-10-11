@@ -4,8 +4,8 @@
 // `FRESH_MS` (`RETRY_MS` after a failure), so the Pull requests page shows it at its next poll. `one` reads GitHub now.
 // Queuing files the job as the person's own issue, with the hopper label, assigned to their connected account, once:
 // an open issue of that title is answered instead (`repo_checks.job_queued`). A dismissal is the user's setting
-// (`repo_checks.dismissed`). Kept in memory, per user: what is read is GitHub's, and is read again after a restart.
-import { addChecksJob, repoChecksState, type NewEvent, type RepoChecks, type RepoChecksFound, type RepoChecksQueued, type RepoChecksView } from '../domain/types.ts';
+// (`repo_checks.dismissed`). Each read also reads the repository's setup (issue #652, design.md "Repository setup"). Kept in memory, per user: what is read is GitHub's, and is read again after a restart.
+import { addChecksJob, repoChecksState, repoSetup, type NewEvent, type RepoChecks, type RepoChecksFound, type RepoChecksQueued, type RepoChecksView } from '../domain/types.ts';
 import type { RepoChecksGitHub } from './github.ts';
 
 /** A repository's checks are read again once this old. */
@@ -65,7 +65,7 @@ export function createRepoChecks(o: RepoChecksOptions): RepoChecksService {
     const dismissed = o.dismissed().includes(key(repo));
     const state = r?.found ? repoChecksState(r.found) : 'unknown';
     return {
-      repo, state, yolo: o.yolo(repo), dismissed,
+      repo, state, yolo: o.yolo(repo), dismissed, setup: repoSetup(r?.found?.setup),
       ...(r?.found ? { found: r.found } : {}),
       ...(r ? { checkedAt: new Date(r.at).toISOString() } : {}),
       ...(r?.error ? { error: r.error } : {}),

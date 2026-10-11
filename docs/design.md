@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
-| `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
+| `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -12240,6 +12240,47 @@ Tests: `test/repo-checks/checks.test.ts` (the triggers, the state, the job's tex
 recommendation; Queue job files the issue once; a job queued by hand is found; Dismiss and back; checks added drop the
 recommendation; GitHub down and no connection say unknown; `hopper repo checks`), `test/ui/pull-requests-view.test.ts`
 (the header, the warning, Queue job and Dismiss post the repository, a queued job's link, a viewer has no buttons).
+
+## Repository setup (issue #652, 2026-10-11)
+
+Requirement 8 of issue #652. A job pushes only to a branch of its own work (part 1), and yolo mode merges only a job of a
+trusted origin once a check passed (parts 1 and 2). Nothing in the hopper keeps anyone else off a release branch: GitHub
+does. So the hopper checks each job repository's setup, and Sources warns when it is not as asked. The owner's steps
+are in deploy.md "Repository setup".
+
+**What is asked** (`src/domain/repo-setup.ts`, pure). Each **guarded branch** — the default branch, and each release
+branch (`RELEASE_BRANCHES`: `main`, `master`, `dev`, `beta`, `stable`) the repository has — needs a pull request, requires
+a status check, and takes no force push. Secret scanning and push protection are on. "No direct push except by the
+owner" is the pull request rule: GitHub lets a repository admin bypass it, and nobody else.
+
+**How it is read** (`src/repo-checks/setup.ts`), with the person's own GitHub connection, beside the checks above and
+in the same read: `GET /repos/{r}` (the default branch, `security_and_analysis`), and per guarded branch
+`GET /repos/{r}/branches/{b}` (`protected`, its required checks; 404: the repository has no such branch, skipped),
+`GET /repos/{r}/rules/branches/{b}` (the rulesets' rules: `pull_request`, `non_fast_forward`, `required_status_checks`)
+and, for a protected branch, `GET /repos/{r}/branches/{b}/protection` (`required_pull_request_reviews`,
+`allow_force_pushes`). A ruleset's rule counts by itself. A branch that is not `protected` has no branch protection.
+
+**Unread is not off.** GitHub shows the branch protection and `security_and_analysis` only to a repository admin. A 403
+or 404 on the protection, or no `security_and_analysis`, makes that point **unread** (`null`), never "off": a
+connection that is no admin must not make a protected branch look open. The state (`repoSetup`): `not set up` when any
+point is off, with each problem in words; else `unknown` when any point is unread, with each one; else `set up`. Not read,
+or GitHub out of reach: `unknown`. The hopper's GitHub App asks for no administration permission for this: a person who
+wants every point read connects as a repository admin, or checks the settings by hand.
+
+**Where it shows.** `GET /api/repo-checks` answers `setup: { state, problems, unread }` for each job repository, and
+`found.setup` holds what was read (`{ branches: [{ branch, pullRequest, statusCheck, forcePushBlocked }], secretScanning,
+pushProtection }`); `hopper repo checks <repo>` prints the same. Sources (`ui/src/views/repo-setup.tsx`) shows a
+"Repository setup" section under GitHub: a line naming the repositories not set up and those not known, then each job
+repository with its state, its problems and what GitHub did not show. It is read when the repository's checks are, every
+ten minutes. No event: a read is GitHub's state, not an act.
+
+**Persisted state.** None: the read is kept in memory with the checks.
+
+Tests: `test/repo-checks/setup.test.ts` (each point from what GitHub shows, the state and the words),
+`test/integration/repo-setup.test.ts` (the real daemon and CLI, GitHub a fake on loopback that shows the branch protection
+and the security settings only to an admin: set up, not set up with each problem, a ruleset read without admin, a
+protected branch read without admin is unread, GitHub down, `hopper repo checks`), `test/ui/repo-setup-view.test.ts` (the
+section, the line, the problems, the unread note; no section with no job repository or no answer).
 
 ## Report a bug (issue #694, 2026-10-10)
 
