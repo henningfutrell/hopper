@@ -23,7 +23,7 @@
 //   Scenario: a write need waits for a person: the template is saved, nothing of it approved, and no box launches
 //   Scenario: needs the hopper cannot read are refused, saying how to write them; a viewer's token is refused for its role
 //   Scenario: the operator CLI asks for a template
-//   Scenario: the recipe on the page (issue #708, part 9): the template the needs would make is shown, and nothing is saved
+//   Scenario: the template request on the page (issue #708, part 9): the template the needs would make is shown, and nothing is saved
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
@@ -175,7 +175,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(await hopper(['template', 'request'])).toMatchObject({ code: 2, err: expect.stringContaining('--needs') });
   });
 
-  it('the recipe on the page: the template the needs would make is shown before it is made, and nothing is saved (issue #708)', async () => {
+  it('the template request on the page: the template the needs would make is shown before it is made, and nothing is saved (issue #708)', async () => {
     const { a, session } = await boot(['cluster/lab']);
     const token = await apiToken(a, session);
     const shown = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab' });

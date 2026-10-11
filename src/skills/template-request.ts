@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
-import type { TemplateView } from '../domain/vault.ts';
+import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
 
@@ -84,6 +84,29 @@ function loads(needs: readonly OperationProfile[]): string {
   }).join('\n');
 }
 
+/** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
+function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined): string[] {
+  return [
+    ...needs.filter((p) => p.operation === 'read' && !inReadPolicy(policy, p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`),
+    ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`),
+  ];
+}
+
+/** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'policy' | 'image'>, said: string | undefined): TemplatePreview | string {
+  const needs = needsOf(said);
+  if (typeof needs === 'string') return needs;
+  const name = requestedName(needs);
+  const was = u.template(name);
+  const waits = outsidePolicy(needs, u.policy());
+  return {
+    template: name, image: u.image, tools: toolsForNeeds(needs), needs: needs.map(inWords),
+    readOnly: needs.every((p) => p.operation === 'read'),
+    approvedBy: waits.length === 0 ? READ_POLICY_APPROVER : 'a person', waits,
+    ...(was ? { exists: sameNeeds(was.profiles, needs) ? 'same' as const : 'changed' as const } : {}),
+  };
+}
+
 /** A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report goes there). */
 export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string): Promise<TemplateAnswer> {
   const needs = needsOf(said);
@@ -98,8 +121,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // The policy approves only a template it makes now, and only when every need is a read it holds.
-    const outside = needs.filter((p) => p.operation !== 'read' || !inReadPolicy(u.policy(), p.asset));
-    if (outside.length === 0) {
+    if (outsidePolicy(needs, u.policy()).length === 0) {
       const approved = await u.approve(name, READ_POLICY_APPROVER);
       if (!approved.ok) return { status: STATUS[approved.code] ?? 503, reason: approved.error };
     }
@@ -108,9 +130,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   if (!t) return { status: 503, reason: `template ${name} was not kept: ask again` };
   const waits = waitsOf(t);
   if (waits.length > 0) {
-    const policy = needs.filter((p) => p.operation === 'read' && !inReadPolicy(u.policy(), p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`);
-    const high = needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`);
-    return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${[...policy, ...high].length ? ` (${[...policy, ...high].join('; ')})` : ''}.` };
+    const why = outsidePolicy(needs, u.policy());
+    return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
   const checking = checkWait(t);
   if (checking) return { status: 202, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };

@@ -266,6 +266,16 @@ export interface TemplateView extends Template {
   radius: TemplateRadius;
 }
 
+/**
+ * The template a request makes, shown before it is made (issue #708, part 9: the template request on Settings → Vault): what a
+ * request with these needs saves now, and who approves it. `exists`: a template of that name is there already, with the
+ * same needs (a request makes no second one) or changed by a person (a request is refused).
+ */
+export interface TemplatePreview {
+  template: string; image: string; tools: string[]; needs: string[]; readOnly: boolean;
+  approvedBy: 'the read policy' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
+}
+
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
 
 /** The secrets a template's boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */

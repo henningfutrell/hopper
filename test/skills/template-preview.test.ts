@@ -1,4 +1,4 @@
-// Issue #708, part 9: the recipe on Settings → Vault. A person writes what the box must do — its needs — and the hopper
+// Issue #708, part 9: the template request on Settings → Vault. A person writes what the box must do — its needs — and the hopper
 // shows the template it would make from them before it makes it: its name, its image, the tools its needs use, that it
 // holds no vault secret, and who approves it (the read policy, or a person, and why). The same derivation as a job's
 // request (issue #716, design.md "Templates on request"); nothing is saved. Pure.
@@ -13,7 +13,7 @@ const user = (o: { policy?: string[]; templates?: TemplateView[] } = {}) => ({
   image: IMAGE,
 });
 
-describe('the template a recipe makes, shown before it is made (issue #708)', () => {
+describe('the template a request makes, shown before it is made (issue #708)', () => {
   it('shows the name, the image, the tools the needs use and no secret; read needs inside the policy are approved by it', () => {
     const p = previewTemplate(user({ policy: ['cluster/lab', 'aws-account/*'] }), 'read/cluster/lab read/aws-account/123456789012');
     expect(p).toEqual({
@@ -49,7 +49,7 @@ describe('the template a recipe makes, shown before it is made (issue #708)', ()
     expect(previewTemplate(user(), 'read/cluster/lab')).not.toHaveProperty('exists');
   });
 
-  it('refuses a recipe it cannot read, with how to write it', () => {
+  it('refuses needs it cannot read, with how to write it', () => {
     expect(previewTemplate(user(), '')).toMatch(/^name what the work needs/);
     expect(previewTemplate(user(), 'delete/cluster/lab')).toContain('the operation is one of');
   });
