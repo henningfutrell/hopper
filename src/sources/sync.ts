@@ -14,10 +14,10 @@
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
 import { offer } from './item-text.ts';
+import { intakeOrder } from './intake-order.ts';
 import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
-import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
@@ -32,6 +32,8 @@ export interface SourceSyncOptions {
   pollMs: (sourceName: string) => number;
   /** How long a source may stay in error before `source.stalled` is recorded. Default STALL_AFTER_MS. */
   stallAfterMs?: number;
+  /** Jev first, for the order new items enter and the head of each tending queue (issue #796); absent: the rules decide. */
+  jevFirst?: JevFirst;
 }
 
 /** A source in error this long has stopped intake: the owner is told. */
@@ -232,7 +234,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
-    const items = await slot.source.discover();
+    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
@@ -328,7 +330,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   });
 
   const afterDone = createAfterDone({
-    store, host, enqueue, finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
     failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); }, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief),

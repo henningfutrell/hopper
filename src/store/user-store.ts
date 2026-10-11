@@ -2,6 +2,7 @@
 // search_path is that schema (the `?schema=` of the database URL, db.ts).
 import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
 import { createArtifactRepository } from './artifacts.ts';
+import { createBugReportRepository } from './bug-reports.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
@@ -67,6 +68,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     handoffs: createHandoffRepository(ctx),
     itemSnapshots: createItemSnapshotRepository(ctx),
     vaultGrants: createVaultGrantRepository(ctx),
+    bugReports: createBugReportRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

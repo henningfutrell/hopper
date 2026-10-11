@@ -89,8 +89,8 @@ export interface UserRuntimeOptions {
   installedDir: string;
   /** How often the plugins config's version is checked. */
   pluginsConfigIntervalMs: number;
-  /** The UI link to one question (notifications carry it). */
-  answerUrl(questionId: string): string;
+  /** A UI link to a view, by its hash (no `#`): one question, `question-<id>`; the Logins view, `logins` (issue #698). Notifications carry them. */
+  uiUrl(hash: string): string;
   /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
   artifactLinkBase(linkBase: string): string;
   /** Where the hopper is reached from outside now (issue #795, the tunnel watch). */
@@ -255,7 +255,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
@@ -313,7 +313,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const questions = createQuestionService({
     store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { first: minorDecisions, gated },
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
-    answerUrl: o.answerUrl,
+    answerUrl: (id) => o.uiUrl(`question-${id}`),
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
     // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
@@ -358,7 +358,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
-    sources: jobSources(), host: engine.sourceHost, clock,
+    sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
@@ -375,7 +375,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
@@ -397,11 +397,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       history.start(); minorDecisions.start(); tldrs.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
-      jobStream.start();
+      jobStream.start(); proxy.githubProxy.bugReports.start(); // Report a bug's kept reports (issue #694)
     },
     stop() {
       stopped ??= (async () => {
-        jobStream.stop();
+        jobStream.stop(); await proxy.githubProxy.bugReports.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();

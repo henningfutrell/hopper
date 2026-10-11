@@ -5,8 +5,9 @@
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
-// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only.
-// API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them.
+// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
+// API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
+// Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -20,13 +21,15 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
+import { autoParkCall } from './cli-operator-auto-park.ts';
 import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token', 'report'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -73,6 +76,7 @@ ${REPO_USAGE}
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
 ${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
+${REPORT_USAGE}
 ${LANES_USAGE}
 ${VAULT_USAGE}
 ${TOKEN_USAGE}
@@ -188,27 +192,6 @@ function backfillCall(args: string[]): Call {
   return { role: 'operator', path: '/ui/api/backfill/done-check', body: async () => ({}) };
 }
 
-const AUTO_PARK_SET = 'auto-park set [--minutes <n>] [--high-priority-minutes <n>]';
-const AUTO_PARK_USAGE = `auto-park | hopper ${AUTO_PARK_SET}`;
-
-function minutesOf(flag: string, raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const n = Number(raw);
-  if (raw.trim() === '' || !Number.isFinite(n)) throw new OperatorRefusal(`--${flag} must be a number of minutes; not ${raw}`);
-  return n;
-}
-
-function autoParkCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: 'string' }, 'high-priority-minutes': { type: 'string' } } });
-  const [verb, ...extra] = positionals;
-  const minutes = minutesOf('minutes', values.minutes);
-  const highPriorityMinutes = minutesOf('high-priority-minutes', values['high-priority-minutes']);
-  if (verb === undefined && minutes === undefined && highPriorityMinutes === undefined) return { role: 'viewer', path: '/api/auto-park' };
-  if (verb !== 'set' || extra.length > 0) throw usage(AUTO_PARK_USAGE);
-  if (minutes === undefined && highPriorityMinutes === undefined) throw usage(AUTO_PARK_SET);
-  return { role: 'admin', path: '/ui/api/auto-park', body: async () => ({ ...(minutes === undefined ? {} : { minutes }), ...(highPriorityMinutes === undefined ? {} : { highPriorityMinutes }) }) };
-}
-
 /** A proposal's paths in short, as the CLI lists them (issue #651). */
 function pathsBrief(p: ReviewItemView) {
   const v = p.versions.at(-1)!;
@@ -262,6 +245,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'template') return templateCall(args);
   if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
+  if (command === 'report') return reportCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
@@ -305,7 +289,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

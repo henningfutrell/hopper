@@ -158,7 +158,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const workDir = config.workDir;
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
   let port = config.port;
-  const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
+  const uiUrl = (hash: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#${hash}`;
   // Where a notification's artifact link points (issue #673): the user's link base, else the hopper's own default.
   const artifactLinkBase = (linkBase: string): string => artifactBase({ linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
@@ -205,7 +205,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase, reach: tunnel.url,
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: tunnel.url,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -327,7 +327,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     url: `http://127.0.0.1:${port}`,
     config,
     auth: () => signIn.config(),
-    answerUrl,
+    answerUrl: (id) => uiUrl(`question-${id}`),
     instance,
     updater,
     access,

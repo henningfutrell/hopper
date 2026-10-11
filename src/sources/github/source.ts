@@ -19,7 +19,7 @@ import { checkJobs } from './check.ts';
 import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
-import { declaredParts, partsOf } from './parts.ts';
+import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
@@ -125,10 +125,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
    */
   const issueParts = async (issue: GitHubIssue) => {
     try {
-      return await partsOf(api, issue.repo, issue.number, issue.body);
+      return await partsOf(api, issue);
     } catch {
-      const d = declaredParts(issue.body);
-      return d && { done: d.ticked, total: d.total };
+      return tickedParts(issue);
     }
   };
 
@@ -345,6 +344,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
     closedAsComplete(job) {
       return closedAsComplete(api, job);
     },

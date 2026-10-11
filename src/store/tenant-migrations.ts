@@ -24,6 +24,7 @@ import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
+import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
 import { originPendingBackfill } from './migration-origin-pending.ts';
@@ -347,6 +348,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   originPendingBackfill,
   // 40: Vault grants (issue #652): a person's grant of the vault to an item's jobs. A table: the build before runs on it.
   VAULT_GRANT_TABLE,
+  // 41: Bug reports (issue #694): a person's reports, filed or kept to send later. A table only: the build before runs on it.
+  BUG_REPORT_TABLE,
 ];
 
 /** A user schema's version once migrated. */

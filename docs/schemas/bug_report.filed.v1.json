@@ -29,6 +29,13 @@
     "fromJob": {
       "type": "boolean",
       "const": true
+    },
+    "id": {
+      "type": "string"
+    },
+    "later": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

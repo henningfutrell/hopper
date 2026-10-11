@@ -5,8 +5,9 @@ import type { UiRole } from './domain/types.ts';
 /** A refusal: the message, exit 2. */
 export class OperatorRefusal extends Error {}
 
-/** A POST of `body`, or, without one, a GET whose answer `pick` narrows. */
+/** A POST of `body`, or, without one, a GET whose answer `pick` narrows; `body` may ask the daemon first (`send`). */
 export interface Call { role: UiRole; path: string; body?: (get: Getter) => Promise<unknown>; pick?: (answer: unknown) => unknown }
-export type Getter = (path: string) => Promise<unknown>;
+/** A GET of `path`, or with `body` a POST, on the same session. */
+export type Getter = (path: string, body?: unknown) => Promise<unknown>;
 
 export const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usage: hopper ${line}`);

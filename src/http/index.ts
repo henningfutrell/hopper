@@ -52,6 +52,7 @@ import { machineHistoryRoutes } from './machine-history.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
+import { bugReportReadRoutes } from './ui/bug-reports.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
@@ -130,6 +131,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
+  bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
