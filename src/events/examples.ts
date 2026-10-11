@@ -236,4 +236,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.child_issue_filed': { requestId: 'r1', parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' }, required: true, subIssue: true },
   'pointed_job.created': { id: 'p1', repo: 'octo-org/hello', pointer: { kind: 'issue', number: 7, url: 'https://github.com/octo-org/hello/issues/7' }, source: 'api', by: 'octocat' },
   'pointed_job.status_changed': { id: 'p1', from: 'queued', to: 'running', lane: 'local/lane-1', by: 'octocat' },
+  'github_watch.changed': {
+    pointedJob: 'p1', repo: 'octo-org/hello', pointer: { kind: 'issue', number: 7, url: 'https://github.com/octo-org/hello/issues/7' },
+    changes: { labels: { added: ['ready'], removed: [] }, comments: { added: [{ id: 1201, author: 'octocat', at: '2026-10-11T12:00:00Z' }], removed: 0 } },
+  },
+  'github_watch.settings_changed': { from: { intervalSeconds: 60 }, to: { intervalSeconds: 300 }, by: 'octocat' },
 };

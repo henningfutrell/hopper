@@ -9,12 +9,11 @@ import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
 import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
-import type { PointedJobRepository } from './pointed-jobs.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
   Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User,
-  UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries,
+  UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries,
 } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
@@ -490,6 +489,8 @@ export interface UserStore {
   bugReports: BugReportRepository;
   /** Pointed jobs (issue #425). */
   pointedJobs: PointedJobRepository;
+  /** GitHub watches (issue #427): each pointed job's last snapshot. */
+  githubWatches: GitHubWatchRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

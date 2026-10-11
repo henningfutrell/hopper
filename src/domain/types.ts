@@ -519,6 +519,8 @@ export * from './auto-park.ts';
 export * from './access.ts';
 export * from './artifacts.ts';
 export * from './tldr.ts';
+export * from './pointed-jobs.ts';
+export * from './github-watch.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 

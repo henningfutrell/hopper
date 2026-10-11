@@ -6,7 +6,7 @@ import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
 } from './types.ts';
 
@@ -81,6 +81,9 @@ export interface UserSettingsRepository {
   getTldr(): TldrSettings | undefined;
   setTldr(settings: TldrSettings): void;
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
+  /** GitHub watches (issue #427): how often each polls; absent: never set, the default. */
+  getGitHubWatch(): GitHubWatchSettings | undefined;
+  setGitHubWatch(settings: GitHubWatchSettings): void;
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
   /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */

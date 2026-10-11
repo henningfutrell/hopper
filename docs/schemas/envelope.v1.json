@@ -200,6 +200,8 @@
         "job.child_issue_filed",
         "pointed_job.created",
         "pointed_job.status_changed",
+        "github_watch.changed",
+        "github_watch.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

@@ -397,11 +397,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       history.start(); minorDecisions.start(); tldrs.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
-      jobStream.start(); proxy.githubProxy.bugReports.start(); // Report a bug's kept reports (issue #694)
+      jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427)
     },
     stop() {
       stopped ??= (async () => {
-        jobStream.stop(); await proxy.githubProxy.bugReports.stop();
+        jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
